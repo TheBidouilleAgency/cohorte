@@ -395,6 +395,21 @@ console.log("gate.py — runtime dialects");
     cx.json?.hookSpecificOutput?.permissionDecision === "deny");
   check("…and the reason says why it was refused rather than queried",
     /no confirmation tier/.test(cx.json?.hookSpecificOutput?.permissionDecisionReason || ""));
+  for (const tool_name of ['spawn_agent', 'Agent']) {
+    const dispatch = raw({ tool_name, tool_input: { agent_type: 'review' }, cwd: d }, '--runtime', 'codex');
+    check(`codex: ${tool_name} with agent_type is denied without a preflight stamp`,
+      dispatch.json?.hookSpecificOutput?.permissionDecision === 'deny'
+      && /preflight/i.test(dispatch.json?.hookSpecificOutput?.permissionDecisionReason || ''));
+    check(`codex: ${tool_name} for an ungated implementer passes`,
+      raw({ tool_name, tool_input: { agent_type: 'backend' }, cwd: d }, '--runtime', 'codex').json === null);
+  }
+  const nativeCwd = spawnSync(python, [GATE, '--runtime', 'codex'], {
+    input: JSON.stringify({ tool_name: 'spawn_agent', tool_input: { agent_type: 'review' }, cwd: d }),
+    cwd: root, encoding: 'utf8',
+    env: { ...process.env, CLAUDE_PROJECT_DIR: '', COHORTE_PROJECT_DIR: '' },
+  });
+  check('codex: payload cwd locates project config without Claude environment variables',
+    JSON.parse(nativeCwd.stdout || '{}').hookSpecificOutput?.permissionDecision === 'deny');
 
   // Cursor sends the command at the top level and names no tool.
   const cu = raw({ hook_event_name: "beforeShellExecution", command: "git push", cwd: d },

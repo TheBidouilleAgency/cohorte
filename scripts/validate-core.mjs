@@ -5,6 +5,8 @@
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+const { applyConditionals, loadRuntime } = createRequire(import.meta.url)('../core/adapter/render.js');
 
 // fileURLToPath, not .pathname — on Windows the latter yields "/C:/…", which
 // join() then resolves against the cwd drive ("C:\C:\…") and every read ENOENTs.
@@ -121,11 +123,14 @@ for (const p of ["profile/PIPELINE.template.md", "profile/SCHEMA.md",
   "profile/cohorte.config.template.yaml"])
   if (!existsSync(join(root, p))) fail(p, "missing");
 
-const tpl = read("profile/PIPELINE.template.md");
+const tpl = applyConditionals(read("profile/PIPELINE.template.md"), loadRuntime('claude'));
 if (/^\s*model:\s*inherit\b/m.test(tpl))
   fail("profile/PIPELINE.template.md",
     "a surfaces[] example pins `model: inherit` — examples must default to sonnet " +
     "(inherit bills at the lead session's model)");
+const codexTpl = applyConditionals(read('profile/PIPELINE.template.md'), loadRuntime('codex'));
+if (/^\s*model:\s*(sonnet|haiku|opus)\b/m.test(codexTpl))
+  fail('profile/PIPELINE.template.md', 'Codex examples must not pin Anthropic model aliases');
 
 // ── init-pipeline router steps ──────────────────────────────────────────────
 const steps = join(root, "core/templates/steps/init-pipeline");

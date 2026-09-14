@@ -14,7 +14,7 @@
     "Subagents are TOML, one file per agent, and the body lives in `developer_instructions`.",
     "Hooks use the SAME PreToolUse envelope as Claude Code, with one difference that matters:",
     "`permissionDecision: ask` is parsed but not honoured, so gate.py escalates ask to deny here.",
-    "Model pins are NOT carried across: the profile names Anthropic aliases (sonnet/haiku), which are meaningless here and would either error or be silently ignored. Agents and commands inherit this runtime's own model selection instead."
+    "Anthropic model aliases are dropped and default to inheritance. Explicit Codex model and model_reasoning_effort values are preserved. Surface agents always live in the current project's .codex/agents, even with a global core; CODEX_HOME does not change."
   ],
   "scopes": {
     "global": {
@@ -56,7 +56,9 @@
     "body_key": "developer_instructions",
     "frontmatter": [
       "name",
-      "description"
+      "description",
+      "model",
+      "model_reasoning_effort"
     ],
     "readonly_key": "sandbox_mode",
     "readonly_value": "read-only",
@@ -66,7 +68,7 @@
   "hook": {
     "format": "claude",
     "event": "PreToolUse",
-    "matcher": "Bash|shell",
+    "matcher": "Bash|shell|spawn_agent|Agent",
     "supports_ask": false,
     "config_shape": "json"
   },

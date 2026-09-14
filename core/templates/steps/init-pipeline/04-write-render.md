@@ -4,8 +4,13 @@
 
 1. **Write `PIPELINE.md`** at the repo root (source: the installer's `pipeline/PIPELINE.template.md`).
 2. **Wire it into `<memory>`:** if `<memory>` exists, ensure it references the profile (add a line
+<!-- cohorte:if runtime:codex -->
+   near the top: `Read PIPELINE.md for the project profile and pipeline rules before pipeline work.`).
+   If absent, create `AGENTS.md` with that instruction and a one-paragraph project intro.
+<!-- cohorte:else -->
    near the top: `> Project profile & pipeline facts: **@PIPELINE.md**`). If not, create a minimal
    `<memory>` with that reference + a one-paragraph project intro.
+<!-- cohorte:endif -->
 3. **Render one agent per surface** — for each surface, follow SCHEMA.md §"Rendering / reconciling a
    surface agent" (steps 2–3): render `<agents>/<agent>.md` from the installer's
    `pipeline/implementer.template.md`, substituting `<SURFACE_AGENT>`, `<SURFACE_LABEL>`, `<SURFACE_PATH>`,
@@ -14,12 +19,28 @@
    PIPELINE.md you just wrote), and the surface-specific blocks
    (`<SURFACE_EXTRA_NEVER>`, `<SURFACE_DESIGN_INPUT>`, `<SURFACE_TDD_STEP1>` — fill design-related ones
    only when `uses_design`).
-   Leave the fixed agents as-is (generic, shipped by the installer): `review.md`, `release.md`,
-   `profile-reader.md`.
+   Leave the fixed agents as-is (generic, shipped by the installer under `<fixed-agents>/`).
+<!-- cohorte:if runtime:codex -->
+   Write `.codex/agents/<agent>.toml` in this project even when the core is global. Preserve
+   TOML syntax when substituting the template; parse every result before dispatch. Each file
+   needs `name`, `description`, and `developer_instructions`. Omit `model` for `inherit` or
+   legacy `sonnet`/`haiku` profiles; preserve an explicitly selected Codex model and reasoning
+   effort. Do not add Claude `tools:` frontmatter. Codex discovers these project files natively:
+   leave the user's `CODEX_HOME` unchanged and do not create a dedicated launcher or auth symlink.
+<!-- cohorte:endif -->
 4. **Generate `<state>/gate-config.json`** from the `gate` block — copy all five keys verbatim:
    `{"deny": [...], "ask": [...], "ask_on_default_branch": [...], "default_branch": "<vcs.default_branch>",
    "preflight": {"enabled": <gate.preflight.enabled>, "agents": [...], "max_age_minutes": <n>}}`
    (profile has no `preflight` block ⇒ omit the key — the hook then skips the phase gate).
+<!-- cohorte:if runtime:codex -->
+5. **Codex configuration.** Preserve `.codex/config.toml` and the user's configuration.
+   The installer registers `PreToolUse` in the selected scope's `hooks.json`; verify exactly
+   one Cohorte hook covering `Bash|shell|spawn_agent|Agent` with `--runtime codex`.
+   In global mode do not duplicate it locally. In project mode use `.codex/hooks.json`.
+   Check the hook is enabled/trusted in this client; a file alone does not prove enforcement.
+   Never write `.claude/settings.json` or Claude `Bash(...)` permission rules for Codex.
+   `ask` rules become `deny` in this hook; explain this stricter behavior.
+<!-- cohorte:else -->
 <!-- cohorte:if hooks -->
 5. **Write `.claude/settings.json`** permissions (`ask`/`deny` lists mirroring the gate, **plus an
    `allow` list of the project's read-only / verification commands** so agents don't stall on
@@ -53,7 +74,15 @@
    deny/ask patterns live, so fill it from the profile exactly and do not skip it. If this repo is
    also driven from Claude Code, that install's hook reads the same file; nothing to duplicate.
 <!-- cohorte:endif -->
+<!-- cohorte:endif -->
 6. **Wire the retrieval provider** (skip if `retrieval.provider: none`):
+<!-- cohorte:if runtime:codex -->
+   Follow SCHEMA.md §Code retrieval's Codex procedure: merge `[mcp_servers.serena]` into the
+   project's `.codex/config.toml`, preserve other settings, gitignore `.serena/`, then check
+   CLI availability, registration and actual session connectivity. Do not write a standalone
+   `.mcp.json` or run `claude mcp add`. Missing connectivity requires a restart/diagnosis,
+   not a claim that registration succeeded end to end.
+<!-- cohorte:else -->
    - **serena:** if the `serena` CLI is missing, have the human install it (`uv tool install -p 3.13
      serena-agent`) — or set the provider to `none` if they decline, and say `/cohorte-update-pipeline` can wire
      it later. If the binary exists (e.g. `~/.local/bin/serena`) but `command -v serena` fails,
@@ -74,6 +103,7 @@
      big changes.
    - Either way the rendered agents already carry the provider's MCP tools in their `tools:` list
      (step 3 / SCHEMA §Rendering); remind the human the new MCP server appears after a session restart.
+<!-- cohorte:endif -->
 7. **Render the isolation scripts** (if `isolation.enabled`) from the installer's
    `pipeline/scripts/*.template` to this repo's `scripts/new-feature.sh` and `scripts/remove-feature.sh`,
    substituting the `__TOKENS__` (project

@@ -86,10 +86,12 @@ WS = re.compile(r"\s+")
 # stat data. Must stay ≥ the filesystem's mtime granularity (1 s on ext4/HFS+); 5 s covers a
 # clock that ticks backwards a little without costing anything on a quiet tree.
 RACY_WINDOW_S = 5
+HOOK_CWD = None
 
 
 def project_root() -> str:
-    return os.environ.get("COHORTE_PROJECT_DIR") or os.environ.get("CLAUDE_PROJECT_DIR", ".")
+    return (os.environ.get("COHORTE_PROJECT_DIR") or os.environ.get("CLAUDE_PROJECT_DIR")
+            or HOOK_CWD or ".")
 
 
 # The generated per-project files (gate config + preflight stamp) live under `.claude/`
@@ -317,7 +319,8 @@ def check_preflight(payload: dict, cfg: dict) -> int:
     # carrying `subagent_type`; Gemini exposes each subagent as a tool of the SAME NAME, so the
     # dispatch arrives as `tool_name: review`. Accept both rather than gating only the shape
     # one vendor happens to use — a phase gate that silently never fires is the 1.3.0 bug.
-    subagent = (payload.get("tool_input") or {}).get("subagent_type", "") or ""
+    tool_input = payload.get("tool_input") or {}
+    subagent = tool_input.get("subagent_type") or tool_input.get("agent_type") or ""
     if not subagent and payload.get("tool_name") in agents:
         subagent = payload.get("tool_name")
     if subagent not in agents:
@@ -493,7 +496,7 @@ def main() -> int:
     if argv and argv[0] in ("--check", "--check-dispatch"):
         return check_cli(argv)
 
-    global RUNTIME
+    global RUNTIME, HOOK_CWD
     for i, a in enumerate(argv):
         if a == "--runtime" and i + 1 < len(argv):
             RUNTIME = argv[i + 1]
@@ -505,6 +508,11 @@ def main() -> int:
     except Exception:
         return 0  # malformed input → don't block
 
+    # Codex provides the project cwd in the envelope, not CLAUDE_PROJECT_DIR.
+    # A globally installed hook must inspect the calling project, not the process cwd.
+    if isinstance(payload.get("cwd"), str) and payload["cwd"]:
+        HOOK_CWD = payload["cwd"]
+
     tool = payload.get("tool_name")
     # Cursor's shell hook carries the command at the top level rather than in tool_input, and
     # names no tool. Normalise once here so every check below stays runtime-agnostic.
@@ -515,7 +523,7 @@ def main() -> int:
     cfg = load_config()
 
     # A dispatch, in whichever shape this runtime sends it (see check_preflight).
-    if tool == "Task" or tool in ((cfg.get("preflight") or {}).get("agents") or ["review"]):
+    if tool in ("Task", "spawn_agent", "Agent") or tool in ((cfg.get("preflight") or {}).get("agents") or ["review"]):
         return check_preflight(payload, cfg)
     # Bash is Claude's/Codex's name for the shell tool; Gemini calls it run_shell_command, and
     # Cursor's beforeShellExecution was normalised to "Bash" above. Anything else is not a

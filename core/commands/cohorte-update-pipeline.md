@@ -1,6 +1,6 @@
 ---
 model: sonnet
-description: Refresh the pipeline core (global ~/.claude, or a repo's bundled .claude) to the latest published cohorte version, then reconcile this repo's generated files to it — /cohorte-init-pipeline stays one-time.
+description: Refresh this runtime's global or project-local pipeline core, then reconcile the project's generated files — /cohorte-init-pipeline stays one-time.
 argument-hint: [path-to-local-checkout]
 ---
 
@@ -24,6 +24,17 @@ the human's choices — so `/cohorte-init-pipeline` never needs re-running for a
 
 ## 2. Run the update
 
+<!-- cohorte:if runtime:codex -->
+Preserve the existing install scope and explicitly select Codex:
+
+- Local source checkout supplied: `node <path>/bin/cli.js update --runtime=codex [--global]`.
+- Published release: `npm i -g cohorte@latest`, then `cohorte update --runtime=codex [--global]`.
+
+Expand `[--global]` to `--global` only for a global core; otherwise omit it. Run from the target
+project, or pass its path. Keep the user's normal `CODEX_HOME`. The global core and generic
+agents may be shared, but reconciliation always writes surface agents in this project's
+`.codex/agents/*.toml`.
+<!-- cohorte:else -->
 - If `$ARGUMENTS` is a path to a local checkout of the pipeline repo (contains `core/` + `install.sh`),
   run from there — useful when iterating on the pipeline itself:
 
@@ -51,6 +62,7 @@ the human's choices — so `/cohorte-init-pipeline` never needs re-running for a
   ```
 
   (The piped installer clones the repo itself; `-s --` forwards the flags.)
+<!-- cohorte:endif -->
 
 ## 3. Report old → new
 
@@ -77,7 +89,20 @@ or the **quiet command variants**: `test_quiet_cmd`/`lint_quiet_cmd` + `commands
 `lint_quiet`, proposing the detected bridled forms per §Output discipline; `gate.preflight` tops up
 silently at its defaults), re-render the surface agents from the current `implementer.template.md`
 (this refreshes each agent's **baked §Conventions slice** — required after any hand-edit of the
-profile's prose), additively patch `settings.json`/`gate-config.json` (including the `preflight`
+profile's prose).
+<!-- cohorte:if runtime:codex -->
+Write surface agents as `.codex/agents/*.toml`, validate TOML, and preserve explicit Codex model
+choices (legacy Anthropic aliases mean inheritance). Patch `<state>/gate-config.json` and
+verify the selected scope's hook covers shell and `spawn_agent`/`Agent`; do not duplicate it.
+Verify `<fixed-agents>/profile-reader.toml` and the other shipped generic agents. Workflows are
+unavailable on Codex and their absence is expected. Reconcile MCP in `.codex/config.toml` using
+SCHEMA.md §Code retrieval, preserving unrelated configuration and checking actual connectivity.
+If a previous install wrote this project's agents globally, compare ownership/content before
+moving them locally; never remove unrelated global agents or overwrite modified local copies.
+Remove project-only `CODEX_HOME` workarounds only after verifying native discovery. Do not copy
+authentication into the repository. Report what changed and anything still unverified.
+<!-- cohorte:else -->
+Additively patch `settings.json`/`gate-config.json` (including the `preflight`
 block and the workflow-agent `allow` entries from init step 5), and run any newly-added capability's
 wiring (e.g. Serena's project-scope `claude mcp add`). Verify the refreshed core actually carries
 `<core>/workflows/` + `agents/profile-reader.md` — missing means the update half-ran: re-run the
@@ -87,6 +112,7 @@ upgrading a bare `serena` entry to the PATH-proof launcher form, `.serena/` giti
 actually connected) and repair whatever fails — wiring that worked at
 init can rot (PATH changes, uninstalls, hand-edits). Report what was reconciled; if nothing was
 missing, say so. This is why `/cohorte-init-pipeline` never needs re-running for a core upgrade.
+<!-- cohorte:endif -->
 
 Four of the §Reconcile steps matter specifically here:
 
@@ -124,11 +150,16 @@ Four of the §Reconcile steps matter specifically here:
 
 ## 4. Tell the human the follow-ups
 
-- **Restart / reload the Claude Code session** so it picks up updated commands, agents, and any
+- **Restart / reload the coding-agent session** so it picks up updated commands, agents, and any
   newly-registered MCP server.
 - **Other repos using the global core:** their core is already fresh, but reconcile is per-repo — run
   `/cohorte-update-pipeline` inside each (it will skip the already-done core update and just reconcile).
+<!-- cohorte:if runtime:codex -->
+- **Commit** the reconciled `PIPELINE.md`, `.codex/agents/*.toml`, `.codex/config.toml` if added,
+  and versioned `<state>` files. Never commit auth or session state.
+<!-- cohorte:else -->
 - **Commit** the reconciled files (`PIPELINE.md`, `.claude/`, `.mcp.json` if added) so teammates get them.
+<!-- cohorte:endif -->
 - The kanban config is global and user-scoped
   (`<config>`) — never committed. The core update never touches it; only the
   reconcile above seeds the file and writes kanban board links (into that global file, not the repo).
