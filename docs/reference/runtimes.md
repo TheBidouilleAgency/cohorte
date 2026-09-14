@@ -36,6 +36,18 @@ the commands, which defeats the point of committing the profile. Skills are disc
 They are invoked as `$cohorte-build`, or picked implicitly when the task matches the skill's
 `description`.
 
+**Codex scope:** `cohorte install --global --runtime=codex` shares the core, skills and
+generic `review`/`release`/`profile-reader` agents. Surface agents generated from a project's
+`PIPELINE.md` always live in that project's `.codex/agents/*.toml`. A project install puts
+the generic agents there too. Keep the normal user `CODEX_HOME`; no project launcher or
+authentication symlink is needed. Codex discovers project agents natively.
+[Custom-agent configuration](https://learn.chatgpt.com/docs/agent-configuration/subagents).
+
+Initialization and reconciliation use `.codex/config.toml` for project MCP servers, preserving
+existing configuration. They do not generate Claude's `.claude/settings.json` permissions or
+a standalone `.mcp.json`. Restart the client after changes and verify MCP connectivity and hook
+trust; files on disk alone do not prove the client loaded them.
+
 Codex skills and Cursor commands perform **no** placeholder substitution — the rendered preamble
 tells the model that `$ARGUMENTS` means the text you typed after the command name.
 
@@ -73,14 +85,17 @@ Same config, same patterns, same verdicts — but advisory, because an agent can
 
 The phase gate (no reviewer dispatch onto red code) also has to survive the differences: Claude Code
 and Cursor send a `Task` tool carrying `subagent_type`, while Gemini exposes each subagent as a tool
-of the **same name**, so the dispatch arrives as `tool_name: review`. The gate accepts both.
+of the **same name**, so the dispatch arrives as `tool_name: review`. Codex uses `spawn_agent`
+(matcher alias `Agent`) with `tool_input.agent_type`. The Codex registration covers shell and
+dispatch calls; the gate normalizes all these forms before checking the preflight stamp.
 
 ## What does not travel
 
 **Model pins.** The profile names Anthropic aliases (`sonnet`, `haiku`). They are meaningless to the
 other vendors and would either error or be silently ignored, so the adapter drops them: agents and
 commands inherit that runtime's own model selection. `/cohorte-doctor`'s model-pin check is
-Claude-only for the same reason.
+Claude-specific for those aliases. Codex profiles default to `inherit`; explicit Codex `model`
+and `model_reasoning_effort` values are preserved when rendering agents.
 
 **Read-only enforcement, in one case.** The reviewer must never be able to fix what it reports.
 Claude expresses that as a `tools:` list without write tools, Cursor as `readonly: true`, Codex as

@@ -30,13 +30,24 @@ fix only with the human's go-ahead (or hand them the command).
    commands' step files are present — `templates/steps/init-pipeline/` non-empty (a router whose
    `templates/steps/<cmd>/` dir is missing is a partial/stale install ⇒
    re-run install/update). **Shipped scripts present and executable** in `<core>/pipeline/scripts/`:
-   `kanban-move.sh`, `preflight.sh`,
-   `new-feature.sh.template`, `remove-feature.sh.template` — ❌ any missing one.
+   `kanban-move.sh`, `preflight.sh`; the `new-feature.sh.template` and
+   `remove-feature.sh.template` sources must be readable, not executable — ❌ any missing one.
    Every caller chains these with `|| true`, so an absent script is a **silent**
    no-op (no kanban card moves, no error anywhere) — this check is the only thing
    that sees it. Also flag ❌ a `VERSION` **newer than** the other `pipeline/` files (compare mtimes):
    a version bumped without a full re-copy is a half-done update ⇒ re-run install/update.
 2. **Profile.** `PIPELINE.md` exists and its `yaml pipeline-profile` block parses. Every
+<!-- cohorte:if runtime:codex -->
+   `surfaces[].agent` has a valid `.codex/agents/<agent>.toml` in this project, regardless of
+   core scope. Check `name`, `description`, `developer_instructions` and no unfilled placeholders.
+   Reconcile only this project's agents; never treat unrelated global agents as orphans.
+   Generic `review.toml`, `release.toml`, `profile-reader.toml` live under `<fixed-agents>/`.
+   The read-only generic agents must carry `sandbox_mode = "read-only"`.
+   Missing `model` means inheritance, not an error. Reject Anthropic aliases; compare explicit
+   Codex model pins with the profile when supplied. Claude `tools:` is not a Codex TOML field.
+   Flag project launchers that redefine `CODEX_HOME` just to discover local agents; native
+   project discovery needs no auth symlink. Do not delete global agents without checking ownership.
+<!-- cohorte:else -->
    `surfaces[].agent` has its `<agents>/<agent>.md` and every agent file has its `surfaces[]`
    entry — **no orphans either way** (SCHEMA.md rule). Each rendered agent's frontmatter `tools`
    matches its surface's `tools` (incl. `DesignSync` iff `uses_design`, retrieval MCP tools iff
@@ -46,6 +57,7 @@ fix only with the human's go-ahead (or hand them the command).
    dispatch); ⚠️ any `inherit` with the note that it bills at the lead's tier. The generic agents
    (`review.md`, `release.md`, `profile-reader.md` in `<agents>/`) must
    each carry their `model:` line too (sonnet/haiku/haiku).
+<!-- cohorte:endif -->
 <!-- cohorte:if runtime:claude -->
    **Command pins:** every mechanical command file
    (`build`, `review`, `fix`, `ship`, `audit`, `refactor`, `doctor`, `align-ds`,
@@ -62,8 +74,14 @@ fix only with the human's go-ahead (or hand them the command).
    double registration, it double-prompts — and its `command` points at a `gate.py` that exists.
    Check the **matcher** actually covers what it must: on Claude Code that means both `Bash` and
    `Task`, since the preflight phase gate keys off `Task` dispatches and a `Bash`-only matcher
-   leaves it silently dead (the 1.3.0–1.3.1 regression). Prove the wiring end to end rather than
-   trusting the file: `python3 <core>/hooks/gate.py --check "<a pattern from the ask list>"` must
+   leaves it silently dead (the 1.3.0–1.3.1 regression).
+<!-- cohorte:if runtime:codex -->
+   Codex's matcher must cover `Bash` plus `spawn_agent`/`Agent`, and
+   `gate.py` must read `tool_input.agent_type`. With preflight enabled and no fresh stamp,
+   a synthetic `spawn_agent` review payload must be denied. Check client hook enablement/trust
+   separately; a direct script check is not proof the client invoked it.
+<!-- cohorte:endif -->
+   Test the evaluator too: `python3 <core>/hooks/gate.py --check "<a pattern from the ask list>"` must
    return a non-`allow` verdict. If the Runtime preamble said this runtime has **no confirmation
    tier**, state it here too: every `ask` pattern behaves as a `deny`, which is safe but stricter
    than the profile reads, and a human who expects a prompt will read the refusal as a bug.
@@ -82,8 +100,14 @@ fix only with the human's go-ahead (or hand them the command).
    the committed copy lands in every clone and new worktree; the gate then blocks clean trees and
    greens unchecked ones. fix: `git rm --cached <state>/preflight.ok` + add it to `.gitignore`.
 4. **Retrieval** (if `retrieval.provider` ≠ `none`). Run the SCHEMA.md §Code retrieval health
+<!-- cohorte:if runtime:codex -->
+   check: CLI resolvable from PATH, `[mcp_servers.<provider>]` in `.codex/config.toml`,
+   `.serena/` gitignored, and tools actually connected in this session. A standalone
+   `.mcp.json` is not Codex project registration.
+<!-- cohorte:else -->
    check: CLI resolvable from PATH, `.mcp.json` entry present in PATH-proof launcher form,
    `.serena/` gitignored, server actually connects.
+<!-- cohorte:endif -->
 5. **Design** (if `design.enabled`). `snapshot_dir` exists and is committed; `ui_kit_path` +
    `tokens_path` exist; if `provider: claude-design`, `DesignSync` responds (`list_files` on the `design_system_project`) and
    `design_system_project` is reachable. Recall: spec `design_files` are full

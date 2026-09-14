@@ -7,6 +7,14 @@ short, user-facing, most recent first. One `## <version> — <YYYY-MM-DD>` secti
 > They are history and are deliberately not rewritten — every command gained a `cohorte-` prefix
 > in 2.0.0.
 
+## 2.10.1 — 2026-09-14
+
+- **Codex project isolation:** surface agents stay in each repository's `.codex/agents/*.toml`
+  even with a global core; no `CODEX_HOME` launcher or auth symlink is required.
+- **Codex correctness:** init/update/doctor use native TOML agents and MCP settings, preflight
+  covers `spawn_agent` dispatches, explicit Codex model choices survive, and implementer
+  templates no longer accidentally force a read-only sandbox. Added regression coverage.
+
 ## 2.10.0 — 2026-08-24
 
 - **The dashboard is gone.** The local web cockpit — the `cohorte dashboard` verb, the

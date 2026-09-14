@@ -37,7 +37,7 @@ repo:
 # wired. serena = live LSP symbol navigation (default, no index to maintain);
 # graphify = persistent tree-sitter knowledge graph over code + docs (needs an
 # index step + rescans); none = agents fall back to Grep/Glob/Read.
-# Registered by /cohorte-init-pipeline as a project-scope MCP server (committed .mcp.json).
+# Registered by /cohorte-init-pipeline in the runtime's project MCP configuration.
 retrieval:
   provider: serena                            # serena | graphify | none
 
@@ -53,12 +53,16 @@ surfaces:
   - key: backend                              # short id, used as agent name + scope
     path: apps/api                            # the ONLY tree this surface's agent may touch
     label: backend (AdonisJS)
-    agent: backend                            # rendered as backend.md in this runtime's agents dir
+    agent: backend                            # rendered in the runtime's project agents dir
     tools: [Read, Write, Edit, Bash, Grep, Glob, mcp__serena]   # mcp__<provider> mirrors retrieval.provider
+<!-- cohorte:if runtime:codex -->
+    model: inherit                            # omit the TOML model pin; explicit Codex models also allowed
+<!-- cohorte:else -->
     model: sonnet                             # frontmatter model tier: sonnet | haiku | inherit
                                               #   sonnet = default (applies the frozen contract — cheap
                                               #   vs the Opus lead); haiku = purely mechanical scaffolding;
                                               #   inherit = only for surfaces with real design decisions
+<!-- cohorte:endif -->
     test_cmd: pnpm --filter api test
     # Bridled variants — what agents actually RUN (dot reporter / failures-only /
     # --quiet), so a green run costs lines, not pages. "" ⇒ callers fall back to
@@ -76,10 +80,14 @@ surfaces:
     label: frontend (React/TanStack)
     agent: frontend
     tools: [Read, Write, Edit, Bash, Grep, Glob, DesignSync, mcp__serena]
+<!-- cohorte:if runtime:codex -->
+    model: inherit                            # use the session model unless explicitly configured
+<!-- cohorte:else -->
     model: sonnet                             # default even for design surfaces — designs + contract are
                                               #   frozen inputs the agent applies; `inherit` (bills at the
                                               #   lead's tier, often Opus) ONLY if this surface must make
                                               #   novel design decisions
+<!-- cohorte:endif -->
     test_cmd: pnpm --filter web test
     test_quiet_cmd: pnpm --filter web test --reporter=dot
     lint_cmd: pnpm --filter web lint

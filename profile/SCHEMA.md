@@ -100,6 +100,28 @@ follow is provider-agnostic: _"prefer the retrieval MCP tools over Grep/Glob + w
 
 **Wiring (done by `/cohorte-init-pipeline`, or `/cohorte-update-pipeline` retroactively):**
 
+<!-- cohorte:if runtime:codex -->
+For `serena`, install its CLI if missing (`uv tool install -p 3.13 serena-agent`), then merge
+this project-scoped table into `.codex/config.toml`, preserving all existing settings:
+
+```toml
+[mcp_servers.serena]
+command = "sh"
+args = ["-c", 'exec "$(command -v serena || echo "$HOME/.local/bin/serena")" start-mcp-server --context codex --project-from-cwd --open-web-dashboard False']
+```
+
+On Windows without `sh`, use `command = "serena"` and the server arguments directly; ensure
+the CLI is on PATH. Gitignore `.serena/`. Keep `CODEX_HOME` at its normal user location;
+the project table is discovered natively once the project is trusted.
+For `graphify`, install its CLI and build/update the graph according to the provider's instructions;
+verify any required MCP registration in `.codex/config.toml` rather than `.mcp.json`.
+
+**Health check:** verify (1) `command -v serena`, (2) the `[mcp_servers.serena]` table,
+(3) `.serena/` ignored, (4) actual tools in the session. `codex mcp list` inspects registration,
+but is not proof of a live connection; restart the session when needed and report that limitation.
+Codex agents inherit MCP configuration; do not write a Claude `tools:` allowlist.
+Teammates receive `.codex/config.toml` and need the provider CLI installed and the project trusted.
+<!-- cohorte:else -->
 - `serena` — requires the `serena` CLI (`uv tool install -p 3.13 serena-agent`). For day-to-day CLI
   use it should also be on PATH (`uv tool update-shell`; uv installs to `~/.local/bin`). Register at
   **project scope** so the registration is committed and portable (`--project-from-cwd` resolves the
@@ -143,6 +165,7 @@ Report each check's result; never report Serena "wired" on registration alone.
 Teammates cloning the repo get the committed `.mcp.json` and only need the provider CLI installed
 and on PATH — if either is missing, the MCP server fails to start and agents silently fall back to
 Grep/Read; the health check above is the diagnostic.
+<!-- cohorte:endif -->
 
 ## Specialization — when to split one surface into more agents
 
@@ -412,6 +435,11 @@ this exact procedure so a surface is always defined the same way. To add surface
    scaffolding; `inherit` only when the surface makes real design decisions worth the lead's model),
    the five `*_cmd`s (derive from the surface's `package.json` / workspace
    filter, mirroring a sibling surface), and `uses_design`.
+<!-- cohorte:if runtime:codex -->
+   **Codex model policy:** use `model: inherit` by default, or a model explicitly selected for
+   Codex. Legacy `sonnet`/`haiku` values are not executable Codex pins: omit them in the rendered
+   agent and report inheritance. Preserve explicit Codex `model`/`model_reasoning_effort` choices.
+<!-- cohorte:endif -->
 2. **Render the agent file** `<agents>/<agent>.md` from `<core>/pipeline/implementer.template.md`
    — the template is already rendered for this runtime, so only the placeholders are yours to fill —
    substituting `<SURFACE_AGENT>`, `<SURFACE_LABEL>`,
@@ -440,6 +468,16 @@ this exact procedure so a surface is always defined the same way. To add surface
      says `none`): `DesignSync get_file(<projectId>, <file>)` for each link in the slot and translate
      each into the code design system (`@/components/ui/*`, `cn()` + CVA), mobile-first — never ad-hoc
      CSS. Then:"_
+<!-- cohorte:if runtime:codex -->
+   **Codex destination and format:** always write `.codex/agents/<agent>.toml` in the current
+   project, including with a global core. The source template has a `.md` filename but contains
+   TOML for this runtime. Validate TOML after substitutions; keep `name`, `description`, and
+   `developer_instructions`. Do not add Claude `tools:`/`model: sonnet` frontmatter.
+   Keep generic agents under `<fixed-agents>/`; never write surface agents there in global mode.
+   No `CODEX_HOME` override, auth symlink or per-project launcher is needed. When migrating an
+   old global surface agent, compare ownership/content with this project's profile before
+   removing its old copy; do not overwrite local customizations or touch other projects' agents.
+<!-- cohorte:endif -->
 3. **Add a §Conventions + §Testing stanza** for `S` in `PIPELINE.md` (mirror a sibling surface; keep it
    rule-shaped). If `S` is a shared-code surface, its convention is "single owner of shared X; slices
    consume, never redefine."
@@ -695,4 +733,3 @@ added vs. moved vs. already-correct.
 `<obsidian.vault_path>/<folder>/Tasks.md` with the `kanban-plugin: board` front-matter, one `## <heading>`
 per configured column in pipeline order, and the closing `%% kanban:settings %%` block
 (`{"kanban-plugin":"board","list-collapse":[false,…]}` with one `false` per column).
-

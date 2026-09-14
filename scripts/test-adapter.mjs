@@ -269,7 +269,76 @@ for (const id of RUNTIMES) {
     const text = readFileSync(step, "utf8");
     check(`${id}: templates carry no unresolved marker`, !/cohorte:(if|else|endif)/.test(text));
     check(`${id}: the settings/hook step matches this runtime`,
-      text.includes("Write `.claude/settings.json`") === rt.capabilities.hooks);
+      text.includes("Write `.claude/settings.json`") === (rt.capabilities.hooks && id !== "codex"));
+    if (id === "codex") {
+      check("codex: init generates native project agents and MCP config",
+        text.includes('.codex/agents/<agent>.toml') && text.includes('.codex/config.toml')
+        && !text.includes('render `<agents>/<agent>.md`') && !text.includes('`review.md`'));
+      const schema = readFileSync(join(p.core, 'pipeline', 'SCHEMA.md'), 'utf8');
+      check("codex: reconciliation preserves TOML destinations and Codex MCP context",
+        schema.includes('`<agents>/<agent>.toml`') && schema.includes('--context codex')
+        && !schema.includes('claude mcp add'));
+      const doctor = readFileSync(join(cmdDir, 'cohorte-doctor', 'SKILL.md'), 'utf8');
+      check("codex: doctor understands inherited models and TOML",
+        doctor.includes('Missing `model` means inheritance, not an error')
+        && !doctor.includes('sonnet/haiku/haiku'));
+      const update = readFileSync(join(cmdDir, 'cohorte-update-pipeline', 'SKILL.md'), 'utf8');
+      check("codex: update selects its runtime and does not demand Claude workflows",
+        update.includes('update --runtime=codex') && !update.includes('claude mcp add')
+        && !update.includes('`<core>/workflows/` + `agents/profile-reader.md`'));
+      const template = readFileSync(join(p.core, 'pipeline', 'PIPELINE.template.md'), 'utf8');
+      check("codex: new profiles default to inheritance",
+        /model: inherit/.test(template) && !/model: sonnet/.test(template));
+      const implementer = readFileSync(join(p.core, 'pipeline', 'implementer.template.md'), 'utf8');
+      check('codex: implementers are not accidentally pinned to a read-only sandbox',
+        !/^sandbox_mode = "read-only"/m.test(implementer));
+    }
+  }
+}
+
+group("codex — global core, project-local surfaces, native TOML");
+{
+  const env = { ...process.env, HOME: home, CLAUDE_CONFIG_DIR: '' };
+  const r = spawnSync(process.execPath,
+    [join(root, 'bin/cli.js'), 'install', '--global', '--runtime=codex'],
+    { cwd: proj, env, encoding: 'utf8' });
+  check('global Codex install succeeds', r.status === 0, r.stderr);
+  const init = readFileSync(join(home, '.agents/skills/cohorte-init-pipeline/SKILL.md'), 'utf8');
+  check('global skill resolves surfaces relative to whichever project invokes it',
+    init.includes('`<agents>` = `.codex/agents`') && !init.includes(proj));
+  check('generic agents retain their global destination',
+    existsSync(join(home, '.codex/agents/review.toml'))
+    && init.includes('`<fixed-agents>` = `~/.codex/agents`'));
+  const registry = JSON.parse(readFileSync(join(home, '.cohorte/codex/pipeline/runtimes.json'), 'utf8'));
+  check('global registry does not pin surface agents to the installer cwd',
+    registry.codex.paths.surface_agents === '.codex/agents'
+    && registry.codex.paths.agent_ext === '.toml');
+  const hook = JSON.parse(readFileSync(join(home, '.codex/hooks.json'), 'utf8')).hooks.PreToolUse[0];
+  check('installed Codex hook matches real shell and subagent calls',
+    ['Bash', 'spawn_agent', 'Agent'].every(n => new RegExp(hook.matcher).test(n)));
+  const rt = adapter.loadRuntime('codex');
+  const paths = adapter.resolvePaths(rt, 'global', proj);
+  const render = model => adapter.renderAgent({
+    source: `---\nname: example\ndescription: Test agent\nmodel: ${model}\nmodel_reasoning_effort: high\n---\nHandle literal ''' in instructions.`,
+    name: 'example', runtime: rt, paths, projectRoot: proj,
+  }).content;
+  const explicit = render('gpt-5.6-terra');
+  check('explicit Codex model and reasoning choices survive rendering',
+    explicit.includes('model = "gpt-5.6-terra"') && explicit.includes('model_reasoning_effort = "high"'));
+  check('inherit and legacy Anthropic aliases never become executable pins',
+    ['inherit', 'sonnet', 'haiku', 'opus'].every(m => !/^model =/m.test(render(m))));
+  const python = [process.env.COHORTE_TEST_PYTHON, 'python3', 'python'].filter(Boolean)
+    .find(p => spawnSync(p, ['-c', 'import tomllib']).status === 0);
+  if (!python) { check('Python 3.11+ available to validate emitted TOML', false); }
+  else {
+    const parsed = spawnSync(python, ['-c', 'import sys,tomllib; print(tomllib.loads(sys.stdin.read())["developer_instructions"])'],
+      { input: explicit, encoding: 'utf8' });
+    check('instructions containing triple apostrophes remain valid TOML',
+      parsed.status === 0 && parsed.stdout.includes("literal '''"), parsed.stderr);
+    const native = spawnSync(python, ['-c',
+      'import pathlib,sys,tomllib; [tomllib.loads(p.read_text()) for p in pathlib.Path(sys.argv[1]).glob("*.toml")]',
+      join(home, '.codex/agents')], { encoding: 'utf8' });
+    check('all installed generic agents parse as TOML', native.status === 0, native.stderr);
   }
 }
 

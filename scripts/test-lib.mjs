@@ -18,6 +18,7 @@ const require = createRequire(import.meta.url);
 const root = fileURLToPath(new URL("..", import.meta.url));
 const { parse, parseProfileBlock } = require(join(root, "lib/yaml.js"));
 const { state, scanSpecs } = require(join(root, "lib/doctor.js"));
+const adapter = require(join(root, 'core/adapter/render.js'));
 
 let failures = 0;
 const check = (name, cond, detail = "") => {
@@ -30,6 +31,11 @@ const eq = (name, got, want) =>
 const tmps = [];
 const scratch = () => { const d = mkdtempSync(join(tmpdir(), "cohorte-lib-")); tmps.push(d); return d; };
 const write = (p, s) => { mkdirSync(join(p, ".."), { recursive: true }); writeFileSync(p, s); };
+// Runtime discovery must not pick up Cohorte installations from the developer's real home.
+const os = require('node:os');
+const originalHomedir = os.homedir;
+os.homedir = () => isolatedHome;
+const isolatedHome = scratch();
 
 // ── yaml.js ──────────────────────────────────────────────────────────────────
 console.log("yaml.js — the profile parser");
@@ -55,7 +61,7 @@ console.log("yaml.js — the profile parser");
 
   // The real thing: the shipped template must round-trip.
   const tpl = readFileSync(join(root, "profile/PIPELINE.template.md"), "utf8");
-  const p = parseProfileBlock(tpl);
+  const p = parseProfileBlock(adapter.adaptInstructions(tpl, adapter.loadRuntime('claude')));
   check("the shipped PIPELINE.template.md parses", !!p);
   eq("…surfaces are a list of 2", (p.surfaces || []).length, 2);
   eq("…surface tools survive as an array", p.surfaces[0].tools.length, 7);
@@ -261,6 +267,46 @@ console.log("doctor.js — a non-Claude runtime layout");
     st("workflows") === "skip" && /Cursor/.test(dt("workflows")), dt("workflows"));
   check("nothing is reported broken on a healthy non-Claude install",
     s.summary.bad === 0 && s.summary.warn === 0, JSON.stringify(s.summary));
+}
+
+// Codex's global core supplies fixed agents; each consuming repo owns its surfaces.
+{
+  const d = scratch();
+  const g = join(d, 'global');
+  write(join(g, 'pipeline/VERSION'), '9.9.9\n');
+  write(join(g, 'pipeline/runtimes.json'), JSON.stringify({ codex: {
+    label: 'Codex', scope: 'global', capabilities: { subagents: true, hooks: true, workflows: false },
+    paths: { core: g, agents: join(g, 'agents'), hooks_config: join(g, 'hooks.json'), state: '.cohorte' },
+  } }));
+  // Legacy registry intentionally has no surface_agents or agent_ext fields.
+  write(join(g, 'agents/unrelated.toml'), 'name = "unrelated"\n');
+  const hook = matcher => write(join(g, 'hooks.json'), JSON.stringify({ hooks: {
+    PreToolUse: [{ matcher, hooks: [{ command: `python3 ${g}/hooks/gate.py --runtime codex` }] }],
+  } }));
+  hook('Bash|shell');
+  const a = join(d, 'project-a'), b = join(d, 'project-b');
+  for (const repo of [a, b]) {
+    write(join(repo, 'PIPELINE.md'), '```yaml pipeline-profile\nname: example\nsurfaces:\n  - key: api\n    agent: api\nretrieval:\n  provider: serena\n```\n');
+    write(join(repo, '.codex/agents/api.toml'), 'name = "api"\ndescription = "API"\ndeveloper_instructions = "Implement"\n');
+    write(join(repo, '.codex/config.toml'), '[mcp_servers.serena]\ncommand = "serena"\n');
+  }
+  const inspect = repo => state({ projectRoot: repo, globalDir: g, cliVersion: '9.9.9' });
+  const status = (s, id) => s.checks.find(c => c.id === id)?.status;
+  let s = await inspect(a);
+  check('Codex doctor accepts project TOML agents with a legacy global registry', status(s, 'agents') === 'ok');
+  check('Codex doctor rejects a shell-only preflight hook', status(s, 'hooks') === 'warn');
+  check('Codex doctor finds native project MCP configuration', status(s, 'retrieval') === 'ok');
+  hook('Bash|spawn_agent');
+  s = await inspect(b);
+  check('a second project resolves its own agents without a launcher', status(s, 'agents') === 'ok');
+  check('Codex doctor accepts the native dispatch matcher', status(s, 'hooks') === 'ok');
+  write(join(b, '.codex/agents/stale.toml'), 'name = "stale"\n');
+  s = await inspect(b);
+  check('Codex doctor detects local orphans even with a global core', status(s, 'agents') === 'warn');
+  write(join(a, '.codex/config.toml'), '# [mcp_servers.serena]\n');
+  write(join(a, '.mcp.json'), JSON.stringify({ mcpServers: { serena: { command: 'serena' } } }));
+  s = await inspect(a);
+  check('a comment or Claude MCP config does not count as Codex registration', status(s, 'retrieval') === 'warn');
 }
 
 // ── runtime.js — stale absolute registry paths (a cloned/moved bundled core) ─
