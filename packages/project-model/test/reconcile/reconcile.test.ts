@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DEFAULT_CONFIG } from '@cohorte/config/schema';
@@ -36,6 +36,21 @@ describe('reconcile plan', () => {
       expect(result.applied).toContain('project.yaml');
       await expect(readFile(join(root, '.cohorte', 'project.yaml'), 'utf8')).resolves.toContain('schemaVersion: 1');
       await expect(readFile(result.journal, 'utf8')).resolves.toContain('project.yaml');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('rejects a generated file that changes after planning', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'cohorte-reconcile-race-'));
+    try {
+      const clock = new FixedClock();
+      const model = await scanRepository(root, { clock, toolVersion: 'test' });
+      const desired = deriveDesiredState({ model, config: DEFAULT_CONFIG, cohorteVersion: '3.0.0', skills: {} });
+      const plan = await planReconcile({ root, scan: async () => model, cohorteVersion: '3.0.0', clock });
+      await mkdir(join(root, '.cohorte'), { recursive: true });
+      await writeFile(join(root, '.cohorte', 'project.yaml'), 'changed after plan\n');
+      await expect(applyReconcile({ root, plan, desired, clock })).rejects.toThrow('conflict/reconcile-race');
     } finally {
       await rm(root, { recursive: true, force: true });
     }

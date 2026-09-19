@@ -1,6 +1,6 @@
 import { appendFile, copyFile, mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import type { Clock } from '@cohorte/base';
+import { type Clock, sha256Hex } from '@cohorte/base';
 import { DEFAULT_CONFIG } from '@cohorte/config/schema';
 import { parse } from 'yaml';
 import type { DesiredState, ReconcilePlan, RepositoryScanner } from '../contract.ts';
@@ -110,6 +110,10 @@ export async function applyReconcile(options: ApplyReconcileOptions): Promise<{
     const target = join(options.root, '.cohorte', operation.target);
     if (!target.startsWith(`${join(options.root, '.cohorte')}/`)) throw new Error('security/path-outside-grant');
     const existing = await readFile(target).catch(() => undefined);
+    const drift = options.plan.drift.entries.find((entry) => entry.target === operation.target);
+    const actualSha256 = existing === undefined ? undefined : sha256Hex(existing);
+    if (actualSha256 !== drift?.actualSha256)
+      throw new Error(`conflict/reconcile-race: ${operation.target} changed after the plan was generated`);
     if (existing !== undefined && backupDir) {
       const backupPath = join(backupDir, operation.target);
       await mkdir(dirname(backupPath), { recursive: true });
