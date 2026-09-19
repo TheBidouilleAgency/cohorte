@@ -7,6 +7,9 @@ export default defineConfig({
   description:
     'Portable, stack-agnostic multi-agent development pipeline for Claude Code — install the core, run /cohorte-init-pipeline, and it adapts to your project.',
   base: '/cohorte/',
+  // docs/v3/ is the V3 working set (spec, design of record, ADRs, plan): engineering
+  // documents with raw `{{ }}` and `<placeholders>` that Vue would try to compile.
+  srcExclude: ['v3/**'],
   lastUpdated: true,
   head: [['link', { rel: 'icon', type: 'image/png', href: '/cohorte/favicon-32.png' }]],
 
@@ -30,6 +33,7 @@ export default defineConfig({
             { text: 'Why not just ask your agent?', link: '/guide/why-cohorte' },
             { text: 'What is Cohorte?', link: '/guide/what-is-cohorte' },
             { text: 'Getting started', link: '/guide/getting-started' },
+            { text: 'Maintainer guide', link: '/guide/maintainers' },
           ],
         },
         {

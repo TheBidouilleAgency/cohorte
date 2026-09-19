@@ -1,0 +1,20 @@
+{
+  "protocolVersion": "1.0",
+  "eventId": "evt_00000000000000000000000000000300",
+  "sequence": 48,
+  "sub": 0,
+  "durability": "durable",
+  "timestamp": "2026-09-18T10:00:42.250Z",
+  "runId": "run_11111111111111111111111111111111",
+  "type": "git.worktree.provisioned",
+  "source": "cohorte",
+  "summary": "worktree web provisioned offline",
+  "severity": "info",
+  "payload": {
+    "slot": "web",
+    "lockfileSha256": "2c26b46b68ffc68ff99b453c1d304134134cbbe6d5f7f1d0c1a0c8a4e2b1d9f0",
+    "network": false,
+    "effectId": "eff_44444444444444444444444444444444"
+  },
+  "redactions": []
+}

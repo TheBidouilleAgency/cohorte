@@ -1,0 +1,8 @@
+# schema: manifest
+schemaVersion: 1
+cohorteVersion: 3.0.0
+createdWith: 3.0.0
+protocol: { min: "1.0", max: "1.0" }
+stateSchemaVersion: 1
+generated:
+  - { path: .gitignore, templateId: cohorte-gitignore, templateSha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, renderedSha256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb }

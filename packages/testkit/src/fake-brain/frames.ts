@@ -1,0 +1,25 @@
+// The frame helpers of AgentHostProtocol v1, for the engine-free fake brain (a Node CHILD process: it imports this
+// file, never the testkit barrel). One definition, in `@cohorte/runtime-pi/host-protocol`; nothing is restated here.
+export {
+  type Attestation,
+  type AttestationClaim,
+  type AttestationExpectation,
+  type AttestationMismatch,
+  attestationExpectation,
+  type ChildFrame,
+  decodeFrame,
+  diffAttestation,
+  type EngineSettings,
+  type ErrorSignal,
+  encodeFrame,
+  type FrameOf,
+  type FrameRejection,
+  type FrameSender,
+  type FrameWire,
+  HOST_PROTOCOL,
+  type HostEvent,
+  MAX_FRAME_CHARS,
+  OS_INJECTED_ENV,
+  type ParentFrame,
+  type SpawnRequestWire,
+} from '@cohorte/runtime-pi/host-protocol';

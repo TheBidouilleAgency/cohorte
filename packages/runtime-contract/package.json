@@ -1,0 +1,29 @@
+{
+  "name": "@cohorte/runtime-contract",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Frontier 1: the AgentRuntime contract and the conformance suite every runtime must pass.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./conformance": {
+      "types": "./src/conformance/index.ts",
+      "default": "./src/conformance/index.ts"
+    },
+    "./*": {
+      "types": "./src/*/index.ts",
+      "default": "./src/*/index.ts"
+    }
+  },
+  "dependencies": {
+    "@cohorte/base": "workspace:*",
+    "typebox": "catalog:"
+  },
+  "devDependencies": {
+    "@cohorte/testkit": "workspace:*"
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "protocolVersion": "1.0",
+  "eventId": "evt_00000000000000000000000000000060",
+  "sequence": 6,
+  "sub": 0,
+  "durability": "durable",
+  "timestamp": "2026-09-18T10:00:42.250Z",
+  "runId": "run_11111111111111111111111111111111",
+  "type": "run.resumed",
+  "source": "cohorte",
+  "summary": "run resumed after a host takeover",
+  "severity": "info",
+  "payload": {
+    "mode": "recovery",
+    "report": {
+      "takeover": true,
+      "hostId": "host_b",
+      "fencingToken": 4,
+      "locks": {
+        "rebuilt": ["slot:web"],
+        "conflicts": []
+      },
+      "orphans": [
+        {
+          "agentId": "agt_implementer_web",
+          "incarnation": 1,
+          "pid": 48211,
+          "kind": "brain",
+          "killed": true
+        }
+      ],
+      "worktrees": [
+        {
+          "slot": "web",
+          "path": ".cohorte/worktrees/run_1/web",
+          "verdict": "ledger-explained"
+        }
+      ],
+      "effects": [
+        {
+          "effectId": "eff_44444444444444444444444444444444",
+          "kind": "tool.command",
+          "replayClass": "verifiable",
+          "verdict": "done"
+        }
+      ],
+      "approvalsCarried": ["apr_22222222222222222222222222222222"],
+      "commandsApplied": ["cmd_55555555555555555555555555555555"],
+      "inDoubt": [],
+      "approvedReplays": [
+        {
+          "approvalId": "apr_22222222222222222222222222222222",
+          "toolCallId": "tc_1_7",
+          "outcome": "executed"
+        }
+      ]
+    }
+  },
+  "redactions": []
+}

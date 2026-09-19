@@ -1,0 +1,23 @@
+{
+  "protocolVersion": "1.0",
+  "eventId": "evt_00000000000000000000000000000330",
+  "sequence": 51,
+  "sub": 0,
+  "durability": "durable",
+  "timestamp": "2026-09-18T10:00:42.250Z",
+  "runId": "run_11111111111111111111111111111111",
+  "type": "git.commit.created",
+  "source": "cohorte",
+  "summary": "result commit on cohorte/run_1/web",
+  "severity": "info",
+  "payload": {
+    "slot": "web",
+    "branch": "cohorte/run_1/web",
+    "sha": "5e4d3c2b1a09",
+    "kind": "result",
+    "treeDigest": "tree_9f2c4d1e",
+    "paths": ["apps/web/src/cart.ts", "apps/web/src/cart.test.ts"],
+    "effectId": "eff_44444444444444444444444444444444"
+  },
+  "redactions": []
+}

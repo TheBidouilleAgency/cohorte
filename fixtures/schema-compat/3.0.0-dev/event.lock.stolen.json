@@ -1,0 +1,21 @@
+{
+  "protocolVersion": "1.0",
+  "eventId": "evt_00000000000000000000000000000390",
+  "sequence": 57,
+  "sub": 0,
+  "durability": "durable",
+  "timestamp": "2026-09-18T10:00:42.250Z",
+  "runId": "run_11111111111111111111111111111111",
+  "type": "lock.stolen",
+  "source": "cohorte",
+  "summary": "slot lock web taken over by host_b",
+  "severity": "warning",
+  "payload": {
+    "scope": "slot",
+    "key": "web",
+    "mode": "exclusive",
+    "owner": "host_b",
+    "fencingToken": 4
+  },
+  "redactions": []
+}

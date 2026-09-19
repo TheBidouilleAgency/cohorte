@@ -1,0 +1,32 @@
+{
+  "name": "@cohorte/project-model",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Deterministic repository scan, init plan/apply, desired state, drift diff.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./contract": {
+      "types": "./src/contract.ts",
+      "default": "./src/contract.ts"
+    },
+    "./*": {
+      "types": "./src/*/index.ts",
+      "default": "./src/*/index.ts"
+    }
+  },
+  "dependencies": {
+    "@cohorte/base": "workspace:*",
+    "@cohorte/config": "workspace:*",
+    "@cohorte/git": "workspace:*",
+    "typebox": "catalog:",
+    "yaml": "catalog:"
+  },
+  "devDependencies": {
+    "@cohorte/testkit": "workspace:*"
+  }
+}

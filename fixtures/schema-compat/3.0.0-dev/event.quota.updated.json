@@ -1,0 +1,32 @@
+{
+  "protocolVersion": "1.0",
+  "eventId": "evt_000000000000000000000000000002b0",
+  "sequence": 43,
+  "sub": 0,
+  "durability": "durable",
+  "timestamp": "2026-09-18T10:00:42.250Z",
+  "runId": "run_11111111111111111111111111111111",
+  "type": "quota.updated",
+  "source": "cohorte",
+  "summary": "openai-codex subscription quota: 37.5% of the 5h window",
+  "severity": "info",
+  "payload": {
+    "provider": "openai-codex",
+    "authMode": "subscription",
+    "quota": {
+      "known": true,
+      "source": "response-headers",
+      "provider": "openai-codex",
+      "windows": [
+        {
+          "name": "5h",
+          "usedPercent": 37.5,
+          "resetsAt": "2026-09-18T14:00:00.000Z",
+          "limitLabel": "Plus"
+        }
+      ],
+      "observedAt": "2026-09-18T10:00:42.250Z"
+    }
+  },
+  "redactions": []
+}

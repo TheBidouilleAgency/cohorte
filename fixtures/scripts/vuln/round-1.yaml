@@ -1,0 +1,6 @@
+version: 1
+agents:
+  - match: { role: reviewer }
+    steps:
+      - do: submit
+        output: { findings: [{ severity: high, location: packages/backend/index.ts, reproduction: unsafe input }] }

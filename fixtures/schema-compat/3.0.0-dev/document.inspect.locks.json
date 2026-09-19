@@ -1,0 +1,16 @@
+{
+  "documentVersion": 1,
+  "protocolVersion": "1.0",
+  "runId": "run_11111111111111111111111111111111",
+  "lastSequence": 57,
+  "kind": "locks",
+  "locks": [
+    {
+      "scope": "slot",
+      "key": "web",
+      "mode": "exclusive",
+      "owner": "run_11111111111111111111111111111111/agt_implementer_web",
+      "leaseExpiresAt": "2026-09-18T10:07:03.000Z"
+    }
+  ]
+}

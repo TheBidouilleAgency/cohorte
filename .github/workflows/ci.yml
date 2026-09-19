@@ -1,316 +1,238 @@
 name: CI
 
 on:
+  workflow_call:
+  schedule:
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
   push:
     branches: [main]
   pull_request:
 
+# V3 verification matrix. Each job delegates to the matching pnpm ci:<job> script so local and CI
+# execution share the same command surface.
+
 jobs:
-  validate:
-    name: Validate core
+  legacy-v2:
+    # V2 lives in legacy/v2, reference only and on no V3 execution path (ADR-0014). Its seven suites
+    # keep running so that the logic V3 ports from it (loop reducer, verdict math, gate cases) stays
+    # a trustworthy reference. They are zero-dependency: no install step.
+    name: Legacy V2 suites
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: legacy/v2
     steps:
       - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
 
       - uses: actions/setup-node@v5
         with:
           node-version: 24
 
-      - name: Structural invariants (commands, agents, pins, cross-refs, installers)
-        run: node scripts/validate-core.mjs
-
-      # validate-core is structural — it cannot see verdict logic. This runs the
-      # workflow scripts against stub agents and asserts the outcomes, notably
-      # that a dead reviewer never scores SHIP (zero findings from a crashed
-      # reviewer is byte-identical to a clean surface).
-      - name: Workflow behaviour tests
-        run: node scripts/test-workflows.mjs
-
-      # The adapter turns one set of source prompts into five runtimes' worth of
-      # commands. Its failures are silent by nature — a dropped conditional or a
-      # leaked marker still installs cleanly and only misleads the model at run
-      # time — so this asserts what actually lands on disk per runtime.
-      - name: Runtime adapter tests
-        run: node scripts/test-adapter.mjs
-
-      - name: Syntax-check CLI + shared readers
+      - name: Syntax-check the V2 CLI, shared readers, gate hook and installer
         run: |
           node --check bin/cli.js bin/report.js
           for f in lib/*.js; do node --check "$f"; done
-
-      - name: Syntax-check gate hook
-        run: python3 -m py_compile core/hooks/gate.py
-
-      # The gate can BLOCK a user's command, and py_compile proves only that it
-      # parses. This drives the real stdin→stdout contract: deny/ask tiers,
-      # chained-command splitting, branch-conditional gating resolved at the
-      # payload cwd, the bypassPermissions ask⇒deny escalation, the preflight
-      # phase gate, and worktree-aware HEAD matching.
-      - name: Gate hook behaviour tests
-        run: node scripts/test-gate.mjs
-
-      # lib/ is shipped runtime code behind `cohorte doctor` and `cohorte specs`:
-      # a hand-rolled YAML parser every check derives from, the JS port of
-      # /cohorte-doctor, and the runtime-layout resolver that decides where a given
-      # coding agent keeps its core — where a wrong answer is a false red.
-      - name: Shared reader tests
-        run: node scripts/test-lib.mjs
-
-      # kanban-move.sh is the board mirror's only writer, and its failure mode is
-      # silence: every call site chains `|| true`, so a card that stopped moving
-      # looks exactly like a project with no board. `auto` resolution — which link
-      # is missing, and the fact that a refusal says so on stdout instead of
-      # exiting quietly — is pinned here.
-      - name: Kanban mirror tests
-        run: node scripts/test-kanban.mjs
-
-      # The metrics collector reports money. Its failure mode is not a crash but a
-      # confidently wrong number — double-billed responses, runs split by a background
-      # agent's completion notice, subagent spend attributed nowhere. Each of those is
-      # pinned by a case here.
-      - name: Metrics collector tests
-        run: node scripts/test-metrics.mjs
-
-      - name: Shell-check installers (syntax)
-        run: bash -n install.sh && sh -n install.sh
-
-      - name: Dry-run install into a scratch HOME
-        run: |
-          scratch=$(mktemp -d)
-          # ./ is load-bearing: without a slash in $0 the installer clones
-          # GitHub main instead of installing the checked-out working tree
-          HOME="$scratch" sh ./install.sh --global
-          test -f "$scratch/.claude/pipeline/VERSION"
-          test -f "$scratch/.claude/agents/review.md"
-          test -f "$scratch/.claude/commands/cohorte-build.md"
-          grep -q "^model: sonnet" "$scratch/.claude/commands/cohorte-build.md"
-          # 1.5.0 retired /smoke — the installer must scrub it, not just stop copying it.
-          test ! -e "$scratch/.claude/agents/smoke.md"
-          test ! -e "$scratch/.claude/commands/smoke.md"
-          # Every caller chains these with `|| true`, so one the installer forgets
-          # is a silent no-op on the user's machine, never an error. Assert them.
-          # 2.3.0 removed telemetry: the sender must never ship, and must be scrubbed
-          # from an existing install (copy-over never deletes).
-          test ! -e "$scratch/.claude/pipeline/scripts/telemetry-send.sh"
-          test -x "$scratch/.claude/pipeline/scripts/kanban-move.sh"
-          test -x "$scratch/.claude/pipeline/scripts/preflight.sh"
-          test -f "$scratch/.claude/pipeline/CHANGELOG.md"
-          # Workflow variants + their phase-0 agent must ship together.
-          test -f "$scratch/.claude/workflows/review.js"
-          test -f "$scratch/.claude/workflows/audit.js"
-          test -f "$scratch/.claude/workflows/refactor.js"
-          test -f "$scratch/.claude/workflows/loop.js"
-          test -f "$scratch/.claude/agents/profile-reader.md"
-          test -f "$scratch/.claude/agents/review.md"
-          test -f "$scratch/.claude/agents/release.md"
-          # A compiled bytecode cache in the source checkout must never ride along.
-          test ! -e "$scratch/.claude/hooks/__pycache__"
-          # A template a command renders from must ship, or the command silently
-          # falls back to inventing the format (validate-core proves the reference
-          # resolves in-repo; only this proves it reaches a user's machine).
-          test -f "$scratch/.claude/templates/decisions.template.md"
-          # Retired-artifact scrubbing can only be tested on an install that ALREADY has
-          # the orphans: asserting their absence on a fresh scratch home passes whether or
-          # not the installer scrubs anything, which is exactly how /cycle survived four
-          # releases after being removed. Plant them, re-install, assert they are gone.
-          mkdir -p "$scratch/.claude/commands" "$scratch/.claude/workflows" "$scratch/.claude/agents"
-          : >"$scratch/.claude/commands/cycle.md"
-          : >"$scratch/.claude/commands/loop.md"
-          # 2.2.0 retired /cohorte-loop. Same reasoning: only a planted copy proves the scrub.
-          : >"$scratch/.claude/commands/cohorte-loop.md"
-          mkdir -p "$scratch/.claude/pipeline/scripts"
-          : >"$scratch/.claude/pipeline/scripts/loop.sh"
-          : >"$scratch/.claude/pipeline/scripts/loop-detach.sh"
-          : >"$scratch/.claude/workflows/cycle.js"
-          : >"$scratch/.claude/agents/smoke.md"
-          : >"$scratch/.claude/commands/smoke.md"
-          # 2.0.0 prefixed all 13 commands. Same reasoning as /cycle above: a fresh
-          # install has nothing to delete, so only a planted pre-2.0.0 layout proves the
-          # scrub loop exists. A surviving bare /build is the worst decoy of the set — it
-          # still dispatches implementers, from a 1.x file that knows nothing of this core.
-          for c in align-ds audit brainstorm build doctor drive fix init-pipeline \
-                   refactor review ship spec update-pipeline; do
-            echo "stale 1.x" >"$scratch/.claude/commands/$c.md"
-          done
-          # Install a SECOND time before asserting the hook: until 1.3.2 the
-          # registration appended if-absent behind a quote-blind "already?" test,
-          # so every re-install added another copy (gate.py then ran once per
-          # copy). One install could never surface it — CI stayed green while
-          # users accumulated four.
-          HOME="$scratch" sh ./install.sh --update --global
-          node scripts/assert-gate-hook.mjs "$scratch/.claude/settings.json"
-          for orphan in commands/cycle.md workflows/cycle.js commands/loop.md agents/smoke.md \
-                        commands/smoke.md commands/cohorte-loop.md \
-                        pipeline/scripts/loop.sh pipeline/scripts/loop-detach.sh; do
-            test ! -e "$scratch/.claude/$orphan" || { echo "installer left $orphan behind"; exit 1; }
-          done
-          # Assert the whole command surface is prefixed, not just that named files went:
-          # this also catches a NEW unprefixed command being added later.
-          stale=$(ls "$scratch/.claude/commands" | grep -v '^cohorte-' || true)
-          test -z "$stale" || { echo "unprefixed command files survived: $stale"; exit 1; }
-
-      # bin/cli.js is what `npx cohorte install/update` actually runs — a
-      # hand-written port of install.sh, so it drifts silently (until 1.2.4 it
-      # copied neither shipped script nor the CHANGELOG). Assert the same
-      # postconditions against the port, not just the shell original.
-      - name: Dry-run the npx CLI into a scratch HOME
-        run: |
-          scratch=$(mktemp -d)
-          # CLAUDE_CONFIG_DIR, not HOME: the CLI honours it on every platform,
-          # while HOME is ignored on Windows (os.homedir reads USERPROFILE there).
-          CLAUDE_CONFIG_DIR="$scratch/.claude" node bin/cli.js install --global
-          test -f "$scratch/.claude/pipeline/VERSION"
-          # The user config must be seeded WHERE THE READERS PROBE — under
-          # CLAUDE_CONFIG_DIR, never the runner's real HOME (which this run
-          # must not touch; seedConfig once wrote there and nothing noticed).
-          test -f "$scratch/.claude/cohorte.config.yaml"
-          test ! -e "$HOME/.claude/cohorte.config.yaml"
-          test -f "$scratch/.claude/commands/cohorte-build.md"
-          # The command is useless without the agent it dispatches: until 1.2.6 this
-          # port copied a hardcoded review+release and shipped a command with no
-          # agent. The shell dry-run above asserted it; this one didn't, so CI stayed
-          # green. Assert every non-template agent here too.
-          test -f "$scratch/.claude/agents/review.md"
-          test -f "$scratch/.claude/agents/release.md"
-          test -f "$scratch/.claude/agents/profile-reader.md"
-          test ! -e "$scratch/.claude/agents/implementer.template.md"
-          # 1.5.0 retired /smoke — the port must scrub it too.
-          test ! -e "$scratch/.claude/agents/smoke.md"
-          test ! -e "$scratch/.claude/commands/smoke.md"
-          # 2.3.0 removed telemetry: the sender must never ship, and must be scrubbed
-          # from an existing install (copy-over never deletes).
-          test ! -e "$scratch/.claude/pipeline/scripts/telemetry-send.sh"
-          test -x "$scratch/.claude/pipeline/scripts/kanban-move.sh"
-          test -x "$scratch/.claude/pipeline/scripts/preflight.sh"
-          test -f "$scratch/.claude/pipeline/CHANGELOG.md"
-          test -f "$scratch/.claude/workflows/review.js"
-          test -f "$scratch/.claude/workflows/audit.js"
-          test -f "$scratch/.claude/workflows/refactor.js"
-          test -f "$scratch/.claude/workflows/loop.js"
-          test -f "$scratch/.claude/templates/decisions.template.md"
-          # The per-project rendered scripts must NOT ship — only their templates.
-          test ! -e "$scratch/.claude/pipeline/scripts/new-feature.sh"
-          test -f "$scratch/.claude/pipeline/scripts/new-feature.sh.template"
-          # Same double-install assertion as the shell dry-run. This port is where
-          # the duplicate actually bit (npx is the documented install route), and
-          # its quote-blind check was a straight copy of the shell one's bug.
-          # Same planted-orphan check as the shell dry-run: this port scrubs by an
-          # independent list, so it drifts independently.
-          : >"$scratch/.claude/commands/cycle.md"
-          : >"$scratch/.claude/commands/loop.md"
-          # 2.2.0 retired /cohorte-loop. Same reasoning: only a planted copy proves the scrub.
-          : >"$scratch/.claude/commands/cohorte-loop.md"
-          mkdir -p "$scratch/.claude/pipeline/scripts"
-          : >"$scratch/.claude/pipeline/scripts/loop.sh"
-          : >"$scratch/.claude/pipeline/scripts/loop-detach.sh"
-          : >"$scratch/.claude/workflows/cycle.js"
-          : >"$scratch/.claude/agents/smoke.md"
-          for c in align-ds audit brainstorm build doctor drive fix init-pipeline \
-                   refactor review ship spec update-pipeline; do
-            echo "stale 1.x" >"$scratch/.claude/commands/$c.md"
-          done
-          CLAUDE_CONFIG_DIR="$scratch/.claude" node bin/cli.js update --global
-          node scripts/assert-gate-hook.mjs "$scratch/.claude/settings.json"
-          for orphan in commands/cycle.md workflows/cycle.js commands/loop.md agents/smoke.md \
-                        commands/cohorte-loop.md pipeline/scripts/loop.sh; do
-            test ! -e "$scratch/.claude/$orphan" || { echo "cli.js left $orphan behind"; exit 1; }
-          done
-          stale=$(ls "$scratch/.claude/commands" | grep -v '^cohorte-' || true)
-          test -z "$stale" || { echo "cli.js left unprefixed command files: $stale"; exit 1; }
-
-      # Bundled (per-project) mode has its own postconditions the --global runs
-      # can't see: the committed .claude/ payload and the specs/ seed.
-      - name: Dry-run the npx CLI in project mode
-        run: |
-          scratch=$(mktemp -d)
-          node bin/cli.js install "$scratch"
-          test -f "$scratch/.claude/pipeline/VERSION"
-          test -f "$scratch/.claude/hooks/gate.py"
-          test -f "$scratch/.claude/agents/review.md"
-          test -f "$scratch/specs/_template.md"
-
-      # The tarball is the release artifact — assert what it does and does NOT
-      # carry. `.npmignore` is INERT under an explicit package.json `files`
-      # allowlist, so its `__pycache__/` rule never fired: a maintainer who had
-      # compiled gate.py (this job does, one step above) shipped their machine's
-      # bytecode cache. Only the `files` negations actually exclude it.
-      - name: Assert the npm tarball carries no build artifacts
-        run: |
-          python3 -m py_compile core/hooks/gate.py   # make the cache exist first
-          test -d core/hooks/__pycache__
-          npm pack --dry-run --ignore-scripts 2>&1 | tee /tmp/pack.txt
-          if grep -qiE '__pycache__|\.pyc' /tmp/pack.txt; then
-            echo "::error::the npm tarball contains Python bytecode — fix package.json files negations"
-            exit 1
-          fi
-          grep -q 'core/hooks/gate.py' /tmp/pack.txt   # …while still shipping the hook itself
-          rm -rf core/hooks/__pycache__
-
-      - name: Assert installs never copy __pycache__
-        run: |
           python3 -m py_compile core/hooks/gate.py
-          scratch=$(mktemp -d)
-          CLAUDE_CONFIG_DIR="$scratch/.claude" node bin/cli.js install --global
-          HOME="$scratch/sh" sh ./install.sh --global
-          test -f "$scratch/.claude/hooks/gate.py"
-          test ! -e "$scratch/.claude/hooks/__pycache__"
-          test ! -e "$scratch/sh/.claude/hooks/__pycache__"
           rm -rf core/hooks/__pycache__
+          bash -n install.sh && sh -n install.sh
 
-  validate-windows:
-    # install.ps1 re-implements the hook reconcile in PowerShell — a regression
-    # there ships to every Windows user while the Linux jobs stay green (the
-    # 1.3.2 failure mode). Same double-install + assert as the sh/cli dry-runs,
-    # plus bin/cli.js on win32 (its `py "…gate.py"` quoting is platform-specific).
-    name: Validate installers (Windows)
-    runs-on: windows-latest
+      # validate-core, test-workflows, test-adapter, test-gate, test-lib, test-kanban, test-metrics,
+      # under a throwaway HOME (lib/runtime.js reads os.homedir() directly).
+      - name: The seven V2 suites
+        working-directory: ${{ github.workspace }}
+        run: pnpm ci:legacy-v2
+
+  lint:
+    name: Lint (Biome, layering, contract words)
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v5
         with:
           node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm ci:lint
 
-      - name: Dry-run install.ps1 twice + assert the hook
-        shell: pwsh
-        run: |
-          $env:CLAUDE_CONFIG_DIR = Join-Path $env:RUNNER_TEMP 'coh-ps'
-          $cmds = Join-Path $env:CLAUDE_CONFIG_DIR 'commands'
-          # Seed the pre-2.0.0 layout so the update path's scrub is actually exercised:
-          # a fresh install has nothing to delete, so it would pass no matter what.
-          New-Item -ItemType Directory -Force -Path $cmds | Out-Null
-          foreach ($c in @('build','review','fix','drive','doctor')) {
-            Set-Content -Path (Join-Path $cmds "$c.md") -Value 'stale 1.x'
-          }
-          .\install.ps1 -Global
-          .\install.ps1 -Update -Global
-          node scripts/assert-gate-hook.mjs (Join-Path $env:CLAUDE_CONFIG_DIR 'settings.json')
-          # Every command must be prefixed and every bare name gone. This is Windows-only
-          # code (install.ps1's scrub loop) that no other job can reach — without this the
-          # 13 decoys could survive an upgrade on Windows and nothing would notice.
-          $stale = Get-ChildItem $cmds -Filter *.md | Where-Object { $_.Name -notlike 'cohorte-*' }
-          if ($stale) { throw "unprefixed command files survived the update: $($stale.Name -join ', ')" }
-          # 2.2.0 retired /cohorte-loop and its two scripts. Copy-over never deletes, so this
-          # asserts the Windows scrub actually runs — a surviving command file is a decoy the
-          # model can still fire against a core that no longer ships its driver.
-          if (Test-Path (Join-Path $cmds 'cohorte-loop.md')) { throw 'retired cohorte-loop.md survived' }
-          $detach = Join-Path $env:CLAUDE_CONFIG_DIR 'pipeline\scripts\loop-detach.sh'
-          if (Test-Path $detach) { throw 'retired loop-detach.sh survived' }
+  typecheck:
+    name: Typecheck (tsc -b + tsconfig.tests.json)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm ci:typecheck
 
-      - name: Dry-run the npx CLI twice + assert the hook (win32 quoting)
-        shell: pwsh
-        run: |
-          $env:CLAUDE_CONFIG_DIR = Join-Path $env:RUNNER_TEMP 'coh-cli'
-          $cmds = Join-Path $env:CLAUDE_CONFIG_DIR 'commands'
-          New-Item -ItemType Directory -Force -Path $cmds | Out-Null
-          foreach ($c in @('build','review','fix','drive','doctor')) {
-            Set-Content -Path (Join-Path $cmds "$c.md") -Value 'stale 1.x'
-          }
-          node bin/cli.js install --global
-          node bin/cli.js update --global
-          node scripts/assert-gate-hook.mjs (Join-Path $env:CLAUDE_CONFIG_DIR 'settings.json')
-          # bin/cli.js has its OWN scrub list (it is a third installer, not a wrapper), so it
-          # needs the same assertion — a name added to install.ps1 and forgotten here would
-          # leave decoys for every `npx cohorte update` user.
-          $stale = Get-ChildItem $cmds -Filter *.md | Where-Object { $_.Name -notlike 'cohorte-*' }
-          if ($stale) { throw "unprefixed command files survived the update: $($stale.Name -join ', ')" }
+  unit:
+    name: Unit (${{ matrix.os }}, Node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        # 24.16.0 is the exact support floor (ADR-0017).
+        node: ['24.16.0', '24.x', '26.x']
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm ci:unit
+
+  integration:
+    name: Integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm ci:integration
+
+  schema-compat:
+    name: Schema compatibility
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm ci:schema-compat
+
+  migrations:
+    name: Migrations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm ci:migrations
+
+  packaging:
+    name: Packaging
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm ci:packaging
+
+  e2e-fake:
+    name: E2E fake runtime
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm ci:e2e-fake
+
+  crash-matrix:
+    name: Crash matrix
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm ci:crash-matrix
+
+  security:
+    name: Security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Linux sandbox backend
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap
+      - run: pnpm ci:security
+
+  dogfood:
+    name: Dogfood
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm ci:dogfood
+
+  acceptance:
+    name: Acceptance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm ci:acceptance
+
+  pi-latest:
+    name: Pi latest early warning
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm ci:pi-latest
+
+  live-provider:
+    name: Live provider (manual)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm ci:live-provider

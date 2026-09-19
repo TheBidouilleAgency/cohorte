@@ -1,0 +1,21 @@
+{
+  "protocolVersion": "1.0",
+  "eventId": "evt_00000000000000000000000000000340",
+  "sequence": 52,
+  "sub": 0,
+  "durability": "durable",
+  "timestamp": "2026-09-18T10:00:42.250Z",
+  "runId": "run_11111111111111111111111111111111",
+  "type": "git.merge.completed",
+  "source": "cohorte",
+  "summary": "web merged into the integration branch",
+  "severity": "success",
+  "payload": {
+    "from": "cohorte/run_1/web",
+    "into": "cohorte/run_1/integration",
+    "mergeSha": "9d8c7b6a5f4e",
+    "treeDigest": "tree_9f2c4d1e",
+    "effectId": "eff_44444444444444444444444444444444"
+  },
+  "redactions": []
+}

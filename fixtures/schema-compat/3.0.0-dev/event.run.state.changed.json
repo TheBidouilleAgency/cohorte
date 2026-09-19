@@ -1,0 +1,51 @@
+{
+  "protocolVersion": "1.0",
+  "eventId": "evt_00000000000000000000000000000040",
+  "sequence": 4,
+  "sub": 0,
+  "durability": "durable",
+  "timestamp": "2026-09-18T10:00:42.250Z",
+  "runId": "run_11111111111111111111111111111111",
+  "type": "run.state.changed",
+  "source": "cohorte",
+  "phase": {
+    "phaseRunId": "phs_BUILD_0",
+    "state": "BUILD",
+    "iteration": 0
+  },
+  "summary": "BUILD -> WAITING_APPROVAL (needs-human)",
+  "severity": "info",
+  "payload": {
+    "transitionId": "tr_0042",
+    "defId": "feature/BUILD/needs-human",
+    "tableVersion": 1,
+    "from": "BUILD",
+    "to": "WAITING_APPROVAL",
+    "reason": "needs-human",
+    "actor": {
+      "kind": "system",
+      "id": "cohorte",
+      "transport": "cli"
+    },
+    "guards": [
+      {
+        "id": "has-pending-approval",
+        "ok": true
+      },
+      {
+        "id": "budget-left",
+        "ok": true,
+        "detail": "79% of the token budget left"
+      }
+    ],
+    "idempotencyKey": "run_11111111111111111111111111111111:BUILD:0:needs-human",
+    "resumeTo": "BUILD",
+    "stop": {
+      "reason": "approval-required",
+      "detail": "a write outside the owned paths needs a decision",
+      "resumable": true,
+      "resumeRequires": "approval"
+    }
+  },
+  "redactions": []
+}

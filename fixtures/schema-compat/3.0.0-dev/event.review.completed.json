@@ -1,0 +1,33 @@
+{
+  "protocolVersion": "1.0",
+  "eventId": "evt_00000000000000000000000000000250",
+  "sequence": 37,
+  "sub": 0,
+  "durability": "durable",
+  "timestamp": "2026-09-18T10:00:42.250Z",
+  "runId": "run_11111111111111111111111111111111",
+  "type": "review.completed",
+  "source": "cohorte",
+  "phase": {
+    "phaseRunId": "phs_REVIEW_1",
+    "state": "REVIEW",
+    "iteration": 1
+  },
+  "summary": "review round 1: 1 blocking finding",
+  "severity": "warning",
+  "payload": {
+    "verdict": "findings",
+    "blocking": 1,
+    "blockingItems": ["fnd_0123456789abcdef"],
+    "fingerprint": "0f1e2d3c4b5a6978",
+    "unreviewed": [],
+    "counts": {
+      "critical": 0,
+      "major": 1,
+      "minor": 2,
+      "info": 0
+    },
+    "clean": false
+  },
+  "redactions": []
+}

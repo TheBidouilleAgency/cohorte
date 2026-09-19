@@ -1,0 +1,18 @@
+{
+  "protocolVersion": "1.0",
+  "eventId": "evt_000000000000000000000000000003e1",
+  "sequence": 62,
+  "sub": 1,
+  "durability": "ephemeral",
+  "timestamp": "2026-09-18T10:00:42.250Z",
+  "runId": "run_11111111111111111111111111111111",
+  "type": "heartbeat",
+  "source": "cohorte",
+  "summary": "host alive",
+  "severity": "progress",
+  "payload": {
+    "hostAlive": true,
+    "lastSequence": 118
+  },
+  "redactions": []
+}

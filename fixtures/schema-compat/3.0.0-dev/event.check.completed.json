@@ -1,0 +1,29 @@
+{
+  "protocolVersion": "1.0",
+  "eventId": "evt_00000000000000000000000000000220",
+  "sequence": 34,
+  "sub": 0,
+  "durability": "durable",
+  "timestamp": "2026-09-18T10:00:42.250Z",
+  "runId": "run_11111111111111111111111111111111",
+  "type": "check.completed",
+  "source": "cohorte",
+  "summary": "check unit passed",
+  "severity": "success",
+  "payload": {
+    "name": "unit",
+    "status": "passed",
+    "argv": ["pnpm", "test"],
+    "exitCode": 0,
+    "durationMs": 18450,
+    "treeDigest": "tree_9f2c4d1e",
+    "output": {
+      "artifactId": "art_33333333333333333333333333333333",
+      "kind": "log",
+      "path": "runs/run_1/artifacts/check-unit.log",
+      "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+      "bytes": 40960
+    }
+  },
+  "redactions": []
+}

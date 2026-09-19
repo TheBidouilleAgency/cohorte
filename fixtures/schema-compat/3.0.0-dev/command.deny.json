@@ -1,0 +1,19 @@
+{
+  "protocolVersion": "1.0",
+  "commandId": "cmd_00000000000000000000000000000009",
+  "type": "deny",
+  "runId": "run_11111111111111111111111111111111",
+  "issuedAt": "2026-09-18T10:00:00.000Z",
+  "actor": {
+    "kind": "human",
+    "id": "enzo",
+    "transport": "cli"
+  },
+  "payload": {
+    "approvalId": "apr_22222222222222222222222222222222"
+  },
+  "auth": {
+    "scheme": "hmac-sha256",
+    "value": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+  }
+}

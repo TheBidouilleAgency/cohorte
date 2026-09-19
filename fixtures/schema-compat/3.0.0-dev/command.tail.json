@@ -1,0 +1,17 @@
+{
+  "protocolVersion": "1.0",
+  "commandId": "cmd_00000000000000000000000000000004",
+  "type": "tail",
+  "runId": "run_11111111111111111111111111111111",
+  "issuedAt": "2026-09-18T10:00:00.000Z",
+  "actor": {
+    "kind": "human",
+    "id": "enzo",
+    "transport": "cli"
+  },
+  "payload": {
+    "sinceSequence": 41,
+    "follow": true,
+    "ephemeral": false
+  }
+}

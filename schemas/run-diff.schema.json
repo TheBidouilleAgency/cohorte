@@ -1,0 +1,177 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cohorte.dev/schemas/3/run-diff.schema.json",
+  "title": "Cohorte run diff (diff --json)",
+  "type": "object",
+  "required": [
+    "documentVersion",
+    "runId",
+    "base",
+    "head",
+    "surfaces"
+  ],
+  "properties": {
+    "documentVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "runId": {
+      "type": "string",
+      "pattern": "^run_[0-9a-f]{32}$"
+    },
+    "base": {
+      "type": "object",
+      "required": [
+        "branch",
+        "sha"
+      ],
+      "properties": {
+        "branch": {
+          "type": "string"
+        },
+        "sha": {
+          "type": "string"
+        }
+      }
+    },
+    "head": {
+      "type": "object",
+      "required": [
+        "branch",
+        "sha",
+        "treeDigest"
+      ],
+      "properties": {
+        "branch": {
+          "type": "string"
+        },
+        "sha": {
+          "type": "string"
+        },
+        "treeDigest": {
+          "type": "string"
+        }
+      }
+    },
+    "surfaces": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "surface",
+          "files",
+          "stat",
+          "patch"
+        ],
+        "properties": {
+          "surface": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "shared"
+              },
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$"
+              }
+            ]
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "path",
+                "op"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "op": {
+                  "type": "string",
+                  "enum": [
+                    "read",
+                    "create",
+                    "modify",
+                    "delete"
+                  ]
+                },
+                "beforeSha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "afterSha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "bytes": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "stat": {
+            "type": "object",
+            "required": [
+              "added",
+              "removed"
+            ],
+            "properties": {
+              "added": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "removed": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          "patch": {
+            "type": "object",
+            "required": [
+              "artifactId",
+              "kind",
+              "path",
+              "sha256",
+              "bytes"
+            ],
+            "properties": {
+              "artifactId": {
+                "type": "string",
+                "pattern": "^art_[0-9a-f]{32}$"
+              },
+              "kind": {
+                "type": "string",
+                "x-cohorte-known": [
+                  "diff",
+                  "file",
+                  "log",
+                  "report",
+                  "agent-output",
+                  "transcript",
+                  "context",
+                  "prompt",
+                  "patch"
+                ]
+              },
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "bytes": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

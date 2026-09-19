@@ -1,0 +1,18 @@
+{
+  "protocolVersion": "1.0",
+  "eventId": "evt_00000000000000000000000000000090",
+  "sequence": 9,
+  "sub": 0,
+  "durability": "durable",
+  "timestamp": "2026-09-18T10:00:42.250Z",
+  "runId": "run_11111111111111111111111111111111",
+  "type": "run.host.detached",
+  "source": "cohorte",
+  "summary": "host host_a detached: lease lost",
+  "severity": "warning",
+  "payload": {
+    "hostId": "host_a",
+    "cause": "lease-lost"
+  },
+  "redactions": []
+}

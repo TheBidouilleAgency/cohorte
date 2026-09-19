@@ -1,0 +1,44 @@
+{
+  "name": "cohorte",
+  "version": "2.10.0",
+  "description": "Portable, stack-agnostic multi-agent development pipeline for Claude Code, Codex CLI, Cursor, Gemini CLI and OpenCode — install the core, run /cohorte-init-pipeline, and it adapts to your project's stack.",
+  "bin": {
+    "cohorte": "bin/cli.js"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "core",
+    "profile",
+    "scripts",
+    "!scripts/new-feature.sh",
+    "!scripts/remove-feature.sh",
+    "!scripts/demo",
+    "!core/hooks/__pycache__",
+    "!**/*.pyc",
+    "install.sh",
+    "install.ps1",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TheBidouilleAgency/cohorte.git"
+  },
+  "homepage": "https://github.com/TheBidouilleAgency/cohorte#readme",
+  "author": "Enzo Viry",
+  "license": "AGPL-3.0-only",
+  "keywords": [
+    "claude",
+    "claude-code",
+    "codex",
+    "cursor",
+    "gemini-cli",
+    "opencode",
+    "agents",
+    "pipeline",
+    "multi-agent"
+  ]
+}

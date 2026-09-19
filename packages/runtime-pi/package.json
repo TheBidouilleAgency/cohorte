@@ -1,0 +1,33 @@
+{
+  "name": "@cohorte/runtime-pi",
+  "version": "0.0.0",
+  "private": true,
+  "description": "PiRuntime: Pi-free parent, AgentHostProtocol, and the child that is the only Pi-importing code.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./host-protocol": {
+      "types": "./src/protocol.ts",
+      "default": "./src/protocol.ts"
+    },
+    "./*": {
+      "types": "./src/*/index.ts",
+      "default": "./src/*/index.ts"
+    }
+  },
+  "dependencies": {
+    "@cohorte/base": "workspace:*",
+    "@cohorte/runtime-contract": "workspace:*",
+    "@earendil-works/pi-agent-core": "catalog:",
+    "@earendil-works/pi-ai": "catalog:",
+    "@earendil-works/pi-coding-agent": "catalog:",
+    "typebox": "catalog:"
+  },
+  "devDependencies": {
+    "@cohorte/testkit": "workspace:*"
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "protocolVersion": "1.0",
+  "eventId": "evt_00000000000000000000000000000020",
+  "sequence": 2,
+  "sub": 0,
+  "durability": "durable",
+  "timestamp": "2026-09-18T10:00:42.250Z",
+  "runId": "run_11111111111111111111111111111111",
+  "type": "pipeline.completed",
+  "source": "cohorte",
+  "summary": "run completed: review clean after 1 fix round",
+  "severity": "success",
+  "payload": {
+    "stop": {
+      "reason": "review-clean",
+      "detail": "review round 2 found nothing blocking",
+      "resumable": false
+    },
+    "integration": {
+      "branch": "cohorte/run_1/integration",
+      "headSha": "9d8c7b6a5f4e",
+      "treeDigest": "tree_9f2c4d1e"
+    },
+    "totals": {
+      "usage": {
+        "tokens": 412300,
+        "modelRequests": 31,
+        "toolCalls": 96,
+        "wallClockMs": 423000,
+        "fixRounds": 1
+      },
+      "tokens": {
+        "input": 380000,
+        "output": 28000,
+        "cacheRead": 4000,
+        "cacheWrite": 300,
+        "total": 412300
+      },
+      "monetaryCost": "not_applicable",
+      "fixRounds": 1,
+      "durationMs": 423000
+    }
+  },
+  "redactions": []
+}

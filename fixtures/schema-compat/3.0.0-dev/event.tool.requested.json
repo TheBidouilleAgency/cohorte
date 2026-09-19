@@ -1,0 +1,45 @@
+{
+  "protocolVersion": "1.0",
+  "eventId": "evt_00000000000000000000000000000190",
+  "sequence": 25,
+  "sub": 0,
+  "durability": "durable",
+  "timestamp": "2026-09-18T10:00:42.250Z",
+  "runId": "run_11111111111111111111111111111111",
+  "type": "tool.requested",
+  "source": "cohorte",
+  "phase": {
+    "phaseRunId": "phs_BUILD_0",
+    "state": "BUILD",
+    "iteration": 0
+  },
+  "agent": {
+    "agentId": "agt_implementer_web",
+    "role": "implementer",
+    "surface": "web",
+    "incarnation": 1,
+    "attempt": 1
+  },
+  "summary": "implementer asks: command pnpm test",
+  "severity": "info",
+  "payload": {
+    "toolCallId": "tc_1_7",
+    "tool": "command",
+    "args": {
+      "argv": ["pnpm", "test"],
+      "cwd": ".",
+      "env": {
+        "API_TOKEN": "[redacted:env-value]"
+      }
+    },
+    "argsSha256": "2c26b46b68ffc68ff99b453c1d304134134cbbe6d5f7f1d0c1a0c8a4e2b1d9f0"
+  },
+  "redactions": [
+    {
+      "path": "/payload/args/env/API_TOKEN",
+      "reason": "env-value",
+      "detector": "env-allowlist",
+      "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    }
+  ]
+}

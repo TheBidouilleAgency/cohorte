@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cohorte.dev/schemas/3/command-result.schema.json",
+  "title": "Cohorte command result (every controller, and the validators)",
+  "type": "object",
+  "required": [
+    "documentVersion",
+    "commandId",
+    "type",
+    "status"
+  ],
+  "properties": {
+    "documentVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "commandId": {
+      "type": "string",
+      "pattern": "^cmd_[0-9a-f]{32}$"
+    },
+    "type": {
+      "type": "string",
+      "x-cohorte-known": [
+        "start",
+        "status",
+        "inspect",
+        "tail",
+        "pause",
+        "resume",
+        "cancel",
+        "approve",
+        "deny",
+        "retry",
+        "skip",
+        "run-tool",
+        "reconcile",
+        "shutdown",
+        "agent.send"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "completed",
+        "rejected",
+        "pending"
+      ]
+    },
+    "result": {
+      "$ref": "#/$defs/JsonValue"
+    },
+    "error": {
+      "$ref": "#/$defs/ErrorInfo"
+    },
+    "lastSequence": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "$defs": {
+    "JsonValue": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        },
+        {
+          "type": "object",
+          "patternProperties": {
+            "^.*$": {
+              "$ref": "#/$defs/JsonValue"
+            }
+          }
+        }
+      ]
+    },
+    "ErrorInfo": {
+      "type": "object",
+      "required": [
+        "code",
+        "class",
+        "message",
+        "impact",
+        "retryable",
+        "remediation"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[a-z]+(?:-[a-z]+)*/[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "class": {
+          "anyOf": [
+            {
+              "type": "string",
+              "const": "configuration"
+            },
+            {
+              "type": "string",
+              "const": "validation"
+            },
+            {
+              "type": "string",
+              "const": "permission"
+            },
+            {
+              "type": "string",
+              "const": "security"
+            },
+            {
+              "type": "string",
+              "const": "provider-transient"
+            },
+            {
+              "type": "string",
+              "const": "provider-terminal"
+            },
+            {
+              "type": "string",
+              "const": "tool-transient"
+            },
+            {
+              "type": "string",
+              "const": "tool-terminal"
+            },
+            {
+              "type": "string",
+              "const": "conflict"
+            },
+            {
+              "type": "string",
+              "const": "budget"
+            },
+            {
+              "type": "string",
+              "const": "timeout"
+            },
+            {
+              "type": "string",
+              "const": "corruption"
+            },
+            {
+              "type": "string",
+              "const": "human-required"
+            }
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "impact": {
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "retryAfterMs": {
+          "type": "number",
+          "minimum": 0
+        },
+        "remediation": {
+          "type": "string"
+        },
+        "cause": {
+          "$ref": "#/$defs/ErrorInfo"
+        },
+        "details": {
+          "type": "object",
+          "patternProperties": {
+            "^.*$": {
+              "$ref": "#/$defs/JsonValue"
+            }
+          }
+        }
+      }
+    }
+  }
+}

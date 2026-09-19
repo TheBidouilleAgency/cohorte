@@ -1,0 +1,32 @@
+{
+  "protocolVersion": "1.0",
+  "eventId": "evt_00000000000000000000000000000260",
+  "sequence": 38,
+  "sub": 0,
+  "durability": "durable",
+  "timestamp": "2026-09-18T10:00:42.250Z",
+  "runId": "run_11111111111111111111111111111111",
+  "type": "review.approved",
+  "source": "cohorte",
+  "phase": {
+    "phaseRunId": "phs_REVIEW_1",
+    "state": "REVIEW",
+    "iteration": 1
+  },
+  "summary": "review approved with 1 waiver",
+  "severity": "success",
+  "payload": {
+    "reviewRef": {
+      "ref": "cohorte/run_1/integration",
+      "sha": "9d8c7b6a5f4e",
+      "treeDigest": "tree_9f2c4d1e"
+    },
+    "waivers": [
+      {
+        "findingId": "fnd_0123456789abcdef",
+        "approvalId": "apr_22222222222222222222222222222222"
+      }
+    ]
+  },
+  "redactions": []
+}

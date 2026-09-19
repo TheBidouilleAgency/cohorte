@@ -1,0 +1,27 @@
+{
+  "protocolVersion": "1.0",
+  "eventId": "evt_000000000000000000000000000003c0",
+  "sequence": 60,
+  "sub": 0,
+  "durability": "durable",
+  "timestamp": "2026-09-18T10:00:42.250Z",
+  "runId": "run_11111111111111111111111111111111",
+  "type": "command.rejected",
+  "source": "cohorte",
+  "causationId": "cmd_55555555555555555555555555555555",
+  "summary": "skip rejected: the policy does not allow skipping REVIEW",
+  "severity": "error",
+  "payload": {
+    "commandId": "cmd_55555555555555555555555555555555",
+    "type": "skip",
+    "error": {
+      "code": "permission/skip-not-allowed",
+      "class": "permission",
+      "message": "policy.skip does not list REVIEW",
+      "impact": "the run is unchanged",
+      "retryable": false,
+      "remediation": "Add REVIEW to policy.skip, or let the review run."
+    }
+  },
+  "redactions": []
+}

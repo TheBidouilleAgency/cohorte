@@ -1,0 +1,21 @@
+version: 1
+agents:
+  - match: { role: implementer }
+    steps:
+      - do: tool
+        tool: write_file
+        input: { path: RUNTIME_INSTALL, content: forbidden }
+      - do: tool
+        tool: write_file
+        input: { path: TARGET_ROOT/.cohorte/ownership.yaml, content: forbidden }
+      - do: tool
+        tool: write_file
+        input: { path: TARGET_ROOT/runtime-link/dist/cli.mjs, content: forbidden }
+      - do: tool
+        tool: write_file
+        input: { path: TARGET_ROOT/.cohorte/state/cohorte.db, content: forbidden }
+      - do: tool
+        tool: patch_file
+        input: { path: TARGET_ROOT/.cohorte/config.yaml, edits: [{ oldText: 'schemaVersion: 1', newText: 'schemaVersion: 2' }] }
+      - do: submit
+        output: { status: completed, summary: all unauthorized writes were denied, artifacts: [], findings: [], checks: [], questions: [], confidence: 1 }

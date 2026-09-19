@@ -1,0 +1,32 @@
+{
+  "protocolVersion": "1.0",
+  "eventId": "evt_00000000000000000000000000000280",
+  "sequence": 40,
+  "sub": 0,
+  "durability": "durable",
+  "timestamp": "2026-09-18T10:00:42.250Z",
+  "runId": "run_11111111111111111111111111111111",
+  "type": "approval.resolved",
+  "source": "human",
+  "causationId": "cmd_55555555555555555555555555555555",
+  "summary": "approval allowed once by enzo",
+  "severity": "success",
+  "payload": {
+    "approvalId": "apr_22222222222222222222222222222222",
+    "decision": "allow-once",
+    "actor": {
+      "kind": "human",
+      "id": "enzo",
+      "transport": "cli"
+    },
+    "commandId": "cmd_55555555555555555555555555555555",
+    "commandAuth": {
+      "scheme": "hmac-sha256",
+      "value": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "grantId": "grant_7",
+    "answer": "use the shared helper",
+    "note": "one-off, the helper is reviewed separately"
+  },
+  "redactions": []
+}

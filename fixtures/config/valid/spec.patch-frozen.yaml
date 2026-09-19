@@ -1,0 +1,11 @@
+# schema: spec
+id: fix-rounding
+kind: patch
+status: frozen
+sha256: 744573caed8809fc085b329203777d386a96724e355b7dd3abd93d03b0b62160
+title: Totals are rounded twice
+acceptance: [the cart total equals the sum of the rounded lines]
+surfaces:
+  backend: { tasks: [round once, in money.ts] }
+openQuestions: []
+patch: { repro: pnpm test money, regressionTest: packages/money/test/rounding.test.ts, causeConfirmed: true }

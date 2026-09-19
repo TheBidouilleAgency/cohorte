@@ -1,0 +1,6 @@
+version: 1
+agents:
+  - match: {}
+    steps:
+      - do: fail
+        error: { class: timeout, code: timeout/agent, retryable: true }

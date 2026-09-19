@@ -1,0 +1,6 @@
+version: 1
+agents:
+  - match: {}
+    steps:
+      - do: fail
+        error: { class: provider-terminal, code: provider/unauthorized, retryable: false }

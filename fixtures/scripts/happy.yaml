@@ -1,0 +1,8 @@
+version: 1
+agents:
+  - match: {}
+    steps:
+      - do: say
+        text: implement greeting
+      - do: submit
+        output: { status: clean }

@@ -1,0 +1,32 @@
+{
+  "protocolVersion": "1.0",
+  "eventId": "evt_000000000000000000000000000001b0",
+  "sequence": 27,
+  "sub": 0,
+  "durability": "durable",
+  "timestamp": "2026-09-18T10:00:42.250Z",
+  "runId": "run_11111111111111111111111111111111",
+  "type": "tool.rejected",
+  "source": "runtime",
+  "phase": {
+    "phaseRunId": "phs_BUILD_0",
+    "state": "BUILD",
+    "iteration": 0
+  },
+  "agent": {
+    "agentId": "agt_implementer_web",
+    "role": "implementer",
+    "surface": "web",
+    "incarnation": 1,
+    "attempt": 1
+  },
+  "summary": "the engine refused a call to an unknown tool",
+  "severity": "warning",
+  "payload": {
+    "engineToolCallId": "call_a1b2c3",
+    "tool": "browse",
+    "cause": "unknown-tool",
+    "message": "no tool named \"browse\" is registered for this agent"
+  },
+  "redactions": []
+}

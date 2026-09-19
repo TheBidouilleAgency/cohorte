@@ -1,0 +1,68 @@
+{
+  "protocolVersion": "1.0",
+  "eventId": "evt_00000000000000000000000000000170",
+  "sequence": 23,
+  "sub": 0,
+  "durability": "durable",
+  "timestamp": "2026-09-18T10:00:42.250Z",
+  "runId": "run_11111111111111111111111111111111",
+  "type": "model.responded",
+  "source": "runtime",
+  "phase": {
+    "phaseRunId": "phs_BUILD_0",
+    "state": "BUILD",
+    "iteration": 0
+  },
+  "agent": {
+    "agentId": "agt_implementer_web",
+    "role": "implementer",
+    "surface": "web",
+    "incarnation": 1,
+    "attempt": 1
+  },
+  "summary": "model response 12: 9 812 tokens, subscription",
+  "severity": "info",
+  "payload": {
+    "requestId": "req_0012",
+    "requestedModel": {
+      "provider": "openai-codex",
+      "model": "gpt-5.5-codex",
+      "capability": "coding"
+    },
+    "effectiveModel": {
+      "provider": "openai-codex",
+      "model": "gpt-5.5-codex-2026-08",
+      "api": "responses",
+      "baseUrl": "https://chatgpt.com/backend-api"
+    },
+    "authMode": "subscription",
+    "authSource": "oauth",
+    "status": "ok",
+    "httpStatus": 200,
+    "durationMs": 8420,
+    "tokens": {
+      "input": 9000,
+      "output": 700,
+      "cacheRead": 100,
+      "cacheWrite": 12,
+      "total": 9812
+    },
+    "monetaryCost": "not_applicable",
+    "quota": {
+      "known": true,
+      "source": "response-headers",
+      "provider": "openai-codex",
+      "windows": [
+        {
+          "name": "5h",
+          "usedPercent": 37.5,
+          "resetsAt": "2026-09-18T14:00:00.000Z",
+          "limitLabel": "Plus"
+        }
+      ],
+      "observedAt": "2026-09-18T10:00:42.250Z"
+    },
+    "attempt": 1
+  },
+  "redactions": []
+}

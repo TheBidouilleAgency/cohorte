@@ -1,0 +1,39 @@
+{
+  "protocolVersion": "1.0",
+  "eventId": "evt_000000000000000000000000000000f0",
+  "sequence": 15,
+  "sub": 0,
+  "durability": "durable",
+  "timestamp": "2026-09-18T10:00:42.250Z",
+  "runId": "run_11111111111111111111111111111111",
+  "type": "agent.state.changed",
+  "source": "cohorte",
+  "phase": {
+    "phaseRunId": "phs_BUILD_0",
+    "state": "BUILD",
+    "iteration": 0
+  },
+  "agent": {
+    "agentId": "agt_implementer_web",
+    "role": "implementer",
+    "surface": "web",
+    "incarnation": 1,
+    "attempt": 1
+  },
+  "summary": "implementer: running -> retrying (retry)",
+  "severity": "info",
+  "payload": {
+    "agent": {
+      "agentId": "agt_implementer_web",
+      "role": "implementer",
+      "surface": "web",
+      "incarnation": 1,
+      "attempt": 1
+    },
+    "from": "running",
+    "to": "retrying",
+    "reason": "retry",
+    "attemptConsumed": true
+  },
+  "redactions": []
+}

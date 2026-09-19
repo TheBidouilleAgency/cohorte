@@ -1,0 +1,6 @@
+# schema: ownership
+# expect: /surfaces/frontend/paths/0
+# why: two surfaces claim apps/web/src/ui and neither is `shared`
+surfaces:
+  frontend: { paths: ["apps/web/**"], owners: [implementer], reviewers: [] }
+  design: { paths: ["docs/**", "apps/web/src/ui/**"], owners: [implementer], reviewers: [] }
