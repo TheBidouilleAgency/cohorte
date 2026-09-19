@@ -1,0 +1,59 @@
+{
+  "protocolVersion": "1.0",
+  "eventId": "evt_000000000000000000000000000001d0",
+  "sequence": 29,
+  "sub": 0,
+  "durability": "durable",
+  "timestamp": "2026-09-18T10:00:42.250Z",
+  "runId": "run_11111111111111111111111111111111",
+  "type": "tool.completed",
+  "source": "cohorte",
+  "phase": {
+    "phaseRunId": "phs_BUILD_0",
+    "state": "BUILD",
+    "iteration": 0
+  },
+  "agent": {
+    "agentId": "agt_implementer_web",
+    "role": "implementer",
+    "surface": "web",
+    "incarnation": 1,
+    "attempt": 1
+  },
+  "summary": "command completed: pnpm test (exit 0)",
+  "severity": "success",
+  "payload": {
+    "toolCallId": "tc_1_7",
+    "tool": "command",
+    "effectId": "eff_44444444444444444444444444444444",
+    "isError": false,
+    "exitCode": 0,
+    "timedOut": false,
+    "durationMs": 18450,
+    "waitedMs": 18610,
+    "output": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 40960,
+      "truncated": true,
+      "preview": " ✓ cart.test.ts (4 tests)\n Test Files  1 passed (1)",
+      "artifact": {
+        "artifactId": "art_33333333333333333333333333333333",
+        "kind": "log",
+        "path": "runs/run_1/artifacts/tc_1_7.log",
+        "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+        "bytes": 40960
+      }
+    },
+    "filesTouched": [
+      {
+        "path": "apps/web/src/cart.test.ts",
+        "op": "create",
+        "afterSha256": "2c26b46b68ffc68ff99b453c1d304134134cbbe6d5f7f1d0c1a0c8a4e2b1d9f0",
+        "bytes": 912
+      }
+    ],
+    "filteredPaths": 2,
+    "replayed": false
+  },
+  "redactions": []
+}

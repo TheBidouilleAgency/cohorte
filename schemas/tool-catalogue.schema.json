@@ -1,0 +1,655 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cohorte.dev/schemas/3/tool-catalogue.schema.json",
+  "title": "Cohorte tool catalogue: a tool call, one branch per tool of DESIGN 2.7",
+  "type": "object",
+  "required": [
+    "name",
+    "input"
+  ],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "the tool as the catalogue names it"
+    },
+    "input": {
+      "description": "the call's arguments, narrowed by the branch for this tool"
+    },
+    "effect": {
+      "type": "string",
+      "description": "read | write | execute | network | control"
+    },
+    "terminal": {
+      "type": "boolean",
+      "description": "a terminal tool ends the agent turn"
+    }
+  },
+  "oneOf": [
+    {
+      "title": "read_file",
+      "description": "Read a file as sealed text with line numbers. offset/limit page through it; binary files error; capped at 256 KiB per call.",
+      "properties": {
+        "name": {
+          "const": "read_file"
+        },
+        "input": {
+          "type": "object",
+          "required": [
+            "path"
+          ],
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "offset": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "effect": {
+          "const": "read"
+        },
+        "terminal": {
+          "const": false
+        }
+      }
+    },
+    {
+      "title": "list_files",
+      "description": "List files under a path (default the workspace root), filtered by glob. Deny sets are filtered out; outgoing symlinks are never followed.",
+      "properties": {
+        "name": {
+          "const": "list_files"
+        },
+        "input": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "glob": {
+              "type": "string"
+            },
+            "maxEntries": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "effect": {
+          "const": "read"
+        },
+        "terminal": {
+          "const": false
+        }
+      }
+    },
+    {
+      "title": "search",
+      "description": "Search file contents for a pattern (a literal argv element, never a shell string). Every hit is filtered against the deny sets and the grant before it is returned.",
+      "properties": {
+        "name": {
+          "const": "search"
+        },
+        "input": {
+          "type": "object",
+          "required": [
+            "pattern"
+          ],
+          "properties": {
+            "pattern": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "glob": {
+              "type": "string"
+            },
+            "caseInsensitive": {
+              "type": "boolean"
+            },
+            "maxMatches": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "effect": {
+          "const": "read"
+        },
+        "terminal": {
+          "const": false
+        }
+      }
+    },
+    {
+      "title": "write_file",
+      "description": "Write the complete content of a file, creating it if it does not exist. The whole file is replaced.",
+      "properties": {
+        "name": {
+          "const": "write_file"
+        },
+        "input": {
+          "type": "object",
+          "required": [
+            "path",
+            "content"
+          ],
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "content": {
+              "type": "string"
+            }
+          }
+        },
+        "effect": {
+          "const": "write"
+        },
+        "terminal": {
+          "const": false
+        }
+      }
+    },
+    {
+      "title": "patch_file",
+      "description": "Apply exact-match text edits to a file: each oldText must occur exactly once in the current content, or the call fails without writing anything.",
+      "properties": {
+        "name": {
+          "const": "patch_file"
+        },
+        "input": {
+          "type": "object",
+          "required": [
+            "path",
+            "edits"
+          ],
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "edits": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "oldText",
+                  "newText"
+                ],
+                "properties": {
+                  "oldText": {
+                    "type": "string"
+                  },
+                  "newText": {
+                    "type": "string"
+                  }
+                }
+              },
+              "minItems": 1
+            }
+          }
+        },
+        "effect": {
+          "const": "write"
+        },
+        "terminal": {
+          "const": false
+        }
+      }
+    },
+    {
+      "title": "run_command",
+      "description": "Run one allow-listed command (argv only, never a shell line) and return its output.",
+      "properties": {
+        "name": {
+          "const": "run_command"
+        },
+        "input": {
+          "type": "object",
+          "required": [
+            "argv"
+          ],
+          "properties": {
+            "argv": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            "cwd": {
+              "type": "string"
+            },
+            "timeoutMs": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "effect": {
+          "const": "execute"
+        },
+        "terminal": {
+          "const": false
+        }
+      }
+    },
+    {
+      "title": "git_diff",
+      "description": "Show a diff of the worktree against 'run-base' (the run's pinned base, the default on a read-only review ref), 'integration' (the default in a slot) or 'checkpoint'.",
+      "properties": {
+        "name": {
+          "const": "git_diff"
+        },
+        "input": {
+          "type": "object",
+          "properties": {
+            "base": {
+              "type": "string",
+              "enum": [
+                "run-base",
+                "integration",
+                "checkpoint"
+              ]
+            },
+            "paths": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "stat": {
+              "type": "boolean"
+            }
+          }
+        },
+        "effect": {
+          "const": "read"
+        },
+        "terminal": {
+          "const": false
+        }
+      }
+    },
+    {
+      "title": "approval_request",
+      "description": "Ask a human a question before proceeding, optionally offering a fixed set of answers. Waits for a decision.",
+      "properties": {
+        "name": {
+          "const": "approval_request"
+        },
+        "input": {
+          "type": "object",
+          "required": [
+            "question"
+          ],
+          "properties": {
+            "question": {
+              "type": "string"
+            },
+            "options": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "effect": {
+          "const": "control"
+        },
+        "terminal": {
+          "const": false
+        }
+      }
+    },
+    {
+      "title": "submit_result",
+      "description": "Submit the final structured result for this task. Call submit_result alone, last: no other tool call may follow it in the same batch.",
+      "properties": {
+        "name": {
+          "const": "submit_result"
+        },
+        "input": {
+          "type": "object",
+          "required": [
+            "status",
+            "summary",
+            "artifacts",
+            "findings",
+            "checks",
+            "questions",
+            "confidence"
+          ],
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "completed",
+                "failed",
+                "blocked",
+                "needs-input"
+              ]
+            },
+            "summary": {
+              "type": "string",
+              "maxLength": 2000
+            },
+            "artifacts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "path",
+                  "kind"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "diff",
+                      "file",
+                      "test",
+                      "report",
+                      "contract"
+                    ]
+                  },
+                  "sha256": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "findings": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "severity",
+                  "kind",
+                  "rule",
+                  "expected",
+                  "actual",
+                  "confidence",
+                  "scope"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^fnd_[0-9a-f]{16}$"
+                  },
+                  "severity": {
+                    "type": "string",
+                    "enum": [
+                      "critical",
+                      "major",
+                      "minor",
+                      "info"
+                    ]
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "spec-violation",
+                      "security",
+                      "quality",
+                      "complexity",
+                      "check-failure"
+                    ]
+                  },
+                  "rule": {
+                    "type": "string"
+                  },
+                  "location": {
+                    "type": "object",
+                    "required": [
+                      "file"
+                    ],
+                    "properties": {
+                      "file": {
+                        "type": "string"
+                      },
+                      "line": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "endLine": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "symbol": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "reproduction": {
+                    "type": "string"
+                  },
+                  "expected": {
+                    "type": "string"
+                  },
+                  "actual": {
+                    "type": "string"
+                  },
+                  "confidence": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "suggestedFix": {
+                    "type": "string"
+                  },
+                  "scope": {
+                    "type": "string",
+                    "enum": [
+                      "in-scope",
+                      "deferred"
+                    ]
+                  },
+                  "outOfScopeReason": {
+                    "type": "string"
+                  }
+                }
+              },
+              "maxItems": 30
+            },
+            "checks": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "status"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "passed",
+                      "failed",
+                      "skipped",
+                      "not-run"
+                    ]
+                  },
+                  "command": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "questions": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "confidence": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "assumptions": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "gap",
+                  "decision"
+                ],
+                "properties": {
+                  "gap": {
+                    "type": "string"
+                  },
+                  "decision": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "remediationAddressed": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "findingId",
+                  "how"
+                ],
+                "properties": {
+                  "findingId": {
+                    "type": "string"
+                  },
+                  "how": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "effect": {
+          "const": "control"
+        },
+        "terminal": {
+          "const": true
+        }
+      }
+    },
+    {
+      "title": "git_commit",
+      "description": "Reserved: granted to nobody in V3.0. Cohorte alone commits agent work.",
+      "properties": {
+        "name": {
+          "const": "git_commit"
+        },
+        "input": {
+          "type": "object",
+          "required": [
+            "message"
+          ],
+          "properties": {
+            "message": {
+              "type": "string"
+            }
+          }
+        },
+        "effect": {
+          "const": "write"
+        },
+        "terminal": {
+          "const": false
+        }
+      }
+    },
+    {
+      "title": "network_request",
+      "description": "Reserved: granted to nobody in V3.0. Agents have no network access.",
+      "properties": {
+        "name": {
+          "const": "network_request"
+        },
+        "input": {
+          "type": "object",
+          "required": [
+            "url"
+          ],
+          "properties": {
+            "url": {
+              "type": "string"
+            },
+            "method": {
+              "type": "string"
+            }
+          }
+        },
+        "effect": {
+          "const": "network"
+        },
+        "terminal": {
+          "const": false
+        }
+      }
+    },
+    {
+      "title": "secret_read",
+      "description": "Reserved: granted to nobody in V3.0.",
+      "properties": {
+        "name": {
+          "const": "secret_read"
+        },
+        "input": {
+          "type": "object",
+          "required": [
+            "id"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          }
+        },
+        "effect": {
+          "const": "read"
+        },
+        "terminal": {
+          "const": false
+        }
+      }
+    },
+    {
+      "title": "a tool added by a later minor version: readers MUST ignore it",
+      "properties": {
+        "name": {
+          "not": {
+            "enum": [
+              "read_file",
+              "list_files",
+              "search",
+              "write_file",
+              "patch_file",
+              "run_command",
+              "git_diff",
+              "approval_request",
+              "submit_result",
+              "git_commit",
+              "network_request",
+              "secret_read"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

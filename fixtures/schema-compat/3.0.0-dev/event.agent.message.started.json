@@ -1,0 +1,30 @@
+{
+  "protocolVersion": "1.0",
+  "eventId": "evt_00000000000000000000000000000121",
+  "sequence": 18,
+  "sub": 1,
+  "durability": "ephemeral",
+  "timestamp": "2026-09-18T10:00:42.250Z",
+  "runId": "run_11111111111111111111111111111111",
+  "type": "agent.message.started",
+  "source": "runtime",
+  "phase": {
+    "phaseRunId": "phs_BUILD_0",
+    "state": "BUILD",
+    "iteration": 0
+  },
+  "agent": {
+    "agentId": "agt_implementer_web",
+    "role": "implementer",
+    "surface": "web",
+    "incarnation": 1,
+    "attempt": 1
+  },
+  "summary": "assistant message",
+  "severity": "progress",
+  "payload": {
+    "messageId": "msg_0007",
+    "role": "assistant"
+  },
+  "redactions": []
+}

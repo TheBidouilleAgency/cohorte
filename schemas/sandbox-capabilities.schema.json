@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cohorte.dev/schemas/3/sandbox-capabilities.schema.json",
+  "title": "Cohorte sandbox capabilities (doctor)",
+  "type": "object",
+  "required": [
+    "level",
+    "backend",
+    "filesystem",
+    "network",
+    "processEscape",
+    "envFiltering",
+    "timeout",
+    "outputCap",
+    "cpuTime",
+    "memory",
+    "processes",
+    "killTree",
+    "missing",
+    "notes"
+  ],
+  "properties": {
+    "level": {
+      "type": "string",
+      "enum": [
+        "L0-process",
+        "L1-os"
+      ]
+    },
+    "backend": {
+      "type": "string",
+      "enum": [
+        "none",
+        "seatbelt",
+        "bubblewrap"
+      ]
+    },
+    "filesystem": {
+      "type": "string",
+      "enum": [
+        "enforced",
+        "partial",
+        "advisory"
+      ]
+    },
+    "network": {
+      "type": "string",
+      "enum": [
+        "enforced-off",
+        "partial",
+        "unenforced"
+      ]
+    },
+    "processEscape": {
+      "type": "string",
+      "enum": [
+        "denied",
+        "partial",
+        "possible"
+      ]
+    },
+    "envFiltering": {
+      "type": "string",
+      "const": "enforced"
+    },
+    "timeout": {
+      "type": "string",
+      "const": "enforced"
+    },
+    "outputCap": {
+      "type": "string",
+      "const": "enforced"
+    },
+    "cpuTime": {
+      "type": "string",
+      "enum": [
+        "enforced",
+        "unavailable"
+      ]
+    },
+    "memory": {
+      "type": "string",
+      "enum": [
+        "enforced",
+        "node-only",
+        "unavailable"
+      ]
+    },
+    "processes": {
+      "type": "string",
+      "enum": [
+        "enforced",
+        "unavailable"
+      ]
+    },
+    "killTree": {
+      "type": "string",
+      "enum": [
+        "pid-namespace",
+        "process-group-with-sweep"
+      ]
+    },
+    "missing": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

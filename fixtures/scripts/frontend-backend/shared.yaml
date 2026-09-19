@@ -1,0 +1,4 @@
+version: 1
+agents:
+  - match: { agentId: implementer* }
+    steps: [{ do: submit, output: { status: shared-change } }]

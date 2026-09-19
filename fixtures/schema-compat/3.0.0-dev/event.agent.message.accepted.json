@@ -1,0 +1,37 @@
+{
+  "protocolVersion": "1.0",
+  "eventId": "evt_00000000000000000000000000000140",
+  "sequence": 20,
+  "sub": 0,
+  "durability": "durable",
+  "timestamp": "2026-09-18T10:00:42.250Z",
+  "runId": "run_11111111111111111111111111111111",
+  "type": "agent.message.accepted",
+  "source": "runtime",
+  "phase": {
+    "phaseRunId": "phs_BUILD_0",
+    "state": "BUILD",
+    "iteration": 0
+  },
+  "agent": {
+    "agentId": "agt_implementer_web",
+    "role": "implementer",
+    "surface": "web",
+    "incarnation": 1,
+    "attempt": 1
+  },
+  "summary": "host note queued for implementer",
+  "severity": "info",
+  "payload": {
+    "agent": {
+      "agentId": "agt_implementer_web",
+      "role": "implementer",
+      "surface": "web",
+      "incarnation": 1,
+      "attempt": 1
+    },
+    "messageId": "msg_0009",
+    "delivery": "steer"
+  },
+  "redactions": []
+}

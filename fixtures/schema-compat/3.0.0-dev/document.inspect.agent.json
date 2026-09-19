@@ -1,0 +1,51 @@
+{
+  "documentVersion": 1,
+  "protocolVersion": "1.0",
+  "runId": "run_11111111111111111111111111111111",
+  "lastSequence": 57,
+  "kind": "agent",
+  "agent": {
+    "agentId": "agt_implementer_web",
+    "role": "implementer",
+    "surface": "web",
+    "label": "implementer · web",
+    "status": "waiting-approval",
+    "lifecycle": "waiting",
+    "attempt": 1,
+    "incarnation": 1,
+    "model": {
+      "requested": {
+        "provider": "openai-codex",
+        "model": "gpt-5.5-codex",
+        "capability": "coding"
+      },
+      "effective": {
+        "provider": "openai-codex",
+        "model": "gpt-5.5-codex-2026-08"
+      }
+    },
+    "authMode": "subscription",
+    "worktree": ".cohorte/worktrees/run_1/web",
+    "usage": {
+      "tokens": 96400,
+      "toolCalls": 22
+    },
+    "summary": "waiting for a decision on packages/shared/src/money.ts",
+    "pendingApproval": "apr_22222222222222222222222222222222",
+    "runtimeRef": {
+      "runtime": "fake",
+      "version": "3.0.0-dev",
+      "sessionId": "session-0001",
+      "transcriptRef": "runs/run_1/transcripts/agt_implementer_web-1.ndjson.gz"
+    }
+  },
+  "grantsDigest": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+  "tools": ["read", "search", "write", "patch", "command", "submit_result"],
+  "incarnations": [
+    {
+      "n": 1,
+      "state": "waiting",
+      "startedAt": "2026-09-18T10:00:00.000Z"
+    }
+  ]
+}

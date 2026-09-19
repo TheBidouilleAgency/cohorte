@@ -1,0 +1,202 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cohorte.dev/schemas/3/spec.schema.json",
+  "title": "Cohorte specification (specs/<id>.yaml)",
+  "anyOf": [
+    {
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "title",
+        "acceptance",
+        "surfaces",
+        "openQuestions",
+        "status"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "type": "string",
+              "const": "feature"
+            },
+            {
+              "type": "string",
+              "const": "patch"
+            }
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "acceptance": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "surfaces": {
+          "type": "object",
+          "patternProperties": {
+            "^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$": {
+              "type": "object",
+              "required": [
+                "tasks"
+              ],
+              "properties": {
+                "tasks": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "contract": {
+          "type": "string",
+          "minLength": 1
+        },
+        "openQuestions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "patch": {
+          "type": "object",
+          "required": [
+            "repro",
+            "regressionTest",
+            "causeConfirmed"
+          ],
+          "properties": {
+            "repro": {
+              "type": "string"
+            },
+            "regressionTest": {
+              "type": "string"
+            },
+            "causeConfirmed": {
+              "type": "boolean"
+            }
+          }
+        },
+        "status": {
+          "type": "string",
+          "const": "draft"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "title",
+        "acceptance",
+        "surfaces",
+        "openQuestions",
+        "status",
+        "sha256"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "type": "string",
+              "const": "feature"
+            },
+            {
+              "type": "string",
+              "const": "patch"
+            }
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "acceptance": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "surfaces": {
+          "type": "object",
+          "patternProperties": {
+            "^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$": {
+              "type": "object",
+              "required": [
+                "tasks"
+              ],
+              "properties": {
+                "tasks": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "contract": {
+          "type": "string",
+          "minLength": 1
+        },
+        "openQuestions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "patch": {
+          "type": "object",
+          "required": [
+            "repro",
+            "regressionTest",
+            "causeConfirmed"
+          ],
+          "properties": {
+            "repro": {
+              "type": "string"
+            },
+            "regressionTest": {
+              "type": "string"
+            },
+            "causeConfirmed": {
+              "type": "boolean"
+            }
+          }
+        },
+        "status": {
+          "type": "string",
+          "const": "frozen"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    }
+  ]
+}

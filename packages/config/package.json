@@ -1,0 +1,31 @@
+{
+  "name": "@cohorte/config",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Schemas and loaders for .cohorte/{manifest,config,ownership}.yaml, specs and skill manifests.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./schema": {
+      "types": "./src/schema/index.ts",
+      "default": "./src/schema/index.ts"
+    },
+    "./*": {
+      "types": "./src/*/index.ts",
+      "default": "./src/*/index.ts"
+    }
+  },
+  "dependencies": {
+    "@cohorte/base": "workspace:*",
+    "@cohorte/protocol": "workspace:*",
+    "typebox": "catalog:",
+    "yaml": "catalog:"
+  },
+  "devDependencies": {
+    "@cohorte/testkit": "workspace:*"
+  }
+}

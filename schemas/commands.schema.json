@@ -1,0 +1,952 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cohorte.dev/schemas/3/commands.schema.json",
+  "title": "Cohorte Protocol command envelope",
+  "type": "object",
+  "required": [
+    "protocolVersion",
+    "commandId",
+    "type",
+    "issuedAt",
+    "actor",
+    "payload"
+  ],
+  "properties": {
+    "protocolVersion": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "commandId": {
+      "type": "string",
+      "pattern": "^cmd_[0-9a-f]{32}$"
+    },
+    "type": {
+      "type": "string",
+      "minLength": 1
+    },
+    "runId": {
+      "type": "string",
+      "pattern": "^run_[0-9a-f]{32}$"
+    },
+    "issuedAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "actor": {
+      "type": "object",
+      "required": [
+        "kind",
+        "id",
+        "transport"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "human",
+            "client",
+            "system"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "transport": {
+          "type": "string",
+          "x-cohorte-known": [
+            "cli"
+          ]
+        }
+      }
+    },
+    "expectedSequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "payload": {},
+    "auth": {
+      "type": "object",
+      "required": [
+        "scheme",
+        "value"
+      ],
+      "properties": {
+        "scheme": {
+          "type": "string",
+          "x-cohorte-known": [
+            "hmac-sha256"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "title": "start",
+      "properties": {
+        "type": {
+          "const": "start"
+        },
+        "payload": {
+          "type": "object",
+          "required": [
+            "profile",
+            "unattended"
+          ],
+          "properties": {
+            "profile": {
+              "type": "string",
+              "x-cohorte-known": [
+                "feature",
+                "bugfix",
+                "review"
+              ]
+            },
+            "spec": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "id"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$"
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "path"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    }
+                  }
+                }
+              ]
+            },
+            "reviewTarget": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "ref"
+                  ],
+                  "properties": {
+                    "ref": {
+                      "type": "string"
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "base",
+                    "head"
+                  ],
+                  "properties": {
+                    "base": {
+                      "type": "string"
+                    },
+                    "head": {
+                      "type": "string"
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "runId"
+                  ],
+                  "properties": {
+                    "runId": {
+                      "type": "string",
+                      "pattern": "^run_[0-9a-f]{32}$"
+                    }
+                  }
+                }
+              ]
+            },
+            "withFix": {
+              "type": "boolean"
+            },
+            "phases": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "BRAINSTORM",
+                  "SPEC",
+                  "PREFLIGHT",
+                  "BUILD",
+                  "TEST",
+                  "REVIEW",
+                  "FIX",
+                  "SHIP"
+                ]
+              }
+            },
+            "modelOverrides": {
+              "type": "object",
+              "patternProperties": {
+                "^.*$": {
+                  "type": "object",
+                  "required": [
+                    "provider",
+                    "model"
+                  ],
+                  "properties": {
+                    "provider": {
+                      "type": "string"
+                    },
+                    "model": {
+                      "type": "string"
+                    },
+                    "capability": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "const": "fast"
+                        },
+                        {
+                          "type": "string",
+                          "const": "coding"
+                        },
+                        {
+                          "type": "string",
+                          "const": "reasoning"
+                        },
+                        {
+                          "type": "string",
+                          "const": "vision"
+                        },
+                        {
+                          "type": "string",
+                          "const": "cheap"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            },
+            "runtime": {
+              "type": "string"
+            },
+            "fakeScript": {
+              "type": "string"
+            },
+            "unattended": {
+              "type": "boolean"
+            },
+            "budgets": {
+              "type": "object",
+              "properties": {
+                "tokens": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "modelRequests": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "toolCalls": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "wallClockMs": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "retries": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "fixRounds": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "contextTokens": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "concurrentAgents": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "estimatedQuotaPercent": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              }
+            },
+            "sandboxRequire": {
+              "type": "string",
+              "enum": [
+                "native",
+                "best-effort"
+              ]
+            },
+            "consent": {
+              "type": "object",
+              "required": [
+                "policySha256",
+                "via"
+              ],
+              "properties": {
+                "policySha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "via": {
+                  "type": "string",
+                  "const": "cli-flag"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "status",
+      "properties": {
+        "type": {
+          "const": "status"
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "runId": {
+              "type": "string",
+              "pattern": "^run_[0-9a-f]{32}$"
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "inspect",
+      "properties": {
+        "type": {
+          "const": "inspect"
+        },
+        "payload": {
+          "type": "object",
+          "required": [
+            "target"
+          ],
+          "properties": {
+            "target": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "kind",
+                    "agentId"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "agent"
+                    },
+                    "agentId": {
+                      "type": "string",
+                      "maxLength": 128,
+                      "pattern": "^agt_[A-Za-z0-9.-]+_[A-Za-z0-9_.-]+$"
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "kind",
+                    "agentId",
+                    "incarnation"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "context"
+                    },
+                    "agentId": {
+                      "type": "string",
+                      "maxLength": 128,
+                      "pattern": "^agt_[A-Za-z0-9.-]+_[A-Za-z0-9_.-]+$"
+                    },
+                    "incarnation": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "kind",
+                    "approvalId"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "approval"
+                    },
+                    "approvalId": {
+                      "type": "string",
+                      "pattern": "^apr_[0-9a-f]{32}$"
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "kind",
+                    "effectId"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "effect"
+                    },
+                    "effectId": {
+                      "type": "string",
+                      "pattern": "^eff_[0-9a-f]{32}$"
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "kind"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "snapshot"
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "kind"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "locks"
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "kind"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "diff"
+                    },
+                    "surface": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$"
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "kind",
+                    "artifactId"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "artifact"
+                    },
+                    "artifactId": {
+                      "type": "string",
+                      "pattern": "^art_[0-9a-f]{32}$"
+                    },
+                    "maxBytes": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 3145728,
+                      "default": 1048576
+                    },
+                    "offset": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "tail",
+      "properties": {
+        "type": {
+          "const": "tail"
+        },
+        "payload": {
+          "type": "object",
+          "required": [
+            "follow",
+            "ephemeral"
+          ],
+          "properties": {
+            "sinceSequence": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "replay": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "follow": {
+              "type": "boolean"
+            },
+            "ephemeral": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "pause",
+      "properties": {
+        "type": {
+          "const": "pause"
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "reason": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "resume",
+      "properties": {
+        "type": {
+          "const": "resume"
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "acknowledge": {
+              "type": "string",
+              "const": "blocked-inspected"
+            },
+            "raiseBudgets": {
+              "type": "object",
+              "properties": {
+                "tokens": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "modelRequests": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "toolCalls": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "wallClockMs": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "retries": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "fixRounds": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "contextTokens": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "concurrentAgents": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "estimatedQuotaPercent": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              }
+            },
+            "takeover": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "cancel",
+      "properties": {
+        "type": {
+          "const": "cancel"
+        },
+        "payload": {
+          "type": "object",
+          "required": [
+            "keepWorktrees"
+          ],
+          "properties": {
+            "reason": {
+              "type": "string"
+            },
+            "keepWorktrees": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "approve",
+      "properties": {
+        "type": {
+          "const": "approve"
+        },
+        "payload": {
+          "type": "object",
+          "required": [
+            "approvalId",
+            "scope"
+          ],
+          "properties": {
+            "approvalId": {
+              "type": "string",
+              "pattern": "^apr_[0-9a-f]{32}$"
+            },
+            "scope": {
+              "type": "string",
+              "enum": [
+                "once",
+                "run"
+              ]
+            },
+            "answer": {
+              "type": "string"
+            },
+            "note": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "deny",
+      "properties": {
+        "type": {
+          "const": "deny"
+        },
+        "payload": {
+          "type": "object",
+          "required": [
+            "approvalId"
+          ],
+          "properties": {
+            "approvalId": {
+              "type": "string",
+              "pattern": "^apr_[0-9a-f]{32}$"
+            },
+            "note": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "retry",
+      "properties": {
+        "type": {
+          "const": "retry"
+        },
+        "payload": {
+          "type": "object",
+          "required": [
+            "target"
+          ],
+          "properties": {
+            "target": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "kind"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "phase"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "BRAINSTORM",
+                        "SPEC",
+                        "PREFLIGHT",
+                        "BUILD",
+                        "TEST",
+                        "REVIEW",
+                        "FIX",
+                        "SHIP"
+                      ]
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "kind",
+                    "agentId"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "agent"
+                    },
+                    "agentId": {
+                      "type": "string",
+                      "maxLength": 128,
+                      "pattern": "^agt_[A-Za-z0-9.-]+_[A-Za-z0-9_.-]+$"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "skip",
+      "properties": {
+        "type": {
+          "const": "skip"
+        },
+        "payload": {
+          "type": "object",
+          "required": [
+            "phase",
+            "justification"
+          ],
+          "properties": {
+            "phase": {
+              "type": "string",
+              "enum": [
+                "BRAINSTORM",
+                "SPEC",
+                "PREFLIGHT",
+                "BUILD",
+                "TEST",
+                "REVIEW",
+                "FIX",
+                "SHIP"
+              ]
+            },
+            "justification": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "run-tool",
+      "properties": {
+        "type": {
+          "const": "run-tool"
+        },
+        "payload": {
+          "type": "object",
+          "required": [
+            "tool",
+            "input",
+            "justification"
+          ],
+          "properties": {
+            "agentId": {
+              "type": "string",
+              "maxLength": 128,
+              "pattern": "^agt_[A-Za-z0-9.-]+_[A-Za-z0-9_.-]+$"
+            },
+            "tool": {
+              "type": "string",
+              "minLength": 1
+            },
+            "input": {
+              "$ref": "#/$defs/JsonValue"
+            },
+            "justification": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "reconcile",
+      "properties": {
+        "type": {
+          "const": "reconcile"
+        },
+        "payload": {
+          "type": "object",
+          "required": [
+            "mode"
+          ],
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": [
+                "plan",
+                "apply"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "shutdown",
+      "properties": {
+        "type": {
+          "const": "shutdown"
+        },
+        "payload": {
+          "type": "object",
+          "required": [
+            "graceMs"
+          ],
+          "properties": {
+            "graceMs": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "agent.send",
+      "properties": {
+        "type": {
+          "const": "agent.send"
+        },
+        "payload": {
+          "type": "object",
+          "required": [
+            "agentId",
+            "text",
+            "delivery"
+          ],
+          "properties": {
+            "agentId": {
+              "type": "string",
+              "maxLength": 128,
+              "pattern": "^agt_[A-Za-z0-9.-]+_[A-Za-z0-9_.-]+$"
+            },
+            "text": {
+              "type": "string"
+            },
+            "delivery": {
+              "type": "string",
+              "enum": [
+                "steer",
+                "follow-up"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "a type added by a later minor version: readers MUST ignore it",
+      "properties": {
+        "type": {
+          "not": {
+            "enum": [
+              "start",
+              "status",
+              "inspect",
+              "tail",
+              "pause",
+              "resume",
+              "cancel",
+              "approve",
+              "deny",
+              "retry",
+              "skip",
+              "run-tool",
+              "reconcile",
+              "shutdown",
+              "agent.send"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "JsonValue": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        },
+        {
+          "type": "object",
+          "patternProperties": {
+            "^.*$": {
+              "$ref": "#/$defs/JsonValue"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

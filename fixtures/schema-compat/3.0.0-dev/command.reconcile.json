@@ -1,0 +1,15 @@
+{
+  "protocolVersion": "1.0",
+  "commandId": "cmd_0000000000000000000000000000000d",
+  "type": "reconcile",
+  "runId": "run_11111111111111111111111111111111",
+  "issuedAt": "2026-09-18T10:00:00.000Z",
+  "actor": {
+    "kind": "human",
+    "id": "enzo",
+    "transport": "cli"
+  },
+  "payload": {
+    "mode": "plan"
+  }
+}

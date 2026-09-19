@@ -1,0 +1,20 @@
+{
+  "protocolVersion": "1.0",
+  "eventId": "evt_00000000000000000000000000000050",
+  "sequence": 5,
+  "sub": 0,
+  "durability": "durable",
+  "timestamp": "2026-09-18T10:00:42.250Z",
+  "runId": "run_11111111111111111111111111111111",
+  "type": "run.paused",
+  "source": "human",
+  "causationId": "cmd_55555555555555555555555555555555",
+  "summary": "run paused by enzo",
+  "severity": "warning",
+  "payload": {
+    "commandId": "cmd_55555555555555555555555555555555",
+    "parkedAgents": ["agt_implementer_web"],
+    "inFlightEffects": ["eff_44444444444444444444444444444444"]
+  },
+  "redactions": []
+}

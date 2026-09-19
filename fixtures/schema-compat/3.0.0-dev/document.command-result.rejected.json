@@ -1,0 +1,15 @@
+{
+  "documentVersion": 1,
+  "commandId": "cmd_55555555555555555555555555555555",
+  "type": "skip",
+  "status": "rejected",
+  "error": {
+    "code": "permission/skip-not-allowed",
+    "class": "permission",
+    "message": "policy.skip does not list REVIEW",
+    "impact": "the run is unchanged",
+    "retryable": false,
+    "remediation": "Add REVIEW to policy.skip, or let the review run."
+  },
+  "lastSequence": 58
+}

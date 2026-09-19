@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cohorte.dev/schemas/3/auth-status.schema.json",
+  "title": "Cohorte authentication status (auth status --json)",
+  "type": "object",
+  "required": [
+    "documentVersion",
+    "generatedAt",
+    "runtime",
+    "providers"
+  ],
+  "properties": {
+    "documentVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "runtime": {
+      "type": "object",
+      "required": [
+        "id",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      }
+    },
+    "providers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "provider",
+          "state",
+          "subscription",
+          "billing",
+          "checkedAt"
+        ],
+        "properties": {
+          "provider": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "subscription": {
+            "type": "boolean"
+          },
+          "billing": {
+            "type": "string",
+            "enum": [
+              "plan-limits",
+              "metered",
+              "unknown"
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "accountLabel": {
+            "type": "string"
+          },
+          "accountLabelNote": {
+            "type": "string"
+          },
+          "caveat": {
+            "type": "string"
+          },
+          "checkedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "protocolVersion": "1.0",
+  "eventId": "evt_00000000000000000000000000000240",
+  "sequence": 36,
+  "sub": 0,
+  "durability": "durable",
+  "timestamp": "2026-09-18T10:00:42.250Z",
+  "runId": "run_11111111111111111111111111111111",
+  "type": "review.finding",
+  "source": "cohorte",
+  "phase": {
+    "phaseRunId": "phs_REVIEW_1",
+    "state": "REVIEW",
+    "iteration": 1
+  },
+  "agent": {
+    "agentId": "agt_reviewer_main",
+    "role": "reviewer",
+    "incarnation": 1,
+    "attempt": 1
+  },
+  "summary": "major finding kept: spec/AC-3 in apps/web/src/cart.ts",
+  "severity": "warning",
+  "payload": {
+    "finding": {
+      "id": "fnd_0123456789abcdef",
+      "severity": "major",
+      "kind": "spec-violation",
+      "rule": "spec/AC-3",
+      "location": {
+        "file": "apps/web/src/cart.ts",
+        "line": 42,
+        "endLine": 48,
+        "symbol": "totalOf"
+      },
+      "reproduction": "add two items with a 10% coupon: the total is rounded twice",
+      "expected": "the coupon applies once, on the sum",
+      "actual": "the coupon applies per line and again on the sum",
+      "confidence": 0.86,
+      "suggestedFix": "apply the coupon in totalOf only",
+      "scope": "in-scope"
+    },
+    "reviewer": {
+      "agentId": "agt_reviewer_main",
+      "role": "reviewer",
+      "incarnation": 1,
+      "attempt": 1
+    },
+    "disposition": "kept"
+  },
+  "redactions": []
+}

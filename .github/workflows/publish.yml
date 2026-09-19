@@ -9,130 +9,58 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write # create the vX.Y.Z tag + GitHub release
-  id-token: write # npm provenance / trusted publishing (OIDC)
+  contents: write
+  id-token: write
 
 jobs:
-  check:
-    name: Sanity check
+  ci:
+    name: V3 release gate
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
+
+  version:
+    name: Resolve V3 version
+    needs: ci
     runs-on: ubuntu-latest
     outputs:
-      should-publish: ${{ steps.version.outputs.changed }}
-      version: ${{ steps.version.outputs.local }}
+      version: ${{ steps.version.outputs.version }}
+      changed: ${{ steps.version.outputs.changed }}
     steps:
       - uses: actions/checkout@v5
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 24
-
-      - name: Syntax-check CLI + shared readers
+      - id: version
+        shell: bash
         run: |
-          node --check bin/cli.js bin/report.js
-          for f in lib/*.js; do node --check "$f"; done
-
-      # The same structural gate CI runs — publish must not outrun a red CI:
-      # this workflow has no dependency on the CI workflow's conclusion, so a
-      # merge whose CI fails would otherwise still ship to npm.
-      - name: Structural invariants (same gate as CI)
-        run: |
-          node scripts/validate-core.mjs
-          node scripts/test-workflows.mjs
-          node scripts/test-gate.mjs
-          node scripts/test-kanban.mjs
-          node scripts/test-lib.mjs
-          node scripts/test-metrics.mjs
-          node scripts/test-adapter.mjs
-          python3 -m py_compile core/hooks/gate.py
-          rm -rf core/hooks/__pycache__   # never let it reach the tarball
-
-      - name: Dry-run install + assert the gate hook (same gate as CI)
-        run: |
-          scratch=$(mktemp -d)
-          CLAUDE_CONFIG_DIR="$scratch/.claude" node bin/cli.js install --global
-          CLAUDE_CONFIG_DIR="$scratch/.claude" node bin/cli.js update --global
-          node scripts/assert-gate-hook.mjs "$scratch/.claude/settings.json"
-
-      - name: Verify package contents
-        run: |
-          npm pack --dry-run 2>&1 | tee /tmp/pack.txt
-          grep -q 'lib/doctor.js' /tmp/pack.txt   # the readers behind `cohorte doctor` must ship
-          if grep -qiE '__pycache__|\.pyc' /tmp/pack.txt; then
-            echo "::error::the npm tarball contains Python bytecode"; exit 1
-          fi
-
-      - name: Compare local vs published version
-        id: version
-        run: |
-          NAME=$(node -p "require('./package.json').name")
-          LOCAL=$(node -p "require('./package.json').version")
-          echo "local=$LOCAL" >> "$GITHUB_OUTPUT"
-          # Existence check, NOT a compare against the `latest` dist-tag: after a
-          # rollback of main, latest(1.4.0) != local(1.3.9) would re-publish the
-          # old version and silently DOWNGRADE every `npx cohorte@latest` user.
-          if npm view "$NAME@$LOCAL" version >/dev/null 2>&1; then
+          VERSION=$(node -p "require('./apps/cli/package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if npm view "cohorte@$VERSION" version >/dev/null 2>&1; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "Version $LOCAL already on the registry — skipping."
           else
-            LATEST=$(npm view "$NAME" version 2>/dev/null || echo "0.0.0")
-            node -e "const p=v=>v.split('.').map(Number);const[a,b]=[p('$LOCAL'),p('$LATEST')];const c=a[0]-b[0]||a[1]-b[1]||a[2]-b[2];if(c<=0){console.error('::error::local $LOCAL does not sort above published latest $LATEST — publishing would downgrade the latest tag');process.exit(1)}"
             echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "Version $LOCAL not yet published (latest is $LATEST) — will publish."
-          fi
-
-      - name: Require a CHANGELOG entry for the new version
-        if: steps.version.outputs.changed == 'true'
-        env:
-          VERSION: ${{ steps.version.outputs.local }}
-        run: |
-          if grep -qE "^## ${VERSION//./\\.}( |$)" CHANGELOG.md; then
-            echo "CHANGELOG.md has an entry for $VERSION."
-          else
-            echo "::error file=CHANGELOG.md::Missing '## $VERSION — <date>' section. Add the What's-new entry (shown by /cohorte-update-pipeline) before releasing."
-            exit 1
           fi
 
   publish:
-    name: Publish v${{ needs.check.outputs.version }}
-    needs: check
-    if: needs.check.outputs.should-publish == 'true'
+    name: Publish V3 ${{ needs.version.outputs.version }}
+    needs: version
+    if: needs.version.outputs.changed == 'true'
     runs-on: ubuntu-latest
     environment: npm-publish
     steps:
       - uses: actions/checkout@v5
-
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v5
         with:
           node-version: 24
+          cache: pnpm
           registry-url: https://registry.npmjs.org
-
-      # Token-less "trusted publishing" via OIDC needs npm >= 11.5.1.
-      # Node 24 bundles npm 11+; upgrade to latest for good measure (npm 12
-      # requires Node >= 22, hence node-version: 24 above). The trusted
-      # publisher for this repo/workflow (publish.yml, environment
-      # npm-publish) is configured on npmjs.com — no token, no secret.
-      - name: Ensure npm >= 11.5 for OIDC
-        run: |
-          npm install -g npm@latest
-          npm --version
-
-      - name: Publish to npm
-        run: npm publish --provenance --access public
-
+      - run: pnpm install --frozen-lockfile
+      - run: node scripts/build.ts --out .build/release
+      - run: npm publish .build/release/.publish --provenance --access public
       - name: Tag and create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ needs.check.outputs.version }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           git fetch --tags --quiet
-          if git rev-parse "v$VERSION" >/dev/null 2>&1; then
-            echo "tag v$VERSION already exists"
-          else
-            git tag "v$VERSION"
-            git push origin "v$VERSION"
-          fi
-          if gh release view "v$VERSION" >/dev/null 2>&1; then
-            echo "release v$VERSION already exists"
-          else
-            gh release create "v$VERSION" --title "v$VERSION" --generate-notes
-          fi
+          git tag "v$VERSION" 2>/dev/null || true
+          git push origin "v$VERSION" 2>/dev/null || true
+          gh release view "v$VERSION" >/dev/null 2>&1 || gh release create "v$VERSION" --title "v$VERSION" --generate-notes

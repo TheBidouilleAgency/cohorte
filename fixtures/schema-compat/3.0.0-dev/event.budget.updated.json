@@ -1,0 +1,31 @@
+{
+  "protocolVersion": "1.0",
+  "eventId": "evt_00000000000000000000000000000290",
+  "sequence": 41,
+  "sub": 0,
+  "durability": "durable",
+  "timestamp": "2026-09-18T10:00:42.250Z",
+  "runId": "run_11111111111111111111111111111111",
+  "type": "budget.updated",
+  "source": "cohorte",
+  "summary": "run budget: 80% of tokens",
+  "severity": "warning",
+  "payload": {
+    "scope": {
+      "level": "run",
+      "id": "run_11111111111111111111111111111111"
+    },
+    "consumed": {
+      "tokens": 1600000
+    },
+    "limit": {
+      "tokens": 2000000,
+      "modelRequests": 200,
+      "toolCalls": 600,
+      "wallClockMs": 3600000,
+      "fixRounds": 3
+    },
+    "threshold": 80
+  },
+  "redactions": []
+}

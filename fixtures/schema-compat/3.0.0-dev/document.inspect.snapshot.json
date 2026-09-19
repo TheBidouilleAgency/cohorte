@@ -1,0 +1,296 @@
+{
+  "documentVersion": 1,
+  "protocolVersion": "1.0",
+  "runId": "run_11111111111111111111111111111111",
+  "lastSequence": 57,
+  "kind": "snapshot",
+  "document": {
+    "documentVersion": 1,
+    "protocolVersion": "1.0",
+    "cohorteVersion": "3.0.0-dev",
+    "generatedAt": "2026-09-18T10:00:42.250Z",
+    "lastSequence": 57,
+    "run": {
+      "runId": "run_11111111111111111111111111111111",
+      "profile": "feature",
+      "title": "Checkout flow",
+      "spec": {
+        "id": "checkout-flow",
+        "kind": "feature",
+        "sha256": "2c26b46b68ffc68ff99b453c1d304134134cbbe6d5f7f1d0c1a0c8a4e2b1d9f0"
+      },
+      "state": "WAITING_APPROVAL",
+      "status": "waiting-approval",
+      "since": "2026-09-18T10:00:42.250Z",
+      "resumeTo": "BUILD",
+      "stop": {
+        "reason": "approval-required",
+        "detail": "a write outside the owned paths needs a decision",
+        "resumable": true,
+        "resumeRequires": "approval"
+      },
+      "iteration": {
+        "fixRounds": 0,
+        "maxFixRounds": 3,
+        "reviewRounds": 0
+      },
+      "host": {
+        "hostId": "host_a",
+        "alive": true,
+        "heartbeatAt": "2026-09-18T10:00:42.250Z",
+        "pid": 48211
+      },
+      "git": {
+        "base": {
+          "branch": "main",
+          "sha": "117ae8b0c1d2"
+        },
+        "integrationBranch": "cohorte/run_1/integration",
+        "integrationHead": "117ae8b0c1d2"
+      },
+      "plan": {
+        "profile": "feature",
+        "runtime": {
+          "id": "fake",
+          "version": "3.0.0-dev"
+        },
+        "trust": {
+          "policySha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+          "loosenedKeys": ["policy.network.provisioning"],
+          "grantedBy": "cli-flag"
+        },
+        "models": [
+          {
+            "role": "implementer",
+            "requested": {
+              "provider": "openai-codex",
+              "model": "gpt-5.5-codex",
+              "capability": "coding"
+            },
+            "thinking": "medium",
+            "authMode": "subscription",
+            "billing": "plan-limits",
+            "reason": "tier \"coding\" of the default routing table"
+          }
+        ],
+        "apiBillingEnabled": false,
+        "meteredProviders": [],
+        "sandbox": {
+          "level": "L1-os",
+          "backend": "seatbelt",
+          "filesystem": "enforced",
+          "network": "enforced-off"
+        },
+        "sandboxRequire": "best-effort",
+        "brainIsolation": "os",
+        "budgets": {
+          "run": {
+            "tokens": 2000000,
+            "modelRequests": 200,
+            "toolCalls": 600,
+            "wallClockMs": 3600000,
+            "fixRounds": 3
+          },
+          "perPhase": {
+            "tokens": 800000
+          },
+          "perAgent": {
+            "tokens": 400000,
+            "toolCalls": 200
+          },
+          "perProvider": {
+            "openai-codex": {
+              "estimatedQuotaPercent": 80
+            }
+          },
+          "perTool": {
+            "command": {
+              "toolCalls": 100
+            }
+          }
+        },
+        "network": {
+          "provisioning": true
+        },
+        "promptOverrides": [],
+        "unattended": false
+      },
+      "snapshotDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "startedAt": "2026-09-18T10:00:00.000Z"
+    },
+    "phases": [
+      {
+        "state": "PREFLIGHT",
+        "label": "Preflight",
+        "status": "completed",
+        "runs": [
+          {
+            "phaseRunId": "phs_PREFLIGHT_0",
+            "iteration": 0,
+            "status": "completed",
+            "startedAt": "2026-09-18T10:00:00.000Z",
+            "endedAt": "2026-09-18T10:00:00.000Z",
+            "outcome": "passed",
+            "agents": [],
+            "checks": []
+          }
+        ]
+      },
+      {
+        "state": "BUILD",
+        "label": "Build",
+        "status": "waiting-approval",
+        "runs": [
+          {
+            "phaseRunId": "phs_BUILD_0",
+            "iteration": 0,
+            "status": "waiting-approval",
+            "startedAt": "2026-09-18T10:00:00.000Z",
+            "agents": [
+              {
+                "agentId": "agt_implementer_web",
+                "role": "implementer",
+                "surface": "web",
+                "label": "implementer · web",
+                "status": "waiting-approval",
+                "lifecycle": "waiting",
+                "attempt": 1,
+                "incarnation": 1,
+                "model": {
+                  "requested": {
+                    "provider": "openai-codex",
+                    "model": "gpt-5.5-codex",
+                    "capability": "coding"
+                  },
+                  "effective": {
+                    "provider": "openai-codex",
+                    "model": "gpt-5.5-codex-2026-08"
+                  }
+                },
+                "authMode": "subscription",
+                "worktree": ".cohorte/worktrees/run_1/web",
+                "usage": {
+                  "tokens": 96400,
+                  "toolCalls": 22
+                },
+                "summary": "waiting for a decision on packages/shared/src/money.ts",
+                "pendingApproval": "apr_22222222222222222222222222222222",
+                "runtimeRef": {
+                  "runtime": "fake",
+                  "version": "3.0.0-dev",
+                  "sessionId": "session-0001",
+                  "transcriptRef": "runs/run_1/transcripts/agt_implementer_web-1.ndjson.gz"
+                }
+              }
+            ],
+            "checks": []
+          }
+        ]
+      },
+      {
+        "state": "TEST",
+        "label": "Test",
+        "status": "pending",
+        "runs": []
+      },
+      {
+        "state": "REVIEW",
+        "label": "Review",
+        "status": "pending",
+        "runs": []
+      },
+      {
+        "state": "FIX",
+        "label": "Fix",
+        "status": "pending",
+        "runs": []
+      },
+      {
+        "state": "SHIP",
+        "label": "Ship",
+        "status": "pending",
+        "runs": []
+      }
+    ],
+    "approvals": {
+      "pending": [
+        {
+          "approvalId": "apr_22222222222222222222222222222222",
+          "kind": "unowned-path",
+          "agentId": "agt_implementer_web",
+          "what": "write packages/shared/src/money.ts",
+          "since": "2026-09-18T10:00:42.250Z",
+          "expiresAt": "2026-09-18T11:00:00.000Z",
+          "cli": "cohorte approve apr_22222222222222222222222222222222"
+        }
+      ],
+      "resolved": 0
+    },
+    "budgets": [
+      {
+        "scope": {
+          "level": "run",
+          "id": "run_11111111111111111111111111111111"
+        },
+        "consumed": {
+          "tokens": 96400,
+          "toolCalls": 22
+        },
+        "limit": {
+          "tokens": 2000000,
+          "modelRequests": 200,
+          "toolCalls": 600,
+          "wallClockMs": 3600000,
+          "fixRounds": 3
+        }
+      }
+    ],
+    "usage": {
+      "tokens": {
+        "input": 380000,
+        "output": 28000,
+        "cacheRead": 4000,
+        "cacheWrite": 300,
+        "total": 412300
+      },
+      "monetaryCost": "not_applicable",
+      "byProvider": [
+        {
+          "provider": "openai-codex",
+          "authMode": "subscription",
+          "billing": "plan-limits",
+          "tokens": {
+            "input": 380000,
+            "output": 28000,
+            "cacheRead": 4000,
+            "cacheWrite": 300,
+            "total": 412300
+          },
+          "quota": {
+            "known": true,
+            "source": "response-headers",
+            "provider": "openai-codex",
+            "windows": [
+              {
+                "name": "5h",
+                "usedPercent": 37.5,
+                "resetsAt": "2026-09-18T14:00:00.000Z",
+                "limitLabel": "Plus"
+              }
+            ],
+            "observedAt": "2026-09-18T10:00:42.250Z"
+          },
+          "accountLabel": "e***@example.com"
+        }
+      ]
+    },
+    "locks": [
+      {
+        "scope": "slot",
+        "key": "web",
+        "mode": "exclusive"
+      }
+    ],
+    "inDoubtEffects": []
+  }
+}

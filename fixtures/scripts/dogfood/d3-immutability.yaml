@@ -1,0 +1,8 @@
+version: 1
+agents:
+  - match: {}
+    steps:
+      - do: await-message
+        timeoutMs: 1500
+      - do: submit
+        output: { status: clean }

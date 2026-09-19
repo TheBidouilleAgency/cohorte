@@ -1,0 +1,549 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cohorte.dev/schemas/3/fake-script.schema.json",
+  "title": "Cohorte fake-runtime script (--runtime fake --script)",
+  "$ref": "#/$defs/FakeScript",
+  "$defs": {
+    "JsonValue": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        },
+        {
+          "type": "object",
+          "patternProperties": {
+            "^.*$": {
+              "$ref": "#/$defs/JsonValue"
+            }
+          }
+        }
+      ]
+    },
+    "FakeStep": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "do",
+            "text"
+          ],
+          "properties": {
+            "do": {
+              "type": "string",
+              "const": "say"
+            },
+            "text": {
+              "type": "string"
+            },
+            "chunks": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "do",
+            "text"
+          ],
+          "properties": {
+            "do": {
+              "type": "string",
+              "const": "think"
+            },
+            "text": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "do",
+            "tool",
+            "input"
+          ],
+          "properties": {
+            "do": {
+              "type": "string",
+              "const": "tool"
+            },
+            "tool": {
+              "type": "string"
+            },
+            "input": {
+              "$ref": "#/$defs/JsonValue"
+            },
+            "expect": {
+              "type": "object",
+              "properties": {
+                "isError": {
+                  "type": "boolean"
+                },
+                "textIncludes": {
+                  "type": "string"
+                }
+              }
+            },
+            "onDenied": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/FakeStep"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "do",
+            "output"
+          ],
+          "properties": {
+            "do": {
+              "type": "string",
+              "const": "submit"
+            },
+            "output": {
+              "$ref": "#/$defs/JsonValue"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "do",
+            "tokens"
+          ],
+          "properties": {
+            "do": {
+              "type": "string",
+              "const": "usage"
+            },
+            "tokens": {
+              "type": "object",
+              "properties": {
+                "input": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "output": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "cacheRead": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "cacheWrite": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "total": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "do"
+          ],
+          "properties": {
+            "do": {
+              "type": "string",
+              "const": "await-message"
+            },
+            "timeoutMs": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "do",
+            "error"
+          ],
+          "properties": {
+            "do": {
+              "type": "string",
+              "const": "fail"
+            },
+            "error": {
+              "type": "object",
+              "required": [
+                "class",
+                "code",
+                "retryable"
+              ],
+              "properties": {
+                "class": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": "configuration"
+                    },
+                    {
+                      "type": "string",
+                      "const": "validation"
+                    },
+                    {
+                      "type": "string",
+                      "const": "permission"
+                    },
+                    {
+                      "type": "string",
+                      "const": "security"
+                    },
+                    {
+                      "type": "string",
+                      "const": "provider-transient"
+                    },
+                    {
+                      "type": "string",
+                      "const": "provider-terminal"
+                    },
+                    {
+                      "type": "string",
+                      "const": "tool-transient"
+                    },
+                    {
+                      "type": "string",
+                      "const": "tool-terminal"
+                    },
+                    {
+                      "type": "string",
+                      "const": "conflict"
+                    },
+                    {
+                      "type": "string",
+                      "const": "budget"
+                    },
+                    {
+                      "type": "string",
+                      "const": "timeout"
+                    },
+                    {
+                      "type": "string",
+                      "const": "corruption"
+                    },
+                    {
+                      "type": "string",
+                      "const": "human-required"
+                    }
+                  ]
+                },
+                "code": {
+                  "type": "string",
+                  "pattern": "^[a-z]+(?:-[a-z]+)*/[a-z0-9]+(?:-[a-z0-9]+)*$"
+                },
+                "retryable": {
+                  "type": "boolean"
+                },
+                "retryAfterMs": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "do",
+            "ms"
+          ],
+          "properties": {
+            "do": {
+              "type": "string",
+              "const": "hang"
+            },
+            "ms": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0
+                },
+                {
+                  "type": "string",
+                  "const": "forever"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "do",
+            "at"
+          ],
+          "properties": {
+            "do": {
+              "type": "string",
+              "const": "crash"
+            },
+            "at": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "before-next-step"
+                },
+                {
+                  "type": "string",
+                  "const": "during-tool"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "do"
+          ],
+          "properties": {
+            "do": {
+              "type": "string",
+              "const": "stop-without-result"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "do"
+          ],
+          "properties": {
+            "do": {
+              "type": "string",
+              "const": "model-request"
+            },
+            "status": {
+              "type": "integer",
+              "minimum": 100,
+              "maximum": 599
+            },
+            "quota": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "known"
+                  ],
+                  "properties": {
+                    "known": {
+                      "type": "boolean",
+                      "const": false
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "known",
+                    "source",
+                    "provider",
+                    "windows",
+                    "observedAt"
+                  ],
+                  "properties": {
+                    "known": {
+                      "type": "boolean",
+                      "const": true
+                    },
+                    "source": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "const": "response-headers"
+                        },
+                        {
+                          "type": "string",
+                          "const": "error"
+                        }
+                      ]
+                    },
+                    "provider": {
+                      "type": "string"
+                    },
+                    "windows": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "name"
+                        ],
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "usedPercent": {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          "resetsAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+                          },
+                          "limitLabel": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "observedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+                    }
+                  }
+                }
+              ]
+            },
+            "authSource": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "oauth"
+                },
+                {
+                  "type": "string",
+                  "const": "api-key"
+                },
+                {
+                  "type": "string",
+                  "const": "none"
+                }
+              ]
+            },
+            "baseUrl": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "FakeScript": {
+      "type": "object",
+      "required": [
+        "version",
+        "agents"
+      ],
+      "properties": {
+        "version": {
+          "type": "number",
+          "const": 1
+        },
+        "agents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "match",
+              "steps"
+            ],
+            "properties": {
+              "match": {
+                "type": "object",
+                "properties": {
+                  "role": {
+                    "type": "string"
+                  },
+                  "agentId": {
+                    "type": "string"
+                  },
+                  "incarnation": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      {
+                        "type": "string",
+                        "const": "any"
+                      }
+                    ]
+                  },
+                  "attempt": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              },
+              "steps": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/FakeStep"
+                }
+              }
+            }
+          }
+        },
+        "defaults": {
+          "type": "object",
+          "properties": {
+            "usagePerTurn": {
+              "type": "object",
+              "required": [
+                "input",
+                "output",
+                "cacheRead",
+                "cacheWrite",
+                "total"
+              ],
+              "properties": {
+                "input": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "output": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "cacheRead": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "cacheWrite": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "total": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            "model": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

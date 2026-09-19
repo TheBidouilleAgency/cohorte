@@ -13,6 +13,10 @@
 
 </div>
 
+> **V3 migration status:** the V3 runtime-independent pipeline is under active migration. V2 sources are retained
+> under [`legacy/v2`](legacy/v2); V3 builds are immutable, snapshot-pinned and can be exercised offline with the
+> fake runtime. See [`docs/v3`](docs/v3/PLAN.md) for the implementation plan and release gates.
+
 A **portable, stack-agnostic multi-agent pipeline** for your coding agent — Claude Code, Codex CLI,
 Cursor, Gemini CLI or OpenCode. Install it once globally, then one command per project
 (`/cohorte-init-pipeline`) adapts it to that project's stack.

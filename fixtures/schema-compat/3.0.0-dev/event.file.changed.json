@@ -1,0 +1,39 @@
+{
+  "protocolVersion": "1.0",
+  "eventId": "evt_00000000000000000000000000000200",
+  "sequence": 32,
+  "sub": 0,
+  "durability": "durable",
+  "timestamp": "2026-09-18T10:00:42.250Z",
+  "runId": "run_11111111111111111111111111111111",
+  "type": "file.changed",
+  "source": "cohorte",
+  "phase": {
+    "phaseRunId": "phs_BUILD_0",
+    "state": "BUILD",
+    "iteration": 0
+  },
+  "agent": {
+    "agentId": "agt_implementer_web",
+    "role": "implementer",
+    "surface": "web",
+    "incarnation": 1,
+    "attempt": 1
+  },
+  "summary": "1 file changed by a command in slot web",
+  "severity": "info",
+  "payload": {
+    "slot": "web",
+    "files": [
+      {
+        "path": "apps/web/src/cart.test.ts",
+        "op": "create",
+        "afterSha256": "2c26b46b68ffc68ff99b453c1d304134134cbbe6d5f7f1d0c1a0c8a4e2b1d9f0",
+        "bytes": 912
+      }
+    ],
+    "detectedBy": "post-command-scan",
+    "attributedTo": "tc_1_7"
+  },
+  "redactions": []
+}

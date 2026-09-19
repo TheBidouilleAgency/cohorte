@@ -1,0 +1,42 @@
+{
+  "protocolVersion": "1.0",
+  "eventId": "evt_000000000000000000000000000002e0",
+  "sequence": 46,
+  "sub": 0,
+  "durability": "durable",
+  "timestamp": "2026-09-18T10:00:42.250Z",
+  "runId": "run_11111111111111111111111111111111",
+  "type": "escalation.applied",
+  "source": "cohorte",
+  "phase": {
+    "phaseRunId": "phs_BUILD_0",
+    "state": "BUILD",
+    "iteration": 0
+  },
+  "agent": {
+    "agentId": "agt_implementer_web",
+    "role": "implementer",
+    "surface": "web",
+    "incarnation": 1,
+    "attempt": 1
+  },
+  "summary": "implementer escalated from coding to reasoning",
+  "severity": "warning",
+  "payload": {
+    "agent": {
+      "agentId": "agt_implementer_web",
+      "role": "implementer",
+      "surface": "web",
+      "incarnation": 1,
+      "attempt": 1
+    },
+    "step": {
+      "kind": "model-tier",
+      "role": "implementer",
+      "from": "coding",
+      "to": "reasoning"
+    },
+    "because": "the same check failed twice"
+  },
+  "redactions": []
+}

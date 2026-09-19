@@ -1,0 +1,51 @@
+{
+  "documentVersion": 1,
+  "protocolVersion": "1.0",
+  "project": {
+    "id": "shop",
+    "root": "/work/shop"
+  },
+  "runs": [
+    {
+      "runId": "run_11111111111111111111111111111111",
+      "profile": "feature",
+      "title": "Checkout flow",
+      "state": "WAITING_APPROVAL",
+      "status": "waiting-approval",
+      "since": "2026-09-18T10:00:42.250Z",
+      "startedAt": "2026-09-18T10:00:00.000Z",
+      "stop": {
+        "reason": "approval-required",
+        "detail": "a write outside the owned paths needs a decision",
+        "resumable": true,
+        "resumeRequires": "approval"
+      }
+    },
+    {
+      "runId": "run_00000000000000000000000000000000",
+      "profile": "bugfix",
+      "title": "Rounding of totals",
+      "state": "COMPLETED",
+      "status": "completed",
+      "since": "2026-09-18T10:00:00.000Z",
+      "startedAt": "2026-09-17T09:00:00.000Z",
+      "endedAt": "2026-09-17T09:21:30.000Z",
+      "stop": {
+        "reason": "review-clean",
+        "detail": "review round 2 found nothing blocking",
+        "resumable": false
+      }
+    }
+  ],
+  "pendingApprovals": [
+    {
+      "approvalId": "apr_22222222222222222222222222222222",
+      "kind": "unowned-path",
+      "agentId": "agt_implementer_web",
+      "what": "write packages/shared/src/money.ts",
+      "since": "2026-09-18T10:00:42.250Z",
+      "expiresAt": "2026-09-18T11:00:00.000Z",
+      "cli": "cohorte approve apr_22222222222222222222222222222222"
+    }
+  ]
+}

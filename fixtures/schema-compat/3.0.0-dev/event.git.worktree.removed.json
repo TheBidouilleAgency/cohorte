@@ -1,0 +1,18 @@
+{
+  "protocolVersion": "1.0",
+  "eventId": "evt_00000000000000000000000000000320",
+  "sequence": 50,
+  "sub": 0,
+  "durability": "durable",
+  "timestamp": "2026-09-18T10:00:42.250Z",
+  "runId": "run_11111111111111111111111111111111",
+  "type": "git.worktree.removed",
+  "source": "cohorte",
+  "summary": "worktree web removed",
+  "severity": "info",
+  "payload": {
+    "slot": "web",
+    "path": ".cohorte/worktrees/run_1/web"
+  },
+  "redactions": []
+}

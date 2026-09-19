@@ -1,0 +1,21 @@
+{
+  "protocolVersion": "1.0",
+  "eventId": "evt_00000000000000000000000000000370",
+  "sequence": 55,
+  "sub": 0,
+  "durability": "durable",
+  "timestamp": "2026-09-18T10:00:42.250Z",
+  "runId": "run_11111111111111111111111111111111",
+  "type": "lock.acquired",
+  "source": "cohorte",
+  "summary": "slot lock web acquired",
+  "severity": "info",
+  "payload": {
+    "scope": "slot",
+    "key": "web",
+    "mode": "exclusive",
+    "owner": "run_11111111111111111111111111111111/agt_implementer_web",
+    "fencingToken": 4
+  },
+  "redactions": []
+}

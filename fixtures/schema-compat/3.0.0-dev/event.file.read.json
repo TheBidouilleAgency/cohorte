@@ -1,0 +1,35 @@
+{
+  "protocolVersion": "1.0",
+  "eventId": "evt_000000000000000000000000000001e0",
+  "sequence": 30,
+  "sub": 0,
+  "durability": "durable",
+  "timestamp": "2026-09-18T10:00:42.250Z",
+  "runId": "run_11111111111111111111111111111111",
+  "type": "file.read",
+  "source": "cohorte",
+  "phase": {
+    "phaseRunId": "phs_BUILD_0",
+    "state": "BUILD",
+    "iteration": 0
+  },
+  "agent": {
+    "agentId": "agt_implementer_web",
+    "role": "implementer",
+    "surface": "web",
+    "incarnation": 1,
+    "attempt": 1
+  },
+  "summary": "read apps/web/src/cart.ts",
+  "severity": "info",
+  "payload": {
+    "toolCallId": "tc_1_2",
+    "file": {
+      "path": "apps/web/src/cart.ts",
+      "op": "read",
+      "afterSha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+      "bytes": 1794
+    }
+  },
+  "redactions": []
+}

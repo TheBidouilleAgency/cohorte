@@ -1,0 +1,35 @@
+{
+  "protocolVersion": "1.0",
+  "eventId": "evt_00000000000000000000000000000030",
+  "sequence": 3,
+  "sub": 0,
+  "durability": "durable",
+  "timestamp": "2026-09-18T10:00:42.250Z",
+  "runId": "run_11111111111111111111111111111111",
+  "type": "pipeline.failed",
+  "source": "cohorte",
+  "summary": "run failed in TEST: pnpm test exited with code 1",
+  "severity": "error",
+  "payload": {
+    "state": "FAILED",
+    "error": {
+      "code": "tool-terminal/command-failed",
+      "class": "tool-terminal",
+      "message": "pnpm test exited with code 1",
+      "impact": "the TEST phase cannot pass until the failing test is fixed",
+      "retryable": false,
+      "remediation": "Run \"cohorte inspect\" on the failed check and fix the test.",
+      "details": {
+        "exitCode": 1
+      }
+    },
+    "stop": {
+      "reason": "identical-failure",
+      "detail": "the same check failed twice",
+      "resumable": true,
+      "resumeRequires": "human-ack"
+    },
+    "checkpointSequence": 118
+  },
+  "redactions": []
+}

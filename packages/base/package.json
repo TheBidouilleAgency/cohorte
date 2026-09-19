@@ -1,0 +1,24 @@
+{
+  "name": "@cohorte/base",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Leaf vocabulary shared by both frontiers: branded ids, error taxonomy, usage, Sealed<T>, canonical JSON.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./*": {
+      "types": "./src/*/index.ts",
+      "default": "./src/*/index.ts"
+    }
+  },
+  "dependencies": {
+    "typebox": "catalog:"
+  },
+  "devDependencies": {
+    "@cohorte/testkit": "workspace:*"
+  }
+}

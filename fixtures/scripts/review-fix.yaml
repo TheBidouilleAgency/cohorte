@@ -1,0 +1,10 @@
+version: 1
+agents:
+  - match: { role: reviewer }
+    steps:
+      - do: submit
+        output: { findings: [{ severity: minor, location: packages/frontend/index.ts, reproduction: missing assertion }] }
+  - match: { role: fixer }
+    steps:
+      - do: submit
+        output: { status: fixed }

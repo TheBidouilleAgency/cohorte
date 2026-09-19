@@ -1,0 +1,15 @@
+# schema: spec
+# expect: 
+# why: a frozen spec carries its sha256
+id: checkout-coupons
+kind: feature
+status: frozen
+title: Coupons at checkout
+acceptance:
+  - a valid coupon lowers the total
+  - an expired coupon is refused with a message
+surfaces:
+  frontend: { tasks: [coupon field on the cart page] }
+  backend: { tasks: [POST /coupons/apply] }
+contract: contracts/coupons.md
+openQuestions: []

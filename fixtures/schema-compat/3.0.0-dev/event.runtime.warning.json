@@ -1,0 +1,37 @@
+{
+  "protocolVersion": "1.0",
+  "eventId": "evt_00000000000000000000000000000150",
+  "sequence": 21,
+  "sub": 0,
+  "durability": "durable",
+  "timestamp": "2026-09-18T10:00:42.250Z",
+  "runId": "run_11111111111111111111111111111111",
+  "type": "runtime.warning",
+  "source": "runtime",
+  "phase": {
+    "phaseRunId": "phs_BUILD_0",
+    "state": "BUILD",
+    "iteration": 0
+  },
+  "agent": {
+    "agentId": "agt_implementer_web",
+    "role": "implementer",
+    "surface": "web",
+    "incarnation": 1,
+    "attempt": 1
+  },
+  "summary": "runtime warning: unmapped stop reason",
+  "severity": "warning",
+  "payload": {
+    "agent": {
+      "agentId": "agt_implementer_web",
+      "role": "implementer",
+      "surface": "web",
+      "incarnation": 1,
+      "attempt": 1
+    },
+    "code": "unmapped-stop-reason",
+    "message": "the engine reported a stop reason this adapter does not know; mapped to \"error\""
+  },
+  "redactions": []
+}

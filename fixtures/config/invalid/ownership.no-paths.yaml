@@ -1,0 +1,4 @@
+# schema: ownership
+# expect: /surfaces/frontend/paths
+surfaces:
+  frontend: { paths: [], owners: [implementer], reviewers: [] }

@@ -1,0 +1,46 @@
+{
+  "protocolVersion": "1.0",
+  "eventId": "evt_000000000000000000000000000001c0",
+  "sequence": 28,
+  "sub": 0,
+  "durability": "durable",
+  "timestamp": "2026-09-18T10:00:42.250Z",
+  "runId": "run_11111111111111111111111111111111",
+  "type": "tool.started",
+  "source": "cohorte",
+  "phase": {
+    "phaseRunId": "phs_BUILD_0",
+    "state": "BUILD",
+    "iteration": 0
+  },
+  "agent": {
+    "agentId": "agt_implementer_web",
+    "role": "implementer",
+    "surface": "web",
+    "incarnation": 1,
+    "attempt": 1
+  },
+  "summary": "command started: pnpm test",
+  "severity": "info",
+  "payload": {
+    "toolCallId": "tc_1_7",
+    "tool": "command",
+    "effectId": "eff_44444444444444444444444444444444",
+    "decision": "allow-once",
+    "ruleId": "command/allowlist",
+    "grantId": "grant_7",
+    "normalizedArgs": {
+      "argv": ["pnpm", "test"],
+      "cwd": ".cohorte/worktrees/run_1/web"
+    },
+    "replayClass": "verifiable",
+    "sandbox": {
+      "level": "L1-os",
+      "backend": "seatbelt",
+      "filesystem": "enforced",
+      "network": "enforced-off"
+    },
+    "replayOfApproval": "apr_22222222222222222222222222222222"
+  },
+  "redactions": []
+}

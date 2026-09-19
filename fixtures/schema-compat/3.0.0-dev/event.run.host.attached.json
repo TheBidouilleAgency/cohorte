@@ -1,0 +1,21 @@
+{
+  "protocolVersion": "1.0",
+  "eventId": "evt_00000000000000000000000000000080",
+  "sequence": 8,
+  "sub": 0,
+  "durability": "durable",
+  "timestamp": "2026-09-18T10:00:42.250Z",
+  "runId": "run_11111111111111111111111111111111",
+  "type": "run.host.attached",
+  "source": "cohorte",
+  "summary": "host host_b attached (takeover)",
+  "severity": "info",
+  "payload": {
+    "hostId": "host_b",
+    "pid": 48302,
+    "cohorteVersion": "3.0.0-dev",
+    "fencingToken": 4,
+    "takeover": true
+  },
+  "redactions": []
+}
