@@ -1,6 +1,16 @@
 // DESIGN 2.6.3 step 8: use-time re-verification, inside the per-slot effect mutex. S-06 (symlink swapped between
 // gate and use) lives here: it is a property of `openVerified`, not of `resolve()`.
-import { chmodSync, closeSync, mkdirSync, readFileSync, readSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  closeSync,
+  mkdirSync,
+  readFileSync,
+  readSync,
+  renameSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { test } from '@cohorte/testkit';
 import { describe, expect } from 'vitest';
@@ -56,7 +66,8 @@ describe('openVerified', () => {
     if (!gate.ok) return;
     const { unlinkSync } = await import('node:fs');
     unlinkSync(join(tempDir, 'a.txt'));
-    writeFileSync(join(tempDir, 'a.txt'), 'second'); // a fresh inode under the same name
+    writeFileSync(join(tempDir, 'replacement.txt'), 'second');
+    renameSync(join(tempDir, 'replacement.txt'), join(tempDir, 'a.txt')); // a distinct inode under the same name
     const opened = openVerified(gate.value.canonical, gate.value.identity, 'read');
     expect(opened.ok).toBe(false);
   });

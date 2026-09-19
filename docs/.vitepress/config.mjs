@@ -33,6 +33,7 @@ export default defineConfig({
             { text: 'Why not just ask your agent?', link: '/guide/why-cohorte' },
             { text: 'What is Cohorte?', link: '/guide/what-is-cohorte' },
             { text: 'Getting started', link: '/guide/getting-started' },
+            { text: 'Maintainer guide', link: '/guide/maintainers' },
           ],
         },
         {

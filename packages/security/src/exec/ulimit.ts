@@ -28,10 +28,10 @@
 // `outputSha256`, pushed to the model through `onChunk`, and put at the head of `tail`).
 const ULIMIT_REFUSED_EXIT = 126;
 const ULIMIT_WRAPPER_SCRIPT =
-  `[ -n "$1" ] && { ulimit -t "$1" 2>/dev/null || exit ${ULIMIT_REFUSED_EXIT}; }; ` +
-  `[ -n "$2" ] && { ulimit -f "$2" 2>/dev/null || exit ${ULIMIT_REFUSED_EXIT}; }; ` +
-  `[ -n "$3" ] && { ulimit -n "$3" 2>/dev/null || exit ${ULIMIT_REFUSED_EXIT}; }; ` +
-  `[ -n "$4" ] && { ulimit -u "$4" 2>/dev/null || exit ${ULIMIT_REFUSED_EXIT}; }; ` +
+  `[ -n "$1" ] && { ulimit -S -t "$1" 2>/dev/null || exit ${ULIMIT_REFUSED_EXIT}; }; ` +
+  `[ -n "$2" ] && { ulimit -S -f "$2" 2>/dev/null || exit ${ULIMIT_REFUSED_EXIT}; }; ` +
+  `[ -n "$3" ] && { ulimit -S -n "$3" 2>/dev/null || exit ${ULIMIT_REFUSED_EXIT}; }; ` +
+  `[ -n "$4" ] && { ulimit -S -u "$4" 2>/dev/null || exit ${ULIMIT_REFUSED_EXIT}; }; ` +
   'shift 4; exec /usr/bin/env -u PWD -u SHLVL "$0" "$@"';
 
 /**
@@ -80,15 +80,16 @@ const toIntArg = (value: number | undefined): string =>
   value === undefined ? '' : String(Math.max(0, Math.trunc(value)));
 
 /**
- * macOS `ulimit -f` truncates in 1 KiB blocks (verified: `<SCRATCH>/understand/toolchain.md` §8: `ulimit -f 8`
- * truncated a 64 KiB write at exactly 8192 bytes). At least one block once a POSITIVE byte limit was asked for —
+ * `ulimit -f` uses 1 KiB blocks on macOS and 512-byte blocks on Linux (the POSIX shells expose different units).
+ * At least one block once a POSITIVE byte limit was asked for —
  * but `fileSizeBytes: 0` is a request in its own right ("this command may create no file at all"), and rounding it
  * up to one block would hand the caller 1024 writable bytes while `guarantees` still claims the limit applied.
  */
 const toBlockArg = (bytes: number | undefined): string => {
   if (bytes === undefined) return '';
   if (bytes <= 0) return '0';
-  return String(Math.max(1, Math.ceil(bytes / 1024)));
+  const blockSize = process.platform === 'linux' ? 512 : 1024;
+  return String(Math.max(1, Math.ceil(bytes / blockSize)));
 };
 
 /**

@@ -17,6 +17,9 @@
 > under [`legacy/v2`](legacy/v2); V3 builds are immutable, snapshot-pinned and can be exercised offline with the
 > fake runtime. See [`docs/v3`](docs/v3/PLAN.md) for the implementation plan and release gates.
 
+For maintainers, see the [maintenance and release guide](docs/guide/maintainers.md) for the architecture, test
+matrix, troubleshooting, PR workflow and npm/GitHub release procedure.
+
 A **portable, stack-agnostic multi-agent pipeline** for your coding agent — Claude Code, Codex CLI,
 Cursor, Gemini CLI or OpenCode. Install it once globally, then one command per project
 (`/cohorte-init-pipeline`) adapts it to that project's stack.
