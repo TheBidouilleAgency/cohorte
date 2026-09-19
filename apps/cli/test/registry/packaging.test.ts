@@ -208,6 +208,7 @@ describe('a real build', () => {
     expect(pkg.license).toBe('AGPL-3.0-only');
     expect(pkg.type).toBe('module');
     expect(pkg.files).toEqual(['dist', 'assets']);
+    expect(pkg.bin).toEqual({ cohorte: 'dist/cli.mjs' });
   });
 
   test('every published dependency is an EXACT version, and no @cohorte/* name leaks', () => {

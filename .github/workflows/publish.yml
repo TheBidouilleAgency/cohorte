@@ -54,7 +54,7 @@ jobs:
           registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile
       - run: node scripts/build.ts --out .build/release
-      - run: npm publish .build/release/.publish --provenance --access public
+      - run: npm publish .build/release/.publish --provenance --access public --tag dev
       - name: Tag and create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

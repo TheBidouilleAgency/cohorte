@@ -36,6 +36,10 @@ function resolvedVersion(appNodeModules: string, name: string): string {
   return pkg.version;
 }
 
+function normalizedBin(bin: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(bin).map(([name, target]) => [name, target.replace(/^\.\//, '')]));
+}
+
 export function stagePublish(options: StagePublishOptions): void {
   const { repoRoot, appDir, distDir, assetsDir, publishDir } = options;
   if (existsSync(publishDir)) rmSync(publishDir, { recursive: true, force: true });
@@ -69,7 +73,9 @@ export function stagePublish(options: StagePublishOptions): void {
     version: appPkg.version,
     license: appPkg.license,
     type: appPkg.type,
-    bin: appPkg.bin,
+    // npm 11 warns that a leading `./` is invalid and normalizes it away during publish. Write the normalized
+    // relative path ourselves so the warning cannot be mistaken for a dropped CLI entry point.
+    bin: normalizedBin(appPkg.bin),
     files: ['dist', 'assets'],
     engines: appPkg.engines,
     dependencies,
