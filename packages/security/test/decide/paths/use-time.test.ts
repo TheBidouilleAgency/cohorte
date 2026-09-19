@@ -61,12 +61,12 @@ describe('openVerified', () => {
 
   test('an identity swap onto a DIFFERENT regular file (no symlink involved) is also caught', async ({ tempDir }) => {
     writeFileSync(join(tempDir, 'a.txt'), 'first');
+    writeFileSync(join(tempDir, 'replacement.txt'), 'second');
     const gate = resolverFor(tempDir).resolve('a.txt', tempDir as CanonicalPath, 'read');
     expect(gate.ok).toBe(true);
     if (!gate.ok) return;
     const { unlinkSync } = await import('node:fs');
     unlinkSync(join(tempDir, 'a.txt'));
-    writeFileSync(join(tempDir, 'replacement.txt'), 'second');
     renameSync(join(tempDir, 'replacement.txt'), join(tempDir, 'a.txt')); // a distinct inode under the same name
     const opened = openVerified(gate.value.canonical, gate.value.identity, 'read');
     expect(opened.ok).toBe(false);

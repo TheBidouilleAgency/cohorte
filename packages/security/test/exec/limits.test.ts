@@ -25,6 +25,13 @@ function kernelRefusesProcessLimit(value: number): boolean {
   return spawnSync('/bin/sh', ['-c', `ulimit -u ${value}`], { stdio: 'ignore' }).status !== 0;
 }
 
+function currentUserProcessHardLimit(): number | undefined {
+  const out = spawnSync('/bin/sh', ['-c', 'ulimit -Hu'], { encoding: 'utf8' });
+  if (out.status !== 0) return undefined;
+  const value = Number.parseInt(out.stdout.trim(), 10);
+  return Number.isFinite(value) ? value : undefined;
+}
+
 // Spawns up to ATTEMPTS children as fast as possible; each one exits immediately. Reports how many succeeded vs.
 // failed to fork (EAGAIN once the ulimit is hit), so an enforced bound is REPORTED rather than silently absorbed.
 const forkBombScript = (attempts: number): string =>
@@ -55,7 +62,8 @@ describe('S-24: fork bomb bounded where processes is enforced, reported otherwis
     const unboundedReport = JSON.parse(unbounded.tail) as { spawned: number; failed: number };
     expect(unboundedReport.spawned + unboundedReport.failed).toBe(attempts);
 
-    const bound = currentUserProcessCount() + 5;
+    const hardLimit = currentUserProcessHardLimit();
+    const bound = Math.min(hardLimit ?? Number.MAX_SAFE_INTEGER, currentUserProcessCount() + 16);
     const bounded = await executor.run(
       nodeRequest(canonical(tempDir), forkBombScript(attempts), {
         timeoutMs: 15_000,
@@ -77,7 +85,12 @@ describe('all four rlimits of DESIGN 2.6.6 reach the program', () => {
       ...nodeRequest(canonical(tempDir), ''),
       file: SH_BIN,
       args: ['-c', 'ulimit -t; ulimit -f; ulimit -n; ulimit -u'],
-      limits: { cpuSeconds: 30, fileSizeBytes: 8 * 1024, openFiles: 64, processes: 128 },
+      limits: {
+        cpuSeconds: 30,
+        fileSizeBytes: 8 * 1024,
+        openFiles: 64,
+        processes: Math.min(currentUserProcessHardLimit() ?? 128, 128),
+      },
     };
     const executor = createExecutor({ redactor: fakeRedactor(), pids: fakePidRegistry(), clock: systemClock });
 
@@ -85,7 +98,12 @@ describe('all four rlimits of DESIGN 2.6.6 reach the program', () => {
 
     expect(result.outcome).toBe('ok');
     // `ulimit -f` is counted in 1 KiB blocks, which is why `fileSizeBytes` is rounded up to whole blocks.
-    expect(result.tail.trim().split('\n')).toEqual(['30', '8', '64', '128']);
+    expect(result.tail.trim().split('\n')).toEqual([
+      '30',
+      '8',
+      '64',
+      String(Math.min(currentUserProcessHardLimit() ?? 128, 128)),
+    ]);
   }, 10_000);
 
   // `fileSizeBytes: 0` is a request, not an absence: "this command may create no file at all" is precisely what

@@ -28,10 +28,10 @@
 // `outputSha256`, pushed to the model through `onChunk`, and put at the head of `tail`).
 const ULIMIT_REFUSED_EXIT = 126;
 const ULIMIT_WRAPPER_SCRIPT =
-  `[ -n "$1" ] && { ulimit -S -t "$1" 2>/dev/null || exit ${ULIMIT_REFUSED_EXIT}; }; ` +
-  `[ -n "$2" ] && { ulimit -S -f "$2" 2>/dev/null || exit ${ULIMIT_REFUSED_EXIT}; }; ` +
-  `[ -n "$3" ] && { ulimit -S -n "$3" 2>/dev/null || exit ${ULIMIT_REFUSED_EXIT}; }; ` +
-  `[ -n "$4" ] && { ulimit -S -u "$4" 2>/dev/null || exit ${ULIMIT_REFUSED_EXIT}; }; ` +
+  `[ -n "$1" ] && { ulimit -t "$1" 2>/dev/null || exit ${ULIMIT_REFUSED_EXIT}; }; ` +
+  `[ -n "$2" ] && { ulimit -f "$2" 2>/dev/null || exit ${ULIMIT_REFUSED_EXIT}; }; ` +
+  `[ -n "$3" ] && { ulimit -n "$3" 2>/dev/null || exit ${ULIMIT_REFUSED_EXIT}; }; ` +
+  `[ -n "$4" ] && { ulimit -u "$4" 2>/dev/null || exit ${ULIMIT_REFUSED_EXIT}; }; ` +
   'shift 4; exec /usr/bin/env -u PWD -u SHLVL "$0" "$@"';
 
 /**

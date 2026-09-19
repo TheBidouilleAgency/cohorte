@@ -7,7 +7,7 @@ agents:
         input: { path: RUNTIME_INSTALL, content: forbidden }
       - do: tool
         tool: write_file
-        input: { path: ../../outside.txt, content: forbidden }
+        input: { path: TARGET_ROOT/.cohorte/ownership.yaml, content: forbidden }
       - do: tool
         tool: write_file
         input: { path: TARGET_ROOT/runtime-link/dist/cli.mjs, content: forbidden }
