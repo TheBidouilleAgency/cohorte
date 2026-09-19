@@ -314,15 +314,19 @@ describe('the start token survives the ulimit wrapper `exec` (round trip through
   }) => {
     const pids = fakePidRegistry();
     let observed: Promise<string | undefined> = Promise.resolve(undefined);
-    const req = nodeRequest(canonical(tempDir), 'process.stdout.write("RUNNING");setTimeout(() => {}, 400);', {
-      // A rlimit is what puts the `/bin/sh` wrapper in the picture at all: without one the executor spawns the
-      // program directly and this test would prove nothing about surviving its `exec`.
-      limits: { openFiles: 256 },
-      onChunk: () => {
-        const [pgid] = [...pids.entries.keys()];
-        if (pgid !== undefined) observed = processStartToken(pgid);
+    const req = nodeRequest(
+      canonical(tempDir),
+      'setTimeout(() => process.stdout.write("RUNNING"), 100);setTimeout(() => {}, 400);',
+      {
+        // A rlimit is what puts the `/bin/sh` wrapper in the picture at all: without one the executor spawns the
+        // program directly and this test would prove nothing about surviving its `exec`.
+        limits: { openFiles: 256 },
+        onChunk: () => {
+          const [pgid] = [...pids.entries.keys()];
+          if (pgid !== undefined) observed = processStartToken(pgid);
+        },
       },
-    });
+    );
     const executor = createExecutor({ redactor: fakeRedactor(), pids, clock: systemClock });
 
     const result = await executor.run(req, new AbortController().signal);
