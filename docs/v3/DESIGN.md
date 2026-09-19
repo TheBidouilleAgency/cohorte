@@ -2850,7 +2850,7 @@ on `ci` through `workflow_call`; `docs.yml` and `discord-releases.yml` survive u
 | 10 providers / budgets | openai-codex subscription; auth guarantee; five budget levels + all seven dimensions; quota events; billing table | static tier routing; API-key mode and the Anthropic opt-in (policy + accounting implemented, exercised with fakes only); price catalogue file | multi-provider routing, fallback, latency/residency routing |
 | 11 state machine | all states, three profiles, loop controller, retries, resume, command matrix | BRAINSTORM + SPEC executors (`phase.available = false`; `cohorte spec` validates/freezes a human-written YAML); SHIP minimal | agentic brainstorm/spec, PR/push |
 | 12 discovery | deterministic scan for `init` and `discover` | `--semantic` rejected with a clear message | semantic discovery |
-| 13 reconcile | `reconcile --plan` with five field classes, six diff classes, provenance/hash guard | `--apply` rejected in V3.0 (`configuration/phase-not-available`) | apply, `update --apply` |
+| 13 reconcile | `reconcile --plan` and conflict-free `reconcile --apply` with five field classes, six diff classes, provenance/hash guard, backups and audit journal | — | `update --apply` |
 | 14 `.cohorte/` | subset of 2.10 | `generated/` skeleton | rendered agents/contracts/checks |
 | 15 git | all of section 5 | — | richer merge strategies |
 | 16 dogfooding | all of section 6 incl. the real-run release gate | — | `self-update` |
@@ -2858,7 +2858,7 @@ on `ci` through `workflow_call`; `docs.yml` and `discord-releases.yml` survive u
 | 18 François | `--json`, `--panel`, `--format=line`, schema-only client test (AC-07) | — | native cockpit |
 | 19 observability | stderr logger, durable events, accounting reducers, redaction as a type | metrics export | trace exporters |
 | 20 persistence | SQLite + memory, migrations, hash chain + anchors, CAS | file/remote store (interface proven by the memory store) | — |
-| 21 CLI | `init, doctor, discover, run, status, inspect, resume, pause, cancel, shutdown, approve, deny, retry, skip, logs/tail, diff, review, fix, ship, auth login/status/logout, providers list/test, models list, config get/set/validate/trust, migrate, reconcile --plan, spec validate/freeze, policy explain, gc` (+ `run-tool`, `send`: registered, answering `configuration/phase-not-available` unless policy enables them) | `update --check` (prints the installed vs pinned asset versions, offline), `brainstorm` (rejects: phase not available) | `update --apply`, `reconcile --apply` |
+| 21 CLI | `init, doctor, discover, run, status, inspect, resume, pause, cancel, shutdown, approve, deny, retry, skip, logs/tail, diff, review, fix, ship, auth login/status/logout, providers list/test, models list, config get/set/validate/trust, migrate, reconcile --plan/--apply, spec validate/freeze, policy explain, gc` (+ `run-tool`, `send`: registered, answering `configuration/phase-not-available` unless policy enables them) | `update --check` (prints the installed vs pinned asset versions, offline), `brainstorm` (rejects: phase not available) | `update --apply` |
 | 22 outputs | full | — | — |
 | 23 security | all MUST measures — "séparation des identities" = 2.6.7 (key holders / system / agents, test S-36); the repository-as-adversary case = 2.10.1 (S-37/S-38) | cryptographic *signatures* (asymmetric) of approvals — V3.0 uses HMAC behind a scheme-neutral `auth` field; per-actor identity | — |
 | 24 errors | full, incl. `impact` | — | — |
@@ -3004,7 +3004,7 @@ add-greeting --runtime fake --script fixtures/scripts/happy.yaml --detach --json
 | D-14 | §16 / §3 principle 8 | Taken literally: **no** flag lets a run continue on a different Cohorte/Pi install; the host is always spawned from the pinned install | ADR-0023 |
 | D-15 | §10 `ModelRef` | Verbatim; the thinking level travels beside it (`SpawnRequest.thinking`, tier table) | — |
 | D-16 | §10 `authMode` (`subscription` or `api`) | Exactly these two. The fake runtime reports the mode its plan requested with `authSource: 'none'` | — |
-| D-17 | §21 `cohorte review <run-id>`, `fix`, `ship`, `discover`, `update` | Semantics fixed in §9; `update --check` is offline (no npm probe in V3.0); `reconcile --apply`, `update --apply`, `brainstorm`, `discover --semantic` answer `configuration/phase-not-available` | D10 · ADR-0012, 0020 |
+| D-17 | §21 `cohorte review <run-id>`, `fix`, `ship`, `discover`, `update` | Semantics fixed in §9; `update --check` is offline (no npm probe in V3.0); `update --apply`, `brainstorm`, `discover --semantic` answer `configuration/phase-not-available` | D10 · ADR-0012, 0020 |
 | D-18 | §22 example has no severity vocabulary | `critical \| major \| minor \| info` (V2's CRITICAL/HIGH/MEDIUM/LOW mapped) | — |
 | D-19 | §25 "au moins un E2E avec fake provider" | The **fake runtime** drives E2E through the built CLI; the **fake provider** drives the real Pi loop in integration tests composed programmatically, because the shipped child has no test hook | 1.3 |
 | D-20 | §23 "absence de privilèges root" | `run`/`resume`/`__host` refuse uid 0; no override | ADR-0022 |

@@ -2221,7 +2221,7 @@
     },
     {
      "id": "U3.09",
-     "title": "project-model II: desired state, five field classes, six-class drift diff, provenance/hash guard, `reconcile --plan`",
+     "title": "project-model II: desired state, five field classes, six-class drift diff, provenance/hash guard, `reconcile --plan/--apply`",
      "integrator": false,
      "origin": "DESIGN U2.6 (split 2/2)",
      "size": "~1900 lines",
@@ -2250,7 +2250,7 @@
      "reads": [],
      "deliverables": [
       "Desired state derived from Project Model + human config + Cohorte templates + skill versions; actual-state reader; the diff engine distinguishing absence / expected change / human change / conflict / potential deletion / unknown.",
-      "`planReconcile({ scan })` (the scanner is INJECTED so this unit never imports U3.08): READ-ONLY plan document; a generated file is replaceable only if its current hash == `renderedSha256`; a human override is never in an apply plan — a collision is `CONFLICT`; `--apply` => `configuration/phase-not-available` in V3.0. `src/import/README.md` names the V2 importer seam."
+      "`planReconcile({ scan })` (the scanner is INJECTED so this unit never imports U3.08): plan document; a generated file is replaceable only if its current hash == `renderedSha256`; a human override is never in an apply plan — a collision is `CONFLICT`. `applyReconcile` applies only conflict-free generated operations, writes an audit journal and optionally preserves a backup. `src/import/README.md` names the V2 importer seam."
      ],
      "tests": [
       "`drift.test.ts`: five field classes incl. `mixed`; six diff classes; a human override never appears in an apply plan; generated file replaced only when the hash still matches",
@@ -2656,8 +2656,8 @@
       "<SCRATCH>/understand/v2-code.md (the V2 doctor check framework worth porting: statuses + exact fix commands)"
      ],
      "deliverables": [
-      "`init [path] [--yes]` (applyInit + lazy project key + `.cohorte/.gitignore`), `discover` (prints the deterministic scan, writes nothing), `reconcile --plan`, `config get|set|validate`, `spec validate|freeze`, `policy explain -- <argv...>`, `migrate --check|--apply` (exit 3 when pending), `gc --dry-run|--apply` — the OWNER of `retention.*` (spec 19, DESIGN 5.9, ADR-0010): gzip `sensitive` files older than `compressAfterDays`, delete transcripts + wire logs older than `transcriptsDays`, artifacts older than `artifactsDays`, the spool one day after run end, purge events only through `runs.purgeable`, drop unreferenced CAS blobs; it NEVER touches a file of a non-terminal run; ages on the injected `Clock` —, `config trust --show|--grant|--revoke` (DESIGN 2.10.1), `update --check` (offline: installed vs pinned asset versions).",
-      "Seams answer `configuration/phase-not-available` with a clear message: `brainstorm`, `discover --semantic`, `reconcile --apply`, `update --apply`.",
+      "`init [path] [--yes]` (applyInit + lazy project key + `.cohorte/.gitignore`), `discover` (prints the deterministic scan, writes nothing), `reconcile --plan/--apply`, `config get|set|validate`, `spec validate|freeze`, `policy explain -- <argv...>`, `migrate --check|--apply` (exit 3 when pending), `gc --dry-run|--apply` — the OWNER of `retention.*` (spec 19, DESIGN 5.9, ADR-0010): gzip `sensitive` files older than `compressAfterDays`, delete transcripts + wire logs older than `transcriptsDays`, artifacts older than `artifactsDays`, the spool one day after run end, purge events only through `runs.purgeable`, drop unreferenced CAS blobs; it NEVER touches a file of a non-terminal run; ages on the injected `Clock` —, `config trust --show|--grant|--revoke` (DESIGN 2.10.1), `update --check` (offline: installed vs pinned asset versions).",
+      "Seams answer `configuration/phase-not-available` with a clear message: `brainstorm`, `discover --semantic`, `update --apply`.",
       "`doctor [--json] [--panel] [--verify-state]`: check framework over the W0-frozen check list — node version, git >= 2.38, state dir on a local filesystem, sandbox capabilities VERBATIM from `probeSandbox()` (incl. the L0 sentence, and `partial` — never `enforced` — until the platform's escape self-test S-28/S-29 passed), the detected package store with the exact `~/.cohorte/config.yaml` line to add (DESIGN 5.7), an armed quota wake-up, a run started from a linked development build, runtime capabilities verbatim, search backend (`rg` or the `git grep` fallback), locks, migrations, gitignore, uid != 0, key modes, low-memory warning for `budgets.concurrency`; `--verify-state` rebuilds projections from the log through `evolve` into a `MemoryStateStore`, diffs them, verifies chain + anchors + approval MACs. `--json` = `DoctorReport`. This unit owns `apps/cli/src/doctor/**` EXCEPT the sub-path `apps/cli/src/doctor/checks/auth/**` (a W0 stub filled by `U5.05`)."
      ],
      "tests": [

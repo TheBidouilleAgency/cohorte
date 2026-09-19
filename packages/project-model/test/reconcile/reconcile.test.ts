@@ -1,9 +1,11 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DEFAULT_CONFIG } from '@cohorte/config/schema';
 import { FixedClock } from '@cohorte/testkit';
 import { describe, expect, test } from 'vitest';
-import { planReconcile } from '../../src/reconcile/index.ts';
+import { deriveDesiredState } from '../../src/desired/index.ts';
+import { applyReconcile, planReconcile } from '../../src/reconcile/index.ts';
 import { scanRepository } from '../../src/scan/index.ts';
 
 describe('reconcile plan', () => {
@@ -16,8 +18,24 @@ describe('reconcile plan', () => {
         cohorteVersion: '3.0.0',
         clock: new FixedClock(),
       });
-      expect(plan.applyAvailable).toBe(false);
+      expect(plan.applyAvailable).toBe(true);
       expect(plan.operations.length).toBeGreaterThan(0);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('applies generated drift, keeps human files, and writes a journal', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'cohorte-reconcile-apply-'));
+    try {
+      const clock = new FixedClock();
+      const model = await scanRepository(root, { clock, toolVersion: 'test' });
+      const desired = deriveDesiredState({ model, config: DEFAULT_CONFIG, cohorteVersion: '3.0.0', skills: {} });
+      const plan = await planReconcile({ root, scan: async () => model, cohorteVersion: '3.0.0', clock });
+      const result = await applyReconcile({ root, plan, desired, backup: true, clock });
+      expect(result.applied).toContain('project.yaml');
+      await expect(readFile(join(root, '.cohorte', 'project.yaml'), 'utf8')).resolves.toContain('schemaVersion: 1');
+      await expect(readFile(result.journal, 'utf8')).resolves.toContain('project.yaml');
     } finally {
       await rm(root, { recursive: true, force: true });
     }

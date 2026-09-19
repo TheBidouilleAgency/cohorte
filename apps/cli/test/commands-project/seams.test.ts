@@ -4,12 +4,10 @@ import reconcile from '../../src/commands/reconcile/index.ts';
 import { fakeCliContext } from '../registry/helpers.ts';
 
 describe('project command seams', () => {
-  test('semantic discovery and reconcile apply are explicit V3 seams', async () => {
+  test('semantic discovery remains a seam while reconcile apply is live', async () => {
     await expect(
       discover.run(fakeCliContext(), { positionals: ['--semantic'], options: {}, json: false }),
     ).rejects.toThrow('semantic discovery is not available');
-    await expect(
-      reconcile.run(fakeCliContext(), { positionals: ['--apply'], options: {}, json: false }),
-    ).rejects.toThrow('reconcile --apply is not available');
+    expect(reconcile.run).toBeTypeOf('function');
   });
 });
