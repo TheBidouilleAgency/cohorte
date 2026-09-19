@@ -1111,7 +1111,7 @@ pnpm --reporter=silent verify && pnpm exec vitest run tests/integration/skeleton
 | U3.06 | core/phase contracts: PREFLIGHT, BUILD, TEST, REVIEW, FIX, SHIP for the three profiles | U2.INT, U2.05, U2.06 | ~2200 lines |
 | U3.07 | core/integration: CommitService (ownership audit + secret scan + trailers), MergeService (plumbing + CAS + revalidation), review refs, git transition effects | U2.INT, U1.05, U1.08, U2.02 | ~2000 lines |
 | U3.08 | project-model I: deterministic repository scan, Project Model, `init` plan/apply, `discover` document | U2.INT, U2.09, U1.05 | ~2000 lines |
-| U3.09 | project-model II: desired state, five field classes, six-class drift diff, provenance/hash guard, `reconcile --plan` | U2.INT, U2.09, U1.05 | ~1900 lines |
+| U3.09 | project-model II: desired state, five field classes, six-class drift diff, provenance/hash guard, `reconcile --plan/--apply` | U2.INT, U2.09, U1.05 | ~1900 lines |
 | U3.10 | providers + telemetry: static tier routing, provider allowlist + pinned endpoints, billing table, quota header parsers; sealed logger, accounting reducers | U2.INT, U2.09, U0.07 | ~1900 lines |
 | U3.INT (integrator) | Gate G3 — integrate Wave 3; full-pipeline skeleton: build -> test -> review -> fix -> clean -> ship with FakeRuntime, real git, real SQLite, crash + resume | U3.01, U3.02, U3.03, U3.04, U3.05, U3.06, U3.07, U3.08, U3.09, U3.10 | ~600 lines of test + integration fixes (the heaviest gate before G4) |
 
@@ -1318,7 +1318,7 @@ pnpm --reporter=silent unit:check U3.07
 pnpm --reporter=silent unit:check U3.08
 ```
 
-#### U3.09 — project-model II: desired state, five field classes, six-class drift diff, provenance/hash guard, `reconcile --plan`
+#### U3.09 — project-model II: desired state, five field classes, six-class drift diff, provenance/hash guard, `reconcile --plan/--apply`
 
 - **Origin:** DESIGN U2.6 (split 2/2) · **Size:** ~1900 lines · **Depends on:** U2.INT, U2.09, U1.05
 - **Read first:** DESIGN §9 (reconcile row), §7.1 (drift classification row), §7.2 (reconciliation row), §6.4 (D1), spec 13, spec 14 (provenance paragraph)
@@ -1327,7 +1327,7 @@ pnpm --reporter=silent unit:check U3.08
 **Deliverables**
 
 - Desired state derived from Project Model + human config + Cohorte templates + skill versions; actual-state reader; the diff engine distinguishing absence / expected change / human change / conflict / potential deletion / unknown.
-- `planReconcile({ scan })` (the scanner is INJECTED so this unit never imports U3.08): READ-ONLY plan document; a generated file is replaceable only if its current hash == `renderedSha256`; a human override is never in an apply plan — a collision is `CONFLICT`; `--apply` => `configuration/phase-not-available` in V3.0. `src/import/README.md` names the V2 importer seam.
+- `planReconcile({ scan })` (the scanner is INJECTED so this unit never imports U3.08): plan document; a generated file is replaceable only if its current hash == `renderedSha256`; a human override is never in an apply plan — a collision is `CONFLICT`. `applyReconcile` applies only conflict-free generated operations, writes an audit journal and optionally preserves a backup. `src/import/README.md` names the V2 importer seam.
 
 **Tests first (TDD)**
 
@@ -1517,7 +1517,7 @@ pnpm --reporter=silent unit:check U4.03
 pnpm --reporter=silent unit:check U4.04
 ```
 
-#### U4.05 — CLI commands C — project verbs + doctor: init, doctor, discover, reconcile --plan, config, spec, policy explain, migrate, gc, update --check, brainstorm
+#### U4.05 — CLI commands C — project verbs + doctor: init, doctor, discover, reconcile --plan/--apply, config, spec, policy explain, migrate, gc, update --check, brainstorm
 
 - **Origin:** DESIGN U2.8 (split 3/3) · **Size:** ~2300 lines · **Depends on:** U3.INT, U0.10, U3.08, U3.09
 - **Read first:** DESIGN §0.3 (the L0 sentence doctor prints), §2.4 (doctor --verify-state), §2.6.6 (SandboxCapabilities verbatim), §3.9 (capabilities table doctor prints), §5.9 (gc), §9 (CLI row, seams answering phase-not-available), §11 (D-17), spec 9 (doctor), 21; <SCRATCH>/understand/v2-code.md (the V2 doctor check framework worth porting: statuses + exact fix commands)
@@ -1525,8 +1525,8 @@ pnpm --reporter=silent unit:check U4.04
 
 **Deliverables**
 
-- `init [path] [--yes]` (applyInit + lazy project key + `.cohorte/.gitignore`), `discover` (prints the deterministic scan, writes nothing), `reconcile --plan`, `config get|set|validate`, `spec validate|freeze`, `policy explain -- <argv...>`, `migrate --check|--apply` (exit 3 when pending), `gc --dry-run|--apply` — the OWNER of `retention.*` (spec 19, DESIGN 5.9, ADR-0010): gzip `sensitive` files older than `compressAfterDays`, delete transcripts + wire logs older than `transcriptsDays`, artifacts older than `artifactsDays`, the spool one day after run end, purge events only through `runs.purgeable`, drop unreferenced CAS blobs; it NEVER touches a file of a non-terminal run; ages on the injected `Clock` —, `config trust --show|--grant|--revoke` (DESIGN 2.10.1), `update --check` (offline: installed vs pinned asset versions).
-- Seams answer `configuration/phase-not-available` with a clear message: `brainstorm`, `discover --semantic`, `reconcile --apply`, `update --apply`.
+- `init [path] [--yes]` (applyInit + lazy project key + `.cohorte/.gitignore`), `discover` (prints the deterministic scan, writes nothing), `reconcile --plan/--apply`, `config get|set|validate`, `spec validate|freeze`, `policy explain -- <argv...>`, `migrate --check|--apply` (exit 3 when pending), `gc --dry-run|--apply` — the OWNER of `retention.*` (spec 19, DESIGN 5.9, ADR-0010): gzip `sensitive` files older than `compressAfterDays`, delete transcripts + wire logs older than `transcriptsDays`, artifacts older than `artifactsDays`, the spool one day after run end, purge events only through `runs.purgeable`, drop unreferenced CAS blobs; it NEVER touches a file of a non-terminal run; ages on the injected `Clock` —, `config trust --show|--grant|--revoke` (DESIGN 2.10.1), `update --check` (offline: installed vs pinned asset versions).
+- Seams answer `configuration/phase-not-available` with a clear message: `brainstorm`, `discover --semantic`, `update --apply`.
 - `doctor [--json] [--panel] [--verify-state]`: check framework over the W0-frozen check list — node version, git >= 2.38, state dir on a local filesystem, sandbox capabilities VERBATIM from `probeSandbox()` (incl. the L0 sentence, and `partial` — never `enforced` — until the platform's escape self-test S-28/S-29 passed), the detected package store with the exact `~/.cohorte/config.yaml` line to add (DESIGN 5.7), an armed quota wake-up, a run started from a linked development build, runtime capabilities verbatim, search backend (`rg` or the `git grep` fallback), locks, migrations, gitignore, uid != 0, key modes, low-memory warning for `budgets.concurrency`; `--verify-state` rebuilds projections from the log through `evolve` into a `MemoryStateStore`, diffs them, verifies chain + anchors + approval MACs. `--json` = `DoctorReport`. This unit owns `apps/cli/src/doctor/**` EXCEPT the sub-path `apps/cli/src/doctor/checks/auth/**` (a W0 stub filled by `U5.05`).
 
 **Tests first (TDD)**

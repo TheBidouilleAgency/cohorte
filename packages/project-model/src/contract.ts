@@ -134,6 +134,8 @@ export interface StateFile {
   class: FieldClass;
   sha256: Sha256;
   templateId?: string;
+  /** Rendered content, kept in-memory for an authorized reconcile apply. */
+  content?: string;
 }
 export interface DesiredState {
   cohorteVersion: string;
@@ -174,7 +176,7 @@ export interface ReconcileOperation {
   reason: string;
 }
 
-/** The `--json` document of `cohorte reconcile --plan`. READ-ONLY: `--apply` is rejected in V3.0. */
+/** The `--json` document of `cohorte reconcile --plan`. */
 export interface ReconcilePlan {
   schemaVersion: 1;
   cohorteVersion: string;
@@ -184,7 +186,7 @@ export interface ReconcilePlan {
   operations: ReconcileOperation[];
   /** targets whose diff class is `conflict` */
   conflicts: string[];
-  applyAvailable: false;
+  applyAvailable: boolean;
 }
 
 const sha = () => Type.Optional(Sha256);
@@ -233,7 +235,7 @@ export const ReconcilePlan: TUnsafe<ReconcilePlan> = Type.Unsafe<ReconcilePlan>(
         ),
       ),
       conflicts: Type.Array(Type.String()),
-      applyAvailable: Type.Literal(false),
+      applyAvailable: Type.Boolean(),
     },
     closed,
   ),

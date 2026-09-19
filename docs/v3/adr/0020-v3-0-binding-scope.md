@@ -17,13 +17,13 @@ whether the OS sandbox, command authentication, architect/verifier roles, API-ke
 bullet and is the definition of done. Judged against that rule:
 
 - **In**, because a spec-29 bullet or a spec MUST needs it: L1 OS sandbox (bullet 3, spec 9), HMAC command authentication (spec 17.2, 23),
-  provisioning of worktrees (bullets 1 and 10), deterministic `init` / `discover` / `reconcile --plan` with five field classes (bullet 11),
+  provisioning of worktrees (bullets 1 and 10), deterministic `init` / `discover` / conflict-free `reconcile --plan/--apply` with five field classes (bullet 11),
   the real Cohorte-on-Cohorte run as a release gate (bullet 10, spec 32), the review profile from the CLI (D6), five budget levels (spec 10),
   migrations CI (bullet 12).
 - **Seam only**: BRAINSTORM/SPEC executors, architect and verifier roles, `git_commit` / `network_request` / `secret_read` tools,
   `summary-with-refs` reduction, the `runRpcMode` host, `Continuation.transcript`, `apps/daemon`, the V2 importer.
 - **Implemented but exercised with fakes only**: API-key mode and the Anthropic metered opt-in (policy + accounting + price catalogue).
-- **Out**: semantic discovery, multi-provider routing/fallback, `reconcile --apply`, `update --apply`, push/PR/release, socket/HTTP transport,
+- **Out**: semantic discovery, multi-provider routing/fallback, `update --apply`, push/PR/release, socket/HTTP transport,
   Windows, packaged binary, skill registry, egress proxy, a shell-script form of `run_command`.
 - Roles exercised in V3.0: implementer, fixer, reviewer, security-reviewer; all other role ids are reserved with prompts.
 

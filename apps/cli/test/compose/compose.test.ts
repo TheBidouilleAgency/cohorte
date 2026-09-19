@@ -18,5 +18,7 @@ describe('CLI composition', () => {
     expect(ctx.hostSpawner).toBeDefined();
     expect(ctx.hostRunner).toBeDefined();
     expect(ctx.openStore).toBeDefined();
+    expect(ctx.runtime.resolve().id).toBe('pi');
+    expect(ctx.runtime.resolve('fake').id).toBe('fake');
   });
 });

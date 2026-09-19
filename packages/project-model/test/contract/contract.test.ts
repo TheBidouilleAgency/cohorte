@@ -142,9 +142,9 @@ describe('DriftReport / ReconcilePlan [S] (spec 13)', () => {
     expect(pathsOf(DriftReport, wrong)).toContain('/entries/0/diff');
   });
 
-  test('the plan is a read-only document: `applyAvailable` can only be false in V3.0', () => {
+  test('the plan publishes whether authorized apply is available', () => {
     expect(pathsOf(ReconcilePlan, plan())).toEqual([]);
-    expect(pathsOf(ReconcilePlan, { ...plan(), applyAvailable: true })).toContain('/applyAvailable');
+    expect(pathsOf(ReconcilePlan, { ...plan(), applyAvailable: true })).toEqual([]);
     expect(
       pathsOf(ReconcilePlan, {
         ...plan(),
@@ -212,7 +212,7 @@ describe('the Wave-0 frozen barrel of @cohorte/project-model', () => {
         diffStates({ cohorteVersion: '3.0.0', files: [] }, { manifest: null, files: [] }, clock).schemaVersion,
       ).toBe(1);
       const reconcile = await planReconcile({ root, scan: async () => scanned, cohorteVersion: '3.0.0', clock });
-      expect(reconcile.applyAvailable).toBe(false);
+      expect(reconcile.applyAvailable).toBe(true);
       expect(reconcile.drift.entries.map((entry) => entry.target)).not.toEqual(
         expect.arrayContaining(['manifest.yaml', 'project.yaml', '.gitignore', 'generated/.gitkeep']),
       );

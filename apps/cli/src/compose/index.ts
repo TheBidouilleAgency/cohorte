@@ -1,13 +1,13 @@
-// apps/cli/src/compose/index.ts — AREA barrel (DESIGN 1.2 apps/cli composition root; PLAN §3 rule 3 "frozen
-// barrel, typed stub"). Assembles the real `CliContext` (open the store, wire the controller/observer/host
-// spawner/renderer, resolve runtime providers) from process-level inputs. Wave-0 stub: filled by `U4.01`, which
-// owns `apps/cli/src/compose/**`.
+// apps/cli/src/compose/index.ts — AREA barrel (DESIGN 1.2 apps/cli composition root). Assembles the real
+// `CliContext` and resolves the production Pi runtime by default, while retaining the fake runtime for tests.
 
 import { mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { createUuidV7IdSource, systemClock } from '@cohorte/base';
 import { openSqliteStore } from '@cohorte/persistence/sqlite';
 import { createFakeRuntimeProvider, fakeScript } from '@cohorte/runtime-fake';
+import { createPiRuntimeProvider } from '@cohorte/runtime-pi';
+import { createRedactor } from '@cohorte/security/redact';
 import { createAssetSource } from '../assets/index.ts';
 import type { CliContext } from '../contract/index.ts';
 import { createController } from '../control/index.ts';
@@ -20,8 +20,9 @@ import { createProductionHostRunner } from './engine.ts';
 
 export async function composeCliContext(inputs: ComposeInputs): Promise<CliContext> {
   const ids = createUuidV7IdSource();
-  const runtime = createFakeRuntimeProvider({ script: fakeScript().build(), clock: systemClock });
   const install = createInstallInspector();
+  const fakeRuntime = createFakeRuntimeProvider({ script: fakeScript().build(), clock: systemClock });
+  const piRuntime = createPiRuntimeProvider({ installDir: install.installDir(), redactor: createRedactor() });
   const assets = createAssetSource();
   const createStore = async () => {
     const stateDir = join(inputs.cwd, '.cohorte', 'state');
@@ -86,7 +87,12 @@ export async function composeCliContext(inputs: ComposeInputs): Promise<CliConte
       },
     },
     renderer: createRenderer(),
-    runtime: { resolve: () => runtime, capabilities: () => ({ provider: runtime.id }) },
+    runtime: {
+      // Pi is the production runtime and the configured V3 default. Keep the fake
+      // available for explicit offline/test callers without making it the CLI default.
+      resolve: (name) => (name === 'fake' ? fakeRuntime : piRuntime),
+      capabilities: () => ({ provider: piRuntime.id }),
+    },
     assets,
     install,
   };

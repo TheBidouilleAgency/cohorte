@@ -148,8 +148,7 @@
       }
     },
     "applyAvailable": {
-      "type": "boolean",
-      "const": false
+      "type": "boolean"
     }
   }
 }

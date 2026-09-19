@@ -1,9 +1,9 @@
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import type { Clock } from '@cohorte/base';
+import { appendFile, copyFile, mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import { type Clock, sha256Hex } from '@cohorte/base';
 import { DEFAULT_CONFIG } from '@cohorte/config/schema';
 import { parse } from 'yaml';
-import type { ReconcilePlan, RepositoryScanner } from '../contract.ts';
+import type { DesiredState, ReconcilePlan, RepositoryScanner } from '../contract.ts';
 import { deriveDesiredState } from '../desired/index.ts';
 import { diffStates, readActualState } from '../drift/index.ts';
 
@@ -12,6 +12,14 @@ export interface PlanReconcileOptions {
   /** injected: this area never imports the scan area */
   scan: RepositoryScanner;
   cohorteVersion: string;
+  clock: Clock;
+}
+
+export interface ApplyReconcileOptions {
+  root: string;
+  plan: ReconcilePlan;
+  desired: DesiredState;
+  backup?: boolean;
   clock: Clock;
 }
 
@@ -73,6 +81,56 @@ export async function planReconcile(options: PlanReconcileOptions): Promise<Reco
     drift,
     operations,
     conflicts: drift.entries.filter((entry) => entry.diff === 'conflict').map((entry) => entry.target),
-    applyAvailable: false,
+    applyAvailable: true,
   };
+}
+
+/** Apply only create/replace/delete operations authorized by a conflict-free plan. */
+export async function applyReconcile(options: ApplyReconcileOptions): Promise<{
+  applied: string[];
+  skipped: string[];
+  backupDir?: string;
+  journal: string;
+}> {
+  if (options.plan.conflicts.length > 0)
+    throw new Error(`conflict/reconcile-human-edit: ${options.plan.conflicts.join(', ')}`);
+  const desiredByPath = new Map(options.desired.files.map((file) => [file.path, file]));
+  const backupDir = options.backup
+    ? join(options.root, '.cohorte', 'reconcile-backups', options.clock.now().replaceAll(':', ''))
+    : undefined;
+  const journal = join(options.root, '.cohorte', 'reconcile.log');
+  await mkdir(join(options.root, '.cohorte'), { recursive: true, mode: 0o700 });
+  const applied: string[] = [];
+  const skipped: string[] = [];
+  for (const operation of options.plan.operations) {
+    if (operation.op !== 'create' && operation.op !== 'replace' && operation.op !== 'delete') {
+      skipped.push(operation.target);
+      continue;
+    }
+    const target = join(options.root, '.cohorte', operation.target);
+    if (!target.startsWith(`${join(options.root, '.cohorte')}/`)) throw new Error('security/path-outside-grant');
+    const existing = await readFile(target).catch(() => undefined);
+    const drift = options.plan.drift.entries.find((entry) => entry.target === operation.target);
+    const actualSha256 = existing === undefined ? undefined : sha256Hex(existing);
+    if (actualSha256 !== drift?.actualSha256)
+      throw new Error(`conflict/reconcile-race: ${operation.target} changed after the plan was generated`);
+    if (existing !== undefined && backupDir) {
+      const backupPath = join(backupDir, operation.target);
+      await mkdir(dirname(backupPath), { recursive: true });
+      await copyFile(target, backupPath);
+    }
+    if (operation.op === 'delete') await unlink(target).catch(() => undefined);
+    else {
+      const file = desiredByPath.get(operation.target);
+      if (file?.content === undefined) throw new Error(`configuration/reconcile-content-missing: ${operation.target}`);
+      await mkdir(dirname(target), { recursive: true });
+      await writeFile(target, file.content, 'utf8');
+    }
+    applied.push(operation.target);
+    await appendFile(
+      journal,
+      `${JSON.stringify({ at: options.clock.now(), op: operation.op, target: operation.target })}\n`,
+    );
+  }
+  return { applied, skipped, ...(backupDir ? { backupDir } : {}), journal };
 }
