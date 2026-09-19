@@ -16,6 +16,7 @@ export function deriveDesiredState(input: DesiredStateInput): DesiredState {
   const generatedArtifacts = new Map<string, string>();
   for (const path of input.model.generatedArtifacts.value) {
     const relative = path.replace(/^\.cohorte\//u, '');
+    if (relative === 'manifest.yaml' || relative === 'project.yaml') continue;
     generatedArtifacts.set(
       relative,
       canonicalJson({
