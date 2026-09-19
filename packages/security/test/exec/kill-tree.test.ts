@@ -335,16 +335,20 @@ describe('the start token survives the ulimit wrapper `exec` (round trip through
   test('sweepGroupByToken(pgid, startToken) verifies the recorded pair and stops the group', async ({ tempDir }) => {
     const pids = fakePidRegistry();
     let swept: Promise<SweepByTokenResult> | undefined;
-    const req = nodeRequest(canonical(tempDir), 'process.stdout.write("RUNNING");setTimeout(() => {}, 4000);', {
-      limits: { openFiles: 256 },
-      onChunk: () => {
-        if (swept !== undefined) return;
-        const [entry] = [...pids.entries];
-        if (entry === undefined) return;
-        const [pgid, { startToken }] = entry;
-        swept = sweepGroupByToken(pgid, startToken, { wait: (ms) => systemClock.sleep(ms), graceMs: 100 });
+    const req = nodeRequest(
+      canonical(tempDir),
+      'setTimeout(() => process.stdout.write("RUNNING"), 100);setTimeout(() => {}, 4000);',
+      {
+        limits: { openFiles: 256 },
+        onChunk: () => {
+          if (swept !== undefined) return;
+          const [entry] = [...pids.entries];
+          if (entry === undefined) return;
+          const [pgid, { startToken }] = entry;
+          swept = sweepGroupByToken(pgid, startToken, { wait: (ms) => systemClock.sleep(ms), graceMs: 100 });
+        },
       },
-    });
+    );
     const executor = createExecutor({ redactor: fakeRedactor(), pids, clock: systemClock });
 
     const result = await executor.run(req, new AbortController().signal);
