@@ -1,7 +1,5 @@
-// apps/cli/src/commands/auth/index.ts — DESIGN §9 verb `auth` (PLAN §3 rule 3 "later units fill
-// stub files that lie inside their owned paths; they never edit ... the registry"). Wave-0 stub: exits with the
-// documented not-available error (spec 24 `configuration/phase-not-available`); filled by the Wave-4/5
-// unit that owns `apps/cli/src/commands/auth/**`.
+// apps/cli/src/commands/auth/index.ts — DESIGN §9 verb `auth`; provider authentication is delegated to the
+// selected runtime child so credentials never cross the CLI/runtime boundary.
 import { createInterface } from 'node:readline/promises';
 import type { ProviderAuthStatus } from '@cohorte/runtime-contract';
 import type { CommandModule } from '../../contract/index.ts';
@@ -41,7 +39,16 @@ async function loginUi(ctx: Parameters<CommandModule['run']>[0], signal: AbortSi
       const text = event.message ?? event.instructions ?? event.url ?? event.verificationUri ?? event.userCode ?? '';
       if (text) ctx.stdio.stdout.write(`${text}\n`);
     },
-    async ask(prompt: { kind: string; message: string }) {
+    async ask(prompt: { kind: string; message: string; options?: { id: string; label: string }[] }) {
+      if (prompt.kind === 'select' && prompt.options?.length) {
+        ctx.stdio.stdout.write(`${prompt.message}\n`);
+        prompt.options.forEach((option, index) => {
+          ctx.stdio.stdout.write(`  ${index + 1}. ${option.label}\n`);
+        });
+        const answer = await readline.question('Choice: ');
+        const index = Number.parseInt(answer, 10) - 1;
+        return prompt.options[index]?.id ?? answer;
+      }
       return readline.question(`${prompt.message} `);
     },
     close() {
