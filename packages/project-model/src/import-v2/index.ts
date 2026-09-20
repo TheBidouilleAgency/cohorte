@@ -84,6 +84,17 @@ export interface V2ImportReport {
   createdAt: string;
 }
 
+export const V2_IMPORT_FAULT_POINTS = [
+  'before-backup',
+  'after-backup',
+  'after-stage',
+  'before-rename',
+  'after-rename',
+  'before-report',
+] as const;
+
+export type V2ImportFaultPoint = (typeof V2_IMPORT_FAULT_POINTS)[number];
+
 interface BundleInput {
   manifest: V2ExportManifest;
   files: Map<string, string>;
@@ -481,7 +492,12 @@ async function digestProject(root: string): Promise<string> {
 
 export async function applyV2Import(
   plan: V2ImportPlan,
-  options: { confirm: boolean; backupRoot: string; now?: string },
+  options: {
+    confirm: boolean;
+    backupRoot: string;
+    now?: string;
+    fault?: (point: V2ImportFaultPoint) => void;
+  },
 ): Promise<V2ImportReport> {
   if (plan.conflicts.length) throw new Error(`configuration/import-conflict: ${plan.conflicts.join(', ')}`);
   if (plan.warnings.some((item) => item.blocking))
@@ -494,50 +510,64 @@ export async function applyV2Import(
     16,
   );
   const backupRoot = resolve(options.backupRoot, `cohorte-v2-${id}`);
-  await mkdir(backupRoot, { recursive: true, mode: 0o700 });
-  const existing: string[] = [];
-  for (const file of plan.files) {
-    try {
-      await lstat(join(plan.projectRoot, file.path));
-      existing.push(file.path);
-      await mkdir(dirname(join(backupRoot, file.path)), { recursive: true, mode: 0o700 });
-      await cp(join(plan.projectRoot, file.path), join(backupRoot, file.path), {
-        recursive: true,
-        verbatimSymlinks: true,
-      });
-    } catch {
-      /* new file */
-    }
-  }
   const stage = join(backupRoot, '.stage');
-  await mkdir(stage, { recursive: true, mode: 0o700 });
-  try {
-    for (const file of plan.files) {
-      if (file.action === 'keep') continue;
-      const target = join(stage, file.path);
-      await mkdir(dirname(target), { recursive: true, mode: 0o700 });
-      await writeFile(target, file.content, { mode: 0o600 });
-    }
-    for (const file of plan.files) {
-      if (file.action === 'keep') continue;
-      const target = join(plan.projectRoot, file.path);
-      await mkdir(dirname(target), { recursive: true, mode: 0o700 });
-      await rename(join(stage, file.path), target);
-    }
+  const reportPath = join(plan.projectRoot, '.cohorte', 'import-reports', `${id}.json`);
+  const existing: string[] = [];
+  let mutated = false;
+  const restore = async () => {
     await rm(stage, { recursive: true, force: true });
-  } catch (error) {
-    await rm(stage, { recursive: true, force: true });
+    await rm(reportPath, { force: true });
+    if (!mutated) return;
     for (const file of plan.files) {
       if (file.action === 'keep') continue;
       const target = join(plan.projectRoot, file.path);
       const backup = join(backupRoot, file.path);
       try {
         await stat(backup);
+        await mkdir(dirname(target), { recursive: true, mode: 0o700 });
         await cp(backup, target, { recursive: true, verbatimSymlinks: true });
       } catch {
         await rm(target, { recursive: true, force: true });
       }
     }
+  };
+  try {
+    options.fault?.('before-backup');
+    await mkdir(backupRoot, { recursive: true, mode: 0o700 });
+    for (const file of plan.files) {
+      try {
+        await lstat(join(plan.projectRoot, file.path));
+        existing.push(file.path);
+        await mkdir(dirname(join(backupRoot, file.path)), { recursive: true, mode: 0o700 });
+        await cp(join(plan.projectRoot, file.path), join(backupRoot, file.path), {
+          recursive: true,
+          verbatimSymlinks: true,
+        });
+      } catch {
+        /* new file */
+      }
+    }
+    options.fault?.('after-backup');
+    await mkdir(stage, { recursive: true, mode: 0o700 });
+    for (const file of plan.files) {
+      if (file.action === 'keep') continue;
+      const target = join(stage, file.path);
+      await mkdir(dirname(target), { recursive: true, mode: 0o700 });
+      await writeFile(target, file.content, { mode: 0o600 });
+    }
+    options.fault?.('after-stage');
+    options.fault?.('before-rename');
+    for (const file of plan.files) {
+      if (file.action === 'keep') continue;
+      const target = join(plan.projectRoot, file.path);
+      await mkdir(dirname(target), { recursive: true, mode: 0o700 });
+      mutated = true;
+      await rename(join(stage, file.path), target);
+    }
+    options.fault?.('after-rename');
+    await rm(stage, { recursive: true, force: true });
+  } catch (error) {
+    await restore();
     throw error;
   }
   const report: V2ImportReport = {
@@ -552,9 +582,14 @@ export async function applyV2Import(
     warnings: plan.warnings,
     createdAt: options.now ?? new Date().toISOString(),
   };
-  const reportPath = join(plan.projectRoot, '.cohorte', 'import-reports', `${id}.json`);
-  await mkdir(dirname(reportPath), { recursive: true, mode: 0o700 });
-  await writeFile(reportPath, `${JSON.stringify({ ...report, existing }, null, 2)}\n`, { mode: 0o600 });
+  try {
+    options.fault?.('before-report');
+    await mkdir(dirname(reportPath), { recursive: true, mode: 0o700 });
+    await writeFile(reportPath, `${JSON.stringify({ ...report, existing }, null, 2)}\n`, { mode: 0o600 });
+  } catch (error) {
+    await restore();
+    throw error;
+  }
   return report;
 }
 

@@ -1,9 +1,10 @@
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import config from '../../src/commands/config/index.ts';
 import gc from '../../src/commands/gc/index.ts';
+import init from '../../src/commands/init/index.ts';
 import migrate from '../../src/commands/migrate/index.ts';
 import policy from '../../src/commands/policy/index.ts';
 import update from '../../src/commands/update/index.ts';
@@ -101,5 +102,68 @@ describe('project commands', () => {
       openStore: async () => ({ migrate: async () => ({ pending: [{ id: 2 }] }), close: async () => {} }) as never,
     });
     expect(await migrate.run(ctx, { positionals: ['--check'], options: {}, json: false })).toBe(3);
+  });
+
+  test('runs the real V2 export, preview, import and rollback CLI flow', async () => {
+    const source = await mkdtemp(join(tmpdir(), 'cohorte-cli-v2-source-'));
+    const bundle = await mkdtemp(join(tmpdir(), 'cohorte-cli-v2-bundle-'));
+    const target = await mkdtemp(join(tmpdir(), 'cohorte-cli-v3-target-'));
+    try {
+      await mkdir(join(source, 'specs'), { recursive: true });
+      await writeFile(join(source, 'PIPELINE.md'), '# Project\n\nversion: 2.10.0\n');
+      await writeFile(join(source, 'cohorte.config.yaml'), 'pipeline:\n  name: demo\n');
+      await writeFile(join(source, 'specs', 'feature.md'), '# Feature\n');
+
+      const exportOut = captureStream();
+      const sourceCtx = fakeCliContext({
+        cwd: source,
+        stdio: { stdout: exportOut.stream, stderr: exportOut.stream, stdin: process.stdin },
+      });
+      expect(await init.run(sourceCtx, { positionals: ['--export-v2', bundle], options: {}, json: false })).toBe(0);
+      expect(JSON.parse(exportOut.text()).manifest.format).toBe('cohorte-v2-export');
+
+      const previewOut = captureStream();
+      const targetCtx = fakeCliContext({
+        cwd: target,
+        stdio: { stdout: previewOut.stream, stderr: previewOut.stream, stdin: process.stdin },
+      });
+      expect(await init.run(targetCtx, { positionals: ['--from-v2', bundle], options: {}, json: false })).toBe(0);
+      expect(JSON.parse(previewOut.text()).conflicts).toEqual([]);
+      await expect(readFile(join(target, '.cohorte', 'manifest.yaml'))).rejects.toThrow();
+
+      const importOut = captureStream();
+      const importCtx = fakeCliContext({
+        cwd: target,
+        stdio: { stdout: importOut.stream, stderr: importOut.stream, stdin: process.stdin },
+      });
+      expect(await init.run(importCtx, { positionals: ['--from-v2', bundle, '--yes'], options: {}, json: false })).toBe(
+        0,
+      );
+      const report = JSON.parse(importOut.text()) as { reportId: string };
+      await expect(readFile(join(target, '.cohorte', 'specs', 'feature.yaml'), 'utf8')).resolves.toContain(
+        'title: Feature',
+      );
+
+      const rollbackOut = captureStream();
+      const rollbackCtx = fakeCliContext({
+        cwd: target,
+        stdio: { stdout: rollbackOut.stream, stderr: rollbackOut.stream, stdin: process.stdin },
+      });
+      expect(
+        await migrate.run(rollbackCtx, {
+          positionals: ['--rollback', report.reportId],
+          options: {},
+          json: false,
+        }),
+      ).toBe(0);
+      expect(JSON.parse(rollbackOut.text())).toMatchObject({ reportId: report.reportId, status: 'rolled-back' });
+      await expect(readFile(join(target, '.cohorte', 'project.yaml'))).rejects.toThrow();
+    } finally {
+      await Promise.all([
+        rm(source, { recursive: true, force: true }),
+        rm(bundle, { recursive: true, force: true }),
+        rm(target, { recursive: true, force: true }),
+      ]);
+    }
   });
 });

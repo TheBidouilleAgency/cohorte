@@ -6,7 +6,13 @@ import { FixedClock } from '@cohorte/testkit';
 import { Compile } from 'typebox/compile';
 import { describe, expect, test } from 'vitest';
 import { parse } from 'yaml';
-import { applyV2Import, exportV2, planV2Import, rollbackV2Import } from '../../src/import-v2/index.ts';
+import {
+  applyV2Import,
+  exportV2,
+  planV2Import,
+  rollbackV2Import,
+  V2_IMPORT_FAULT_POINTS,
+} from '../../src/import-v2/index.ts';
 import { scanRepository } from '../../src/scan/index.ts';
 
 async function fixture(): Promise<{ root: string; destination: string; backup: string }> {
@@ -103,6 +109,34 @@ describe('V2 export and V3 import', () => {
       await expect(applyV2Import(plan, { confirm: true, backupRoot: paths.backup })).rejects.toThrow(
         'import-project-changed',
       );
+    } finally {
+      await Promise.all([
+        rm(paths.root, { recursive: true, force: true }),
+        rm(paths.destination, { recursive: true, force: true }),
+        rm(paths.backup, { recursive: true, force: true }),
+      ]);
+    }
+  });
+
+  test.each(V2_IMPORT_FAULT_POINTS)('restores the project after fault injection at %s', async (faultPoint) => {
+    const paths = await fixture();
+    try {
+      await exportV2({ root: paths.root, destination: paths.destination, now: '2026-09-20T00:00:00.000Z' });
+      const plan = await planV2Import(paths.destination, paths.root);
+      await expect(
+        applyV2Import(plan, {
+          confirm: true,
+          backupRoot: paths.backup,
+          now: '2026-09-20T00:00:00.000Z',
+          fault: (point) => {
+            if (point === faultPoint) throw new Error(`fault:${point}`);
+          },
+        }),
+      ).rejects.toThrow(`fault:${faultPoint}`);
+      await expect(readFile(join(paths.root, 'PIPELINE.md'), 'utf8')).resolves.toContain('version: 2.10.0');
+      await expect(readFile(join(paths.root, '.cohorte', 'manifest.yaml'))).rejects.toThrow();
+      await expect(readFile(join(paths.root, '.cohorte', 'config.yaml'))).rejects.toThrow();
+      await expect(readFile(join(paths.root, '.cohorte', 'import-reports'))).rejects.toThrow();
     } finally {
       await Promise.all([
         rm(paths.root, { recursive: true, force: true }),
