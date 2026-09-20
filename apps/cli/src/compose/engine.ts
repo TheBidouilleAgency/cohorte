@@ -394,7 +394,7 @@ export async function createProductionEngine(options: ProductionEngineOptions): 
     clock: systemClock,
     pinStore,
     metadata: {
-      app: { version: '3.0.0-dev.0', gitHash: null },
+      app: { version: '3.0.0-dev.1', gitHash: null },
       packages: [],
       assets: {
         treeSha256: options.assetsTreeSha256 ?? ('0'.repeat(64) as unknown as Sha256),
@@ -818,7 +818,7 @@ export async function createProductionHostRunner(options: ProductionEngineOption
       const host = createRunHost({
         engine,
         runId: runId as RunId,
-        cohorteVersion: '3.0.0-dev.0',
+        cohorteVersion: '3.0.0-dev.1',
         cwd: options.cwd,
         hostId: hostIdentity.hostId,
       });
