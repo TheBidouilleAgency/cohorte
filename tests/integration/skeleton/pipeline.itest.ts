@@ -2,7 +2,7 @@
 // This deliberately uses the same production engine composition as the skeleton, including the phase executor and
 // tool effect, instead of asserting only individual orchestration units.
 import { afterEach, describe, expect, it } from 'vitest';
-import { eventTypes, HOST_B, openSkeleton, seedIdleRun, signedStart } from './support.ts';
+import { eventTypes, HOST_B, openSkeleton, PROJECT_KEY, seedIdleRun, signedStart } from './support.ts';
 
 describe('pipeline composition', () => {
   let skeleton: Awaited<ReturnType<typeof openSkeleton>> | undefined;
@@ -21,6 +21,6 @@ describe('pipeline composition', () => {
     const types = await eventTypes(skeleton.store, skeleton.runId);
     expect(types).toContain('run.state.changed');
     expect(types).toContain('tool.completed');
-    await expect(skeleton.store.verifyChain(skeleton.runId, skeleton.projectKey)).resolves.toMatchObject({ ok: true });
+    await expect(skeleton.store.verifyChain(skeleton.runId, PROJECT_KEY)).resolves.toMatchObject({ ok: true });
   });
 });
