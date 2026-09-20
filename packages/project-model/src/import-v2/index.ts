@@ -258,7 +258,29 @@ export async function planV2Import(
   const bundle = await readBundle(bundleRoot);
   const modelSource = bundle.files.get('PIPELINE.md');
   const mapped = mapConfig(bundle.files.get('cohorte.config.yaml'));
+  const projectContent = options.model === undefined ? undefined : stringify(options.model);
+  const generated =
+    projectContent === undefined
+      ? []
+      : [
+          {
+            path: 'project.yaml',
+            templateId: 'project-model/v1',
+            templateSha256: sha256Hex(projectContent),
+            renderedSha256: sha256Hex(projectContent),
+          },
+        ];
+  const manifestContent = stringify({
+    schemaVersion: 1,
+    cohorteVersion: '3.0.0',
+    createdWith: 'v2-import',
+    protocol: { min: '3.0', max: '3.x' },
+    stateSchemaVersion: 1,
+    generated,
+  });
   const files: V2ImportFile[] = [
+    { path: '.cohorte/manifest.yaml', content: manifestContent, action: 'create', reason: 'V3 migration marker' },
+    { path: '.cohorte/.gitignore', content: 'state/\nruns/\n', action: 'create', reason: 'protect V3 local state' },
     { path: '.cohorte/config.yaml', content: mapped.config, action: 'create', reason: 'mapped V2 configuration' },
     {
       path: '.cohorte/ownership.yaml',
@@ -271,7 +293,7 @@ export async function planV2Import(
       : [
           {
             path: '.cohorte/project.yaml',
-            content: stringify(options.model),
+            content: projectContent ?? '',
             action: 'create' as const,
             reason: 'deterministic V3 project model generated during import',
           },

@@ -59,6 +59,7 @@ describe('V2 export and V3 import', () => {
       });
       expect(report.files).toEqual(
         expect.arrayContaining([
+          '.cohorte/manifest.yaml',
           '.cohorte/project.yaml',
           '.cohorte/config.yaml',
           '.cohorte/import-source/specs/feature.md',
