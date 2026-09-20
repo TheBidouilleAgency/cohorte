@@ -1,6 +1,6 @@
-# ADR-0014: V2 compatibility surface — sources to `legacy/v2/`, cockpit verbs kept, importer later
+# ADR-0014: V2 compatibility surface — sources to `legacy/v2/`, cockpit verbs kept, complete importer
 
-- **Status:** Provisional
+- **Status:** Accepted
 - **Date:** 2026-09-18
 - **Covers:** spec 31 open question 14; brief D8
 - **Design reference:** DESIGN.md §9 (row 27), §10.3 (U0.1), §2.3.5
@@ -21,14 +21,15 @@ today spawns `cohorte doctor --panel`, `cohorte specs --porcelain` and similar o
    is ported as a MUST-DENY test table only.
 4. Kept for cockpit continuity: `cohorte doctor --panel`, `cohorte status --panel=…`, `cohorte specs --porcelain` (byte-compatible field
    order). Panel modes always exit 0.
-5. The importer (`cohorte-v2 export`, `init --from-v2`) is V3.1; the seam is `project-model/src/import/` with a reserved bundle schema.
+5. The importer (`init --export-v2`, `init --from-v2`) performs the complete conversion in the current format; the implementation lives in
+   `project-model/src/import-v2/`. The bundle contract and rollback rules are frozen in `docs/v3/MIGRATION.md`.
 
 ## Consequences
 
 - The branch carries both code bases until V3.0 ships; the published package contains nothing from `legacy/`.
-- Existing V2 users have no automated migration in V3.0.
+- Existing V2 users have a reviewable, checksum-verified migration path; V2 runtime execution remains excluded.
 
 ## Revisit when
 
-- V3.0 is released → decide when `legacy/v2/` leaves the repository (after the importer exists, or at 3.1).
+- The current format is released → decide when `legacy/v2/` leaves the repository; never remove it before the importer and its rollback tests ship.
 - François drops the one-shot panel extension model → the `--panel` adapters can be removed.

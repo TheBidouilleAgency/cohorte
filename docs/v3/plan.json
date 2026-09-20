@@ -1,10 +1,10 @@
 {
  "$comment": "Machine-readable work breakdown of Cohorte V3.0. Human-readable twin: docs/v3/PLAN.md. Design of record: docs/v3/DESIGN.md. Read by scripts/gen-unit-checks.ts and scripts/unit-check.ts (ownedPaths, testPaths).",
  "version": 1,
- "revision": 2,
- "date": "2026-09-18",
+ "revision": 3,
+ "date": "2026-09-20",
  "repo": "/Users/enzo/dev-perso/cohorte",
- "branch": "feat/v3-rewrite",
+ "branch": "feat/v2-v3-migration",
  "designOfRecord": "docs/v3/DESIGN.md",
  "spec": "docs/v3/SPEC.md",
  "structuralPaths": [
