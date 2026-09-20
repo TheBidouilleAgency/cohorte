@@ -24,7 +24,7 @@ const init: CommandModule = {
       if (!bundle) throw new Error('configuration/import-invalid: init --from-v2 requires a bundle directory');
       const model = await scanRepository(root, { clock: ctx.clock, toolVersion: '3.0.0-v2-import' });
       const plan = await planV2Import(resolve(ctx.cwd, bundle), root, { model });
-      if (!args.positionals.includes('--yes') && !args.json) {
+      if (!args.positionals.includes('--yes')) {
         ctx.stdio.stdout.write(`${JSON.stringify(plan, null, 2)}\n`);
         return plan.conflicts.length ? 3 : 0;
       }

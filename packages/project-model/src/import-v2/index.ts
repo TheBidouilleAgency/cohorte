@@ -366,19 +366,35 @@ export async function applyV2Import(
   }
   const stage = join(backupRoot, '.stage');
   await mkdir(stage, { recursive: true, mode: 0o700 });
-  for (const file of plan.files) {
-    if (file.action === 'keep') continue;
-    const target = join(stage, file.path);
-    await mkdir(dirname(target), { recursive: true, mode: 0o700 });
-    await writeFile(target, file.content, { mode: 0o600 });
+  try {
+    for (const file of plan.files) {
+      if (file.action === 'keep') continue;
+      const target = join(stage, file.path);
+      await mkdir(dirname(target), { recursive: true, mode: 0o700 });
+      await writeFile(target, file.content, { mode: 0o600 });
+    }
+    for (const file of plan.files) {
+      if (file.action === 'keep') continue;
+      const target = join(plan.projectRoot, file.path);
+      await mkdir(dirname(target), { recursive: true, mode: 0o700 });
+      await rename(join(stage, file.path), target);
+    }
+    await rm(stage, { recursive: true, force: true });
+  } catch (error) {
+    await rm(stage, { recursive: true, force: true });
+    for (const file of plan.files) {
+      if (file.action === 'keep') continue;
+      const target = join(plan.projectRoot, file.path);
+      const backup = join(backupRoot, file.path);
+      try {
+        await stat(backup);
+        await cp(backup, target, { recursive: true, verbatimSymlinks: true });
+      } catch {
+        await rm(target, { recursive: true, force: true });
+      }
+    }
+    throw error;
   }
-  for (const file of plan.files) {
-    if (file.action === 'keep') continue;
-    const target = join(plan.projectRoot, file.path);
-    await mkdir(dirname(target), { recursive: true, mode: 0o700 });
-    await rename(join(stage, file.path), target);
-  }
-  await rm(stage, { recursive: true, force: true });
   const report: V2ImportReport = {
     reportId: id,
     status: 'applied',
