@@ -1,7 +1,7 @@
 # Cohorte V3.0 — Work breakdown (PLAN)
 
 **Status:** executable plan for parallel coding agents · **Date:** 2026-09-18 · **Design of record:** `docs/v3/DESIGN.md` · **Spec:** `docs/v3/SPEC.md`
-**Machine-readable twin:** `docs/v3/plan.json` (same data; `scripts/gen-unit-checks.ts` and `scripts/unit-check.ts` read it).
+**Machine-readable twin:** `docs/v3/plan.json` (same data; `scripts/gen-unit-checks.ts` and `scripts/unit-check.ts` read it). **Migration plan:** `docs/v3/MIGRATION.md`.
 **Revision 2 (same day):** amended after the adversarial design critique — 3 blockers, 16 majors, 17 minors, all applied; §8.4 maps each finding to the unit that delivers its fix, §2 rows F-7, F-8, PC-8..PC-11 record the facts behind the contract amendments.
 **Where the work happens:** ONE working tree, `/Users/enzo/dev-perso/cohorte`, branch `feat/v3-rewrite`. No git worktrees for the builders, no commits by agents.
 
