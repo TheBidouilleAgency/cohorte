@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { cp, lstat, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { canonicalJson, sha256Hex } from '@cohorte/base';
+import { DEFAULT_CONFIG, type Spec, specContentSha256 } from '@cohorte/config/schema';
 import { parse, stringify } from 'yaml';
 import type { ProjectModel } from '../contract.ts';
 
@@ -227,26 +228,138 @@ async function readBundle(bundleRoot: string): Promise<BundleInput> {
   return { manifest, files, sourceDigest };
 }
 
-function mapConfig(input: string | undefined): { config: string; ownership: string; warnings: V2ImportWarning[] } {
-  const warnings: V2ImportWarning[] = [];
-  if (input === undefined) return { config: 'schemaVersion: 1\n', ownership: 'surfaces: {}\n', warnings };
-  let document: Record<string, unknown> = {};
+function pipelineBlock(input: string | undefined): Record<string, unknown> {
+  const match = input?.match(/```ya?ml\s+pipeline-profile\s*\n([\s\S]*?)\n```/iu);
+  if (!match?.[1]) return {};
   try {
-    const parsed = parse(input) as unknown;
-    if (parsed && typeof parsed === 'object') document = parsed as Record<string, unknown>;
+    const parsed = parse(match[1]) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
   } catch {
-    warnings.push(warning('config-invalid-yaml', 'V2 configuration is not valid YAML', 'cohorte.config.yaml', true));
+    return {};
   }
-  const profile = (document.pipeline ?? document['pipeline-profile']) as Record<string, unknown> | undefined;
-  if (profile?.name === undefined)
+}
+
+function rule(id: string, program: string, decision: 'allow' | 'ask' | 'deny') {
+  return { id, program, decision, replay: 'idempotent' as const, network: false, origin: 'project-config' as const };
+}
+
+function mapConfig(
+  input: string | undefined,
+  pipeline: string | undefined,
+  model: ProjectModel | undefined,
+): { config: string; ownership: string; warnings: V2ImportWarning[] } {
+  const warnings: V2ImportWarning[] = [];
+  let document: Record<string, unknown> = {};
+  if (input !== undefined) {
+    try {
+      const parsed = parse(input) as unknown;
+      if (parsed && typeof parsed === 'object') document = parsed as Record<string, unknown>;
+    } catch {
+      warnings.push(warning('config-invalid-yaml', 'V2 configuration is not valid YAML', 'cohorte.config.yaml', true));
+    }
+  }
+  const profile = pipelineBlock(pipeline);
+  if (profile.name === undefined)
     warnings.push(warning('config-project-id-missing', 'project id needs human confirmation'));
   if (document.kanban !== undefined)
     warnings.push(warning('kanban-not-imported', 'Kanban links remain external and are not synchronized'));
-  const id = typeof profile?.name === 'string' ? profile.name : 'imported-project';
+  const id = typeof profile.name === 'string' ? profile.name : 'imported-project';
+  const vcs = (profile.vcs ?? {}) as Record<string, unknown>;
+  const commands = (profile.commands ?? {}) as Record<string, unknown>;
+  const gate = (profile.gate ?? {}) as Record<string, unknown>;
+  const defaultBranch =
+    typeof vcs.default_branch === 'string' ? vcs.default_branch : DEFAULT_CONFIG.project.defaultBranch;
+  const branchPrefix =
+    typeof vcs.feature_branch_prefix === 'string' ? vcs.feature_branch_prefix : DEFAULT_CONFIG.git.branchPrefix;
+  const migrated = structuredClone(DEFAULT_CONFIG);
+  migrated.project = { ...migrated.project, id, defaultBranch, protectedBranches: [defaultBranch] };
+  migrated.git = { ...migrated.git, branchPrefix };
+  migrated.checks = {
+    ...migrated.checks,
+    ...(typeof commands.test === 'string' ? { test: commands.test.split(/\s+/u) } : {}),
+    ...(typeof commands.lint === 'string' ? { lint: commands.lint.split(/\s+/u) } : {}),
+    ...(typeof commands.typecheck === 'string' ? { typecheck: commands.typecheck.split(/\s+/u) } : {}),
+  };
+  const deny = Array.isArray(gate.deny) ? gate.deny.filter((v): v is string => typeof v === 'string') : [];
+  const ask = Array.isArray(gate.ask) ? gate.ask.filter((v): v is string => typeof v === 'string') : [];
+  migrated.policy.commands = {
+    allow: [],
+    ask: ask.map((value, index) => rule(`v2-ask-${index}`, value.split(/\s+/u)[0] ?? value, 'ask')),
+    deny: deny.map((value, index) => rule(`v2-deny-${index}`, value.split(/\s+/u)[0] ?? value, 'deny')),
+  };
+  warnings.push(
+    warning('runtime-review-required', 'V2 runtime adapters are not migrated; review the current runtime selection'),
+  );
+  const surfaces = Object.fromEntries(
+    Object.entries(model?.surfaces ?? {}).map(([key, value]) => [
+      key,
+      { paths: value.paths.value, owners: ['implementer'], reviewers: ['reviewer'] },
+    ]),
+  );
   return {
-    config: stringify({ schemaVersion: 1, project: { id, defaultBranch: 'main', protectedBranches: ['main'] } }),
-    ownership: 'surfaces: {}\n',
+    config: stringify(migrated),
+    ownership: stringify({ surfaces }),
     warnings,
+  };
+}
+
+function section(markdown: string, number: string, fallback: string): string {
+  const match = markdown.match(new RegExp(`^##\\s+${number}\\.?.*?\\n([\\s\\S]*?)(?=^##\\s+|$)`, 'imu'));
+  return match?.[1]?.trim() ?? fallback;
+}
+
+function bullets(text: string): string[] {
+  return text
+    .split('\n')
+    .map((line) => line.match(/^\s*(?:[-*]|\d+[.)])\s+(.*)$/u)?.[1]?.trim())
+    .filter((value): value is string => Boolean(value));
+}
+
+function importedSpec(path: string, markdown: string): { id: string; content: string; warning?: V2ImportWarning } {
+  const front = markdown.match(/^---\s*\n([\s\S]*?)\n---/u);
+  const metadata = front?.[1] ? (parse(front[1]) as Record<string, unknown>) : {};
+  const filename = path.split('/').pop()?.replace(/\.md$/iu, '') ?? 'imported-spec';
+  const id =
+    String(metadata.feature_id ?? filename)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/gu, '-')
+      .replace(/^-|-$/gu, '')
+      .slice(0, 48) || 'imported-spec';
+  const heading = markdown.match(/^#\s+(.+)$/mu)?.[1]?.trim();
+  const title = String(metadata.title ?? heading ?? id);
+  const rawStatus = String(metadata.status ?? 'draft');
+  const status = rawStatus === 'draft' ? 'draft' : 'frozen';
+  const acceptance = bullets(section(markdown, '9', ''));
+  const openQuestions = bullets(section(markdown, '10', ''));
+  const surfaces: Record<string, { tasks: string[] }> = {};
+  const surfaceSection = section(markdown, '6', '');
+  for (const match of surfaceSection.matchAll(/^###\s+([^\n]+)\n([\s\S]*?)(?=^###\s+|$)/gmu)) {
+    const key =
+      match[1]
+        ?.trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/gu, '-')
+        .replace(/^-|-$/gu, '') || 'shared';
+    surfaces[key] = { tasks: bullets(match[2] ?? '') };
+  }
+  if (Object.keys(surfaces).length === 0)
+    surfaces.shared = { tasks: ['Review imported V2 specification and assign implementation tasks.'] };
+  const body = {
+    id,
+    kind: 'feature' as const,
+    status,
+    title,
+    acceptance: acceptance.length ? acceptance : [`Review imported V2 specification: ${title}`],
+    surfaces,
+    openQuestions: [...openQuestions, ...(rawStatus === 'draft' ? [] : [`Original V2 status: ${rawStatus}`])],
+  } as Spec;
+  if (status === 'frozen') return { id, content: stringify({ ...body, sha256: specContentSha256(body) }) };
+  return {
+    id,
+    content: stringify(body),
+    ...(rawStatus === 'draft'
+      ? {}
+      : { warning: warning('spec-status-normalized', `V2 status ${rawStatus} was normalized to frozen`, path) }),
   };
 }
 
@@ -257,7 +370,7 @@ export async function planV2Import(
 ): Promise<V2ImportPlan> {
   const bundle = await readBundle(bundleRoot);
   const modelSource = bundle.files.get('PIPELINE.md');
-  const mapped = mapConfig(bundle.files.get('cohorte.config.yaml'));
+  const mapped = mapConfig(bundle.files.get('cohorte.config.yaml'), modelSource, options.model);
   const projectContent = options.model === undefined ? undefined : stringify(options.model);
   const generated =
     projectContent === undefined
@@ -278,6 +391,10 @@ export async function planV2Import(
     stateSchemaVersion: 1,
     generated,
   });
+  const convertedSpecs = bundle.manifest.files
+    .filter((entry) => entry.kind === 'spec')
+    .map((entry) => ({ entry, converted: importedSpec(entry.path, bundle.files.get(entry.path) ?? '') }));
+  const specWarnings = convertedSpecs.flatMap(({ converted }) => (converted.warning ? [converted.warning] : []));
   const files: V2ImportFile[] = [
     { path: '.cohorte/manifest.yaml', content: manifestContent, action: 'create', reason: 'V3 migration marker' },
     { path: '.cohorte/.gitignore', content: 'state/\nruns/\n', action: 'create', reason: 'protect V3 local state' },
@@ -308,13 +425,19 @@ export async function planV2Import(
             reason: 'preserve V2 source',
           },
         ]),
+    ...convertedSpecs.map(({ entry, converted }) => ({
+      path: `.cohorte/specs/${converted.id}.yaml`,
+      content: converted.content,
+      action: 'create' as const,
+      reason: `convert V2 Markdown specification ${entry.path} to native schema`,
+    })),
     ...bundle.manifest.files
-      .filter((entry) => entry.kind === 'spec' || entry.kind === 'history')
+      .filter((entry) => entry.kind === 'history')
       .map((entry) => ({
-        path: `.cohorte/import-source/${normalisePath(entry.path)}`,
+        path: `.cohorte/artifacts/v2-history/${normalisePath(entry.path).replace(/^specs\/reports\//u, '')}`,
         content: bundle.files.get(entry.path) ?? '',
         action: 'create' as const,
-        reason: entry.kind === 'spec' ? 'preserve V2 specification' : 'preserve V2 historical artifact',
+        reason: 'import V2 historical artifact',
       })),
   ];
   const currentDigest = await digestProject(projectRoot);
@@ -344,7 +467,7 @@ export async function planV2Import(
     projectRoot: resolve(projectRoot),
     sourceVersion: bundle.manifest.sourceVersion,
     files,
-    warnings: [...bundle.manifest.warnings, ...mapped.warnings],
+    warnings: [...bundle.manifest.warnings, ...mapped.warnings, ...specWarnings],
     conflicts,
     sourceDigest: bundle.sourceDigest,
     targetDigest: currentDigest,

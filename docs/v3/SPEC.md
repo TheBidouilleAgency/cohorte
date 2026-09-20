@@ -785,7 +785,7 @@ Ces points doivent être décidés avant le gel de l’API correspondante :
 11. Comment signer/distribuer les skills externes et leurs checks ?
 12. Le semantic discovery peut-il utiliser un provider distant lors de `init`, ou doit-il fonctionner offline avec un modèle local ?
 13. Quel schéma de licence et quelle politique de télémétrie opt-in pour la distribution publique ?
-14. **Décidé dans ADR-0014 :** V3.0 conserve uniquement la continuité cockpit et le diagnostic sans exécuter V2 ; l'importeur `init --export-v2` / `init --from-v2` est V3.1. Le bundle, le mapping, le rollback et les critères d'acceptation sont définis dans `docs/v3/MIGRATION.md`.
+14. **Décidé dans ADR-0014 :** le format courant conserve uniquement la continuité cockpit et le diagnostic sans exécuter V2 ; `init --export-v2` / `init --from-v2` réalise la migration complète. Le bundle, le mapping, le rollback et les critères d'acceptation sont définis dans `docs/v3/MIGRATION.md`.
 
 ## 32. Décisions de conception à préserver
 

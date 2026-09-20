@@ -1,23 +1,22 @@
 # Cohorte V3 — plan de migration
 
-**Statut :** gelé pour V3.0  
-**Portée :** migration d'un projet déjà piloté par Cohorte V2 vers V3, puis migrations d'état entre versions V3.  
+**Statut :** migration complète du format V2 vers le format courant  
+**Portée :** conversion d'un projet déjà piloté par Cohorte V2 vers le format courant, sans étape intermédiaire ni import différé.  
 **Décision liée :** [ADR-0014](adr/0014-v2-compatibility-surface.md)
 
 ## 1. Décision de version
 
-V3.0 est une rupture contrôlée : il n'exécute pas le runtime V2 et ne transforme pas
-automatiquement un projet V2. L'importeur V2 est livré en V3.1 sous la forme de
-`cohorte-v2 export` / `cohorte init --from-v2`.
+Le format courant est une rupture contrôlée : il n'exécute pas le runtime V2,
+mais la migration convertit immédiatement les données de projet utiles. Aucun
+run V2 n'est maquillé en run courant et aucun runtime V2 n'est embarqué.
 
 Cela donne deux chemins explicites :
 
 | Situation | Commande | Résultat |
 |---|---|---|
 | Nouveau projet | `cohorte init` | configuration V3 neuve |
-| Projet V2 à conserver tel quel | aucune migration | V2 continue avec l'installation V2 |
-| Projet V2 à reprendre dans V3.1 | `cohorte init --export-v2 <bundle>` puis `cohorte init --from-v2 <bundle>` | bundle inspectable, import approuvé |
-| Base d'état V3 avec migrations en attente | `cohorte migrate --check` puis `cohorte migrate --apply` | schéma V3 suivant, après backup |
+| Projet V2 à convertir | `cohorte init --export-v2 <bundle>` puis `cohorte init --from-v2 <bundle>` | bundle inspectable, conversion complète et approuvée |
+| Base d'état courante avec migrations en attente | `cohorte migrate --check` puis `cohorte migrate --apply` | schéma courant suivant, après backup |
 
 V3.0 doit toutefois reconnaître proprement les traces V2 et expliquer l'action
 attendue. Il ne doit ni les écraser, ni les interpréter comme une base V3.
@@ -26,9 +25,9 @@ attendue. Il ne doit ni les écraser, ni les interpréter comme une base V3.
 
 | Source V2 | V3.0 | V3.1 importer |
 |---|---|---|
-| `PIPELINE.md`, profils et `cohorte.config.yaml` | détection et diagnostic seulement | import vers `.cohorte/manifest.yaml`, `config.yaml`, `ownership.yaml` |
-| `specs/*.md` et leurs statuts | laissés intacts | import en spécifications V3 avec provenance `v2` |
-| `specs/reports/`, métriques, logs | laissés intacts | attachés comme artefacts historiques, jamais comme événements durables |
+| `PIPELINE.md`, profils et `cohorte.config.yaml` | détection et diagnostic seulement | conversion vers `.cohorte/manifest.yaml`, `config.yaml`, `ownership.yaml` |
+| `specs/*.md` et leurs statuts | laissés intacts | conversion en `.cohorte/specs/*.yaml`, avec statut normalisé et provenance dans le rapport |
+| `specs/reports/`, métriques, logs | laissés intacts | import dans `.cohorte/artifacts/v2-history/`, jamais comme événements durables |
 | `.cohorte/`, `.claude/`, états runtime et `gate-config.json` | jamais lus comme état V3 | archivés dans le bundle, sans être exécutés |
 | cartes Kanban externes | aucune écriture | export des liens et statuts, sans synchronisation automatique |
 | runs, leases, transcripts et worktrees V2 | non migrés | non migrés ; un run V3 démarre à `IDLE` |
@@ -66,10 +65,10 @@ Contraintes du format :
 5. Le bundle est vérifié avant lecture et ne peut écrire dans le projet tant que
    l'utilisateur n'a pas confirmé le diff proposé.
 
-Le schéma du bundle est réservé dans `project-model/src/import/` dès V3.0 ; son
-implémentation et sa CLI appartiennent à V3.1.
+Le bundle et sa conversion sont implémentés dans `project-model/src/import-v2/`
+et exécutés par la CLI courante.
 
-## 4. Procédure V3.1
+## 4. Procédure de migration
 
 ### Phase A — préflight sans écriture
 
@@ -84,8 +83,9 @@ implémentation et sa CLI appartiennent à V3.1.
 
 ### Phase B — proposition
 
-1. Mapper les champs V2 connus vers les schémas V3.
-2. Générer une nouvelle proposition sous `.cohorte/import-preview/<id>/`.
+1. Mapper les champs V2 connus vers les schémas courants.
+2. Convertir les specs Markdown vers `.cohorte/specs/*.yaml` et déplacer les rapports vers les artefacts historiques.
+3. Générer une nouvelle proposition sous `.cohorte/import-preview/<id>/`.
 3. Afficher les ajouts, modifications, champs ignorés et conflits.
 4. Exiger une confirmation explicite si une valeur V2 n'a pas d'équivalent ou
    si un fichier V3 existe déjà.
@@ -99,7 +99,7 @@ implémentation et sa CLI appartiennent à V3.1.
    temporaire, fsync, rename ; aucun fichier V2 n'est supprimé.
 5. Créer un rapport signé par les hashes : source, destination, warnings, backup,
    commande et version de l'importeur.
-6. Initialiser un nouveau run V3 uniquement à la demande ; aucun run V2 ne devient
+6. Initialiser un nouveau run courant uniquement à la demande ; aucun run V2 ne devient
    artificiellement `COMPLETED`, `PAUSED` ou `RESUMABLE`.
 
 ## 5. Rollback et reprise
@@ -112,7 +112,7 @@ du projet. Tant que le rapport n'est pas `applied`, la commande est sans effet.
   checksums ;
 - échec de vérification : état `rollback-required`, aucune nouvelle tentative
   automatique ;
-- rollback manuel : `cohorte migrate --rollback <report-id>` en V3.1, avec le
+- rollback manuel : `cohorte migrate --rollback <report-id>`, avec le
   backup exact et le digest attendu ;
 - les fichiers V2 d'origine ne sont jamais supprimés par l'importeur.
 
@@ -124,11 +124,11 @@ connaît pas le schéma refuse `status` et indique exactement `cohorte migrate
 
 ## 6. Critères d'acceptation
 
-- V3.0 sur un projet V2 ne modifie aucun fichier et explique la procédure V3.1.
+- le mode preview ne modifie aucun fichier et explique la conversion complète.
 - Un export exclut les secrets, refuse les traversals et est vérifiable hors ligne.
 - Un import avec conflit ne touche pas au projet et produit un diff lisible.
 - Une interruption à chaque étape de l'application est récupérable par le backup.
-- Les specs V2 importées gardent leur contenu et leur provenance ; les statuts
+- Les specs V2 converties restent lisibles par le loader courant et gardent leur provenance ; les statuts
   non mappés deviennent des warnings bloquants.
 - Aucun run, lease, transcript ou worktree V2 n'est présenté comme un run V3.
 - Une migration `0002` de la base V3 est testée avec `check`, backup, `apply`,
@@ -138,7 +138,6 @@ connaît pas le schéma refuse `status` et indique exactement `cohorte migrate
 
 | Version | Travail | Preuve |
 |---|---|---|
-| V3.0 / W0 | réserver le schéma d'import, documenter la détection et conserver V2 dans `legacy/v2/` | test de non-écriture + diagnostic |
-| V3.0 / W1 + W5 | moteur de migrations SQLite, backups, refus de schéma incompatible | `U1.01`, `U5.07`, D5 |
-| V3.1 | export V2, mapping config/specs, preview, application atomique, rollback | suite `tests/integration/import-v2/**` |
-| V3.1 | retirer éventuellement `legacy/v2/` après adoption de l'importeur | décision de release, jamais automatique |
+| Migration | export V2, mapping config/specs, preview, application atomique, rollback | suite `packages/project-model/test/import-v2/**` |
+| État courant | moteur de migrations SQLite, backups, refus de schéma incompatible | `U1.01`, `U5.07`, D5 |
+| Nettoyage | supprimer les fichiers V2 seulement après backup et confirmation | rapport d'import, jamais automatique |

@@ -1,8 +1,11 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { CohorteConfig, Ownership, Spec } from '@cohorte/config/schema';
 import { FixedClock } from '@cohorte/testkit';
+import { Compile } from 'typebox/compile';
 import { describe, expect, test } from 'vitest';
+import { parse } from 'yaml';
 import { applyV2Import, exportV2, planV2Import, rollbackV2Import } from '../../src/import-v2/index.ts';
 import { scanRepository } from '../../src/scan/index.ts';
 
@@ -62,12 +65,22 @@ describe('V2 export and V3 import', () => {
           '.cohorte/manifest.yaml',
           '.cohorte/project.yaml',
           '.cohorte/config.yaml',
-          '.cohorte/import-source/specs/feature.md',
+          '.cohorte/specs/feature.yaml',
+          '.cohorte/artifacts/v2-history/review.md',
         ]),
       );
+      await expect(readFile(join(paths.root, '.cohorte', 'specs', 'feature.yaml'), 'utf8')).resolves.toContain(
+        'title: Feature',
+      );
+      const importedConfig = parse(await readFile(join(paths.root, '.cohorte', 'config.yaml'), 'utf8'));
+      const importedOwnership = parse(await readFile(join(paths.root, '.cohorte', 'ownership.yaml'), 'utf8'));
+      const importedSpec = parse(await readFile(join(paths.root, '.cohorte', 'specs', 'feature.yaml'), 'utf8'));
+      expect(Compile(CohorteConfig).Check(importedConfig)).toBe(true);
+      expect(Compile(Ownership).Check(importedOwnership)).toBe(true);
+      expect(Compile(Spec).Check(importedSpec)).toBe(true);
       await expect(
-        readFile(join(paths.root, '.cohorte', 'import-source', 'specs', 'feature.md'), 'utf8'),
-      ).resolves.toBe('# Feature\n');
+        readFile(join(paths.root, '.cohorte', 'artifacts', 'v2-history', 'review.md'), 'utf8'),
+      ).resolves.toBe('# Review\n');
       await expect(readFile(join(paths.root, 'PIPELINE.md'), 'utf8')).resolves.toContain('version: 2.10.0');
       await rollbackV2Import(report);
       await expect(readFile(join(paths.root, '.cohorte', 'project.yaml'))).rejects.toThrow();
