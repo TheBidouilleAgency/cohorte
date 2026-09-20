@@ -1,7 +1,7 @@
 # Cohorte V3 — plan de migration
 
-**Statut :** migration complète du format V2 vers le format courant  
-**Portée :** conversion d'un projet déjà piloté par Cohorte V2 vers le format courant, sans étape intermédiaire ni import différé.  
+**Statut :** migration complète du format V2 vers le format courant
+**Portée :** conversion d'un projet déjà piloté par Cohorte V2 vers le format courant, sans étape intermédiaire ni import différé.
 **Décision liée :** [ADR-0014](adr/0014-v2-compatibility-surface.md)
 
 ## 1. Décision de version
