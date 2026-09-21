@@ -44,6 +44,38 @@ describe('project commands', () => {
     }
   });
 
+  test('brainstorm --run delegates the panel to the native Pi BRAINSTORM phase', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'cohorte-brainstorm-run-'));
+    try {
+      const out = captureStream();
+      const calls: unknown[] = [];
+      const ctx = fakeCliContext({
+        cwd,
+        stdio: { stdout: out.stream, stderr: out.stream, stdin: process.stdin },
+        controller: {
+          send: async (_command: string, payload: unknown) => {
+            calls.push(payload);
+            return { status: 'pending', result: { runId: 'run_brainstorm' } };
+          },
+        } as never,
+        hostSpawner: { spawnDetached: async () => ({ pid: 1 }) } as never,
+      });
+      expect(
+        await brainstorm.run(ctx, {
+          positionals: ['Préparer le lancement', '--run'],
+          options: {},
+          json: true,
+        }),
+      ).toBe(4);
+      expect(calls[0]).toMatchObject({
+        runtime: 'pi',
+        phases: ['BRAINSTORM', 'SPEC', 'PREFLIGHT', 'BUILD', 'TEST', 'REVIEW', 'FIX', 'TEST', 'REVIEW', 'SHIP'],
+      });
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   test('spec validate and freeze resolve legacy-compatible markdown specs by feature id', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'cohorte-spec-md-'));
     try {

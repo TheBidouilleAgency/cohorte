@@ -9,7 +9,7 @@ the configured Pi runtime.
 
 | V2 capability | V3 implementation | Evidence | State |
 | --- | --- | --- | --- |
-| Brainstorm seed and structured handoff | `commands/brainstorm`, `BRAINSTORM` phase | `apps/cli/test/commands-project/brainstorm.test.ts`, phase contract tests | Implemented; interactive persona panel still needs runtime-level coverage |
+| Brainstorm seed and structured handoff | `commands/brainstorm`, native Pi `BRAINSTORM` phase | project-command tests, phase contract tests, `brainstorm --run` delegation test | Implemented; deterministic draft mode and native Pi panel mode both stage the structured handoff |
 | Spec validation and freeze | `commands/spec validate\|freeze`, Markdown/YAML loaders | `apps/cli/test/commands-project/spec.test.ts` | Implemented |
 | Build fan-out by owned surface | `BUILD` phase contracts and selected start surfaces | core phase/executor tests, acceptance run | Implemented |
 | Test gate before review | `TEST` phase and check runner | engine and acceptance tests | Implemented |
