@@ -93,6 +93,7 @@ const loop: CommandModule = {
     let result: number;
     let controllerResult: LoopSnapshot = before;
     if (previous?.status === 'pending' && previous.runId) {
+      controllerResult = { ...before, runId: previous.runId };
       try {
         const tree = await ctx.openStore().then(async (store) => {
           try {
@@ -103,7 +104,7 @@ const loop: CommandModule = {
         });
         const state = tree.run.state;
         if (ACTIVE_STATES.has(state)) {
-          controllerResult = { ...before, runId: previous.runId, phase: previous.phase ?? 'build', status: 'pending' };
+          controllerResult = { ...controllerResult, phase: previous.phase ?? 'build', status: 'pending' };
           await writeFile(reportPath, `${JSON.stringify(controllerResult, null, 2)}\n`, 'utf8');
           if (args.json) ctx.stdio.stdout.write(`${JSON.stringify({ ...controllerResult, reportPath })}\n`);
           else ctx.stdio.stdout.write(`loop pending: ${reportPath}\n`);
