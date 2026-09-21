@@ -2,7 +2,8 @@
 // stub files that lie inside their owned paths; they never edit ... the registry"). Wave-0 stub: exits with the
 // documented not-available error (spec 24 `configuration/phase-not-available`); filled by the Wave-4/5
 // unit that owns `apps/cli/src/commands/spec/**`.
-import { access, readFile, writeFile } from 'node:fs/promises';
+import { access, appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { freezeSpec, loadSpec } from '@cohorte/config';
 import { stringify } from 'yaml';
 import type { CommandModule } from '../../contract/index.ts';
@@ -37,6 +38,11 @@ const spec: CommandModule = {
           ? source.replace(/^---\n[\s\S]*?\n---/u, `---\n${next}\n---`)
           : `---\n${next}\n---\n\n${source}`;
         await writeFile(file, body, 'utf8');
+        await mkdir(resolve(ctx.cwd, 'specs'), { recursive: true });
+        await appendFile(
+          resolve(ctx.cwd, 'specs', '_decisions.md'),
+          `${ctx.clock.now().slice(0, 10)} · spec/${input} · frozen\n`,
+        );
         ctx.stdio.stdout.write(`${JSON.stringify({ path: file, status: 'frozen', valid: true })}\n`);
         return 0;
       }
@@ -47,6 +53,13 @@ const spec: CommandModule = {
     const frozen = args.subVerb === 'freeze';
     const value = frozen ? await freezeSpec(file) : await loadSpec(file);
     if (frozen) await writeFile(file, stringify(value));
+    if (frozen) {
+      await mkdir(resolve(ctx.cwd, 'specs'), { recursive: true });
+      await appendFile(
+        resolve(ctx.cwd, 'specs', '_decisions.md'),
+        `${ctx.clock.now().slice(0, 10)} · spec/${input} · frozen\n`,
+      );
+    }
     ctx.stdio.stdout.write(`${JSON.stringify(value)}\n`);
     return 0;
   },
