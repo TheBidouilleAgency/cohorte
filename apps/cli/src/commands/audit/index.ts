@@ -10,6 +10,22 @@ const exec = promisify(execFile);
 
 type BacklogItem = { severity: string; file: string; line: number; kind: string; fix: string };
 
+async function configuredDomains(root: string): Promise<string[]> {
+  try {
+    const pipeline = await readFile(join(root, 'PIPELINE.md'), 'utf8');
+    const block = /```yaml pipeline-profile\s*\n([\s\S]*?)\n```/u.exec(pipeline)?.[1];
+    const profile = block ? (parse(block) as { surfaces?: unknown[] }) : {};
+    const keys = (profile.surfaces ?? []).flatMap((surface) =>
+      surface && typeof surface === 'object' && 'key' in surface && typeof surface.key === 'string'
+        ? [surface.key]
+        : [],
+    );
+    return [...new Set([...keys, 'shared'])];
+  } catch {
+    return [];
+  }
+}
+
 async function configuredGates(root: string): Promise<string[]> {
   try {
     const pipeline = await readFile(join(root, 'PIPELINE.md'), 'utf8');
@@ -135,17 +151,43 @@ const audit: CommandModule = {
     if (findings.length === 0) backlog.push('', 'No open findings were recovered from the durable reports.', '');
     const backlogPath = join(ctx.cwd, 'specs', 'refactor-backlog.md');
     await writeFile(backlogPath, `${backlog.join('\n')}\n`, 'utf8');
-    const result = await review.run(ctx, {
-      ...args,
-      // Audit targets are domains/paths, not feature spec IDs. Forward the target
-      // as a review surface so Pi reviews the selected ownership slice instead of
-      // trying to open specs/<domain>.md.
-      positionals: target
-        ? ['--surface', target, ...args.positionals.filter((x) => x.startsWith('--'))]
-        : args.positionals,
-    });
+    const configured = await configuredDomains(ctx.cwd);
+    const domains = configured.filter((domain) => !target || target === domain || domain.startsWith(target));
+    const dispatch = domains.length > 0 ? domains : [target ?? 'all'];
+    const outcomes = await Promise.all(
+      dispatch.map(async (domain) => {
+        try {
+          const result = await review.run(ctx, {
+            ...args,
+            // Audit targets are domains/paths, not feature spec IDs. Forward each
+            // domain as a review surface so Pi reviews one ownership slice at a time.
+            positionals: ['--surface', domain, ...args.positionals.filter((value) => value.startsWith('--'))],
+          });
+          return { domain, status: result };
+        } catch (error) {
+          return { domain, status: 3, error: error instanceof Error ? error.message : String(error) };
+        }
+      }),
+    );
+    const dispatchPath = join(ctx.cwd, 'specs', 'reports', 'audit-dispatch.json');
+    await writeFile(
+      dispatchPath,
+      `${JSON.stringify(
+        {
+          generatedAt: ctx.clock.now(),
+          requestedTarget: target ?? null,
+          domains: outcomes,
+          deadDomains: outcomes.filter((item) => item.error).map((item) => item.domain),
+        },
+        null,
+        2,
+      )}\n`,
+      'utf8',
+    );
+    const result = outcomes.some((item) => item.status === 3) ? 3 : outcomes.some((item) => item.status === 4) ? 4 : 0;
     ctx.stdio.stdout.write(
-      `audit gates written to ${relative(ctx.cwd, gatePath)}; backlog written to ${relative(ctx.cwd, backlogPath)}; review dispatched\n`,
+      `audit gates written to ${relative(ctx.cwd, gatePath)}; backlog written to ${relative(ctx.cwd, backlogPath)}; ` +
+        `review dispatched for ${outcomes.length} domain(s)\n`,
     );
     return result;
   },

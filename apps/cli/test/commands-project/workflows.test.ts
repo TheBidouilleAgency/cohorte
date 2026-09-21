@@ -60,6 +60,40 @@ describe('V2 workflow compatibility commands', () => {
     }
   });
 
+  test('audit dispatches one Pi review per configured domain and records the dispatch', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'cohorte-audit-dispatch-'));
+    try {
+      await writeFile(
+        join(cwd, 'PIPELINE.md'),
+        ['```yaml pipeline-profile', 'surfaces:', '  - key: apps-api', '  - key: apps-web', '```', ''].join('\n'),
+      );
+      const calls: unknown[] = [];
+      const out = captureStream();
+      const ctx = fakeCliContext({
+        cwd,
+        stdio: { stdout: out.stream, stderr: out.stream, stdin: process.stdin },
+        controller: {
+          send: async (_command, payload) => {
+            calls.push(payload);
+            return { status: 'pending' };
+          },
+        } as never,
+      });
+      expect(await audit.run(ctx, { positionals: [], options: {}, json: false })).toBe(4);
+      expect(calls).toHaveLength(3);
+      expect(calls.map((payload) => (payload as { surfaces?: string[] }).surfaces)).toEqual([
+        ['apps-api'],
+        ['apps-web'],
+        ['shared'],
+      ]);
+      await expect(readFile(join(cwd, 'specs', 'reports', 'audit-dispatch.json'), 'utf8')).resolves.toContain(
+        '"deadDomains": []',
+      );
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   test('retro mines repeated findings and only writes after explicit ratification', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'cohorte-retro-'));
     try {
