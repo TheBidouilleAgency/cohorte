@@ -24,6 +24,8 @@ const refactor: CommandModule = {
         : requested;
     if (!domains.length) return 2;
     const completed: Array<{ domain: string; tasks: string[] }> = [];
+    const outcomes: Array<{ domain: string; spec: string; tasks: string[]; status: number; attempts: number }> = [];
+    await mkdir(join(ctx.cwd, 'specs', 'reports'), { recursive: true });
     const runDomain = async (domain: string): Promise<number> => {
       const heading = headings.find((match) => match[1]?.trim() === domain);
       const start = heading?.index ?? -1;
@@ -48,10 +50,18 @@ const refactor: CommandModule = {
       const path = join(ctx.cwd, '.cohorte', 'specs', `${id}.yaml`);
       await mkdir(join(ctx.cwd, '.cohorte', 'specs'), { recursive: true });
       await writeFile(path, stringify(spec), 'utf8');
-      const result = await run.run(ctx, {
+      const first = await run.run(ctx, {
         ...args,
         positionals: [path, '--profile', 'feature', '--phases', 'BUILD,TEST,REVIEW', '--with-fix'],
       });
+      const result =
+        first === 3
+          ? await run.run(ctx, {
+              ...args,
+              positionals: [path, '--profile', 'feature', '--phases', 'BUILD,TEST,REVIEW', '--with-fix'],
+            })
+          : first;
+      outcomes.push({ domain, spec: path, tasks, status: result, attempts: first === 3 ? 2 : 1 });
       if (result === 0) {
         completed.push({ domain, tasks });
       }
@@ -69,7 +79,6 @@ const refactor: CommandModule = {
     if (sharedStatus !== 0) return sharedStatus;
     const parallelDomains = ordered[0] === 'shared' ? ordered.slice(1) : ordered;
     const statuses = await Promise.all(parallelDomains.map((domain) => runDomain(domain)));
-    if (statuses.some((result) => result !== 0)) return Math.max(...statuses, 0);
     for (const item of completed) {
       source = source
         .split(/\r?\n/u)
@@ -79,6 +88,12 @@ const refactor: CommandModule = {
         .join('\n');
     }
     await writeFile(backlogPath, `${source}\n`, 'utf8');
+    await writeFile(
+      join(ctx.cwd, 'specs', 'reports', 'refactor.json'),
+      `${JSON.stringify({ generatedAt: ctx.clock.now(), domains, outcomes }, null, 2)}\n`,
+      'utf8',
+    );
+    if (statuses.some((result) => result !== 0)) return Math.max(...statuses, 0);
     return 0;
   },
 };

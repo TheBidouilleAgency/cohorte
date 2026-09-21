@@ -7,6 +7,7 @@ import audit from '../../src/commands/audit/index.ts';
 import fleet from '../../src/commands/fleet/index.ts';
 import loop from '../../src/commands/loop/index.ts';
 import { decideLoop } from '../../src/commands/loop/reducer.ts';
+import refactor from '../../src/commands/refactor/index.ts';
 import retro from '../../src/commands/retro/index.ts';
 import updatePipeline from '../../src/commands/update-pipeline/index.ts';
 import { captureStream, fakeCliContext } from '../registry/helpers.ts';
@@ -196,6 +197,31 @@ describe('V2 workflow compatibility commands', () => {
       expect(await updatePipeline.run(ctx, { positionals: ['--plan'], options: {}, json: true })).toBe(0);
       const lines = out.text().trim().split('\n');
       expect(JSON.parse(lines.at(-1) ?? '')).toMatchObject({ mode: 'plan', bundleVerified: true, bundleFiles: 0 });
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test('refactor records per-domain Pi outcomes and leaves pending items open', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'cohorte-refactor-'));
+    try {
+      await mkdir(join(cwd, 'specs'), { recursive: true });
+      await writeFile(
+        join(cwd, 'specs', 'refactor-backlog.md'),
+        '# Refactor backlog\n\n## apps-api\n\n- [ ] HIGH · apps/api/auth.ts:12 · tdd · add a regression test\n',
+      );
+      const out = captureStream();
+      const ctx = fakeCliContext({
+        cwd,
+        stdio: { stdout: out.stream, stderr: out.stream, stdin: process.stdin },
+        controller: { send: async () => ({ status: 'pending', result: { runId: 'run_refactor' } }) } as never,
+        hostSpawner: { spawnDetached: async () => ({ pid: 1 }) } as never,
+      });
+      expect(await refactor.run(ctx, { positionals: ['apps-api'], options: {}, json: false })).toBe(4);
+      expect(JSON.parse(await readFile(join(cwd, 'specs', 'reports', 'refactor.json'), 'utf8'))).toMatchObject({
+        outcomes: [{ domain: 'apps-api', status: 4, attempts: 1 }],
+      });
+      await expect(readFile(join(cwd, 'specs', 'refactor-backlog.md'), 'utf8')).resolves.toContain('- [ ]');
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
