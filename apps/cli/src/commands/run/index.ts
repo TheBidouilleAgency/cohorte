@@ -100,7 +100,26 @@ const run: CommandModule = {
         ?.replace(/\.ya?ml$/, '')
         .split(/[\\/]/)
         .pop();
-      if (card) await moveConfiguredCard(ctx.env.HOME ?? ctx.cwd, card, profile === 'review' ? 'review' : 'building');
+      if (card) {
+        // A run is accepted before its host has entered the first phase. Reflect
+        // that phase instead of jumping straight to Building. This matters for
+        // `brainstorm --run`, where the run may still fail during recovery or
+        // preflight before it ever reaches BUILD.
+        const firstPhase = phases?.[0];
+        const stage =
+          firstPhase === 'BRAINSTORM'
+            ? 'brainstorm'
+            : firstPhase === 'SPEC'
+              ? 'spec'
+              : firstPhase === 'REVIEW' || profile === 'review'
+                ? 'review'
+                : firstPhase === 'FIX'
+                  ? 'fix'
+                  : firstPhase === 'SHIP'
+                    ? 'ship'
+                    : 'building';
+        await moveConfiguredCard(ctx.env.HOME ?? ctx.cwd, card, stage);
+      }
     }
     return result.status === 'rejected' ? 3 : result.status === 'pending' ? 4 : 0;
   },
