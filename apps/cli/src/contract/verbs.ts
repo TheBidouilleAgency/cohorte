@@ -64,6 +64,11 @@ export const VERBS: readonly VerbSpec[] = [
     json: true,
   },
   { name: 'spec', summary: 'Validate or freeze a human-written spec', subVerbs: ['validate', 'freeze'] },
+  {
+    name: 'obsidian',
+    summary: 'Connect and synchronize an Obsidian board',
+    subVerbs: ['create', 'connect', 'status', 'move'],
+  },
   { name: 'policy', summary: 'Explain the effective security policy', subVerbs: ['explain'] },
   { name: 'gc', summary: 'Garbage-collect worktrees, spools and old runs' },
   {

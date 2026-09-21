@@ -114,6 +114,7 @@ export interface CohorteConfig {
   };
   /** default false; `true` is rejected by the LOADER in 3.0 (configuration/telemetry-remote-unavailable, ADR-0013) */
   telemetry: { remote: boolean };
+  integrations?: { obsidian?: { vaultPath: string; board: string } };
 }
 
 const oneOf = <const V extends readonly string[]>(values: V): TUnsafe<V[number]> =>
@@ -278,6 +279,16 @@ const CohorteConfigSchema = Type.Object(
       closed,
     ),
     telemetry: Type.Object({ remote: Type.Boolean() }, closed),
+    integrations: Type.Optional(
+      Type.Object(
+        {
+          obsidian: Type.Optional(
+            Type.Object({ vaultPath: Type.String({ minLength: 1 }), board: Type.String({ minLength: 1 }) }, closed),
+          ),
+        },
+        closed,
+      ),
+    ),
   },
   closed,
 );

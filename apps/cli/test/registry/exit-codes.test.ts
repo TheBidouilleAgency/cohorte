@@ -8,6 +8,7 @@ import {
   CANCELLED_EXIT_CODE,
   COMPLETED_EXIT_CODE,
   EXIT_CODE_BY_CLASS,
+  formatExitCodesHelp,
   SUSPENDED_EXIT_CODE,
   waitExitCode,
 } from '../../src/contract/index.ts';
@@ -52,5 +53,13 @@ describe('exit codes', () => {
     expect(help).toMatch(/\b2\b.*usage/);
     expect(help).toMatch(/\b3\b.*rejected/);
     expect(help).toMatch(/\b4\b.*pending/);
+  });
+
+  test('help groups shared runtime exit codes instead of printing duplicate rows', () => {
+    const help = formatExitCodesHelp();
+    expect(help).toContain('14  provider-transient error / provider-terminal error');
+    expect(help).toContain('16  conflict error / cancelled');
+    expect(help.match(/^\s+14\s/gm)).toHaveLength(1);
+    expect(help.match(/^\s+16\s/gm)).toHaveLength(1);
   });
 });

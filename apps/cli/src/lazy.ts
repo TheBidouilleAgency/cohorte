@@ -52,6 +52,7 @@ export const COMMAND_MODULES: Readonly<Record<string, () => Promise<unknown>>> =
   migrate: () => import('./commands/migrate/index.ts'),
   reconcile: () => import('./commands/reconcile/index.ts'),
   spec: () => import('./commands/spec/index.ts'),
+  obsidian: () => import('./commands/obsidian/index.ts'),
   policy: () => import('./commands/policy/index.ts'),
   gc: () => import('./commands/gc/index.ts'),
   update: () => import('./commands/update/index.ts'),
