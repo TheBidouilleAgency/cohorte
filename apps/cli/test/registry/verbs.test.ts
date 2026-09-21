@@ -10,7 +10,7 @@ import { testDeps } from './helpers.ts';
 /**
  * DESIGN §9's CLI row, transcribed BY HAND (PLAN U0.10 deliverable 1 spells the same list): "`init doctor discover
  * run status inspect resume pause cancel shutdown approve deny retry skip logs tail diff review fix ship auth
- * providers models config migrate reconcile spec policy gc update brainstorm run-tool send` + hidden `__host`".
+ * providers models config migrate reconcile spec obsidian policy gc update brainstorm run-tool send` + hidden `__host`".
  *
  * Deliberately NOT derived from `VERBS` — that is the whole point. The registry is frozen at G0 and every Wave-4/5
  * unit builds on it, so a coordinated deletion (the `VERBS` entry, its `COMMAND_MODULES` loader and its
@@ -44,6 +44,7 @@ const DESIGN_9_VERBS = [
   'migrate',
   'reconcile',
   'spec',
+  'obsidian',
   'policy',
   'gc',
   'update',
@@ -62,6 +63,7 @@ const DESIGN_9_SUB_VERBS: Readonly<Record<string, readonly string[]>> = {
   models: ['list'],
   config: ['get', 'set', 'validate', 'trust'],
   spec: ['validate', 'freeze'],
+  obsidian: ['create', 'connect', 'status', 'move'],
   policy: ['explain'],
 };
 

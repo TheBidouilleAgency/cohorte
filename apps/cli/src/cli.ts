@@ -20,7 +20,7 @@ import { loadCliContext, loadCommandModule } from './lazy.ts';
 
 /** Mirrors `apps/cli/package.json` "version"; `apps/cli/test/registry/version.test.ts` reads that file and fails
  * if the two ever drift (a literal keeps `--version` free of any file read on the one-shot start-up path). */
-export const COHORTE_VERSION = '3.0.0-dev.5';
+export const COHORTE_VERSION = '3.0.0-dev.6';
 
 export interface RuntimeDeps {
   readonly stdout: NodeJS.WritableStream;

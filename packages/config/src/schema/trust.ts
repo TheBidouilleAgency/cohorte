@@ -81,6 +81,7 @@ export const CONFIG_KEY_TRUST: readonly ConfigKeyTrustRule[] = Object.freeze([
   neutral('/git/keepWorktrees'),
   tighten('/retention'),
   neutral('/telemetry'),
+  neutral('/integrations'),
 ]);
 
 const covers = (rule: ConfigKeyTrustRule, pointer: string): boolean =>

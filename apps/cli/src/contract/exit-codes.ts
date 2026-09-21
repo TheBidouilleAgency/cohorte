@@ -56,7 +56,19 @@ export const CANCELLED_EXIT_HELP: ExitCodeHelpRow = { code: CANCELLED_EXIT_CODE,
 
 /** Rendered into `--help` (PLAN U0.10 test: "controller codes 0/2/3/4 documented in --help"). */
 export function formatExitCodesHelp(): string {
-  const rows = [...CONTROLLER_EXIT_HELP, ...ERROR_CLASS_EXIT_HELP, CANCELLED_EXIT_HELP];
+  const rows = [...CONTROLLER_EXIT_HELP, ...ERROR_CLASS_EXIT_HELP, CANCELLED_EXIT_HELP].reduce<ExitCodeHelpRow[]>(
+    (merged, row) => {
+      const existing = merged.find((item) => item.code === row.code);
+      if (existing) {
+        const index = merged.indexOf(existing);
+        merged[index] = { code: row.code, meaning: `${existing.meaning} / ${row.meaning}` };
+      } else {
+        merged.push({ ...row });
+      }
+      return merged;
+    },
+    [],
+  );
   const width = Math.max(...rows.map((row) => String(row.code).length));
   const lines = rows.map((row) => `  ${String(row.code).padStart(width)}  ${row.meaning}`);
   return ['Exit codes:', ...lines].join('\n');

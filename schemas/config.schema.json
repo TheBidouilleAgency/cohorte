@@ -2254,6 +2254,28 @@
           "type": "boolean"
         }
       }
+    },
+    "integrations": {
+      "type": "object",
+      "properties": {
+        "obsidian": {
+          "type": "object",
+          "required": [
+            "vaultPath",
+            "board"
+          ],
+          "properties": {
+            "vaultPath": {
+              "type": "string",
+              "minLength": 1
+            },
+            "board": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
     }
   }
 }
