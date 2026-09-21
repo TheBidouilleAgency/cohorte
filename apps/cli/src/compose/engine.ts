@@ -577,8 +577,9 @@ export async function createProductionEngine(options: ProductionEngineOptions): 
     integration,
     events,
     store: options.store,
+    redactor,
     checkRunner,
-  });
+  } as Parameters<typeof createPhaseExecutor>[0] & { redactor: typeof redactor });
   const factCollector = createFactCollector({
     store: options.store,
     runId: options.runId as RunId,

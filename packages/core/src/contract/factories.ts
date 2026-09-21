@@ -347,6 +347,8 @@ export interface PhasesExecutorDeps {
   events: EventWriter;
   /** Optional projection writer used by the host composition to persist acquired slots in the same run lease. */
   store?: StateStore;
+  /** Optional durable finding projection; when present, review findings are sealed and indexed by run. */
+  redactor?: Redactor;
   checkRunner?: PhaseCheckRunner;
 }
 export interface PhaseCheckRunner {

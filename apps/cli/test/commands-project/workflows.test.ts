@@ -6,10 +6,35 @@ import alignDs from '../../src/commands/align-ds/index.ts';
 import audit from '../../src/commands/audit/index.ts';
 import fleet from '../../src/commands/fleet/index.ts';
 import loop from '../../src/commands/loop/index.ts';
+import { decideLoop } from '../../src/commands/loop/reducer.ts';
 import retro from '../../src/commands/retro/index.ts';
 import { captureStream, fakeCliContext } from '../registry/helpers.ts';
 
 describe('V2 workflow compatibility commands', () => {
+  test('loop reducer ships only on a clean reviewed result', () => {
+    expect(decideLoop(null, undefined, 1, 5)).toEqual({ outcome: 'abort', reason: 'review-died' });
+    expect(
+      decideLoop(
+        {
+          verdict: 'findings',
+          kept: [],
+          refuted: [],
+          deferred: [],
+          needsInvestigation: [],
+          blocking: 1,
+          blockingItems: ['apps/api/auth.ts:12'],
+          fingerprint: '0000000000000000',
+          unreviewed: [],
+          clean: false,
+          counts: { critical: 0, major: 1, minor: 0, info: 0 },
+        },
+        'apps/api/auth.ts:12',
+        2,
+        5,
+      ),
+    ).toEqual({ outcome: 'abort', reason: 'treading-water' });
+  });
+
   test('audit materializes a durable backlog from prior structured reports', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'cohorte-audit-'));
     try {
@@ -87,7 +112,7 @@ describe('V2 workflow compatibility commands', () => {
     }
   });
 
-  test('loop persists a resumable durable handoff around the Pi run', async () => {
+  test('loop persists a resumable durable handoff and refuses to ship without a verdict', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'cohorte-loop-'));
     try {
       const out = captureStream();
