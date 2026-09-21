@@ -3,11 +3,37 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import alignDs from '../../src/commands/align-ds/index.ts';
+import audit from '../../src/commands/audit/index.ts';
 import fleet from '../../src/commands/fleet/index.ts';
 import retro from '../../src/commands/retro/index.ts';
 import { captureStream, fakeCliContext } from '../registry/helpers.ts';
 
 describe('V2 workflow compatibility commands', () => {
+  test('audit materializes a durable backlog from prior structured reports', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'cohorte-audit-'));
+    try {
+      await mkdir(join(cwd, 'specs', 'reports'), { recursive: true });
+      await writeFile(
+        join(cwd, 'specs', 'reports', 'review.json'),
+        JSON.stringify({
+          items: [{ severity: 'HIGH', file: 'apps/api/auth.ts', line: 12, kind: 'tdd', fix: 'add a regression test' }],
+        }),
+      );
+      const out = captureStream();
+      const ctx = fakeCliContext({
+        cwd,
+        stdio: { stdout: out.stream, stderr: out.stream, stdin: process.stdin },
+        controller: { send: async () => ({ status: 'pending' }) } as never,
+      });
+      expect(await audit.run(ctx, { positionals: [], options: {}, json: false })).toBe(4);
+      await expect(readFile(join(cwd, 'specs', 'refactor-backlog.md'), 'utf8')).resolves.toContain(
+        'HIGH · apps/api/auth.ts:12 · tdd · add a regression test',
+      );
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   test('retro mines repeated findings and only writes after explicit ratification', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'cohorte-retro-'));
     try {
