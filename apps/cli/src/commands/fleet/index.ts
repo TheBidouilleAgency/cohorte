@@ -34,6 +34,37 @@ const specSurfaces = async (cwd: string, id: string, known: readonly string[]) =
   );
   return { keys: listed.length ? listed : [...known], inferred: listed.length === 0 };
 };
+const specDependencies = async (cwd: string, id: string, candidates: readonly string[]): Promise<string[]> => {
+  const text = await specText(cwd, id);
+  if (!text) return [];
+  const declared = new Set<string>();
+  const matches = [
+    ...text.matchAll(/(?:^|\n)\s*(?:dependsOn|depends-on|depends on)\s*:\s*([^\n]+)/giu),
+    ...text.matchAll(/(?:dependsOn|depends-on|depends on)\s+([^\n]+)/giu),
+  ];
+  for (const match of matches) {
+    for (const value of (match[1] ?? '').split(/[,\s[\]"']/u)) {
+      if (candidates.includes(value) && value !== id) declared.add(value);
+    }
+  }
+  return [...declared].sort();
+};
+function dependencyOrder(ids: readonly string[], dependencies: ReadonlyMap<string, readonly string[]>): string[] {
+  const result: string[] = [];
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+  const visit = (id: string): void => {
+    if (visited.has(id)) return;
+    if (visiting.has(id)) return;
+    visiting.add(id);
+    for (const dependency of dependencies.get(id) ?? []) visit(dependency);
+    visiting.delete(id);
+    visited.add(id);
+    result.push(id);
+  };
+  for (const id of ids) visit(id);
+  return result;
+}
 const statusOf = async (cwd: string, id: string) => {
   try {
     const text = await readFile(join(cwd, 'specs', `${id}.md`), 'utf8');
@@ -69,21 +100,22 @@ const fleet: CommandModule = {
         return 11;
       }
       const keys = await surfaces(ctx.cwd);
+      const dependencyMap = new Map<string, string[]>();
       const featureData = Object.fromEntries(
         await Promise.all(
           ids.map(async (id) => {
             const ownership = await specSurfaces(ctx.cwd, id, keys);
-            return [
-              id,
-              { dependsOn: [], overlap: ownership.keys, overlapInferred: ownership.inferred, worktree: null },
-            ];
+            const dependsOn = await specDependencies(ctx.cwd, id, ids);
+            dependencyMap.set(id, dependsOn);
+            return [id, { dependsOn, overlap: ownership.keys, overlapInferred: ownership.inferred, worktree: null }];
           }),
         ),
       );
+      const order = dependencyOrder(ids, dependencyMap);
       const plan = {
         documentVersion: 1,
         generatedAt: ctx.clock.now(),
-        order: ids,
+        order,
         surfaces: keys,
         features: featureData,
         status: 'planned',

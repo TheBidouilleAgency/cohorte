@@ -14,12 +14,12 @@ the configured Pi runtime.
 | Build fan-out by owned surface | `BUILD` phase contracts and selected start surfaces | core phase/executor tests, acceptance run | Implemented |
 | Test gate before review | `TEST` phase and check runner | engine and acceptance tests | Implemented |
 | Parallel review and typed verdict | `REVIEW` phase, `ReviewResult`, persisted findings | review/core tests and finding projection | Implemented |
-| Fix only affected surfaces | `fix` remediation handoff plus `--surfaces` start scope | workflow tests | Implemented as a follow-up run; same-run retry remains to be integrated |
+| Fix only affected surfaces | `fix` remediation handoff plus `--surfaces` start scope | workflow tests | Implemented as the V2 follow-up run; only surfaces named by the report are re-dispatched |
 | Loop reducer | `commands/loop/reducer.ts` plus core `LoopController` | workflow and core loop tests | Implemented for durable start/resume, explicit surface selection, fresh-verdict checks, advancing bounded rounds and durable decision history |
-| Treading-water / max-rounds / dead-reviewer stops | typed reducer decisions | reducer tests | Implemented in reducer; dead-reviewer retry and complete round-history projection remain to be wired into the CLI report |
+| Treading-water / max-rounds / dead-reviewer stops | typed reducer decisions | reducer tests and durable loop report | Implemented; dead reviewers/unreviewed surfaces stop the loop, and each round decision is retained |
 | Audit gates + per-domain review | `commands/audit` | workflow tests, `audit-gates.txt`, `audit-dispatch.json` | Implemented; each configured domain plus `shared` gets an independent Pi review and dead dispatches are recorded |
 | Refactor backlog execution | `commands/refactor` | refactor tests, `specs/reports/refactor.json` and `refactor-verify.*.txt` | Implemented for Pi BUILD/TEST/REVIEW fan-out, shared-first ordering, small-backlog skip, durable per-domain outcomes, configured gate verification and one bounded retry; unverified items remain open |
-| Fleet plan/status/sync | `commands/fleet` | workflow tests and `fleet.json` | Implemented; dependency extraction from contracts remains limited |
+| Fleet plan/status/sync | `commands/fleet` | workflow tests and `fleet.json` | Implemented with explicit `dependsOn` extraction, dependency-first ordering, isolated worktrees and post-merge rebase status |
 | Retro pattern mining and ratification | `commands/retro` | workflow tests | Implemented read-only scan and explicit convention write |
 | Design-system alignment | `commands/align-ds` | command tests, configured `design.live_snapshot_dir` | Implemented for the deterministic filesystem adapter: live source → committed snapshot → UI kit; external design connector remains an optional integration |
 | Pipeline update/reconcile | `commands/update-pipeline` | workflow tests, `.cohorte/update-pipeline.json` | Implemented for V3's externally refreshed install: verifies the pinned Pi bundle, then plans/applies project reconciliation with a durable report |

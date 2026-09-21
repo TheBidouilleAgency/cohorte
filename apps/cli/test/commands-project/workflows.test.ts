@@ -171,14 +171,19 @@ describe('V2 workflow compatibility commands', () => {
     const cwd = await mkdtemp(join(tmpdir(), 'cohorte-fleet-'));
     try {
       await mkdir(join(cwd, 'specs'), { recursive: true });
-      await writeFile(join(cwd, 'specs', 'one.md'), '---\nstatus: frozen\n---\n');
+      await writeFile(join(cwd, 'specs', 'one.md'), '---\nstatus: frozen\ndependsOn: [two]\n---\n');
       await writeFile(join(cwd, 'specs', 'two.md'), '---\nstatus: frozen\n---\n');
       const out = captureStream();
       const ctx = fakeCliContext({ cwd, stdio: { stdout: out.stream, stderr: out.stream, stdin: process.stdin } });
       expect(
         await fleet.run(ctx, { subVerb: 'plan', positionals: ['one', 'two', '--apply'], options: {}, json: false }),
       ).toBe(0);
-      await expect(readFile(join(cwd, 'specs', 'reports', 'fleet.json'), 'utf8')).resolves.toContain('one');
+      const plan = JSON.parse(await readFile(join(cwd, 'specs', 'reports', 'fleet.json'), 'utf8')) as {
+        order: string[];
+        features: Record<string, { dependsOn: string[] }>;
+      };
+      expect(plan.order).toEqual(['two', 'one']);
+      expect(plan.features.one?.dependsOn).toEqual(['two']);
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
