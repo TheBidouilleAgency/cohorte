@@ -11,9 +11,9 @@ import { resolveSpecPath } from '../../project/spec-path.ts';
 const spec: CommandModule = {
   verb: 'spec',
   async run(ctx, args) {
-    const value = args.positionals.find((item) => !item.startsWith('--'));
-    if (!value) return 2;
-    const file = resolveSpecPath(ctx.cwd, value);
+    const input = args.positionals.find((item) => !item.startsWith('--'));
+    if (!input) return 2;
+    const file = resolveSpecPath(ctx.cwd, input);
     const frozen = args.subVerb === 'freeze';
     const value = frozen ? await freezeSpec(file) : await loadSpec(file);
     if (frozen) await writeFile(file, stringify(value));
