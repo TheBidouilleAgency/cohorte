@@ -125,9 +125,11 @@ const auth: CommandModule = {
     if (args.subVerb === 'login') {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 10 * 60_000);
+      // Keep the handlers installed while the first interrupt is cleaning up the detached auth child.
+      // A second Ctrl+C must not terminate this process before `authLogin` can reap its callback server.
       const abortLogin = () => controller.abort();
-      process.once('SIGINT', abortLogin);
-      process.once('SIGTERM', abortLogin);
+      process.on('SIGINT', abortLogin);
+      process.on('SIGTERM', abortLogin);
       const ui = await loginUi(ctx, controller.signal);
       try {
         const status = await runtime.login(provider, ui, controller.signal);
