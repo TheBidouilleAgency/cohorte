@@ -299,6 +299,7 @@ describe('V2 workflow compatibility commands', () => {
       expect(JSON.parse(await readFile(join(cwd, 'specs', 'reports', 'feature-x.loop.json'), 'utf8'))).toMatchObject({
         outcome: 'abort',
         reason: 'review-died',
+        history: [{ round: 1, status: 'completed', outcome: 'abort', reason: 'review-died' }],
       });
     } finally {
       await rm(cwd, { recursive: true, force: true });

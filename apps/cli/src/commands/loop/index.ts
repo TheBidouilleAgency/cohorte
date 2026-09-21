@@ -16,6 +16,15 @@ type LoopSnapshot = {
   reason?: string;
   blockingKey?: string;
   surfaces?: string[];
+  history?: Array<{
+    round: number;
+    runId?: string;
+    status: 'completed' | 'rejected';
+    outcome?: 'ship' | 'abort' | 'continue';
+    reason?: string;
+    blockingKey?: string;
+    updatedAt: string;
+  }>;
   startedAt: string;
   updatedAt: string;
 };
@@ -95,6 +104,7 @@ const loop: CommandModule = {
       phase: round === 1 ? 'build' : 'fix',
       status: 'running',
       ...(surfaces.length > 0 ? { surfaces } : previous?.surfaces ? { surfaces: previous.surfaces } : {}),
+      ...(previous?.history ? { history: previous.history } : {}),
       startedAt: previous?.startedAt ?? now,
       updatedAt: now,
     };
@@ -177,6 +187,26 @@ const loop: CommandModule = {
             : {}),
       ...(decision?.outcome === 'continue' ? { blockingKey: decision.key } : {}),
       updatedAt: ctx.clock.now(),
+      ...(result === 4
+        ? {}
+        : {
+            history: [
+              ...(controllerResult.history ?? []),
+              {
+                round,
+                ...(controllerResult.runId ? { runId: controllerResult.runId } : {}),
+                status: result === 0 ? ('completed' as const) : ('rejected' as const),
+                ...(decision?.outcome ? { outcome: decision.outcome } : { outcome: 'abort' as const }),
+                ...(decision?.outcome === 'abort'
+                  ? { reason: decision.reason }
+                  : result !== 0
+                    ? { reason: 'run-rejected' }
+                    : {}),
+                ...(decision?.outcome === 'continue' ? { blockingKey: decision.key } : {}),
+                updatedAt: ctx.clock.now(),
+              },
+            ],
+          }),
     } satisfies LoopSnapshot;
     await writeFile(reportPath, `${JSON.stringify(output, null, 2)}\n`, 'utf8');
     if (args.json) ctx.stdio.stdout.write(`${JSON.stringify({ ...output, reportPath })}\n`);
