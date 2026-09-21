@@ -8,6 +8,8 @@ import { calculateReview } from '../../review/normalize.ts';
 export type { PhaseContractRegistry, PhasesContractsDeps };
 
 const SUPPORTED_PHASES = [
+  'BRAINSTORM',
+  'SPEC',
   'PREFLIGHT',
   'BUILD',
   'TEST',
@@ -24,6 +26,9 @@ const RETRY = {
 };
 
 const OBJECTIVES: Record<SupportedPhase, string> = {
+  BRAINSTORM:
+    'challenge the idea from product, UX, architecture and delivery perspectives and produce a structured brief',
+  SPEC: 'turn the reviewed brief into a complete, testable and frozen feature specification',
   PREFLIGHT: 'validate readiness, specification completeness and surface ownership',
   BUILD: 'implement the frozen specification in isolated surface worktrees',
   TEST: 'run the project checks against the integration tree',
@@ -43,28 +48,32 @@ function surfacesOf(ctx: PhaseInputContext): string[] {
 }
 
 function toolsFor(role: CohorteRole): string[] {
-  if (role === 'reviewer' || role === 'security-reviewer') {
+  if (role === 'brainstormer' || role === 'spec-author' || role === 'reviewer' || role === 'security-reviewer') {
     return ['read_file', 'list_files', 'search', 'git_diff', 'submit_result'];
   }
   return ['read_file', 'list_files', 'search', 'git_diff', 'write_file', 'patch_file', 'run_command', 'submit_result'];
 }
 
-function planFor(role: 'implementer' | 'reviewer' | 'fixer', surface: string, state: SupportedPhase): AgentPlan {
-  const ownedPaths = [`${surface}/**`];
+function planFor(
+  role: 'brainstormer' | 'spec-author' | 'implementer' | 'reviewer' | 'fixer',
+  surface: string | undefined,
+  state: SupportedPhase,
+): AgentPlan {
+  const ownedPaths = surface ? [`${surface}/**`] : [];
   const tools = toolsFor(role);
-  const readOnly = role === 'reviewer';
+  const readOnly = role === 'brainstormer' || role === 'spec-author' || role === 'reviewer';
   const task: TaskSpec = {
     role,
     objective: OBJECTIVES[state],
-    stablePrefix: `cohorte ${state.toLowerCase()} task for surface ${surface}`,
+    stablePrefix: `cohorte ${state.toLowerCase()} task${surface ? ` for surface ${surface}` : ''}`,
     ownedPaths,
-    facts: { phase: state, surface },
+    facts: { phase: state, ...(surface ? { surface } : {}) },
   };
   return {
-    agentId: `agt_${role}_${surface}` as AgentId,
+    agentId: `agt_${role}_${surface ?? 'project'}` as AgentId,
     role,
-    surface: surface as SurfaceId,
-    owner: surface,
+    ...(surface ? { surface: surface as SurfaceId } : {}),
+    owner: surface ?? 'project',
     promptId: `agents/${role}`,
     task,
     context: { tiers: ['system', 'doctrine', 'data', 'task', 'prior-results'], includePaths: ownedPaths },
@@ -75,9 +84,13 @@ function planFor(role: 'implementer' | 'reviewer' | 'fixer', surface: string, st
       ...(readOnly ? { readOnlyPaths: ownedPaths } : {}),
       tools,
     },
-    modelTier: (role === 'reviewer' ? 'reasoning' : 'coding') as ModelCapability,
+    modelTier: (readOnly ? 'reasoning' : 'coding') as ModelCapability,
     budget: { maxEngineRetries: 0 },
-    workspace: readOnly ? { kind: 'readonly-ref', ref: 'review-ref' } : { kind: 'slot', slot: surface },
+    workspace: surface
+      ? readOnly
+        ? { kind: 'readonly-ref', ref: 'review-ref' }
+        : { kind: 'slot', slot: surface }
+      : { kind: 'none' },
   };
 }
 
@@ -102,6 +115,8 @@ function contractFor(state: SupportedPhase): PhaseContract {
           ? input.surfaces.filter((surface): surface is string => typeof surface === 'string').sort()
           : surfacesOf(ctx);
       if (state === 'TEST' || state === 'PREFLIGHT' || state === 'SHIP') return [];
+      if (state === 'BRAINSTORM') return [planFor('brainstormer', undefined, state)];
+      if (state === 'SPEC') return [planFor('spec-author', undefined, state)];
       const role = state === 'BUILD' ? 'implementer' : state === 'REVIEW' ? 'reviewer' : 'fixer';
       return surfaces.map((surface) => planFor(role, surface, state));
     },

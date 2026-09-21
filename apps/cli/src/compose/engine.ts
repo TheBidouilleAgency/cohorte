@@ -366,7 +366,7 @@ export async function createProductionEngine(options: ProductionEngineOptions): 
   const toolHost = createToolHost(toolHostDeps);
   const pending = options.runId ? await options.store.pendingCommands(options.runId) : [];
   const requestedStart = pending.find((command) => command.envelope.type === 'start')?.envelope.payload as
-    | { runtime?: string; fakeScript?: string }
+    | { runtime?: string; fakeScript?: string; phases?: readonly string[] }
     | undefined;
   const fakeDefaultScript = fakeScript()
     .agent({}, [{ do: 'submit', output: { status: 'clean' } }])
@@ -384,7 +384,14 @@ export async function createProductionEngine(options: ProductionEngineOptions): 
       ? createPiRuntimeProvider({ installDir: options.install.installDir(), redactor })
       : createFakeRuntimeProvider({ script: fakeRuntimeScript, clock: systemClock });
   const assets = createAssetSource();
-  const shippedPromptIds = ['agents/fixer', 'agents/implementer', 'agents/reviewer', 'agents/security-reviewer'];
+  const shippedPromptIds = [
+    'agents/brainstormer',
+    'agents/fixer',
+    'agents/implementer',
+    'agents/reviewer',
+    'agents/security-reviewer',
+    'agents/spec-author',
+  ];
   const pinnedPromptPaths = new Map<string, { path: string; sha256: Sha256; bytes: number }>();
   const pinStore = createBlobStore({ dir: join(loaded.projectRoot, '.cohorte', 'state', 'cas') });
   const runtimePin = await provider.pin();
@@ -577,6 +584,8 @@ export async function createProductionEngine(options: ProductionEngineOptions): 
     runId: options.runId as RunId,
     clock: systemClock,
     probes: {
+      ...(requestedStart?.phases?.includes('BRAINSTORM') ? { 'input.is-idea': true } : {}),
+      ...(requestedStart?.phases?.includes('SPEC') ? { 'brainstorm.output-valid': true } : {}),
       'config.trust-satisfied': true,
       'snapshot.captured': true,
       'runtime.pin-valid': true,

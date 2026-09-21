@@ -465,8 +465,7 @@ export async function closePhaseAndAdvance(args: ClosePhaseArgs): Promise<StopRe
     'checks.failed-non-environmental':
       outcome.kind === 'failed' && phaseChecks.some((check) => check.status === 'failed'),
     'loop.may-continue':
-      (facts as unknown as Record<string, unknown>)['loop.may-continue'] === true ||
-      (outcome.kind === 'failed' && phaseChecks.some((check) => check.status === 'failed')),
+      (facts as unknown as Record<string, unknown>)['loop.may-continue'] === true || outcome.kind === 'failed',
   };
   const guardOutcomes = evaluateGuards(step.guards, { run: runState, facts: outcomeFacts, now }, deps.guards);
   const candidate = candidateForOutcome(step.candidates, from, outcome.kind);

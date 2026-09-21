@@ -1165,7 +1165,7 @@ export type Guard = (ctx: GuardContext) => GuardOutcome;  // PURE and synchronou
 
 | id | from → to | reason | actor | preconditions (guards) | effects |
 |---|---|---|---|---|---|
-| T01 | IDLE → BRAINSTORM | start | human | `input.is-idea`, `phase.available(BRAINSTORM)` *(false in V3.0)* | — |
+| T01 | IDLE → BRAINSTORM | start | human | `input.is-idea`, `phase.available(BRAINSTORM)` | — |
 | T02 | BRAINSTORM → SPEC | ready | human | `brainstorm.output-valid` | — |
 | T03 | SPEC → PREFLIGHT | ready | human | `spec.schema-valid`, `spec.frozen` | `record-spec-hash` |
 | T04 | IDLE → PREFLIGHT | start | either | `spec.schema-valid`, `spec.frozen`, `host.not-root`, `host.outside-target`, `config.trust-satisfied` *(2.10.1)*, `snapshot.captured`, `runtime.pin-valid`, `runtime.platform-supported`, `auth.plan-satisfied`, `billing.consented`, `sandbox.meets-policy`, `repo.base-resolved`, `locks.project+zones-held` | `create-integration-branch` |
@@ -2848,7 +2848,7 @@ on `ci` through `workflow_call`; `docs.yml` and `discord-releases.yml` survive u
 | 8 roles, skills, ownership | roles **implementer, fixer, reviewer, security-reviewer** (when listed in ownership); ownership; inline skills | architect (contract authoring), verifier, brainstormer, spec-author, tester, release-manager, discoverer, reconciler: prompts + role ids reserved | skill registry |
 | 9 tools / gates / sandbox | `read_file, list_files, search, write_file, patch_file, run_command, git_diff, approval_request, submit_result`; full gate chain; L0 + **L1**; doctor capabilities; macOS brain sandbox; `policy explain` | `git_commit`, `network_request`, `secret_read` (registered, granted to nobody) | proxy-based host allowlisting |
 | 10 providers / budgets | openai-codex subscription; auth guarantee; five budget levels + all seven dimensions; quota events; billing table | static tier routing; API-key mode and the Anthropic opt-in (policy + accounting implemented, exercised with fakes only); price catalogue file | multi-provider routing, fallback, latency/residency routing |
-| 11 state machine | all states, three profiles, loop controller, retries, resume, command matrix | BRAINSTORM + SPEC executors (`phase.available = false`; `cohorte brainstorm` creates a deterministic draft and `cohorte spec` validates/freezes YAML); SHIP minimal | agentic brainstorm/spec, PR/push |
+| 11 state machine | all states, three profiles, loop controller, retries, resume, command matrix | SHIP minimal | PR/push |
 | 12 discovery | deterministic scan for `init` and `discover` | `--semantic` rejected with a clear message | semantic discovery |
 | 13 reconcile | `reconcile --plan` and conflict-free `reconcile --apply` with five field classes, six diff classes, provenance/hash guard, backups and audit journal | — | `update --apply` |
 | 14 `.cohorte/` | subset of 2.10 | `generated/` skeleton | rendered agents/contracts/checks |
@@ -2858,7 +2858,7 @@ on `ci` through `workflow_call`; `docs.yml` and `discord-releases.yml` survive u
 | 18 François | `--json`, `--panel`, `--format=line`, schema-only client test (AC-07) | — | native cockpit |
 | 19 observability | stderr logger, durable events, accounting reducers, redaction as a type | metrics export | trace exporters |
 | 20 persistence | SQLite + memory, migrations, hash chain + anchors, CAS | file/remote store (interface proven by the memory store) | — |
-| 21 CLI | `init, doctor, discover, run, loop, status, inspect, resume, pause, cancel, shutdown, approve, deny, retry, skip, logs/tail, diff, review, fix, ship, auth login/status/logout, providers list/test, models list, config get/set/validate/trust, migrate, reconcile --plan/--apply, spec validate/freeze, brainstorm, patch, policy explain, gc` (+ `run-tool`, `send`: registered, answering `configuration/phase-not-available` unless policy enables them) | `update --check` (prints the installed vs pinned asset versions, offline), `brainstorm` (deterministic draft scaffold; no agentic panel) | `update --apply` |
+| 21 CLI | V2 workflow commands plus durable V3 controls, Obsidian mirror, `brainstorm`, `spec`, `patch`, `loop`, `build`, `intake`, `audit`, `refactor`, `fleet`, `retro`, `align-ds`, `update-pipeline` | `update --check` (offline) | `update --apply` |
 | 22 outputs | full | — | — |
 | 23 security | all MUST measures — "séparation des identities" = 2.6.7 (key holders / system / agents, test S-36); the repository-as-adversary case = 2.10.1 (S-37/S-38) | cryptographic *signatures* (asymmetric) of approvals — V3.0 uses HMAC behind a scheme-neutral `auth` field; per-actor identity | — |
 | 24 errors | full, incl. `impact` | — | — |

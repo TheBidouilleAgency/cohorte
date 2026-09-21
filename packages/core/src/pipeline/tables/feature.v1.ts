@@ -9,7 +9,7 @@ import type { TransitionDef, TransitionTable } from '../../contract/types.ts';
 import { buildSkipRows, buildTailRows, stopRowMap } from './shared.ts';
 
 const HEAD_ROWS: readonly TransitionDef[] = [
-  // BRAINSTORM/SPEC: rows exist for totality (ADR-0018 §5), `phase.available` is false in V3.0 (see pipeline/guards).
+  // BRAINSTORM/SPEC are executable authoring phases; direct frozen-spec starts remain supported below.
   {
     id: 'T01',
     from: 'IDLE',

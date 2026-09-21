@@ -8,9 +8,7 @@ import { COMMAND_TYPE_TO_VERB, VERB_NAMES, VERBS } from '../../src/contract/inde
 import { testDeps } from './helpers.ts';
 
 /**
- * DESIGN §9's CLI row, transcribed BY HAND (PLAN U0.10 deliverable 1 spells the same list): "`init doctor discover
- * run status inspect resume pause cancel shutdown approve deny retry skip logs tail diff review fix ship auth
- * providers models config migrate reconcile spec obsidian policy gc update brainstorm run-tool send` + hidden `__host`".
+ * V3's public workflow surface, transcribed BY HAND so additions/removals remain an explicit migration decision.
  *
  * Deliberately NOT derived from `VERBS` — that is the whole point. The registry is frozen at G0 and every Wave-4/5
  * unit builds on it, so a coordinated deletion (the `VERBS` entry, its `COMMAND_MODULES` loader and its
@@ -22,6 +20,14 @@ const DESIGN_9_VERBS = [
   'discover',
   'run',
   'loop',
+  'build',
+  'intake',
+  'audit',
+  'refactor',
+  'fleet',
+  'retro',
+  'align-ds',
+  'update-pipeline',
   'status',
   'inspect',
   'resume',

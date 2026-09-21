@@ -3,7 +3,8 @@ import { dirname, join, resolve } from 'node:path';
 import { CohorteError, errorOf } from '@cohorte/base';
 import { stringify } from 'yaml';
 import type { CommandModule } from '../../contract/index.ts';
-import { configuredIdeas } from '../obsidian/index.ts';
+import { configuredIdeas, moveConfiguredCard } from '../obsidian/index.ts';
+import run from '../run/index.ts';
 
 function slugify(value: string): string {
   const slug = value
@@ -50,7 +51,10 @@ const brainstorm: CommandModule = {
     }
 
     const id = slugify(optionValue(args.positionals, '--id') ?? sourceId ?? input);
-    const output = resolve(ctx.cwd, optionValue(args.positionals, '--output') ?? join('.cohorte', 'specs', `${id}.yaml`));
+    const output = resolve(
+      ctx.cwd,
+      optionValue(args.positionals, '--output') ?? join('.cohorte', 'specs', `${id}.yaml`),
+    );
     const spec = {
       id,
       kind: 'feature' as const,
@@ -74,8 +78,23 @@ const brainstorm: CommandModule = {
 
     await mkdir(dirname(output), { recursive: true });
     await writeFile(output, stringify(spec), 'utf8');
+    if (sourceId) await moveConfiguredCard(ctx.env.HOME ?? ctx.cwd, sourceId, 'brainstorm', input);
     const result = { id, status: spec.status, path: output, next: `cohorte spec freeze ${output}` };
     ctx.stdio.stdout.write(`${args.json ? JSON.stringify(result) : `created ${output}\nnext: ${result.next}`}\n`);
+    if (args.positionals.includes('--run')) {
+      return run.run(ctx, {
+        ...args,
+        positionals: [
+          id,
+          output,
+          '--phases',
+          'BRAINSTORM,SPEC,PREFLIGHT,BUILD,TEST,REVIEW,FIX,TEST,REVIEW,SHIP',
+          '--with-fix',
+          '--runtime',
+          optionValue(args.positionals, '--runtime') ?? 'pi',
+        ],
+      });
+    }
     return 0;
   },
 };

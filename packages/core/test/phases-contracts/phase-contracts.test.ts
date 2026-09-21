@@ -13,13 +13,13 @@ const context = {
 } as never;
 
 describe('phase contracts', () => {
-  it('publishes exactly the six executable V3 phases', () => {
+  it('publishes all executable V3 phases, including the migrated authoring phases', () => {
     const registry = createPhaseContracts({} as never);
     expect(['PREFLIGHT', 'BUILD', 'TEST', 'REVIEW', 'FIX', 'SHIP'].every((state) => registry.get(state as never))).toBe(
       true,
     );
-    expect(registry.get('BRAINSTORM')).toBeUndefined();
-    expect(registry.get('SPEC')).toBeUndefined();
+    expect(registry.get('BRAINSTORM')).toMatchObject({ state: 'BRAINSTORM' });
+    expect(registry.get('SPEC')).toMatchObject({ state: 'SPEC' });
   });
 
   it('plans isolated implementers and read-only reviewers, while TEST has no agents', () => {

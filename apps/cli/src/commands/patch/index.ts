@@ -27,7 +27,10 @@ const patch: CommandModule = {
     const input = args.positionals.find((value) => !value.startsWith('--'));
     if (!input) return 2;
     const id = slugify(optionValue(args.positionals, '--id') ?? input);
-    const output = resolve(ctx.cwd, optionValue(args.positionals, '--output') ?? join('.cohorte', 'specs', `patch-${id}.yaml`));
+    const output = resolve(
+      ctx.cwd,
+      optionValue(args.positionals, '--output') ?? join('.cohorte', 'specs', `patch-${id}.yaml`),
+    );
     const spec = {
       id: `patch-${id}`,
       kind: 'patch' as const,
@@ -35,10 +38,7 @@ const patch: CommandModule = {
       title: input,
       acceptance: [`Add a regression test that reproduces and prevents: ${input}`],
       surfaces: {},
-      openQuestions: [
-        'What is the minimal reproducible failure?',
-        'Which existing behavior must remain unchanged?',
-      ],
+      openQuestions: ['What is the minimal reproducible failure?', 'Which existing behavior must remain unchanged?'],
     };
     try {
       await access(output);
