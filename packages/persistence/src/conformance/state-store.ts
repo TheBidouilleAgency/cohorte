@@ -1253,6 +1253,8 @@ export function stateStoreConformance(factory: () => Promise<StateStore>, hooks:
         expect(tree.budgets.map((row) => row.consumed)).toEqual([{ toolCalls: 1 }]);
         expect(tree.locks.map((row) => row.lockId)).toEqual([lease.lockId]);
         expect((await store.getArtifact(id, artifactId('log')))?.path).toBe('artifacts/check.log');
+        expect((await store.listFindings(id)).map((row) => row.findingId)).toEqual([findingId('f1')]);
+        expect((await store.listFindings(id, { status: 'fixed' })).length).toBe(0);
         expect(await store.getArtifact(other.id, artifactId('log'))).toBeUndefined();
         await expect(store.readRunTree(runId('nobody'))).rejects.toBeInstanceOf(StoreUsageError);
       });

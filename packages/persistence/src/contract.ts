@@ -159,6 +159,8 @@ export interface StateStore {
   listEffects(runId: RunId, q: { states: EffectState[] }): Promise<EffectRecord[]>;
   readLedger(runId: RunId, slot: string): Promise<LedgerEntry[]>;
   getArtifact(runId: RunId, id: ArtifactId): Promise<ArtifactRecord | undefined>;
+  /** Findings are durable phase handoffs; callers must be able to rebuild review state after a host restart. */
+  listFindings(runId: RunId, q?: { phaseRunId?: string; status?: string }): Promise<FindingRecord[]>;
   verifyChain(runId: RunId, key?: Uint8Array): Promise<VerifyChainResult>;
 
   // ── command inbox (D5): the only write a non-owner process performs ───

@@ -1,5 +1,6 @@
 import { type AgentId, type BudgetCounters, errorOf, type ModelCapability, type SurfaceId } from '@cohorte/base';
 import type { ActivePipelineState, CohorteRole } from '@cohorte/protocol';
+import { AgentOutput, ReviewResult } from '@cohorte/protocol';
 import { Type } from 'typebox';
 import type { PhaseContractRegistry, PhasesContractsDeps } from '../../contract/factories.ts';
 import type { AgentPlan, AgentResult, PhaseContract, PhaseInputContext, TaskSpec } from '../../contract/types.ts';
@@ -99,19 +100,50 @@ function budgetFor(run: PhaseInputContext['run'], state: SupportedPhase): Budget
   return record?.limit ?? {};
 }
 
+/**
+ * The phase handoff is persisted and consumed by the next phase.  Keeping the
+ * result envelope closed here is important: `Type.Unknown()` would validate a
+ * malformed supervisor result and defer the failure to a later transition,
+ * where it is much harder to attribute to the producing agent.
+ */
+const AGENT_RESULT = Type.Object({
+  agent: Type.Object({
+    agentId: Type.String(),
+    role: Type.String(),
+    surface: Type.Optional(Type.String()),
+  }),
+  outcome: Type.Enum({ completed: 'completed', failed: 'failed', cancelled: 'cancelled' }),
+  output: Type.Optional(AgentOutput),
+  error: Type.Optional(
+    Type.Object({
+      code: Type.String(),
+      class: Type.String(),
+      message: Type.String(),
+      impact: Type.String(),
+      retryable: Type.Boolean(),
+      remediation: Type.String(),
+    }),
+  ),
+  artifacts: Type.Array(
+    Type.Object({
+      artifactId: Type.Optional(Type.String()),
+      path: Type.String(),
+      kind: Type.String(),
+      sha256: Type.Optional(Type.String()),
+    }),
+  ),
+  usage: Type.Record(Type.String(), Type.Number()),
+});
+
 function contractFor(state: SupportedPhase): PhaseContract {
   const outputSchema =
     state === 'REVIEW'
       ? Type.Object({
           phase: Type.Literal(state),
-          results: Type.Array(Type.Record(Type.String(), Type.Unknown())),
-          review: Type.Object({
-            clean: Type.Boolean(),
-            blockingItems: Type.Array(Type.String()),
-            kept: Type.Array(Type.Record(Type.String(), Type.Unknown())),
-          }),
+          results: Type.Array(AGENT_RESULT),
+          review: ReviewResult,
         })
-      : Type.Object({ phase: Type.Literal(state), results: Type.Array(Type.Record(Type.String(), Type.Unknown())) });
+      : Type.Object({ phase: Type.Literal(state), results: Type.Array(AGENT_RESULT) });
   return {
     id: state.toLowerCase(),
     version: 1,

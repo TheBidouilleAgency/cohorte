@@ -604,10 +604,10 @@ export async function createProductionEngine(options: ProductionEngineOptions): 
       'tree.digest-recorded': true,
       'checks.all-passed': true,
       'checks.digest-equals-integration': true,
-      'review.nothing-to-fix': true,
-      'review.no-unreviewed': true,
-      'review.leftovers-parked-or-waived': true,
       'reviewref.digest-equals-integration': true,
+      // REVIEW facts are derived from the typed phase handoff in the engine.
+      // Do not seed them as true here: doing so lets a finding jump directly
+      // to SHIP before the review result is evaluated.
       'approval.ship-allowed': true,
       'tree.digest-equals-approved': true,
       'acceptance.no-open-human-items': true,

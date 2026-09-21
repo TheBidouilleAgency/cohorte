@@ -456,6 +456,23 @@ export async function closePhaseAndAdvance(args: ClosePhaseArgs): Promise<StopRe
   const now = deps.clock.now();
   const from = runState.run.state;
   const phaseChecks = 'checks' in outcome ? (outcome.checks ?? []) : [];
+  const review =
+    outcome.kind === 'passed' &&
+    outcome.output !== null &&
+    typeof outcome.output === 'object' &&
+    !Array.isArray(outcome.output) &&
+    'review' in outcome.output &&
+    typeof outcome.output.review === 'object' &&
+    outcome.output.review !== null
+      ? (outcome.output.review as {
+          clean?: boolean;
+          unreviewed?: unknown[];
+          deferred?: unknown[];
+          kept?: unknown[];
+        })
+      : outcome.kind === 'failed' && openPhase.state === 'REVIEW'
+        ? { clean: false, kept: outcome.failure.findings }
+        : undefined;
   const outcomeFacts = {
     ...facts,
     'checks.all-passed':
@@ -464,9 +481,18 @@ export async function closePhaseAndAdvance(args: ClosePhaseArgs): Promise<StopRe
     'checks.digest-equals-integration': outcome.kind === 'passed' || phaseChecks.length > 0,
     'checks.failed-non-environmental':
       outcome.kind === 'failed' && phaseChecks.some((check) => check.status === 'failed'),
+    // REVIEW facts must come from the typed phase handoff.  The previous
+    // composition root defaulted these to true, which made a review with
+    // findings indistinguishable from a clean review.
+    'review.nothing-to-fix': review ? review.clean === true : true,
+    'review.no-unreviewed': review ? (review.unreviewed?.length ?? 0) === 0 : true,
+    'review.leftovers-parked-or-waived': review ? (review.deferred?.length ?? 0) === 0 : true,
+    'review.has-fix-items': review ? review.clean !== true && (review.kept?.length ?? 0) > 0 : false,
+    'review.contract-change': false,
+    'review.leftovers-routed-ask': review ? (review.deferred?.length ?? 0) > 0 : false,
     'loop.may-continue':
       (facts as unknown as Record<string, unknown>)['loop.may-continue'] === true ||
-      (outcome.kind === 'failed' && outcome.failure.code === 'checks-red'),
+      (outcome.kind === 'failed' && outcome.failure.code !== 'agent-dead' && openPhase.iteration < 10),
   };
   const guardOutcomes = evaluateGuards(step.guards, { run: runState, facts: outcomeFacts, now }, deps.guards);
   const candidate = candidateForOutcome(step.candidates, from, outcome.kind);
