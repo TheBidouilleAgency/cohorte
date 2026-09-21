@@ -67,7 +67,7 @@ const DESIGN_9_SUB_VERBS: Readonly<Record<string, readonly string[]>> = {
   policy: ['explain'],
 };
 
-const STILL_STUBBED = new Set(['brainstorm']);
+const STILL_STUBBED = new Set<string>();
 
 describe('registry', () => {
   test('every verb name is unique', () => {

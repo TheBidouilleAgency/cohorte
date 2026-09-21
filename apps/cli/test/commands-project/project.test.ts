@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
+import brainstorm from '../../src/commands/brainstorm/index.ts';
 import config from '../../src/commands/config/index.ts';
 import gc from '../../src/commands/gc/index.ts';
 import init from '../../src/commands/init/index.ts';
@@ -11,6 +12,34 @@ import update from '../../src/commands/update/index.ts';
 import { captureStream, fakeCliContext } from '../registry/helpers.ts';
 
 describe('project commands', () => {
+  test('brainstorm creates a draft V3 spec from an idea without overwriting existing work', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'cohorte-brainstorm-'));
+    try {
+      const out = captureStream();
+      const ctx = fakeCliContext({ cwd, stdio: { stdout: out.stream, stderr: out.stream, stdin: process.stdin } });
+      expect(
+        await brainstorm.run(ctx, {
+          positionals: ['Ajouter un calendrier équipe'],
+          options: {},
+          json: true,
+        }),
+      ).toBe(0);
+      const result = JSON.parse(out.text()) as { id: string; path: string; status: string };
+      expect(result).toMatchObject({ id: 'ajouter-un-calendrier-equipe', status: 'draft' });
+      await expect(readFile(result.path, 'utf8')).resolves.toContain('status: draft');
+
+      await expect(
+        brainstorm.run(ctx, {
+          positionals: ['Ajouter un calendrier équipe'],
+          options: {},
+          json: true,
+        }),
+      ).rejects.toThrow('refusing to overwrite');
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   test('config validates the generated project configuration', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'cohorte-project-'));
     await mkdir(join(cwd, '.cohorte'), { recursive: true });

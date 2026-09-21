@@ -77,7 +77,7 @@ export const VERBS: readonly VerbSpec[] = [
     // `commands/update/index.ts` reads `--check` from `args.options`/`args.positionals` like every other verb flag.
     summary: 'Check for a newer pinned install (offline, --check only in V3.0)',
   },
-  { name: 'brainstorm', summary: 'Not available in V3.0 (reserved verb id, DESIGN §9)' },
+  { name: 'brainstorm', summary: 'Create a draft feature spec from an idea' },
   {
     name: 'run-tool',
     summary: 'Run one tool directly (admin; policy.admin.runTool)',
