@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { CommandModule } from '../../contract/index.ts';
 import run from '../run/index.ts';
@@ -21,6 +21,18 @@ type LoopSnapshot = {
 function valueAfter(values: readonly string[], flag: string): string | undefined {
   const index = values.indexOf(flag);
   return index < 0 ? undefined : values[index + 1];
+}
+
+async function isFreshReview(cwd: string, feature: string): Promise<boolean> {
+  try {
+    const [spec, verdict] = await Promise.all([
+      stat(join(cwd, 'specs', `${feature}.md`)),
+      stat(join(cwd, 'specs', 'reports', `${feature}.verdict.json`)),
+    ]);
+    return verdict.mtimeMs >= spec.mtimeMs;
+  } catch {
+    return false;
+  }
 }
 
 const loop: CommandModule = {
@@ -71,7 +83,7 @@ const loop: CommandModule = {
     let review = readReview(
       result && typeof result === 'object' && 'result' in result ? (result as { result?: unknown }).result : undefined,
     );
-    if (!review && result === 0) {
+    if (!review && result === 0 && (await isFreshReview(ctx.cwd, feature))) {
       try {
         review = readReview(
           JSON.parse(await readFile(join(ctx.cwd, 'specs', 'reports', `${feature}.verdict.json`), 'utf8')),
@@ -79,6 +91,10 @@ const loop: CommandModule = {
       } catch {
         // A completed Pi command without a durable verdict is not a successful loop.
       }
+    } else if (!review && result === 0) {
+      // A stale verdict is deliberately ignored: V2 treats it as uncovered review,
+      // never as evidence that the new build is clean.
+      review = null;
     }
     const decision = result === 4 ? undefined : decideLoop(review, previous?.blockingKey, round, maxRounds);
     const output = {

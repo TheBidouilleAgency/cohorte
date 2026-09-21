@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
@@ -183,6 +183,42 @@ describe('V2 workflow compatibility commands', () => {
         phase: string;
       };
       expect(report).toMatchObject({ id: 'feature-x', round: 1, maxRounds: 3, status: 'pending', phase: 'build' });
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test('loop ignores a verdict older than the current spec', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'cohorte-loop-stale-'));
+    try {
+      await mkdir(join(cwd, 'specs', 'reports'), { recursive: true });
+      const verdict = join(cwd, 'specs', 'reports', 'feature-x.verdict.json');
+      const spec = join(cwd, 'specs', 'feature-x.md');
+      await writeFile(
+        verdict,
+        JSON.stringify({
+          verdict: 'approved',
+          unreviewed: [],
+          deferred: [],
+          blockingItems: [],
+          blocking: 0,
+          clean: true,
+        }),
+      );
+      await writeFile(spec, '---\nstatus: frozen\n---\n');
+      const old = new Date(Date.now() - 60_000);
+      await utimes(verdict, old, old);
+      const out = captureStream();
+      const ctx = fakeCliContext({
+        cwd,
+        stdio: { stdout: out.stream, stderr: out.stream, stdin: process.stdin },
+        controller: { send: async () => ({ status: 'completed' }) } as never,
+      });
+      expect(await loop.run(ctx, { positionals: ['feature-x'], options: {}, json: true })).toBe(0);
+      expect(JSON.parse(await readFile(join(cwd, 'specs', 'reports', 'feature-x.loop.json'), 'utf8'))).toMatchObject({
+        outcome: 'abort',
+        reason: 'review-died',
+      });
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
