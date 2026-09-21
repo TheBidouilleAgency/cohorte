@@ -1,6 +1,7 @@
 // apps/cli/src/control/index.ts — AREA barrel: the `Controller` port (DESIGN 2.3.4 inbox / start routes: sign,
 // `INSERT ... ON CONFLICT(command_id) DO NOTHING`, touch `inbox.poke`, wait <= `--wait`). Wave-0 stub: filled by
 // `U4.02`, which owns `apps/cli/src/control/**`.
+import { readFile } from 'node:fs/promises';
 import { type Clock, type IdSource, sha256Hex } from '@cohorte/base';
 import { initialRunState } from '@cohorte/core/state';
 import type { StateStore } from '@cohorte/persistence/contract';
@@ -48,24 +49,28 @@ export function createController(options: {
         auth: { scheme: authenticator.scheme, value: authenticator.sign(canonicalCommandBody(envelope), key) },
       } as never;
       const store = await options.openStore();
+      const startPayload = type === 'start' ? (payload as CommandPayloads['start']) : undefined;
+      const specSha256 =
+        startPayload?.spec && 'path' in startPayload.spec
+          ? sha256Hex(await readFile(startPayload.spec.path))
+          : sha256Hex('inline-spec');
       const result =
         type === 'start'
           ? await store.transact('project', null, (tx) => {
-              const startPayload = payload as CommandPayloads['start'];
+              const start = payload as CommandPayloads['start'];
               const status = tx.enqueueCommand(signed);
               if (status === 'enqueued') {
-                const specPath =
-                  startPayload.spec && 'path' in startPayload.spec ? startPayload.spec.path : 'inline-spec';
+                const specPath = start.spec && 'path' in start.spec ? start.spec.path : 'inline-spec';
                 tx.putRun(
                   initialRunState({
                     runId: createdRunId,
-                    profile: startPayload.profile,
+                    profile: start.profile,
                     tableVersion: 1,
-                    specId: (startPayload.spec && 'id' in startPayload.spec
-                      ? startPayload.spec.id
+                    specId: (start.spec && 'id' in start.spec
+                      ? start.spec.id
                       : `spec_${sha256Hex(specPath).slice(0, 24)}`) as never,
-                    specSha256: sha256Hex(specPath),
-                    title: `${startPayload.profile} run`,
+                    specSha256,
+                    title: `${start.profile} run`,
                     pinnedInstallDir: options.pinnedInstallDir ?? options.cwd,
                     baseBranch: 'main',
                     cohorteVersion: '3.0.0-dev.7',
