@@ -8,6 +8,7 @@ import gc from '../../src/commands/gc/index.ts';
 import init from '../../src/commands/init/index.ts';
 import migrate from '../../src/commands/migrate/index.ts';
 import policy from '../../src/commands/policy/index.ts';
+import spec from '../../src/commands/spec/index.ts';
 import update from '../../src/commands/update/index.ts';
 import { captureStream, fakeCliContext } from '../registry/helpers.ts';
 
@@ -35,6 +36,21 @@ describe('project commands', () => {
           json: true,
         }),
       ).rejects.toThrow('refusing to overwrite');
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test('spec validate and freeze resolve legacy-compatible markdown specs by feature id', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'cohorte-spec-md-'));
+    try {
+      await mkdir(join(cwd, 'specs'), { recursive: true });
+      await writeFile(join(cwd, 'specs', 'calendar.md'), '---\nstatus: draft\n---\n\n# Calendar\n');
+      const out = captureStream();
+      const ctx = fakeCliContext({ cwd, stdio: { stdout: out.stream, stderr: out.stream, stdin: process.stdin } });
+      expect(await spec.run(ctx, { subVerb: 'validate', positionals: ['calendar'], options: {}, json: true })).toBe(0);
+      expect(await spec.run(ctx, { subVerb: 'freeze', positionals: ['calendar'], options: {}, json: true })).toBe(0);
+      await expect(readFile(join(cwd, 'specs', 'calendar.md'), 'utf8')).resolves.toContain('status: frozen');
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
