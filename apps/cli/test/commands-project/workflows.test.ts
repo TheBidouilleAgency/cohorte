@@ -227,6 +227,46 @@ describe('V2 workflow compatibility commands', () => {
     }
   });
 
+  test('refactor retries a completed Pi domain when its configured gates fail', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'cohorte-refactor-gates-'));
+    try {
+      await mkdir(join(cwd, 'specs'), { recursive: true });
+      await writeFile(
+        join(cwd, 'PIPELINE.md'),
+        ['```yaml pipeline-profile', 'commands:', '  test: node -e "process.exit(1)"', '```', ''].join('\n'),
+      );
+      await writeFile(
+        join(cwd, 'specs', 'refactor-backlog.md'),
+        [
+          '# Refactor backlog',
+          '',
+          '## apps-api',
+          '',
+          ...Array.from(
+            { length: 5 },
+            (_, index) => `- [ ] HIGH · apps/api/auth.ts:${index + 1} · tdd · fix ${index + 1}`,
+          ),
+          '',
+        ].join('\n'),
+      );
+      const out = captureStream();
+      const ctx = fakeCliContext({
+        cwd,
+        stdio: { stdout: out.stream, stderr: out.stream, stdin: process.stdin },
+        controller: { send: async () => ({ status: 'completed' }) } as never,
+      });
+      expect(await refactor.run(ctx, { positionals: ['apps-api'], options: {}, json: false })).toBe(15);
+      expect(JSON.parse(await readFile(join(cwd, 'specs', 'reports', 'refactor.json'), 'utf8'))).toMatchObject({
+        outcomes: [{ domain: 'apps-api', status: 15, attempts: 2 }],
+      });
+      await expect(readFile(join(cwd, 'specs', 'reports', 'refactor-verify.apps-api.txt'), 'utf8')).resolves.toContain(
+        'process.exit(1)',
+      );
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   test('fleet sync drops an explicitly shipped feature without touching its worktree', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'cohorte-fleet-sync-'));
     try {

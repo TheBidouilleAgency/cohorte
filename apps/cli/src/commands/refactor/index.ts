@@ -1,9 +1,47 @@
+import { execFile } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 import { specContentSha256 } from '@cohorte/config/schema';
-import { stringify } from 'yaml';
+import { parse, stringify } from 'yaml';
 import type { CommandModule } from '../../contract/index.ts';
 import run from '../run/index.ts';
+
+const exec = promisify(execFile);
+
+async function configuredGates(root: string): Promise<string[]> {
+  try {
+    const source = await readFile(join(root, 'PIPELINE.md'), 'utf8');
+    const block = /```yaml pipeline-profile\s*\n([\s\S]*?)\n```/u.exec(source)?.[1];
+    const commands = block ? (parse(block) as { commands?: Record<string, unknown> }).commands : undefined;
+    if (!commands) return [];
+    return ['format', 'lint', 'typecheck', 'test']
+      .map((key) => commands[key])
+      .filter((value): value is string => typeof value === 'string' && value.length > 0 && !value.startsWith('<'));
+  } catch {
+    return [];
+  }
+}
+
+async function verifyDomain(root: string, domain: string): Promise<number> {
+  const commands = await configuredGates(root);
+  if (!commands.length) return 0;
+  const results: string[] = [];
+  let status = 0;
+  for (const command of commands) {
+    try {
+      const result = await exec('sh', ['-lc', command], { cwd: root, maxBuffer: 2_000_000 });
+      results.push(`$ ${command}\n${result.stdout || '(no output)'}${result.stderr || ''}`);
+    } catch (error) {
+      const failure = error as { stdout?: string; stderr?: string; message?: string };
+      results.push(`$ ${command}\n${failure.stdout ?? ''}${failure.stderr ?? failure.message ?? String(error)}`);
+      status = 15;
+    }
+  }
+  await mkdir(join(root, 'specs', 'reports'), { recursive: true });
+  await writeFile(join(root, 'specs', 'reports', `refactor-verify.${domain}.txt`), `${results.join('\n\n')}\n`, 'utf8');
+  return status;
+}
 
 const refactor: CommandModule = {
   verb: 'refactor',
@@ -73,18 +111,21 @@ const refactor: CommandModule = {
         ...args,
         positionals: [path, '--profile', 'feature', '--phases', 'BUILD,TEST,REVIEW', '--with-fix'],
       });
+      const firstGates = first === 0 ? await verifyDomain(ctx.cwd, domain) : 0;
       const result =
-        first === 3
+        first === 3 || firstGates !== 0
           ? await run.run(ctx, {
               ...args,
               positionals: [path, '--profile', 'feature', '--phases', 'BUILD,TEST,REVIEW', '--with-fix'],
             })
           : first;
-      outcomes.push({ domain, spec: path, tasks, status: result, attempts: first === 3 ? 2 : 1 });
-      if (result === 0) {
+      const finalGates = result === 0 ? await verifyDomain(ctx.cwd, domain) : 0;
+      const status = finalGates !== 0 ? finalGates : result;
+      outcomes.push({ domain, spec: path, tasks, status, attempts: first === 3 || firstGates !== 0 ? 2 : 1 });
+      if (status === 0) {
         completed.push({ domain, tasks });
       }
-      return result;
+      return status;
     };
 
     // V2 deliberately serialises the shared contract slice, then fans out
