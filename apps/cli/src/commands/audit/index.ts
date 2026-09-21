@@ -137,7 +137,12 @@ const audit: CommandModule = {
     await writeFile(backlogPath, `${backlog.join('\n')}\n`, 'utf8');
     const result = await review.run(ctx, {
       ...args,
-      positionals: target ? [target, ...args.positionals.filter((x) => x.startsWith('--'))] : args.positionals,
+      // Audit targets are domains/paths, not feature spec IDs. Forward the target
+      // as a review surface so Pi reviews the selected ownership slice instead of
+      // trying to open specs/<domain>.md.
+      positionals: target
+        ? ['--surface', target, ...args.positionals.filter((x) => x.startsWith('--'))]
+        : args.positionals,
     });
     ctx.stdio.stdout.write(
       `audit gates written to ${relative(ctx.cwd, gatePath)}; backlog written to ${relative(ctx.cwd, backlogPath)}; review dispatched\n`,
