@@ -35,6 +35,11 @@ const run: CommandModule = {
     );
     const model = valueAfter('--model');
     const phasesValue = valueAfter('--phases');
+    const surfaces = args.positionals
+      .flatMap((value, index) =>
+        value === '--surface' && args.positionals[index + 1] ? [args.positionals[index + 1] as string] : [],
+      )
+      .concat((valueAfter('--surfaces') ?? '').split(',').filter(Boolean));
     const phases = phasesValue
       ?.split(',')
       .map((value) => value.trim().toUpperCase())
@@ -74,6 +79,7 @@ const run: CommandModule = {
       ...(valueAfter('--runtime') ? { runtime: valueAfter('--runtime') as string } : {}),
       ...(valueAfter('--script') ? { fakeScript: valueAfter('--script') as string } : {}),
       ...(phasesValue !== undefined ? { phases: phases ?? [] } : {}),
+      ...(surfaces.length > 0 ? { surfaces } : {}),
       ...(args.positionals.includes('--with-fix') ? { withFix: true } : {}),
       ...(args.positionals.includes('--unattended') ? { unattended: true } : {}),
       ...(model ? { modelOverrides: { implementer: { provider: 'default', model } } } : {}),

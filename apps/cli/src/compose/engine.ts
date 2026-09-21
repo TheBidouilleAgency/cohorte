@@ -366,7 +366,7 @@ export async function createProductionEngine(options: ProductionEngineOptions): 
   const toolHost = createToolHost(toolHostDeps);
   const pending = options.runId ? await options.store.pendingCommands(options.runId) : [];
   const requestedStart = pending.find((command) => command.envelope.type === 'start')?.envelope.payload as
-    | { runtime?: string; fakeScript?: string; phases?: readonly string[] }
+    | { runtime?: string; fakeScript?: string; phases?: readonly string[]; surfaces?: readonly string[] }
     | undefined;
   const fakeDefaultScript = fakeScript()
     .agent({}, [{ do: 'submit', output: { status: 'clean' } }])
@@ -765,7 +765,9 @@ export async function createProductionEngine(options: ProductionEngineOptions): 
         filesystem: sandboxCapabilities.filesystem,
         network: sandboxCapabilities.network,
       };
+      const selectedSurfaces = requestedStart?.surfaces ? new Set(requestedStart.surfaces) : undefined;
       const zones = Object.entries(loaded.ownership.surfaces)
+        .filter(([surfaceId]) => selectedSurfaces === undefined || selectedSurfaces.has(surfaceId))
         .filter(([surfaceId]) => surfaceId !== 'shared')
         .flatMap(([, surface]) => surface.paths.map((path) => literalPrefixOf(path).join('/')).filter(Boolean))
         .filter((path, index, paths) => paths.indexOf(path) === index)
