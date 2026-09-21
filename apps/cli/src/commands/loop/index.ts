@@ -15,6 +15,7 @@ type LoopSnapshot = {
   outcome?: 'ship' | 'abort';
   reason?: string;
   blockingKey?: string;
+  surfaces?: string[];
   startedAt: string;
   updatedAt: string;
 };
@@ -71,12 +72,21 @@ const loop: CommandModule = {
     if (!feature) return 2;
     const parsedMax = Number(valueAfter(args.positionals, '--max-rounds') ?? 5);
     const maxRounds = Number.isInteger(parsedMax) ? Math.min(10, Math.max(1, parsedMax)) : 5;
+    const surfaces = (valueAfter(args.positionals, '--surfaces') ?? '')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean);
     const reportPath = join(ctx.cwd, 'specs', 'reports', `${feature}.loop.json`);
     let previous: Partial<LoopSnapshot> | undefined;
     try {
       previous = JSON.parse(await readFile(reportPath, 'utf8')) as Partial<LoopSnapshot>;
     } catch {}
-    const round = previous?.outcome ? 1 : Math.max(1, Number(previous?.round) || 1);
+    const round =
+      previous?.status === 'completed' && !previous.outcome
+        ? Math.max(1, Number(previous.round) || 1) + 1
+        : previous?.outcome
+          ? 1
+          : Math.max(1, Number(previous?.round) || 1);
     const now = ctx.clock.now();
     const before: LoopSnapshot = {
       id: feature,
@@ -84,6 +94,7 @@ const loop: CommandModule = {
       maxRounds,
       phase: round === 1 ? 'build' : 'fix',
       status: 'running',
+      ...(surfaces.length > 0 ? { surfaces } : previous?.surfaces ? { surfaces: previous.surfaces } : {}),
       startedAt: previous?.startedAt ?? now,
       updatedAt: now,
     };
@@ -120,6 +131,11 @@ const loop: CommandModule = {
         profile: 'feature',
         spec: { path: resolveSpecPath(ctx.cwd, feature) },
         phases: [...LOOP_PHASES],
+        ...(surfaces.length > 0
+          ? { surfaces: surfaces as never }
+          : previous?.surfaces
+            ? { surfaces: previous.surfaces as never }
+            : {}),
         withFix: true,
         unattended: true,
       });
