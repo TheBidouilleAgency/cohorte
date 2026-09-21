@@ -2,12 +2,50 @@ import { execFile } from 'node:child_process';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { promisify } from 'node:util';
+import { parse } from 'yaml';
 import type { CommandModule } from '../../contract/index.ts';
 import review from '../review/index.ts';
 
 const exec = promisify(execFile);
 
 type BacklogItem = { severity: string; file: string; line: number; kind: string; fix: string };
+
+async function configuredGates(root: string): Promise<string[]> {
+  try {
+    const pipeline = await readFile(join(root, 'PIPELINE.md'), 'utf8');
+    const block = /```yaml pipeline-profile\s*\n([\s\S]*?)\n```/u.exec(pipeline)?.[1];
+    const commands = block ? (parse(block) as { commands?: Record<string, unknown> })?.commands : undefined;
+    if (!commands) return [];
+    return ['format', 'lint', 'typecheck', 'test']
+      .map((key) => commands[key])
+      .filter((value): value is string => typeof value === 'string' && value.length > 0 && !value.startsWith('<'));
+  } catch {
+    return [];
+  }
+}
+
+async function runGates(root: string): Promise<string> {
+  const commands = await configuredGates(root);
+  if (commands.length === 0) {
+    try {
+      const result = await exec('git', ['diff', '--check'], { cwd: root, maxBuffer: 1_000_000 });
+      return `git diff --check\n${result.stdout || 'clean\n'}`;
+    } catch (error) {
+      return `git diff --check\n${error instanceof Error ? error.message : String(error)}\n`;
+    }
+  }
+  const chunks: string[] = [];
+  for (const command of commands) {
+    try {
+      const result = await exec('sh', ['-lc', command], { cwd: root, maxBuffer: 2_000_000 });
+      chunks.push(`$ ${command}\n${result.stdout || '(no output)'}${result.stderr || ''}`);
+    } catch (error) {
+      const failure = error as { stdout?: string; stderr?: string; message?: string };
+      chunks.push(`$ ${command}\n${failure.stdout ?? ''}${failure.stderr ?? failure.message ?? String(error)}\n`);
+    }
+  }
+  return `${chunks.join('\n')}\n`;
+}
 
 async function readExistingFindings(root: string): Promise<BacklogItem[]> {
   const reports = join(root, 'specs', 'reports');
@@ -78,14 +116,7 @@ const audit: CommandModule = {
     if (target === undefined && args.positionals.length > 0) return 2;
     await mkdir(join(ctx.cwd, 'specs', 'reports'), { recursive: true });
     const gatePath = join(ctx.cwd, 'specs', 'reports', 'audit-gates.txt');
-    let gate = '';
-    try {
-      const result = await exec('git', ['diff', '--check'], { cwd: ctx.cwd, maxBuffer: 1_000_000 });
-      gate = result.stdout || 'git diff --check: clean\n';
-    } catch (error) {
-      gate = `${error instanceof Error ? error.message : String(error)}\n`;
-    }
-    await writeFile(gatePath, gate, 'utf8');
+    await writeFile(gatePath, await runGates(ctx.cwd), 'utf8');
     const findings = (await readExistingFindings(ctx.cwd))
       .filter((item) => target === undefined || item.file.includes(target) || domainFor(item.file) === target)
       .filter((item, index, all) => all.findIndex((other) => JSON.stringify(other) === JSON.stringify(item)) === index)
