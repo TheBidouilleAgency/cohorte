@@ -58,6 +58,7 @@ export const COMMAND_MODULES: Readonly<Record<string, () => Promise<unknown>>> =
   gc: () => import('./commands/gc/index.ts'),
   update: () => import('./commands/update/index.ts'),
   brainstorm: () => import('./commands/brainstorm/index.ts'),
+  patch: () => import('./commands/patch/index.ts'),
   'run-tool': () => import('./commands/run-tool/index.ts'),
   send: () => import('./commands/send/index.ts'),
   __host: () => import('./commands/__host/index.ts'),

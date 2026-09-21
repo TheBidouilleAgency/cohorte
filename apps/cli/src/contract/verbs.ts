@@ -79,6 +79,7 @@ export const VERBS: readonly VerbSpec[] = [
     summary: 'Check for a newer pinned install (offline, --check only in V3.0)',
   },
   { name: 'brainstorm', summary: 'Create a draft feature spec from an idea' },
+  { name: 'patch', summary: 'Create a minimal regression patch spec' },
   {
     name: 'run-tool',
     summary: 'Run one tool directly (admin; policy.admin.runTool)',

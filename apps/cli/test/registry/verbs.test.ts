@@ -50,6 +50,7 @@ const DESIGN_9_VERBS = [
   'gc',
   'update',
   'brainstorm',
+  'patch',
   'run-tool',
   'send',
   '__host',
