@@ -8,6 +8,7 @@ import { CohorteError, errorOf, type Sha256, sha256Hex } from '@cohorte/base';
 import { loadConfig, resolveConfig } from '@cohorte/config';
 import { createKeyStore, createTrustStore } from '@cohorte/security/auth';
 import type { CommandModule } from '../../contract/index.ts';
+import { resolveSpecPath } from '../../project/spec-path.ts';
 
 const run: CommandModule = {
   verb: 'run',
@@ -59,7 +60,7 @@ const run: CommandModule = {
     const payload = {
       profile,
       unattended: false,
-      ...(spec ? { spec: { path: spec } } : {}),
+      ...(spec ? { spec: { path: resolveSpecPath(ctx.cwd, spec) } } : {}),
       ...(valueAfter('--runtime') ? { runtime: valueAfter('--runtime') as string } : {}),
       ...(valueAfter('--script') ? { fakeScript: valueAfter('--script') as string } : {}),
       ...(model ? { modelOverrides: { implementer: { provider: 'default', model } } } : {}),

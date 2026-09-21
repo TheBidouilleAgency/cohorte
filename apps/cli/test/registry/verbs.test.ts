@@ -21,6 +21,7 @@ const DESIGN_9_VERBS = [
   'doctor',
   'discover',
   'run',
+  'loop',
   'status',
   'inspect',
   'resume',

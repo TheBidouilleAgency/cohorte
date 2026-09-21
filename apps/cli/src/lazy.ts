@@ -29,6 +29,7 @@ export const COMMAND_MODULES: Readonly<Record<string, () => Promise<unknown>>> =
   doctor: () => import('./commands/doctor/index.ts'),
   discover: () => import('./commands/discover/index.ts'),
   run: () => import('./commands/run/index.ts'),
+  loop: () => import('./commands/loop/index.ts'),
   status: () => import('./commands/status/index.ts'),
   inspect: () => import('./commands/inspect/index.ts'),
   resume: () => import('./commands/resume/index.ts'),

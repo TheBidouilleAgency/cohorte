@@ -27,6 +27,7 @@ export const VERBS: readonly VerbSpec[] = [
   { name: 'doctor', summary: 'Diagnose the installation, configuration and toolchain', json: true },
   { name: 'discover', summary: 'Print the deterministic project scan (no write)', json: true },
   { name: 'run', summary: 'Start a pipeline run', commandType: 'start', json: true },
+  { name: 'loop', summary: 'Run a feature through the durable V3 workflow' },
   { name: 'status', summary: 'Show a run, or the project, status', commandType: 'status', json: true },
   {
     name: 'inspect',

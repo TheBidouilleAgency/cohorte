@@ -3,7 +3,8 @@ import { dirname, join, resolve } from 'node:path';
 import { parse, stringify } from 'yaml';
 import type { CommandModule } from '../../contract/index.ts';
 
-type Card = { id: string; title: string; checked: boolean; column: string; line: number };
+export type ObsidianCard = { id: string; title: string; checked: boolean; column: string; line: number };
+type Card = ObsidianCard;
 
 const COLUMNS = ['Ideas', 'Brainstorm', 'Spec', 'Ready to build', 'Building', 'Review', 'Fix', 'Ship', 'Shipped'];
 const STAGES = new Map([
@@ -54,6 +55,11 @@ function parseCards(source: string): Card[] {
     });
   });
   return cards;
+}
+
+export async function configuredIdeas(home: string): Promise<ObsidianCard[]> {
+  const resolved = await boardPath(home);
+  return parseCards(await readFile(resolved.path, 'utf8')).filter((card) => card.column === 'Ideas');
 }
 
 async function loadUserConfig(home: string): Promise<{ path: string; value: Record<string, unknown> }> {

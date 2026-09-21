@@ -1,8 +1,9 @@
 import { access, mkdir, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { CohorteError, errorOf } from '@cohorte/base';
 import { stringify } from 'yaml';
 import type { CommandModule } from '../../contract/index.ts';
+import { configuredIdeas } from '../obsidian/index.ts';
 
 function slugify(value: string): string {
   const slug = value
@@ -20,14 +21,36 @@ function optionValue(args: readonly string[], flag: string): string | undefined 
   return index === -1 ? undefined : args[index + 1];
 }
 
+function firstInput(args: readonly string[]): string | undefined {
+  const valueFlags = new Set(['--id', '--output', '--ticket']);
+  for (let index = 0; index < args.length; index++) {
+    const value = args[index];
+    if (!value?.startsWith('--')) return value;
+    if (valueFlags.has(value)) index++;
+  }
+  return undefined;
+}
+
 const brainstorm: CommandModule = {
   verb: 'brainstorm',
   async run(ctx, args) {
-    const input = args.positionals.find((value) => !value.startsWith('--'));
-    if (!input) return 2;
+    let input = firstInput(args.positionals);
+    let sourceId: string | undefined;
+    if (!input) {
+      const ideas = await configuredIdeas(ctx.env.HOME ?? ctx.cwd);
+      const ticket = optionValue(args.positionals, '--ticket');
+      const selected = ticket ? ideas.find((card) => card.id === ticket) : ideas.length === 1 ? ideas[0] : undefined;
+      if (!selected) {
+        if (!ideas.length) return 2;
+        ctx.stdio.stdout.write(`${ideas.map((card) => `${card.id}\t${card.title}`).join('\n')}\n`);
+        return 2;
+      }
+      input = selected.title;
+      sourceId = selected.id;
+    }
 
-    const id = slugify(optionValue(args.positionals, '--id') ?? input);
-    const output = optionValue(args.positionals, '--output') ?? join(ctx.cwd, '.cohorte', 'specs', `${id}.yaml`);
+    const id = slugify(optionValue(args.positionals, '--id') ?? sourceId ?? input);
+    const output = resolve(ctx.cwd, optionValue(args.positionals, '--output') ?? join('.cohorte', 'specs', `${id}.yaml`));
     const spec = {
       id,
       kind: 'feature' as const,

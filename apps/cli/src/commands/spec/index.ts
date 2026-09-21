@@ -6,12 +6,14 @@ import { writeFile } from 'node:fs/promises';
 import { freezeSpec, loadSpec } from '@cohorte/config';
 import { stringify } from 'yaml';
 import type { CommandModule } from '../../contract/index.ts';
+import { resolveSpecPath } from '../../project/spec-path.ts';
 
 const spec: CommandModule = {
   verb: 'spec',
   async run(ctx, args) {
-    const file = args.positionals.find((value) => !value.startsWith('--'));
-    if (!file) return 2;
+    const value = args.positionals.find((item) => !item.startsWith('--'));
+    if (!value) return 2;
+    const file = resolveSpecPath(ctx.cwd, value);
     const frozen = args.subVerb === 'freeze';
     const value = frozen ? await freezeSpec(file) : await loadSpec(file);
     if (frozen) await writeFile(file, stringify(value));
