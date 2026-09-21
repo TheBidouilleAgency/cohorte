@@ -112,6 +112,24 @@ describe('V2 workflow compatibility commands', () => {
     }
   });
 
+  test('fleet sync drops an explicitly shipped feature without touching its worktree', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'cohorte-fleet-sync-'));
+    try {
+      await mkdir(join(cwd, 'specs', 'reports'), { recursive: true });
+      await writeFile(
+        join(cwd, 'specs', 'reports', 'fleet.json'),
+        JSON.stringify({ order: ['one', 'two'], features: { one: { worktree: '/missing/one' }, two: {} } }),
+      );
+      const out = captureStream();
+      const ctx = fakeCliContext({ cwd, stdio: { stdout: out.stream, stderr: out.stream, stdin: process.stdin } });
+      expect(await fleet.run(ctx, { subVerb: 'sync', positionals: ['one'], options: {}, json: true })).toBe(0);
+      await expect(readFile(join(cwd, 'specs', 'reports', 'fleet.json'), 'utf8')).resolves.not.toContain('"one"');
+      expect(JSON.parse(out.text()).rows[0]).toMatchObject({ id: 'one', action: 'shipped: removed from fleet plan' });
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   test('loop persists a resumable durable handoff and refuses to ship without a verdict', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'cohorte-loop-'));
     try {

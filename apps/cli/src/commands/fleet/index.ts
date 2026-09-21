@@ -34,6 +34,14 @@ const specSurfaces = async (cwd: string, id: string, known: readonly string[]) =
   );
   return { keys: listed.length ? listed : [...known], inferred: listed.length === 0 };
 };
+const statusOf = async (cwd: string, id: string) => {
+  try {
+    const text = await readFile(join(cwd, 'specs', `${id}.md`), 'utf8');
+    return /^status:\s*(\S+)/mu.exec(text.slice(0, 1500))?.[1] ?? 'unknown';
+  } catch {
+    return 'missing';
+  }
+};
 const surfaces = async (cwd: string): Promise<string[]> => {
   try {
     const text = await readFile(join(cwd, 'PIPELINE.md'), 'utf8');
@@ -107,14 +115,45 @@ const fleet: CommandModule = {
           order?: string[];
           features?: Record<string, { worktree?: string }>;
         };
+        const defaultBranch = 'main';
         const rows = [];
         for (const id of plan.order ?? []) {
-          let status = 'missing';
+          const worktree = plan.features?.[id]?.worktree ?? null;
+          const root = worktree ?? ctx.cwd;
+          const status = await statusOf(root, id);
+          let loop: Record<string, unknown> = {};
+          let verdict: Record<string, unknown> = {};
           try {
-            const text = (await specText(ctx.cwd, id)) ?? '';
-            status = /^status:\s*(\S+)/mu.exec(text.slice(0, 1500))?.[1] ?? 'unknown';
+            loop = JSON.parse(await readFile(join(root, 'specs', 'reports', `${id}.loop.json`), 'utf8'));
           } catch {}
-          rows.push({ id, status, worktree: plan.features?.[id]?.worktree ?? null });
+          try {
+            verdict = JSON.parse(await readFile(join(root, 'specs', 'reports', `${id}.verdict.json`), 'utf8'));
+          } catch {}
+          let ahead = 0;
+          let behind = 0;
+          try {
+            await exec('git', ['-C', root, 'fetch', '--quiet', 'origin', defaultBranch]);
+            const { stdout } = await exec('git', [
+              '-C',
+              root,
+              'rev-list',
+              '--left-right',
+              '--count',
+              `origin/${defaultBranch}...HEAD`,
+            ]);
+            const counts = stdout.trim().split(/\s+/u).map(Number);
+            behind = counts[0] ?? 0;
+            ahead = counts[1] ?? 0;
+          } catch {}
+          rows.push({
+            id,
+            status,
+            worktree,
+            loop: { phase: loop.phase ?? null, round: loop.round ?? null, outcome: loop.outcome ?? null },
+            blocking: verdict.blocking ?? null,
+            ahead,
+            behind,
+          });
         }
         ctx.stdio.stdout.write(
           `${args.json ? JSON.stringify({ rows }) : rows.map((x) => `${x.id} · ${x.status} · ${x.worktree ?? 'no worktree'}`).join('\n')}\n`,
@@ -131,7 +170,29 @@ const fleet: CommandModule = {
           order?: string[];
           features?: Record<string, { worktree?: string; branch?: string }>;
         };
-        const rows = [];
+        const defaultBranch = 'main';
+        const requestedShipped = args.positionals.find((value) => value !== mode && !value.startsWith('--'));
+        const mergedBranches = await exec('git', ['branch', '--merged', defaultBranch], { cwd: ctx.cwd })
+          .then(({ stdout }) => stdout)
+          .catch(() => '');
+        const requested =
+          requestedShipped && (plan.order ?? []).includes(requestedShipped) ? requestedShipped : undefined;
+        const detectedShipped =
+          requested ??
+          (plan.order ?? []).find((id) => {
+            const branch = plan.features?.[id]?.branch;
+            return branch
+              ? mergedBranches.split(/\r?\n/u).some((line) => line.replace(/^\*?\s*/u, '') === branch)
+              : false;
+          });
+        if (detectedShipped) {
+          plan.order = (plan.order ?? []).filter((id) => id !== detectedShipped);
+          if (plan.features) delete plan.features[detectedShipped];
+          await writeFile(file, `${JSON.stringify(plan, null, 2)}\n`, 'utf8');
+        }
+        const rows: Array<{ id: string; action: string; worktree?: string }> = detectedShipped
+          ? [{ id: detectedShipped, action: 'shipped: removed from fleet plan' }]
+          : [];
         for (const id of plan.order ?? []) {
           const worktree = plan.features?.[id]?.worktree;
           if (!worktree) {
@@ -139,28 +200,29 @@ const fleet: CommandModule = {
             continue;
           }
           try {
+            await exec('git', ['-C', worktree, 'fetch', '--quiet', 'origin', defaultBranch]);
+            const loopPath = join(worktree, 'specs', 'reports', `${id}.loop.json`);
+            let loop: { outcome?: string } = {};
+            try {
+              loop = JSON.parse(await readFile(loopPath, 'utf8')) as { outcome?: string };
+            } catch {}
             const { stdout } = await exec('git', ['-C', worktree, 'status', '--porcelain']);
-            const branch = plan.features?.[id]?.branch;
-            let divergence = '';
-            if (branch) {
+            if (stdout.trim()) {
+              rows.push({ id, action: 'rebase needed: dirty worktree', worktree });
+            } else if (!loop.outcome) {
+              rows.push({ id, action: 'rebase needed: loop in flight', worktree });
+            } else {
               try {
-                const { stdout: counts } = await exec('git', [
-                  '-C',
+                await exec('git', ['-C', worktree, 'rebase', `origin/${defaultBranch}`]);
+                rows.push({ id, action: 'rebased; fresh review required', worktree });
+              } catch (error) {
+                rows.push({
+                  id,
+                  action: `rebase conflict: ${error instanceof Error ? error.message : String(error)}`,
                   worktree,
-                  'rev-list',
-                  '--left-right',
-                  '--count',
-                  `HEAD...${branch}`,
-                ]);
-                divergence = counts.trim();
-              } catch {}
+                });
+              }
             }
-            rows.push({
-              id,
-              action: stdout.trim() ? 'rebase needed: dirty worktree' : 'ready for supervised rebase',
-              worktree,
-              divergence,
-            });
           } catch {
             rows.push({ id, action: 'worktree missing', worktree });
           }
