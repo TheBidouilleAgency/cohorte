@@ -68,7 +68,7 @@ export function createController(options: {
                     title: `${startPayload.profile} run`,
                     pinnedInstallDir: options.pinnedInstallDir ?? options.cwd,
                     baseBranch: 'main',
-                    cohorteVersion: '3.0.0-dev.2',
+                    cohorteVersion: '3.0.0-dev.3',
                     schemaVersion: 1,
                     startedAt: options.clock.now(),
                   }).run,
