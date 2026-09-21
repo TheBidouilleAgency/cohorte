@@ -1,6 +1,6 @@
 {
   "name": "cohorte",
-  "version": "3.0.0-dev.1",
+  "version": "3.0.0-dev.2",
   "private": true,
   "description": "Cohorte V3: a durable multi-agent development pipeline with a runtime-independent orchestrator.",
   "license": "AGPL-3.0-only",

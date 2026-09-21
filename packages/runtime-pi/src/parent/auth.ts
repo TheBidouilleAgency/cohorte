@@ -103,20 +103,31 @@ async function exchange<T>(
   } finally {
     clearTimeout(timer);
     void transport.send({ t: 'shutdown' });
-    await new Promise<void>((resolve) => {
-      if (child.exitCode !== null || child.signalCode !== null || child.pid === undefined) return resolve();
-      const kill = setTimeout(() => {
-        try {
-          process.kill(-(child.pid ?? 0), 'SIGKILL');
-        } catch {
-          // already gone
-        }
-      }, timings.exitGraceMs);
-      child.once('exit', () => {
-        clearTimeout(kill);
-        resolve();
+    const pid = child.pid;
+    const goneWithin = (ms: number): Promise<boolean> =>
+      new Promise((resolve) => {
+        if (child.exitCode !== null || child.signalCode !== null || child.pid === undefined) return resolve(true);
+        const timer = setTimeout(() => resolve(false), ms);
+        child.once('exit', () => {
+          clearTimeout(timer);
+          resolve(true);
+        });
       });
-    });
+    const signalGroup = (signal: NodeJS.Signals): void => {
+      if (pid === undefined) return;
+      try {
+        process.kill(process.platform === 'win32' ? pid : -pid, signal);
+      } catch {
+        // The leader or its process group already exited.
+      }
+    };
+
+    // Auth providers may leave a localhost callback server behind after a failed login. Reap the
+    // detached process group, not only the leader, so a later provider login cannot hit EADDRINUSE.
+    if (!(await goneWithin(timings.exitGraceMs))) {
+      signalGroup('SIGTERM');
+      if (!(await goneWithin(timings.termGraceMs))) signalGroup('SIGKILL');
+    }
     transport.close();
   }
 }
