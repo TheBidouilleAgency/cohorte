@@ -73,7 +73,7 @@ describe('V2 workflow compatibility commands', () => {
         cwd,
         stdio: { stdout: out.stream, stderr: out.stream, stdin: process.stdin },
         controller: {
-          send: async (_command, payload) => {
+          send: async (_command: string, payload: unknown) => {
             calls.push(payload);
             return { status: 'pending' };
           },
