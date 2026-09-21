@@ -5,6 +5,7 @@ import { describe, expect, test } from 'vitest';
 import alignDs from '../../src/commands/align-ds/index.ts';
 import audit from '../../src/commands/audit/index.ts';
 import fleet from '../../src/commands/fleet/index.ts';
+import loop from '../../src/commands/loop/index.ts';
 import retro from '../../src/commands/retro/index.ts';
 import { captureStream, fakeCliContext } from '../registry/helpers.ts';
 
@@ -81,6 +82,30 @@ describe('V2 workflow compatibility commands', () => {
         await fleet.run(ctx, { subVerb: 'plan', positionals: ['one', 'two', '--apply'], options: {}, json: false }),
       ).toBe(0);
       await expect(readFile(join(cwd, 'specs', 'reports', 'fleet.json'), 'utf8')).resolves.toContain('one');
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test('loop persists a resumable durable handoff around the Pi run', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'cohorte-loop-'));
+    try {
+      const out = captureStream();
+      const ctx = fakeCliContext({
+        cwd,
+        stdio: { stdout: out.stream, stderr: out.stream, stdin: process.stdin },
+        controller: { send: async () => ({ status: 'pending', result: { runId: 'run_loop' } }) } as never,
+        hostSpawner: { spawnDetached: async () => {} } as never,
+      });
+      expect(await loop.run(ctx, { positionals: ['feature-x', '--max-rounds', '3'], options: {}, json: true })).toBe(4);
+      const report = JSON.parse(await readFile(join(cwd, 'specs', 'reports', 'feature-x.loop.json'), 'utf8')) as {
+        id: string;
+        round: number;
+        maxRounds: number;
+        status: string;
+        phase: string;
+      };
+      expect(report).toMatchObject({ id: 'feature-x', round: 1, maxRounds: 3, status: 'pending', phase: 'build' });
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
