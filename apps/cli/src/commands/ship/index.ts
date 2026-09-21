@@ -7,6 +7,7 @@ import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import type { CommandModule } from '../../contract/index.ts';
+import { moveConfiguredCard } from '../obsidian/index.ts';
 
 const exec = promisify(execFile);
 
@@ -64,6 +65,7 @@ const ship: CommandModule = {
         return status.trim() === '' ? 0 : 11;
       }
       const specSource = await readFile(specPath, 'utf8');
+      await moveConfiguredCard(ctx.env.HOME ?? ctx.cwd, runId, 'ship');
       await writeFile(specPath, markShipped(specSource), 'utf8');
       await exec('git', ['add', '-A', '--', ':!.cohorte'], { cwd: ctx.cwd });
       await exec('git', ['commit', '-m', `cohorte(${runId}): ship`], { cwd: ctx.cwd });
@@ -84,6 +86,11 @@ const ship: CommandModule = {
         ],
         { cwd: ctx.cwd },
       );
+      const pr = /\/pull\/(\d+)/u.exec(prUrl)?.[1];
+      await moveConfiguredCard(ctx.env.HOME ?? ctx.cwd, runId, 'shipped', pr ? `${runId} — PR #${pr}` : runId);
+      if (args.positionals.includes('--watch')) {
+        await exec('gh', ['pr', 'checks', prUrl.trim(), '--watch'], { cwd: ctx.cwd, maxBuffer: 2_000_000 });
+      }
       ctx.stdio.stdout.write(
         `${JSON.stringify({ feature: runId, reportPath, branch: branch.trim(), clean: false, prUrl: prUrl.trim() })}\n`,
       );
