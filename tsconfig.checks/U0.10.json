@@ -34,7 +34,6 @@
     "../apps/cli/src/doctor/checks/auth/index.ts"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

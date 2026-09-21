@@ -13,7 +13,6 @@
     "../tests/packaging/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

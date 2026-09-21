@@ -14,7 +14,6 @@
     "../packages/security/test/decide/gate/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

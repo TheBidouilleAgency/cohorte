@@ -29,7 +29,6 @@ export const PLAN_PATH = 'docs/v3/plan.json';
 export const CHECKS_DIRECTORY = 'tsconfig.checks';
 /** Same exclusions as every other tsconfig, vitest and Biome (PLAN §3 rule 12), plus tsc's own output. */
 export const SHARED_EXCLUDES: readonly string[] = [
-  'legacy/**',
   '.cohorte/**',
   '.build/**',
   '**/dist/**',

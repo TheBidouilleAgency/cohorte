@@ -14,7 +14,6 @@
     "../packages/core/test/toolhost/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

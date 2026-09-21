@@ -18,7 +18,6 @@
     "../apps/cli/test/doctor-auth/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

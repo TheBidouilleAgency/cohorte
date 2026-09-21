@@ -26,7 +26,7 @@ const PLAN: Plan = {
             'fixtures/data/**',
             'docs/v3/notes.md',
             'package.json',
-            'legacy/v2/**',
+            'vendor/retired/**',
             '.github/workflows/ci.yml',
           ],
           testPaths: ['packages/alpha/test/area'],
@@ -60,7 +60,6 @@ describe('renderUnitCheckConfig', () => {
     expect(config.compilerOptions).toMatchObject({ composite: false, noEmit: true, incremental: false });
     expect(config.include).toContain('../packages/alpha/src/area/**/*');
     expect(config.exclude).toEqual([
-      '../legacy/**',
       '../.cohorte/**',
       '../.build/**',
       '../**/dist/**',

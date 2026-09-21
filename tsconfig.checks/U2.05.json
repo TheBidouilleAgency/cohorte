@@ -18,7 +18,6 @@
     "../packages/core/test/guards/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

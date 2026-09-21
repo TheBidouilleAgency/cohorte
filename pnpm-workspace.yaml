@@ -1,5 +1,5 @@
 # Workspace packages: apps/* and packages/* ONLY.
-# Never docs/ (a VitePress site with its own npm toolchain) and never legacy/ (V2, reference only).
+# Never docs/ (a VitePress site with its own npm toolchain).
 packages:
   - apps/*
   - packages/*

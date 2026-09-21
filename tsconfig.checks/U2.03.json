@@ -18,7 +18,6 @@
     "../packages/tools/test/workspace/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

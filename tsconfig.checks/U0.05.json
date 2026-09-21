@@ -18,7 +18,6 @@
     "../fixtures/schema-compat/3.0.0-dev/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

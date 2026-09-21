@@ -22,5 +22,5 @@
     "vitest*.config.ts",
     "apps/*/*.config.ts"
   ],
-  "exclude": ["legacy/**", ".cohorte/**", ".build/**", "**/dist/**", "**/dist-types/**", "**/node_modules/**"]
+  "exclude": [".cohorte/**", ".build/**", "**/dist/**", "**/dist-types/**", "**/node_modules/**"]
 }

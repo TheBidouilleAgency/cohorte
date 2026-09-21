@@ -13,7 +13,6 @@
     "test:e2e": "vitest run --project e2e",
     "test:live": "vitest run --config vitest.live.config.ts",
     "ci:local": "node scripts/ci-local.ts",
-    "ci:legacy-v2": "pnpm legacy:test",
     "ci:lint": "biome ci . && node scripts/check-layers.ts && node scripts/check-contract-words.ts && node scripts/check-prompts.ts",
     "ci:typecheck": "tsc -b && tsc -p tsconfig.tests.json",
     "ci:unit": "vitest run --project unit",
@@ -34,8 +33,7 @@
     "build": "node scripts/build.ts",
     "pack:check": "node scripts/pack-check.ts",
     "gen:schemas": "node scripts/gen-schemas.ts",
-    "checkpoint": "node scripts/checkpoint.ts",
-    "legacy:test": "node legacy/v2/run-suites.mjs"
+    "checkpoint": "node scripts/checkpoint.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",

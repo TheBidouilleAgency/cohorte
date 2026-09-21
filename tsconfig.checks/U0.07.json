@@ -52,7 +52,6 @@
     "../packages/telemetry/test/contract/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

@@ -1,9 +1,0 @@
-# python bytecode caches (generated when gate.py runs)
-__pycache__/
-*.pyc
-
-# NOTE: scripts/new-feature.sh + scripts/remove-feature.sh (this repo's own rendered
-# isolation scripts — it dogfoods /cohorte-init-pipeline) are excluded in package.json's
-# `files` negations, NOT here: an explicit `files` whitelist wins over .npmignore,
-# so listing them in this file has no effect. The shipped artifacts are the
-# *.sh.template files beside them.

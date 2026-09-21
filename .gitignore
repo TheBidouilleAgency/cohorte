@@ -19,8 +19,4 @@ apps/cli/.publish/
 *.tsbuildinfo
 dist-types/
 
-# V2 dogfooded its own /cohorte-init-pipeline: these are its rendered isolation scripts, with this
-# repo's ports and paths baked in. The shipped V2 artifacts are the *.sh.template files beside them.
-legacy/v2/scripts/new-feature.sh
-legacy/v2/scripts/remove-feature.sh
 .serena/

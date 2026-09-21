@@ -16,7 +16,6 @@
     "../packages/core/test/provision/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

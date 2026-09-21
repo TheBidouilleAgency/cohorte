@@ -25,7 +25,6 @@
     "../packages/testkit/src/store-factory/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

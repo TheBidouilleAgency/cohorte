@@ -6,7 +6,7 @@ export default defineConfig({
   test: {
     name: 'live',
     include: ['tests/live/**/*.live.ts'],
-    exclude: ['legacy/**', '.cohorte/**', '.build/**', '**/dist/**', '**/node_modules/**'],
+    exclude: ['.cohorte/**', '.build/**', '**/dist/**', '**/node_modules/**'],
     environment: 'node',
     pool: 'forks',
     testTimeout: 300_000,

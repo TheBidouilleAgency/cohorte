@@ -20,7 +20,6 @@
     "../packages/core/test/snapshot/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

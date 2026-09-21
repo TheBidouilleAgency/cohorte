@@ -10,11 +10,10 @@ apps/cli/            the ONLY published package (`cohorte`); apps/daemon/ is a R
 packages/<name>/     fifteen private, ESM-only, source-first packages (`@cohorte/<name>`)
 tests/<suite>/       cross-package suites: integration, e2e, security, crash, dogfood, packaging, acceptance, live
 scripts/             tooling, run as TypeScript by Node itself (no tsx, no build step)
-legacy/v2/           Cohorte V2, reference only, on no execution path
 docs/                a VitePress site with its OWN npm toolchain; docs/v3/ holds the V3 documents
 ```
 
-`pnpm-workspace.yaml` lists `apps/*` and `packages/*` and nothing else: never `docs/`, never `legacy/`.
+`pnpm-workspace.yaml` lists `apps/*` and `packages/*` and nothing else: never `docs/`.
 
 Toolchain: Node `^24.16.0 || >=26.1.0` (it runs `.ts` natively), pnpm 12.4.2, TypeScript 7.0.2 (`tsc` is
 a type checker here and emits declarations only, into the ignored `dist-types/`), tsdown 0.23.0, vitest 5,
@@ -138,7 +137,7 @@ The suffix is half of it; the LOCATION is the other half. `vitest.config.ts` col
 under `src/`, a `*.test.ts` under `tests/` never run. `unit:check` fails on such a file when the unit
 owns it, and warns about any other test-looking name (`*.spec.ts`, a `.tsx` / `.mts` / `.js` extension)
 because that one may be fixture data.
-`legacy/**`, `.cohorte/**`, `.build/**`, `**/dist/**`, `**/node_modules/**` are excluded from vitest,
+`.cohorte/**`, `.build/**`, `**/dist/**`, `**/node_modules/**` are excluded from vitest,
 Biome and every tsconfig.
 
 ## Commands
@@ -152,7 +151,6 @@ pnpm 12.4.2 rejects the short flag of `pnpm --reporter=silent <script>` (`unexpe
 | `pnpm --reporter=silent verify` — frozen offline install, `tsc -b`, `tsc -p tsconfig.tests.json`, `biome ci .`, `check-layers`, `check-contract-words`, `gen-schemas --check`, unit + integration tests | Wave 0 and integrators |
 | `node scripts/gen-unit-checks.ts [--check]` — regenerate / verify `tsconfig.checks/**` | Wave 0 and integrators |
 | `COHORTE_CHECKPOINT_DIR=<abs dir outside the repo> node scripts/checkpoint.ts G<n>` — rollback checkpoint, never a commit | integrators |
-| `pnpm --reporter=silent legacy:test` — the seven V2 suites, from `legacy/v2`, with a throwaway `HOME` | anyone |
 
 `verify`, `build`, `pack:check` and `gen:schemas` name scripts that later Wave-0 units deliver
 (`scripts/gen-schemas.ts`: `U0.G`; `scripts/build.ts`, `scripts/pack-check.ts`: `U0.10`).

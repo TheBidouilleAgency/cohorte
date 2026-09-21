@@ -20,7 +20,6 @@
     "../tests/integration/fixtures/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

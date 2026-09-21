@@ -5,7 +5,7 @@ import { defineConfig } from 'vitepress'
 export default defineConfig({
   title: 'Cohorte',
   description:
-    'Portable, stack-agnostic multi-agent development pipeline for Claude Code — install the core, run /cohorte-init-pipeline, and it adapts to your project.',
+    'Durable multi-agent development pipeline for Pi with typed contracts, SQLite state and crash-safe runs.',
   base: '/cohorte/',
   // docs/v3/ is the V3 working set (spec, design of record, ADRs, plan): engineering
   // documents with raw `{{ }}` and `<placeholders>` that Vue would try to compile.
@@ -28,28 +28,18 @@ export default defineConfig({
     sidebar: {
       '/guide/': [
         {
-          text: 'Introduction',
+          text: 'V3',
           items: [
-            { text: 'Why not just ask your agent?', link: '/guide/why-cohorte' },
-            { text: 'What is Cohorte?', link: '/guide/what-is-cohorte' },
             { text: 'Getting started', link: '/guide/getting-started' },
             { text: 'Maintainer guide', link: '/guide/maintainers' },
           ],
         },
         {
-          text: 'Using the pipeline',
+          text: 'Architecture',
           items: [
-            { text: 'The feature cycle', link: '/guide/feature-cycle' },
-            { text: 'Workflows (multi-agent runs)', link: '/guide/workflows' },
-            { text: 'Token economy', link: '/guide/token-economy' },
-            { text: 'Parallel features', link: '/guide/parallel-features' },
-          ],
-        },
-        {
-          text: 'Capabilities',
-          items: [
-            { text: 'Design system', link: '/guide/design-system' },
-            { text: 'Kanban mirror', link: '/guide/kanban' },
+            { text: 'V3 specification', link: 'https://github.com/TheBidouilleAgency/cohorte/blob/main/docs/v3/SPEC.md' },
+            { text: 'Design record', link: 'https://github.com/TheBidouilleAgency/cohorte/blob/main/docs/v3/DESIGN.md' },
+            { text: 'CLI reference', link: 'https://github.com/TheBidouilleAgency/cohorte/blob/main/docs/v3/CLI.md' },
           ],
         },
       ],
@@ -58,13 +48,10 @@ export default defineConfig({
           text: 'Reference',
           items: [
             { text: 'Commands', link: '/reference/commands' },
-            { text: 'Agents', link: '/reference/agents' },
-            { text: 'The profile (PIPELINE.md)', link: '/reference/profile' },
-            { text: 'Gate & permissions', link: '/reference/gate' },
-            { text: 'Shipped scripts', link: '/reference/scripts' },
-            { text: 'Runtimes (Codex, Cursor, Gemini, OpenCode)', link: '/reference/runtimes' },
-            { text: 'Installers & updates', link: '/reference/installers' },
-            { text: 'Troubleshooting', link: '/reference/troubleshooting' },
+            { text: 'Exit codes', link: 'https://github.com/TheBidouilleAgency/cohorte/blob/main/docs/v3/reference/exit-codes.md' },
+            { text: 'Error codes', link: 'https://github.com/TheBidouilleAgency/cohorte/blob/main/docs/v3/reference/error-codes.md' },
+            { text: 'Configuration', link: 'https://github.com/TheBidouilleAgency/cohorte/blob/main/docs/v3/reference/configuration.md' },
+            { text: 'Security model', link: 'https://github.com/TheBidouilleAgency/cohorte/blob/main/docs/v3/reference/security-model.md' },
           ],
         },
       ],

@@ -14,7 +14,6 @@
     "../packages/git/test/impl/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

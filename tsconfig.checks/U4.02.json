@@ -16,7 +16,6 @@
     "../apps/cli/test/control/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

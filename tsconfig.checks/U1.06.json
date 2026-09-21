@@ -15,7 +15,6 @@
     "../packages/runtime-fake/test/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

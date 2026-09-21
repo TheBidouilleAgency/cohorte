@@ -6,8 +6,7 @@ les gestes quotidiens et les procédures opératoires.
 
 ## 1. Périmètre et sources de vérité
 
-Cohorte V3 est le monorepo racine. V2 est conservée comme référence de compatibilité sous
-[`legacy/v2`](https://github.com/TheBidouilleAgency/cohorte/tree/main/legacy/v2), mais elle n'est plus sur le chemin d'exécution V3.
+Cohorte V3 est le monorepo racine. Le runtime V2 a été retiré ; seule la voie d'import `init --export-v2` / `init --from-v2` reste maintenue pour les projets historiques.
 
 Les sources de vérité sont :
 
@@ -86,7 +85,7 @@ Pour vérifier l'installation complète sans lancer de provider réel :
 pnpm ci:local
 ```
 
-Cette commande exécute les mêmes commandes que les jobs CI, dans l'ordre : legacy V2, lint, typecheck, unit,
+Cette commande exécute les mêmes commandes que les jobs CI, dans l'ordre : lint, typecheck, unit,
 integration, schema-compat, migrations, packaging, E2E fake, crash, security, dogfood, acceptance et Pi.
 
 ## 4. Développement quotidien
@@ -223,8 +222,7 @@ Une PR V3 doit :
 - être rebasée sur `origin/main` avant merge si GitHub signale `CONFLICTING` ;
 - garder `.cohorte/`, `.build/`, `dist-types/` et les credentials hors du commit.
 
-Pour résoudre une PR de migration, vérifier le diff par rapport à `origin/main` et conserver les deux principes :
-V2 sous `legacy/v2/`, V3 à la racine. Après résolution :
+Pour résoudre une PR de migration, vérifier le diff par rapport à `origin/main` et conserver le runtime V3 à la racine. Après résolution :
 
 ```sh
 git fetch origin main

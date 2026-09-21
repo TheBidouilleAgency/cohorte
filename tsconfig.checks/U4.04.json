@@ -22,7 +22,6 @@
     "../apps/cli/src/commands/inspect/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

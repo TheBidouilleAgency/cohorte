@@ -19,7 +19,6 @@
     "../packages/runtime-pi/test/tripwires/type-proof.ts"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

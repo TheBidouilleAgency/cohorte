@@ -18,7 +18,6 @@
     "../packages/tools/test/impl/state/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

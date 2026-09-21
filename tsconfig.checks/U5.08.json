@@ -16,7 +16,6 @@
     "../fixtures/schema-compat/golden-stream/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

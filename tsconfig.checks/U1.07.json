@@ -20,7 +20,6 @@
     "../packages/testkit/src/fake-brain/scripts/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

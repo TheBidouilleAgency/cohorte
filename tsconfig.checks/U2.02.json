@@ -16,7 +16,6 @@
     "../packages/security/test/auth/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

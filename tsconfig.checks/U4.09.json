@@ -14,7 +14,6 @@
     "../tests/integration/assets/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

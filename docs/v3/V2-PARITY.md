@@ -1,20 +1,19 @@
 # V2/V3 workflow parity
 
-This document is the acceptance matrix for the V3 migration. V2 references are kept under
-`legacy/v2/core/commands/` and `legacy/v2/core/workflows/`. V3 must preserve the user-visible
-workflow semantics while using the durable Pi host, SQLite state store, typed phase contracts and
-the configured Pi runtime.
+This document is the acceptance matrix for the completed V3 migration. The V2 runtime is no longer
+carried in the repository. The matrix records the user-visible semantics that V3 preserves while
+using the durable Pi host, SQLite state store, typed phase contracts and the configured Pi runtime.
 
 ## Acceptance matrix
 
-| V2 capability | V3 implementation | Evidence | State |
+| Former workflow capability | V3 implementation | Evidence | State |
 | --- | --- | --- | --- |
 | Brainstorm seed and structured handoff | `commands/brainstorm`, native Pi `BRAINSTORM` phase | project-command tests, phase contract tests, `brainstorm --run` delegation test | Implemented; deterministic draft mode and native Pi panel mode both stage the structured handoff |
 | Spec validation and freeze | `commands/spec validate\|freeze`, Markdown/YAML loaders | `apps/cli/test/commands-project/spec.test.ts` | Implemented |
 | Build fan-out by owned surface | `BUILD` phase contracts and selected start surfaces | core phase/executor tests, acceptance run | Implemented |
 | Test gate before review | `TEST` phase and check runner | engine and acceptance tests | Implemented |
 | Parallel review and typed verdict | `REVIEW` phase, `ReviewResult`, persisted findings | review/core tests and finding projection | Implemented |
-| Fix only affected surfaces | `fix` remediation handoff plus `--surfaces` start scope | workflow tests | Implemented as the V2 follow-up run; only surfaces named by the report are re-dispatched |
+| Fix only affected surfaces | `fix` remediation handoff plus `--surfaces` start scope | workflow tests | Implemented; only surfaces named by the report are re-dispatched |
 | Loop reducer | `commands/loop/reducer.ts` plus core `LoopController` | workflow and core loop tests | Implemented for durable start/resume, explicit surface selection, fresh-verdict checks, advancing bounded rounds and durable decision history |
 | Treading-water / max-rounds / dead-reviewer stops | typed reducer decisions | reducer tests and durable loop report | Implemented; dead reviewers/unreviewed surfaces stop the loop, and each round decision is retained |
 | Audit gates + per-domain review | `commands/audit` | workflow tests, `audit-gates.txt`, `audit-dispatch.json` | Implemented; each configured domain plus `shared` gets an independent Pi review and dead dispatches are recorded |
@@ -35,9 +34,9 @@ native Pi host coverage, and the following checks are green on the PR head:
 pnpm ci:typecheck
 pnpm ci:unit
 pnpm ci:integration
-pnpm ci:e2e
+pnpm ci:e2e-fake
 pnpm ci:acceptance
-pnpm ci:legacy
+pnpm ci:packaging
 ```
 
 The `.cohorte/` state directory is local runtime state and must remain uncommitted.

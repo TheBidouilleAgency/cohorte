@@ -13,7 +13,6 @@
     "../tests/acceptance/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

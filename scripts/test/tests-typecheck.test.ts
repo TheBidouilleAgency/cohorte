@@ -68,7 +68,7 @@ describe('tsconfig.tests.json', () => {
   test('excluded trees are not typechecked', { timeout: 60_000 }, async ({ tree }) => {
     const done = await typecheck(tree, {
       'tests/e2e/ok.e2e.ts': typeLevelTest('string'),
-      'legacy/v2/tests/bad.test.ts': typeLevelTest('number'),
+      '.cohorte/state/tests/bad.test.ts': typeLevelTest('number'),
       '.build/u/tests/bad.test.ts': typeLevelTest('number'),
       '.cohorte/worktrees/w/tests/bad.test.ts': typeLevelTest('number'),
       'tests/e2e/dist/bad.e2e.ts': typeLevelTest('number'),

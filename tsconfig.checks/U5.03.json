@@ -22,7 +22,6 @@
     "../fixtures/scripts/frontend-backend/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

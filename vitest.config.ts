@@ -2,7 +2,7 @@ import { defineConfig } from 'vitest/config';
 
 // Discovery is by FILE SUFFIX (DESIGN 7.0): helpers and data tables under test/ are never collected,
 // and no unit ever edits this file.
-const EXCLUDE = ['legacy/**', '.cohorte/**', '.build/**', '**/dist/**', '**/node_modules/**'];
+const EXCLUDE = ['.cohorte/**', '.build/**', '**/dist/**', '**/node_modules/**'];
 
 // scripts/unit-check.ts gives every unit a private cache directory, so parallel unit checks in one
 // working tree never write the same files.

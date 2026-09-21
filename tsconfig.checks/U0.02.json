@@ -22,7 +22,6 @@
     "../packages/testkit/test/foundation/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

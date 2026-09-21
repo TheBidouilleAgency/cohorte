@@ -14,7 +14,6 @@
     "../packages/security/test/decide/commands/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

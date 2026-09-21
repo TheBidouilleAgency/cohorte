@@ -445,7 +445,7 @@ describe('checkLayers', () => {
       'packages/base/src/index.ts': 'export {};\n',
       'packages/base/node_modules/dep/src/x.ts': bad,
       'packages/base/dist/x.ts': bad,
-      'legacy/v2/packages/base/src/x.ts': bad,
+      'vendor/retired/packages/base/src/x.ts': bad,
       '.build/u/packages/base/src/x.ts': bad,
       '.cohorte/worktrees/w/packages/base/src/x.ts': bad,
     });
