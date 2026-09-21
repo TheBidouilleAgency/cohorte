@@ -21,7 +21,7 @@ the configured Pi runtime.
 | Refactor backlog execution | `commands/refactor` | refactor tests | Partial; contract authoring and per-surface retry semantics remain |
 | Fleet plan/status/sync | `commands/fleet` | workflow tests and `fleet.json` | Implemented; dependency extraction from contracts remains limited |
 | Retro pattern mining and ratification | `commands/retro` | workflow tests | Implemented read-only scan and explicit convention write |
-| Design-system alignment | `commands/align-ds` | command tests | Filesystem snapshot only; live adapter/token alignment is not configured |
+| Design-system alignment | `commands/align-ds` | command tests, configured `design.live_snapshot_dir` | Implemented for the deterministic filesystem adapter: live source → committed snapshot → UI kit; external design connector remains an optional integration |
 | Ship preflight and release | `commands/ship`, `ship --apply` | CLI typecheck; release flow implementation | Implemented; CI watch and post-merge Kanban verification remain |
 | Obsidian Kanban mirroring | `commands/obsidian` and configured card moves | Obsidian command tests | Implemented for configured board moves |
 

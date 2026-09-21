@@ -129,6 +129,42 @@ describe('V2 workflow compatibility commands', () => {
     }
   });
 
+  test('align-ds consumes a configured live filesystem adapter and refreshes the snapshot', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'cohorte-ds-live-'));
+    try {
+      await mkdir(join(cwd, 'live'), { recursive: true });
+      await mkdir(join(cwd, 'snapshot'), { recursive: true });
+      await mkdir(join(cwd, 'ui'), { recursive: true });
+      await writeFile(join(cwd, 'tokens.css'), ':root {}\n');
+      await writeFile(join(cwd, 'live', 'Button.prompt.md'), 'live button\n');
+      await writeFile(join(cwd, 'snapshot', 'Button.prompt.md'), 'old button\n');
+      await writeFile(join(cwd, 'ui', 'Button.prompt.md'), 'old button\n');
+      await writeFile(
+        join(cwd, 'PIPELINE.md'),
+        [
+          '```yaml pipeline-profile',
+          'design:',
+          '  enabled: true',
+          '  live_snapshot_dir: live',
+          '  snapshot_dir: snapshot',
+          '  ui_kit_path: ui',
+          '  tokens_path: tokens.css',
+          '```',
+          '',
+        ].join('\n'),
+      );
+      const out = captureStream();
+      const ctx = fakeCliContext({ cwd, stdio: { stdout: out.stream, stderr: out.stream, stdin: process.stdin } });
+      expect(await alignDs.run(ctx, { positionals: [], options: {}, json: true })).toBe(0);
+      expect(JSON.parse(out.text())).toMatchObject({ source: join(cwd, 'live'), delta: 1 });
+      expect(await alignDs.run(ctx, { positionals: ['--apply'], options: {}, json: false })).toBe(0);
+      await expect(readFile(join(cwd, 'snapshot', 'Button.prompt.md'), 'utf8')).resolves.toBe('live button\n');
+      await expect(readFile(join(cwd, 'ui', 'Button.prompt.md'), 'utf8')).resolves.toBe('live button\n');
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   test('fleet plan requires frozen specs and persists an explicit plan', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'cohorte-fleet-'));
     try {

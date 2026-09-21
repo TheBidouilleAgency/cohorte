@@ -37,46 +37,62 @@ const alignDs: CommandModule = {
       return 0;
     }
     const snapshot = typeof design.snapshot_dir === 'string' ? resolve(ctx.cwd, design.snapshot_dir) : undefined;
+    const liveSource =
+      typeof design.live_snapshot_dir === 'string' ? resolve(ctx.cwd, design.live_snapshot_dir) : snapshot;
     const uiKit = typeof design.ui_kit_path === 'string' ? resolve(ctx.cwd, design.ui_kit_path) : undefined;
     const tokens = typeof design.tokens_path === 'string' ? resolve(ctx.cwd, design.tokens_path) : undefined;
-    if (!snapshot || !uiKit || !tokens) {
+    if (!snapshot || !liveSource || !uiKit || !tokens) {
       ctx.stdio.stderr.write('design system enabled but snapshot_dir, ui_kit_path and tokens_path are required\n');
       return 10;
     }
-    if (!(await exists(snapshot)) || !(await exists(uiKit)) || !(await exists(tokens))) {
-      ctx.stdio.stderr.write('design system paths are missing; configure a committed snapshot and code targets\n');
+    if (!(await exists(liveSource)) || !(await exists(snapshot)) || !(await exists(uiKit)) || !(await exists(tokens))) {
+      ctx.stdio.stderr.write(
+        'design system paths are missing; configure a live source, committed snapshot and code targets\n',
+      );
       return 10;
     }
-    const files = (await walk(snapshot)).filter((file) => file !== 'README.md');
+    const files = (await walk(liveSource)).filter((file) => file !== 'README.md');
     const missing: string[] = [];
     const changed: string[] = [];
     for (const file of files) {
-      const source = await readFile(join(snapshot, file));
+      const source = await readFile(join(liveSource, file));
       try {
-        const target = await readFile(join(uiKit, file));
+        const target = await readFile(join(snapshot, file));
         if (createHash('sha256').update(source).digest('hex') !== createHash('sha256').update(target).digest('hex'))
           changed.push(file);
       } catch {
         missing.push(file);
       }
+      try {
+        const target = await readFile(join(uiKit, file));
+        if (createHash('sha256').update(source).digest('hex') !== createHash('sha256').update(target).digest('hex'))
+          changed.push(file);
+      } catch {
+        if (!missing.includes(file)) missing.push(file);
+      }
     }
     const snapshotSet = new Set(files);
-    const removed = (await walk(uiKit)).filter((file) => !snapshotSet.has(file));
+    const removed = (await walk(snapshot)).filter((file) => !snapshotSet.has(file));
+    const uniqueMissing = [...new Set(missing)];
+    const uniqueChanged = [...new Set(changed)];
     const result = {
+      source: liveSource,
       snapshot,
       uiKit,
       tokens,
       files,
-      missing,
-      changed,
+      missing: uniqueMissing,
+      changed: uniqueChanged,
       removed,
-      delta: missing.length + changed.length,
+      delta: uniqueMissing.length + uniqueChanged.length,
     };
     if (args.positionals.includes('--apply')) {
-      for (const file of [...missing, ...changed])
-        await cp(join(snapshot, file), join(uiKit, file), { recursive: true });
+      for (const file of [...uniqueMissing, ...uniqueChanged])
+        await cp(join(liveSource, file), join(snapshot, file), { recursive: true });
+      for (const file of [...uniqueMissing, ...uniqueChanged])
+        await cp(join(liveSource, file), join(uiKit, file), { recursive: true });
       ctx.stdio.stdout.write(
-        `aligned ${missing.length + changed.length} design-system file(s); ${removed.length} stale file(s) reported\n`,
+        `aligned ${result.delta} design-system file(s); ${removed.length} stale file(s) reported\n`,
       );
     } else
       ctx.stdio.stdout.write(
