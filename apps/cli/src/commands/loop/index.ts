@@ -1,7 +1,8 @@
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import type { ActivePipelineState } from '@cohorte/protocol';
 import type { CommandModule } from '../../contract/index.ts';
-import run from '../run/index.ts';
+import { resolveSpecPath } from '../../project/spec-path.ts';
 import { decideLoop, readReview } from './reducer.ts';
 
 type LoopSnapshot = {
@@ -17,6 +18,29 @@ type LoopSnapshot = {
   startedAt: string;
   updatedAt: string;
 };
+
+const LOOP_PHASES = [
+  'PREFLIGHT',
+  'BUILD',
+  'TEST',
+  'REVIEW',
+  'FIX',
+  'TEST',
+  'REVIEW',
+  'SHIP',
+] as const satisfies readonly ActivePipelineState[];
+
+const ACTIVE_STATES = new Set([
+  'PREFLIGHT',
+  'BRAINSTORM',
+  'SPEC',
+  'BUILD',
+  'TEST',
+  'REVIEW',
+  'FIX',
+  'SHIP',
+  'SUSPENDED',
+]);
 
 function valueAfter(values: readonly string[], flag: string): string | undefined {
   const index = values.indexOf(flag);
@@ -66,20 +90,46 @@ const loop: CommandModule = {
     await mkdir(join(ctx.cwd, 'specs', 'reports'), { recursive: true });
     await writeFile(reportPath, `${JSON.stringify(before, null, 2)}\n`, 'utf8');
 
-    const result = await run.run(ctx, {
-      ...args,
-      positionals: [
-        feature,
-        '--profile',
-        'feature',
-        '--phases',
-        'PREFLIGHT,BUILD,TEST,REVIEW,FIX,TEST,REVIEW,SHIP',
-        '--with-fix',
-        '--unattended',
-        ...args.positionals.filter((value) => value.startsWith('--')),
-      ],
-    });
-    const controllerResult = before;
+    let result: number;
+    let controllerResult: LoopSnapshot = before;
+    if (previous?.status === 'pending' && previous.runId) {
+      try {
+        const tree = await ctx.openStore().then(async (store) => {
+          try {
+            return await store.readRunTree(previous?.runId as never);
+          } finally {
+            await store.close();
+          }
+        });
+        const state = tree.run.state;
+        if (ACTIVE_STATES.has(state)) {
+          controllerResult = { ...before, runId: previous.runId, phase: previous.phase ?? 'build', status: 'pending' };
+          await writeFile(reportPath, `${JSON.stringify(controllerResult, null, 2)}\n`, 'utf8');
+          if (args.json) ctx.stdio.stdout.write(`${JSON.stringify({ ...controllerResult, reportPath })}\n`);
+          else ctx.stdio.stdout.write(`loop pending: ${reportPath}\n`);
+          return 4;
+        }
+        result = state === 'COMPLETED' ? 0 : state === 'CANCELLED' ? 16 : 3;
+      } catch {
+        // If the state store cannot be read, do not claim that a pending run is resumable.
+        result = 4;
+      }
+    } else {
+      const started = await ctx.controller.send('start', {
+        profile: 'feature',
+        spec: { path: resolveSpecPath(ctx.cwd, feature) },
+        phases: [...LOOP_PHASES],
+        withFix: true,
+        unattended: true,
+      });
+      const runId =
+        started.result && typeof started.result === 'object' && 'runId' in started.result
+          ? String((started.result as { runId: string }).runId)
+          : undefined;
+      if (runId && started.status === 'pending') await ctx.hostSpawner.spawnDetached(runId as never);
+      controllerResult = { ...before, ...(runId ? { runId } : {}) };
+      result = started.status === 'rejected' ? 3 : started.status === 'pending' ? 4 : 0;
+    }
     let review = readReview(
       result && typeof result === 'object' && 'result' in result ? (result as { result?: unknown }).result : undefined,
     );

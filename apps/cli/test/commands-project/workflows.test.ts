@@ -223,4 +223,43 @@ describe('V2 workflow compatibility commands', () => {
       await rm(cwd, { recursive: true, force: true });
     }
   });
+
+  test('loop resumes an active persisted run instead of enqueueing a duplicate', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'cohorte-loop-resume-'));
+    try {
+      await mkdir(join(cwd, 'specs', 'reports'), { recursive: true });
+      await writeFile(
+        join(cwd, 'specs', 'reports', 'feature-x.loop.json'),
+        JSON.stringify({
+          id: 'feature-x',
+          round: 1,
+          maxRounds: 3,
+          phase: 'build',
+          status: 'pending',
+          runId: 'run_existing',
+          startedAt: '2026-09-18T00:00:00.000Z',
+          updatedAt: '2026-09-18T00:00:00.000Z',
+        }),
+      );
+      const out = captureStream();
+      const ctx = fakeCliContext({
+        cwd,
+        stdio: { stdout: out.stream, stderr: out.stream, stdin: process.stdin },
+        controller: {
+          send: async () => {
+            throw new Error('duplicate start');
+          },
+        } as never,
+        openStore: async () =>
+          ({
+            readRunTree: async () => ({ run: { state: 'BUILD' } }),
+            close: async () => {},
+          }) as never,
+      });
+      expect(await loop.run(ctx, { positionals: ['feature-x'], options: {}, json: true })).toBe(4);
+      expect(JSON.parse(out.text())).toMatchObject({ status: 'pending', runId: 'run_existing' });
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
 });
