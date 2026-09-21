@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { access, cp, readdir, readFile } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 import { parse } from 'yaml';
@@ -47,15 +48,39 @@ const alignDs: CommandModule = {
       return 10;
     }
     const files = (await walk(snapshot)).filter((file) => file !== 'README.md');
-    const absent: string[] = [];
-    for (const file of files) if (!(await exists(join(uiKit, file)))) absent.push(file);
-    const result = { snapshot, uiKit, tokens, files, missing: absent, changed: absent.length };
+    const missing: string[] = [];
+    const changed: string[] = [];
+    for (const file of files) {
+      const source = await readFile(join(snapshot, file));
+      try {
+        const target = await readFile(join(uiKit, file));
+        if (createHash('sha256').update(source).digest('hex') !== createHash('sha256').update(target).digest('hex'))
+          changed.push(file);
+      } catch {
+        missing.push(file);
+      }
+    }
+    const snapshotSet = new Set(files);
+    const removed = (await walk(uiKit)).filter((file) => !snapshotSet.has(file));
+    const result = {
+      snapshot,
+      uiKit,
+      tokens,
+      files,
+      missing,
+      changed,
+      removed,
+      delta: missing.length + changed.length,
+    };
     if (args.positionals.includes('--apply')) {
-      for (const file of absent) await cp(join(snapshot, file), join(uiKit, file), { recursive: true });
-      ctx.stdio.stdout.write(`aligned ${absent.length} missing design-system file(s)\n`);
+      for (const file of [...missing, ...changed])
+        await cp(join(snapshot, file), join(uiKit, file), { recursive: true });
+      ctx.stdio.stdout.write(
+        `aligned ${missing.length + changed.length} design-system file(s); ${removed.length} stale file(s) reported\n`,
+      );
     } else
       ctx.stdio.stdout.write(
-        `${args.json ? JSON.stringify(result) : `${absent.length} design-system file(s) require alignment`}\n`,
+        `${args.json ? JSON.stringify(result) : `${result.delta} design-system file(s) require alignment; ${removed.length} stale file(s)`}\n`,
       );
     return 0;
   },

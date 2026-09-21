@@ -1,18 +1,38 @@
 import { execFile } from 'node:child_process';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { parse } from 'yaml';
 import type { CommandModule } from '../../contract/index.ts';
 
 const exec = promisify(execFile);
-const frozen = async (cwd: string, id: string) => {
+const exists = async (path: string) => {
   try {
-    const text = await readFile(join(cwd, 'specs', `${id}.md`), 'utf8');
-    return /^status:\s*frozen\s*$/mu.test(text.slice(0, 1500));
+    await access(path);
+    return true;
   } catch {
     return false;
   }
+};
+const specText = async (cwd: string, id: string): Promise<string | undefined> => {
+  for (const path of [join(cwd, 'specs', `${id}.md`), join(cwd, '.cohorte', 'specs', `${id}.yaml`)]) {
+    try {
+      return await readFile(path, 'utf8');
+    } catch {}
+  }
+  return undefined;
+};
+const frozen = async (cwd: string, id: string) => {
+  const text = await specText(cwd, id);
+  return text !== undefined && (/^status:\s*frozen\s*$/mu.test(text.slice(0, 1500)) || /status:\s*frozen/u.test(text));
+};
+const specSurfaces = async (cwd: string, id: string, known: readonly string[]) => {
+  const text = await specText(cwd, id);
+  if (!text) return { keys: [...known], inferred: true };
+  const listed = known.filter((key) =>
+    new RegExp(`(?:^|[\\s"'])${key.replaceAll('-', '[^A-Za-z0-9]?')}([\\s"']|$)`, 'mu').test(text),
+  );
+  return { keys: listed.length ? listed : [...known], inferred: listed.length === 0 };
 };
 const surfaces = async (cwd: string): Promise<string[]> => {
   try {
@@ -41,16 +61,39 @@ const fleet: CommandModule = {
         return 11;
       }
       const keys = await surfaces(ctx.cwd);
+      const featureData = Object.fromEntries(
+        await Promise.all(
+          ids.map(async (id) => {
+            const ownership = await specSurfaces(ctx.cwd, id, keys);
+            return [
+              id,
+              { dependsOn: [], overlap: ownership.keys, overlapInferred: ownership.inferred, worktree: null },
+            ];
+          }),
+        ),
+      );
       const plan = {
         documentVersion: 1,
         generatedAt: ctx.clock.now(),
         order: ids,
         surfaces: keys,
-        features: Object.fromEntries(ids.map((id) => [id, { dependsOn: [], overlap: keys }])),
+        features: featureData,
         status: 'planned',
       };
       if (args.positionals.includes('--apply')) {
         await mkdir(join(ctx.cwd, 'specs', 'reports'), { recursive: true });
+        if (await exists(join(ctx.cwd, '.git'))) {
+          const worktreeRoot = resolve(ctx.cwd, '.cohorte', 'worktrees');
+          await mkdir(worktreeRoot, { recursive: true });
+          for (const id of ids) {
+            const worktree = resolve(worktreeRoot, id);
+            if (!(await exists(worktree))) {
+              await exec('git', ['worktree', 'add', '-b', `cohorte/${id}`, worktree, 'HEAD'], { cwd: ctx.cwd });
+            }
+            (plan.features[id] as { worktree: string; branch: string }).worktree = worktree;
+            (plan.features[id] as { branch: string }).branch = `cohorte/${id}`;
+          }
+        }
         await writeFile(file, `${JSON.stringify(plan, null, 2)}\n`, 'utf8');
       }
       ctx.stdio.stdout.write(
@@ -68,7 +111,7 @@ const fleet: CommandModule = {
         for (const id of plan.order ?? []) {
           let status = 'missing';
           try {
-            const text = await readFile(join(ctx.cwd, 'specs', `${id}.md`), 'utf8');
+            const text = (await specText(ctx.cwd, id)) ?? '';
             status = /^status:\s*(\S+)/mu.exec(text.slice(0, 1500))?.[1] ?? 'unknown';
           } catch {}
           rows.push({ id, status, worktree: plan.features?.[id]?.worktree ?? null });
@@ -86,7 +129,7 @@ const fleet: CommandModule = {
       try {
         const plan = JSON.parse(await readFile(file, 'utf8')) as {
           order?: string[];
-          features?: Record<string, { worktree?: string }>;
+          features?: Record<string, { worktree?: string; branch?: string }>;
         };
         const rows = [];
         for (const id of plan.order ?? []) {
@@ -97,10 +140,26 @@ const fleet: CommandModule = {
           }
           try {
             const { stdout } = await exec('git', ['-C', worktree, 'status', '--porcelain']);
+            const branch = plan.features?.[id]?.branch;
+            let divergence = '';
+            if (branch) {
+              try {
+                const { stdout: counts } = await exec('git', [
+                  '-C',
+                  worktree,
+                  'rev-list',
+                  '--left-right',
+                  '--count',
+                  `HEAD...${branch}`,
+                ]);
+                divergence = counts.trim();
+              } catch {}
+            }
             rows.push({
               id,
               action: stdout.trim() ? 'rebase needed: dirty worktree' : 'ready for supervised rebase',
               worktree,
+              divergence,
             });
           } catch {
             rows.push({ id, action: 'worktree missing', worktree });
