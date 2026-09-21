@@ -4,7 +4,7 @@
 // unit that owns `apps/cli/src/commands/run/**`.
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { CohorteError, errorOf, type Sha256, sha256Hex } from '@cohorte/base';
+import { CohorteError, errorOf, type Sha256, type SurfaceId, sha256Hex } from '@cohorte/base';
 import { loadConfig, resolveConfig } from '@cohorte/config';
 import { createKeyStore, createTrustStore } from '@cohorte/security/auth';
 import type { CommandModule } from '../../contract/index.ts';
@@ -79,7 +79,7 @@ const run: CommandModule = {
       ...(valueAfter('--runtime') ? { runtime: valueAfter('--runtime') as string } : {}),
       ...(valueAfter('--script') ? { fakeScript: valueAfter('--script') as string } : {}),
       ...(phasesValue !== undefined ? { phases: phases ?? [] } : {}),
-      ...(surfaces.length > 0 ? { surfaces } : {}),
+      ...(surfaces.length > 0 ? { surfaces: surfaces as SurfaceId[] } : {}),
       ...(args.positionals.includes('--with-fix') ? { withFix: true } : {}),
       ...(args.positionals.includes('--unattended') ? { unattended: true } : {}),
       ...(model ? { modelOverrides: { implementer: { provider: 'default', model } } } : {}),
