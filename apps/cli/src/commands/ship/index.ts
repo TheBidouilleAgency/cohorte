@@ -10,6 +10,11 @@ import type { CommandModule } from '../../contract/index.ts';
 
 const exec = promisify(execFile);
 
+function markShipped(source: string): string {
+  if (/^status:\s*shipped\s*$/mu.test(source)) return source;
+  return source.replace(/^status:\s*\S+\s*$/mu, 'status: shipped');
+}
+
 const ship: CommandModule = {
   verb: 'ship',
   async run(ctx, args) {
@@ -51,10 +56,38 @@ const ship: CommandModule = {
         `# Release — ${runId}\n\n- generated: ${ctx.clock.now()}\n- branch: ${branch.trim()}\n- clean: ${status.trim() === ''}\n\n## Diff\n\n${stat.trim() || '(empty)'}\n\n## Handoff\n\nReview the branch and run the repository release procedure.\n`,
         'utf8',
       );
-      ctx.stdio.stdout.write(
-        `${JSON.stringify({ feature: runId, reportPath, branch: branch.trim(), clean: status.trim() === '' })}\n`,
+      const apply = args.positionals.includes('--apply');
+      if (!apply) {
+        ctx.stdio.stdout.write(
+          `${JSON.stringify({ feature: runId, reportPath, branch: branch.trim(), clean: status.trim() === '' })}\n`,
+        );
+        return status.trim() === '' ? 0 : 11;
+      }
+      const specSource = await readFile(specPath, 'utf8');
+      await writeFile(specPath, markShipped(specSource), 'utf8');
+      await exec('git', ['add', '-A', '--', ':!.cohorte'], { cwd: ctx.cwd });
+      await exec('git', ['commit', '-m', `cohorte(${runId}): ship`], { cwd: ctx.cwd });
+      await exec('git', ['push', 'origin', branch.trim()], { cwd: ctx.cwd });
+      const { stdout: prUrl } = await exec(
+        'gh',
+        [
+          'pr',
+          'create',
+          '--base',
+          'main',
+          '--head',
+          branch.trim(),
+          '--title',
+          `cohorte(${runId}): ship`,
+          '--body',
+          `Automated Cohorte V3 ship for ${runId}.\n\nReview report: ${reportPath}`,
+        ],
+        { cwd: ctx.cwd },
       );
-      return status.trim() === '' ? 0 : 11;
+      ctx.stdio.stdout.write(
+        `${JSON.stringify({ feature: runId, reportPath, branch: branch.trim(), clean: false, prUrl: prUrl.trim() })}\n`,
+      );
+      return 0;
     }
     if (!approvalId) return 2;
     const result = await ctx.controller.send(
