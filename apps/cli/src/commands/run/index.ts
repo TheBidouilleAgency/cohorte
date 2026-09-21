@@ -29,6 +29,8 @@ const run: CommandModule = {
         args.positionals[index - 1] !== '--runtime' &&
         args.positionals[index - 1] !== '--script' &&
         args.positionals[index - 1] !== '--model' &&
+        args.positionals[index - 1] !== '--wait' &&
+        args.positionals[index - 1] !== '--phases' &&
         !['feature', 'bugfix', 'review'].includes(value),
     );
     const model = valueAfter('--model');

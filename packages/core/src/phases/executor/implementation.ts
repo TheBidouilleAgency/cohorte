@@ -1,5 +1,6 @@
 import { type ErrorInfo, type JsonValue, toErrorInfo } from '@cohorte/base';
 import type { CheckResult, Finding, StopRecord } from '@cohorte/protocol';
+import { Value } from 'typebox/value';
 import type { PhasesExecutorDeps } from '../../contract/factories.ts';
 import type { PhaseExecutor as PhaseExecutorPort } from '../../contract/internal.ts';
 import type { AgentResult, PhaseOutcome } from '../../contract/types.ts';
@@ -187,6 +188,26 @@ export function createPhaseExecutor(deps: PhasesExecutorDeps): PhaseExecutorPort
 
       const assembled = contract.assemble(resolved.value, results, ctx);
       if (!assembled.ok) return failed('outputs-invalid', assembled.error);
+      if (!Value.Check(contract.outputSchema, assembled.value))
+        return failed(
+          'outputs-invalid',
+          error(
+            'validation/phase-output-invalid',
+            `Phase ${ctx.phase.state} produced an output that does not match contract ${contract.id}@${contract.version}.`,
+            'Inspect the phase handoff and retry it with a valid structured output.',
+          ),
+        );
+      for (const check of contract.checks) {
+        if (!check.evaluate(resolved.value, assembled.value, ctx))
+          return failed(
+            'outputs-invalid',
+            error(
+              `validation/phase-check-${check.id}`,
+              `Phase check ${check.id} failed for ${ctx.phase.state}.`,
+              'Resolve the failed phase check and retry the phase.',
+            ),
+          );
+      }
       if (
         ctx.phase.state === 'REVIEW' &&
         typeof assembled.value === 'object' &&

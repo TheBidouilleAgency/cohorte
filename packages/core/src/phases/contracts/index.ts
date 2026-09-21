@@ -100,6 +100,18 @@ function budgetFor(run: PhaseInputContext['run'], state: SupportedPhase): Budget
 }
 
 function contractFor(state: SupportedPhase): PhaseContract {
+  const outputSchema =
+    state === 'REVIEW'
+      ? Type.Object({
+          phase: Type.Literal(state),
+          results: Type.Array(Type.Record(Type.String(), Type.Unknown())),
+          review: Type.Object({
+            clean: Type.Boolean(),
+            blockingItems: Type.Array(Type.String()),
+            kept: Type.Array(Type.Record(Type.String(), Type.Unknown())),
+          }),
+        })
+      : Type.Object({ phase: Type.Literal(state), results: Type.Array(Type.Record(Type.String(), Type.Unknown())) });
   return {
     id: state.toLowerCase(),
     version: 1,
@@ -120,7 +132,7 @@ function contractFor(state: SupportedPhase): PhaseContract {
       const role = state === 'BUILD' ? 'implementer' : state === 'REVIEW' ? 'reviewer' : 'fixer';
       return surfaces.map((surface) => planFor(role, surface, state));
     },
-    outputSchema: Type.Unknown(),
+    outputSchema,
     checks: [],
     budget: (run) => budgetFor(run, state),
     stop: [],
