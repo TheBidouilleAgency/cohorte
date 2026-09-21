@@ -23,14 +23,14 @@ const refactor: CommandModule = {
         ? headings.map((match) => match[1]?.trim()).filter((x): x is string => Boolean(x))
         : requested;
     if (!domains.length) return 2;
-    let status = 0;
-    for (const domain of domains) {
+    const completed: Array<{ domain: string; tasks: string[] }> = [];
+    const runDomain = async (domain: string): Promise<number> => {
       const heading = headings.find((match) => match[1]?.trim() === domain);
       const start = heading?.index ?? -1;
       const next = start < 0 ? -1 : source.indexOf('\n## ', start + 1);
       const block = start < 0 ? '' : source.slice(start, next < 0 ? source.length : next);
       const tasks = block.split(/\r?\n/u).filter((line) => /^- \[ \]/u.test(line));
-      if (!tasks.length) continue;
+      if (!tasks.length) return 0;
       const id = `refactor-${domain
         .toLowerCase()
         .replace(/[^a-z0-9]+/gu, '-')
@@ -48,15 +48,38 @@ const refactor: CommandModule = {
       const path = join(ctx.cwd, '.cohorte', 'specs', `${id}.yaml`);
       await mkdir(join(ctx.cwd, '.cohorte', 'specs'), { recursive: true });
       await writeFile(path, stringify(spec), 'utf8');
-      status = Math.max(
-        status,
-        await run.run(ctx, {
-          ...args,
-          positionals: [path, '--profile', 'feature', '--phases', 'BUILD,TEST,REVIEW', '--with-fix'],
-        }),
-      );
+      const result = await run.run(ctx, {
+        ...args,
+        positionals: [path, '--profile', 'feature', '--phases', 'BUILD,TEST,REVIEW', '--with-fix'],
+      });
+      if (result === 0) {
+        completed.push({ domain, tasks });
+      }
+      return result;
+    };
+
+    // V2 deliberately serialises the shared contract slice, then fans out
+    // disjoint surfaces. Keeping that ordering avoids parallel agents editing
+    // the same contract while retaining the wall-clock win for independent
+    // domains.
+    const ordered = domains.includes('shared')
+      ? ['shared', ...domains.filter((domain) => domain !== 'shared')]
+      : domains;
+    const sharedStatus = ordered[0] === 'shared' ? await runDomain('shared') : 0;
+    if (sharedStatus !== 0) return sharedStatus;
+    const parallelDomains = ordered[0] === 'shared' ? ordered.slice(1) : ordered;
+    const statuses = await Promise.all(parallelDomains.map((domain) => runDomain(domain)));
+    if (statuses.some((result) => result !== 0)) return Math.max(...statuses, 0);
+    for (const item of completed) {
+      source = source
+        .split(/\r?\n/u)
+        .map((line) =>
+          line.startsWith('- [ ] ') && item.tasks.includes(line) ? line.replace('- [ ] ', '- [x] ') : line,
+        )
+        .join('\n');
     }
-    return status;
+    await writeFile(backlogPath, `${source}\n`, 'utf8');
+    return 0;
   },
 };
 
