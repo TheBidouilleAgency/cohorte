@@ -26,7 +26,6 @@
     "../apps/cli/test/doctor/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

@@ -23,7 +23,6 @@
     "../packages/core/test/state/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

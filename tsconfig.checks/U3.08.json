@@ -16,7 +16,6 @@
     "../packages/project-model/test/init/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

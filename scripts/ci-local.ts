@@ -4,7 +4,6 @@ import { spawnSync } from 'node:child_process';
 type Job = { name: string; command: string[] };
 
 const jobs: readonly Job[] = [
-  { name: 'legacy-v2', command: ['pnpm', 'ci:legacy-v2'] },
   { name: 'lint', command: ['pnpm', 'ci:lint'] },
   { name: 'typecheck', command: ['pnpm', 'ci:typecheck'] },
   { name: 'unit', command: ['pnpm', 'ci:unit'] },

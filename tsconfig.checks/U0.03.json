@@ -24,7 +24,6 @@
     "../packages/testkit/src/fake-brain/frames.ts"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

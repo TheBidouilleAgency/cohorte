@@ -13,7 +13,6 @@
     "../tests/integration/pi-faux/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

@@ -17,7 +17,6 @@
     "../tests/integration/schema-compat/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

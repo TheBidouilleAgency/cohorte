@@ -18,7 +18,6 @@
     "../packages/config/test/migrate/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

@@ -7,9 +7,14 @@ machine-readable shape.
 | Class | Exit code | Meaning |
 |---|---:|---|
 | usage | 2 | Invalid CLI arguments |
-| configuration | 10 | Invalid, unavailable or untrusted project configuration |
-| security | 11 | Policy, authentication or integrity violation |
-| conflict | 12 | Lock, lease, ownership or merge conflict |
-| provider | 13 | Runtime/provider failure |
-| corruption | 14 | State, chain or snapshot corruption |
-| internal | 15 | Unexpected Cohorte failure |
+| configuration | 10 | Invalid or unavailable project configuration |
+| validation | 11 | Invalid spec, tool input or agent output |
+| permission | 12 | Tool, path or network permission denied |
+| security | 13 | Policy, authentication or integrity violation |
+| provider | 14 | Transient or terminal runtime/provider failure |
+| tool | 15 | Transient or terminal tool failure |
+| conflict | 16 | Lock, lease, ownership or merge conflict |
+| budget | 17 | Budget exhausted |
+| timeout | 18 | Operation timed out |
+| corruption | 19 | State, chain or snapshot corruption |
+| human-required | 20 | Human decision required |

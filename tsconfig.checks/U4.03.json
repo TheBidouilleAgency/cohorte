@@ -27,7 +27,6 @@
     "../apps/cli/src/commands/send/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

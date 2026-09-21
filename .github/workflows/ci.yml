@@ -13,38 +13,6 @@ on:
 # execution share the same command surface.
 
 jobs:
-  legacy-v2:
-    # V2 lives in legacy/v2, reference only and on no V3 execution path (ADR-0014). Its seven suites
-    # keep running so that the logic V3 ports from it (loop reducer, verdict math, gate cases) stays
-    # a trustworthy reference. They are zero-dependency: no install step.
-    name: Legacy V2 suites
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: legacy/v2
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 24
-
-      - name: Syntax-check the V2 CLI, shared readers, gate hook and installer
-        run: |
-          node --check bin/cli.js bin/report.js
-          for f in lib/*.js; do node --check "$f"; done
-          python3 -m py_compile core/hooks/gate.py
-          rm -rf core/hooks/__pycache__
-          bash -n install.sh && sh -n install.sh
-
-      # validate-core, test-workflows, test-adapter, test-gate, test-lib, test-kanban, test-metrics,
-      # under a throwaway HOME (lib/runtime.js reads os.homedir() directly).
-      - name: The seven V2 suites
-        working-directory: ${{ github.workspace }}
-        run: pnpm ci:legacy-v2
-
   lint:
     name: Lint (Biome, layering, contract words)
     runs-on: ubuntu-latest

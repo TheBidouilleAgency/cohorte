@@ -14,7 +14,6 @@
     "../packages/core/test/integration-services/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

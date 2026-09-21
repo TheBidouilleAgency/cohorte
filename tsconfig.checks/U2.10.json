@@ -22,7 +22,6 @@
     "../packages/testkit/test/harness/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

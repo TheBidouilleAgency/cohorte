@@ -31,7 +31,6 @@
     "../packages/core/test/canary.edges.test.ts"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

@@ -20,7 +20,6 @@
     "../packages/core/test/lifecycle/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

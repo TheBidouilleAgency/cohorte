@@ -22,7 +22,6 @@
     "../packages/telemetry/test/accounting/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

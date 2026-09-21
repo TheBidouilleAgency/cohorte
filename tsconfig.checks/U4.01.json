@@ -20,7 +20,6 @@
     "../apps/cli/test/pin/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

@@ -1,6 +1,6 @@
 # Cohorte V3 — plan de migration
 
-**Statut :** migration complète du format V2 vers le format courant
+**Statut :** migration complète du format V2 vers le format courant ; runtime V2 supprimé du dépôt
 **Portée :** conversion d'un projet déjà piloté par Cohorte V2 vers le format courant, sans étape intermédiaire ni import différé.
 **Décision liée :** [ADR-0014](adr/0014-v2-compatibility-surface.md)
 
@@ -18,20 +18,20 @@ Cela donne deux chemins explicites :
 | Projet V2 à convertir | `cohorte init --export-v2 <bundle>` puis `cohorte init --from-v2 <bundle>` | bundle inspectable, conversion complète et approuvée |
 | Base d'état courante avec migrations en attente | `cohorte migrate --check` puis `cohorte migrate --apply` | schéma courant suivant, après backup |
 
-V3.0 doit toutefois reconnaître proprement les traces V2 et expliquer l'action
-attendue. Il ne doit ni les écraser, ni les interpréter comme une base V3.
+L'importeur reconnaît proprement les traces V2 et explique l'action attendue. Il
+ne les écrase pas et ne les interprète jamais comme une base V3.
 
 ## 2. Ce qui est migré et ce qui ne l'est pas
 
-| Source V2 | V3.0 | V3.1 importer |
+| Source V2 | Importeur V3 |
 |---|---|---|
-| `PIPELINE.md`, profils et `cohorte.config.yaml` | détection et diagnostic seulement | conversion vers `.cohorte/manifest.yaml`, `config.yaml`, `ownership.yaml` |
-| `specs/*.md` et leurs statuts | laissés intacts | conversion en `.cohorte/specs/*.yaml`, avec statut normalisé et provenance dans le rapport |
-| `specs/reports/`, métriques, logs | laissés intacts | import dans `.cohorte/artifacts/v2-history/`, jamais comme événements durables |
-| `.cohorte/`, `.claude/`, états runtime et `gate-config.json` | jamais lus comme état V3 | archivés dans le bundle, sans être exécutés |
-| cartes Kanban externes | aucune écriture | export des liens et statuts, sans synchronisation automatique |
-| runs, leases, transcripts et worktrees V2 | non migrés | non migrés ; un run V3 démarre à `IDLE` |
-| secrets, credentials, fichiers de session | refusés | exclus du bundle et signalés comme non exportables |
+| `PIPELINE.md`, profils et `cohorte.config.yaml` | conversion vers `.cohorte/manifest.yaml`, `config.yaml`, `ownership.yaml` |
+| `specs/*.md` et leurs statuts | conversion en `.cohorte/specs/*.yaml`, avec statut normalisé et provenance |
+| `specs/reports/`, métriques, logs | import dans `.cohorte/artifacts/v2-history/`, jamais comme événements durables |
+| `.cohorte/`, `.claude/`, états runtime et `gate-config.json` | archivés dans le bundle, sans être exécutés |
+| cartes Kanban externes | export des liens et statuts, sans synchronisation automatique |
+| runs, leases, transcripts et worktrees V2 | non migrés ; un run V3 démarre à `IDLE` |
+| secrets, credentials, fichiers de session | exclus du bundle et signalés comme non exportables |
 
 Les règles V2 sans équivalent V3 sont conservées dans `warnings[]` avec leur
 chemin et une action de remplacement. Une perte silencieuse est une erreur de
@@ -140,4 +140,4 @@ connaît pas le schéma refuse `status` et indique exactement `cohorte migrate
 |---|---|---|
 | Migration | export V2, mapping config/specs, preview, application atomique, rollback | suite `packages/project-model/test/import-v2/**` |
 | État courant | moteur de migrations SQLite, backups, refus de schéma incompatible | `U1.01`, `U5.07`, D5 |
-| Nettoyage | supprimer les fichiers V2 seulement après backup et confirmation | rapport d'import, jamais automatique |
+| Nettoyage | runtime V2 supprimé après livraison de l'importeur et de ses tests de rollback | `legacy/v2/` absent, CI et documentation V3 uniquement |

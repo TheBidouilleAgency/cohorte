@@ -21,7 +21,6 @@
     "../scripts/ci-local.ts"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

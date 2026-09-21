@@ -21,7 +21,6 @@
     "../packages/protocol/test/core/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

@@ -420,7 +420,7 @@ export function matchesAny(path: string, patterns: readonly string[]): boolean {
   return patterns.some((pattern) => globToRegExp(pattern).test(path));
 }
 
-// legacy/, docs/ and assets/ are never entered because only the five roots below are walked.
+// docs/ and assets/ are never entered because only the five roots below are walked.
 const SKIPPED_DIRECTORIES = new Set(['node_modules', 'dist', 'dist-types', '.git', '.build', '.cohorte']);
 const SOURCE_FILE = /\.(?:ts|mts|cts|tsx|js|mjs|cjs)$/;
 // The two suffixes every package tsconfig.json excludes from `tsc -b`, and no other.

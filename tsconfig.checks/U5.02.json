@@ -15,7 +15,6 @@
     "../fixtures/scripts/security/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

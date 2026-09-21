@@ -21,7 +21,6 @@
     "../tests/integration/skeleton/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",

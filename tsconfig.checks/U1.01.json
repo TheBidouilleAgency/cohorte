@@ -16,7 +16,6 @@
     "../packages/persistence/test/migrations/**/*"
   ],
   "exclude": [
-    "../legacy/**",
     "../.cohorte/**",
     "../.build/**",
     "../**/dist/**",
