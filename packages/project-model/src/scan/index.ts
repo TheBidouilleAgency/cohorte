@@ -48,6 +48,66 @@ function field<T>(
   return { value, class: className, provenance: { detector, sources } };
 }
 
+const WORKSPACE_ROOTS = new Set(['apps', 'packages', 'services', 'modules', 'libs', 'plugins']);
+
+function surfaceId(path: string): string {
+  return path
+    .replaceAll('/', '-')
+    .replace(/[^A-Za-z0-9_.-]/g, '_')
+    .slice(0, 128);
+}
+
+const topLevelOf = (file: string): string | undefined => file.split('/')[0];
+
+/**
+ * Finds stable, implementation-sized boundaries without making semantic guesses. A package manifest is the
+ * strongest local signal; for repositories without manifests we fall back to top-level directories.
+ */
+function discoverSurfacePaths(files: string[]): Map<string, { glob: string; sources: string[] }> {
+  const candidates = new Map<string, { glob: string; sources: string[] }>();
+  const packageDirs = files
+    .filter((file) => file.endsWith('/package.json'))
+    .map((file) => file.slice(0, -'/package.json'.length))
+    .filter((dir) => dir.includes('/'));
+
+  for (const dir of packageDirs) {
+    const first = topLevelOf(dir);
+    if (first === undefined || !WORKSPACE_ROOTS.has(first)) continue;
+    const glob = `${dir}/**`;
+    candidates.set(surfaceId(dir), {
+      glob,
+      sources: files.filter((file) => file === dir || file.startsWith(`${dir}/`)),
+    });
+  }
+
+  const topLevelDirectories = new Set(
+    files
+      .filter((file) => file.includes('/'))
+      .map(topLevelOf)
+      .filter((name): name is string => Boolean(name && !name.startsWith('.'))),
+  );
+  for (const topLevel of [...topLevelDirectories].sort()) {
+    if (WORKSPACE_ROOTS.has(topLevel)) continue;
+    const glob = `${topLevel}/**`;
+    candidates.set(topLevel, { glob, sources: files.filter((file) => file.startsWith(`${topLevel}/`)) });
+  }
+
+  if (candidates.size === 0) {
+    const topLevelDirectoriesOnly = new Set(
+      files
+        .filter((file) => file.includes('/'))
+        .map(topLevelOf)
+        .filter((name): name is string => Boolean(name && !name.startsWith('.'))),
+    );
+    for (const topLevel of [...topLevelDirectoriesOnly].sort()) {
+      const glob = `${topLevel}/**`;
+      candidates.set(topLevel, { glob, sources: files.filter((file) => file.startsWith(`${topLevel}/`)) });
+    }
+  }
+
+  return candidates;
+}
+
 export async function scanRepository(root: string, options: ScanOptions): Promise<ProjectModel> {
   const files = await filesUnder(root);
   const packagePath = join(root, 'package.json');
@@ -107,16 +167,8 @@ export async function scanRepository(root: string, options: ScanOptions): Promis
   }
   const testLocations = files.filter((file) => /(^|\/)(test|tests|__tests__)(\/|$)|\.(test|spec)\./u.test(file));
   const surfaces: ProjectModel['surfaces'] = {};
-  const topLevel: string[] = [
-    ...new Set(
-      files.map((file) => file.split('/')[0]).filter((name): name is string => Boolean(name && !name.startsWith('.'))),
-    ),
-  ];
-  for (const name of topLevel.sort()) {
-    const paths = files.filter((file) => file === name || file.startsWith(`${name}/`));
-    if (paths.length)
-      surfaces[name.replace(/[^A-Za-z0-9_.-]/g, '_')] = { paths: field([`${name}/**`], 'workspace-layout', paths) };
-  }
+  for (const [id, candidate] of discoverSurfacePaths(files))
+    surfaces[id] = { paths: field([candidate.glob], 'workspace-layout', candidate.sources) };
   const id =
     pkg.name?.replace(/^@[^/]+\//u, '') ??
     (relative(process.cwd(), root).replace(/[^A-Za-z0-9_.-]/g, '_') || 'project');
