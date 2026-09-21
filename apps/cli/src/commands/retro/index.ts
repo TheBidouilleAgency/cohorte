@@ -22,9 +22,15 @@ const retro: CommandModule = {
   verb: 'retro',
   async run(ctx, args) {
     const reportDir = join(ctx.cwd, 'specs', 'reports');
-    const files = [...(await listFiles(reportDir)), ...(await listFiles(join(ctx.cwd, 'specs')))].filter(
+    let files = [...(await listFiles(reportDir)), ...(await listFiles(join(ctx.cwd, 'specs')))].filter(
       (file) => !file.endsWith('_decisions.md'),
     );
+    const last = args.positionals.find((value, index) => value === 'last' && args.positionals[index + 1]);
+    if (last) {
+      const count = Number(args.positionals[args.positionals.indexOf('last') + 1]);
+      if (!Number.isInteger(count) || count < 1) return 2;
+      files = files.sort().slice(-count);
+    }
     const grouped = new Map<string, Pattern>();
     for (const file of files) {
       let source = '';
@@ -44,8 +50,17 @@ const retro: CommandModule = {
         grouped.set(key, item);
       }
     }
-    const patterns = [...grouped.values()].filter((x) => x.count >= 2).sort((a, b) => b.count - a.count);
+    const patterns = [...grouped.values()]
+      .map((pattern) => ({ ...pattern, count: new Set(pattern.evidence.map((value) => value.split(' · ')[0])).size }))
+      .filter((x) => x.count >= 2)
+      .sort((a, b) => b.count - a.count);
     const result = { patterns, evidenceFiles: files.map((x) => x.replace(`${ctx.cwd}/`, '')) };
+    await mkdir(reportDir, { recursive: true });
+    await writeFile(
+      join(reportDir, 'retro-scan.txt'),
+      `${ctx.clock.now()}\n${patterns.map((pattern) => `${pattern.count}x ${pattern.rule}\n${pattern.evidence.join('\n')}`).join('\n')}\n`,
+      'utf8',
+    );
     if (!args.positionals.includes('--apply')) {
       ctx.stdio.stdout.write(
         `${args.json ? JSON.stringify(result) : patterns.length ? patterns.map((x) => `${x.count}x · ${x.rule}`).join('\n') : 'no recurring review patterns found'}\n`,
@@ -72,7 +87,7 @@ const retro: CommandModule = {
     await mkdir(join(ctx.cwd, 'specs'), { recursive: true });
     await appendFile(
       join(ctx.cwd, 'specs', '_decisions.md'),
-      `${new Date().toISOString().slice(0, 10)} · conventions · ${rules.join('; ')} — because retro ratification\n`,
+      `${ctx.clock.now().slice(0, 10)} · conventions · ${rules.join('; ')} — because retro ratification\n`,
     );
     ctx.stdio.stdout.write(`applied ${rules.length} convention(s); run cohorte update-pipeline to refresh agents\n`);
     return 0;
