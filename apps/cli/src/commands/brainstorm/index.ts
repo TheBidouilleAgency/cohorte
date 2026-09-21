@@ -78,8 +78,41 @@ const brainstorm: CommandModule = {
 
     await mkdir(dirname(output), { recursive: true });
     await writeFile(output, stringify(spec), 'utf8');
+    const reportPath = join(ctx.cwd, 'specs', 'reports', `${id}-brainstorm.md`);
+    await mkdir(dirname(reportPath), { recursive: true });
+    await writeFile(
+      reportPath,
+      [
+        `# Brainstorm — ${input}`,
+        '',
+        `- id: ${id}`,
+        `- generated: ${ctx.clock.now()}`,
+        `- source: ${sourceId ?? 'cli'}`,
+        '',
+        '## Problem',
+        '',
+        input,
+        '',
+        '## Perspectives',
+        '',
+        '- Product: clarify the measurable user outcome.',
+        '- UX: identify the primary flow and failure states.',
+        '- Architecture: identify affected surfaces and boundaries.',
+        '- Delivery: define acceptance evidence and rollout constraints.',
+        '',
+        '## Open questions',
+        '',
+        ...spec.openQuestions.map((question) => `- [ ] ${question}`),
+        '',
+        '## Handoff',
+        '',
+        `Run \`cohorte spec validate ${id}\` then \`cohorte spec freeze ${id}\` after answering the questions.`,
+        '',
+      ].join('\n'),
+      'utf8',
+    );
     if (sourceId) await moveConfiguredCard(ctx.env.HOME ?? ctx.cwd, sourceId, 'brainstorm', input);
-    const result = { id, status: spec.status, path: output, next: `cohorte spec freeze ${output}` };
+    const result = { id, status: spec.status, path: output, reportPath, next: `cohorte spec validate ${id}` };
     ctx.stdio.stdout.write(`${args.json ? JSON.stringify(result) : `created ${output}\nnext: ${result.next}`}\n`);
     if (args.positionals.includes('--run')) {
       return run.run(ctx, {

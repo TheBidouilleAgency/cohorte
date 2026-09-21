@@ -28,6 +28,9 @@ describe('project commands', () => {
       const result = JSON.parse(out.text()) as { id: string; path: string; status: string };
       expect(result).toMatchObject({ id: 'ajouter-un-calendrier-equipe', status: 'draft' });
       await expect(readFile(result.path, 'utf8')).resolves.toContain('status: draft');
+      await expect(
+        readFile(join(cwd, 'specs', 'reports', 'ajouter-un-calendrier-equipe-brainstorm.md'), 'utf8'),
+      ).resolves.toContain('## Perspectives');
 
       await expect(
         brainstorm.run(ctx, {
