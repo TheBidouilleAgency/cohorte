@@ -20,6 +20,11 @@ const review: CommandModule = {
     const base = valueAfter('--base');
     const head = valueAfter('--head');
     const pr = valueAfter('--pr');
+    const surfaces = args.positionals
+      .flatMap((value, index) =>
+        value === '--surface' && args.positionals[index + 1] ? [args.positionals[index + 1] as never] : [],
+      )
+      .concat((valueAfter('--surfaces') ?? '').split(',').filter(Boolean) as never[]);
     if (args.positionals.includes('--pr') && !pr) return 2;
     const reviewTarget: { ref: string } | { base: string; head: string } | { runId: never } | undefined = pr
       ? { ref: `refs/pull/${pr}/head` }
@@ -35,6 +40,7 @@ const review: CommandModule = {
     const result = await ctx.controller.send('start', {
       profile: 'review',
       unattended: false,
+      ...(surfaces.length > 0 ? { surfaces } : {}),
       ...(reviewTarget ? { reviewTarget } : {}),
       ...(!reviewTarget && target ? { spec: { path: resolveSpecPath(ctx.cwd, target) } } : {}),
     });
