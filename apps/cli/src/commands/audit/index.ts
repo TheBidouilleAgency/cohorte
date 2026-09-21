@@ -161,7 +161,10 @@ const audit: CommandModule = {
             ...args,
             // Audit targets are domains/paths, not feature spec IDs. Forward each
             // domain as a review surface so Pi reviews one ownership slice at a time.
-            positionals: ['--surface', domain, ...args.positionals.filter((value) => value.startsWith('--'))],
+            positionals:
+              configured.length === 0 && target === undefined
+                ? args.positionals
+                : ['--surface', domain, ...args.positionals.filter((value) => value.startsWith('--'))],
           });
           return { domain, status: result };
         } catch (error) {

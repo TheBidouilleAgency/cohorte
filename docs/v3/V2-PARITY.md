@@ -17,7 +17,7 @@ the configured Pi runtime.
 | Fix only affected surfaces | `fix` remediation handoff plus `--surfaces` start scope | workflow tests | Implemented as a follow-up run; same-run retry remains to be integrated |
 | Loop reducer | `commands/loop/reducer.ts` plus core `LoopController` | workflow and core loop tests | Partially implemented; durable multi-round orchestration remains |
 | Treading-water / max-rounds / dead-reviewer stops | typed reducer decisions | reducer tests | Implemented in reducer; needs wiring to durable host rounds |
-| Audit gates + per-domain review | `commands/audit` | workflow tests and `audit-gates.txt` | Gates implemented; domain fan-out/dead-domain reporting still needs native Pi dispatch |
+| Audit gates + per-domain review | `commands/audit` | workflow tests, `audit-gates.txt`, `audit-dispatch.json` | Implemented; each configured domain plus `shared` gets an independent Pi review and dead dispatches are recorded |
 | Refactor backlog execution | `commands/refactor` | refactor tests | Partial; contract authoring and per-surface retry semantics remain |
 | Fleet plan/status/sync | `commands/fleet` | workflow tests and `fleet.json` | Implemented; dependency extraction from contracts remains limited |
 | Retro pattern mining and ratification | `commands/retro` | workflow tests | Implemented read-only scan and explicit convention write |
