@@ -1,6 +1,6 @@
 import { Readable } from 'node:stream';
-import { describe, expect, test } from 'vitest';
-import auth from '../../src/commands/auth/index.ts';
+import { describe, expect, test, vi } from 'vitest';
+import auth, { openBrowser } from '../../src/commands/auth/index.ts';
 import models from '../../src/commands/models/index.ts';
 import providers from '../../src/commands/providers/index.ts';
 import { captureStream, fakeCliContext } from '../registry/helpers.ts';
@@ -83,5 +83,35 @@ describe('authentication and provider commands', () => {
     expect(await auth.run(ctx, { positionals: ['fake'], options: {}, json: false, subVerb: 'login' })).toBe(0);
     expect(answer).toBe('account-a');
     expect(out.text()).toContain('Account A');
+  });
+
+  test('prints both the device URL and one-time code', async () => {
+    const out = captureStream();
+    const status = { provider: 'fake', state: 'oauth', subscription: true, billing: 'plan-limits' } as const;
+    const runtime = {
+      login: async (
+        _provider: string,
+        ui: { show(event: { kind: string; userCode?: string; verificationUri?: string }): void },
+      ) => {
+        ui.show({ kind: 'device-code', verificationUri: 'https://auth.example/device', userCode: 'ABCD-EFGH' });
+        return status;
+      },
+    };
+    const ctx = fakeCliContext({
+      stdio: { stdout: out.stream, stderr: out.stream, stdin: process.stdin },
+      runtime: { resolve: () => runtime as never },
+    });
+
+    expect(await auth.run(ctx, { positionals: ['fake'], options: {}, json: false, subVerb: 'login' })).toBe(0);
+    expect(out.text()).toContain('Open: https://auth.example/device');
+    expect(out.text()).toContain('Code: ABCD-EFGH');
+  });
+
+  test('opens a valid browser URL without a shell and rejects unsafe URLs', () => {
+    const spawnProcess = vi.fn(() => ({ unref: vi.fn() })) as never;
+    expect(openBrowser('https://auth.example/login', spawnProcess)).toBe(true);
+    expect(spawnProcess).toHaveBeenCalledOnce();
+    expect(openBrowser('file:///tmp/credentials', spawnProcess)).toBe(false);
+    expect(spawnProcess).toHaveBeenCalledOnce();
   });
 });

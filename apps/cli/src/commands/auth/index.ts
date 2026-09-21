@@ -1,8 +1,32 @@
 // apps/cli/src/commands/auth/index.ts — DESIGN §9 verb `auth`; provider authentication is delegated to the
 // selected runtime child so credentials never cross the CLI/runtime boundary.
+import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
 import type { ProviderAuthStatus } from '@cohorte/runtime-contract';
 import type { CommandModule } from '../../contract/index.ts';
+
+type Spawn = typeof spawn;
+
+/** Open an OAuth URL without involving a shell. The URL is always printed by the caller as a fallback. */
+export function openBrowser(rawUrl: string, spawnProcess: Spawn = spawn): boolean {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return false;
+
+  const command = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'cmd.exe' : 'xdg-open';
+  const args = process.platform === 'win32' ? ['/c', 'start', '', url.toString()] : [url.toString()];
+  try {
+    const child = spawnProcess(command, args, { detached: true, stdio: 'ignore' });
+    child.unref();
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function document(ctx: Parameters<CommandModule['run']>[0], statuses: ProviderAuthStatus[]) {
   return {
@@ -36,6 +60,24 @@ async function loginUi(ctx: Parameters<CommandModule['run']>[0], signal: AbortSi
       userCode?: string;
       verificationUri?: string;
     }) {
+      if (event.kind === 'open-url') {
+        const lines = [event.instructions, event.url ? `Open: ${event.url}` : undefined].filter(
+          (value): value is string => Boolean(value),
+        );
+        if (lines.length) ctx.stdio.stdout.write(`${lines.join('\n')}\n`);
+        if (event.url) openBrowser(event.url);
+        return;
+      }
+      if (event.kind === 'device-code') {
+        const lines = [
+          event.verificationUri ? `Open: ${event.verificationUri}` : undefined,
+          event.userCode ? `Code: ${event.userCode}` : undefined,
+          event.instructions,
+          event.message,
+        ].filter((value): value is string => Boolean(value));
+        if (lines.length) ctx.stdio.stdout.write(`${lines.join('\n')}\n`);
+        return;
+      }
       const text = event.message ?? event.instructions ?? event.url ?? event.verificationUri ?? event.userCode ?? '';
       if (text) ctx.stdio.stdout.write(`${text}\n`);
     },
