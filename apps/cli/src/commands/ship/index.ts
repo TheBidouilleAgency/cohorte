@@ -3,7 +3,7 @@
 // documented not-available error (spec 24 `configuration/phase-not-available`); filled by the Wave-4/5
 // unit that owns `apps/cli/src/commands/ship/**`.
 import { execFile } from 'node:child_process';
-import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import type { CommandModule } from '../../contract/index.ts';
@@ -36,25 +36,39 @@ const ship: CommandModule = {
       }
       const reports = join(ctx.cwd, 'specs', 'reports');
       let verdict = false;
+      let verdictMtime = 0;
       try {
         for (const name of await readdir(reports)) {
           if (!name.includes(runId)) continue;
           const text = await readFile(join(reports, name), 'utf8');
-          if (/\bSHIP\b/u.test(text)) verdict = true;
+          if (/\bSHIP\b/u.test(text)) {
+            verdict = true;
+            verdictMtime = Math.max(verdictMtime, (await stat(join(reports, name))).mtimeMs);
+          }
         }
       } catch {}
       if (!verdict) {
         ctx.stdio.stderr.write('ship requires a durable SHIP review verdict\n');
         return 11;
       }
+      if (verdictMtime < (await stat(specPath)).mtimeMs) {
+        ctx.stdio.stderr.write('ship requires a fresh SHIP review verdict\n');
+        return 11;
+      }
       const { stdout: branch } = await exec('git', ['branch', '--show-current'], { cwd: ctx.cwd });
-      const { stdout: status } = await exec('git', ['status', '--porcelain'], { cwd: ctx.cwd });
-      const { stdout: stat } = await exec('git', ['diff', '--stat'], { cwd: ctx.cwd });
+      if (branch.trim() === 'main' || branch.trim() === 'master') {
+        ctx.stdio.stderr.write('ship requires a feature branch\n');
+        return 11;
+      }
+      const { stdout: status } = await exec('git', ['status', '--porcelain', '--', '.', ':(exclude).cohorte'], {
+        cwd: ctx.cwd,
+      });
+      const { stdout: diffStat } = await exec('git', ['diff', '--stat'], { cwd: ctx.cwd });
       const reportPath = join(reports, `${runId}-release.md`);
       await mkdir(reports, { recursive: true });
       await writeFile(
         reportPath,
-        `# Release — ${runId}\n\n- generated: ${ctx.clock.now()}\n- branch: ${branch.trim()}\n- clean: ${status.trim() === ''}\n\n## Diff\n\n${stat.trim() || '(empty)'}\n\n## Handoff\n\nReview the branch and run the repository release procedure.\n`,
+        `# Release — ${runId}\n\n- generated: ${ctx.clock.now()}\n- branch: ${branch.trim()}\n- clean: ${status.trim() === ''}\n\n## Diff\n\n${diffStat.trim() || '(empty)'}\n\n## Handoff\n\nReview the branch and run the repository release procedure.\n`,
         'utf8',
       );
       const apply = args.positionals.includes('--apply');

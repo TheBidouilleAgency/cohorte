@@ -208,7 +208,7 @@ describe('V2 workflow compatibility commands', () => {
       await mkdir(join(cwd, 'specs'), { recursive: true });
       await writeFile(
         join(cwd, 'specs', 'refactor-backlog.md'),
-        '# Refactor backlog\n\n## apps-api\n\n- [ ] HIGH · apps/api/auth.ts:12 · tdd · add a regression test\n',
+        '# Refactor backlog\n\n## apps-api\n\n- [ ] HIGH · apps/api/auth.ts:12 · tdd · add a regression test\n- [ ] HIGH · apps/api/auth.ts:20 · tdd · cover logout\n- [ ] MEDIUM · apps/api/auth.ts:30 · tdd · cover timeout\n- [ ] MEDIUM · apps/api/auth.ts:40 · tdd · remove duplication\n- [ ] LOW · apps/api/auth.ts:50 · cleanup · rename helper\n',
       );
       const out = captureStream();
       const ctx = fakeCliContext({

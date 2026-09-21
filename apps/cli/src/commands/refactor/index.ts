@@ -24,7 +24,15 @@ const refactor: CommandModule = {
         : requested;
     if (!domains.length) return 2;
     const completed: Array<{ domain: string; tasks: string[] }> = [];
-    const outcomes: Array<{ domain: string; spec: string; tasks: string[]; status: number; attempts: number }> = [];
+    const outcomes: Array<{
+      domain: string;
+      spec?: string;
+      tasks: string[];
+      status: number;
+      attempts: number;
+      skipped?: boolean;
+      reason?: string;
+    }> = [];
     await mkdir(join(ctx.cwd, 'specs', 'reports'), { recursive: true });
     const runDomain = async (domain: string): Promise<number> => {
       const heading = headings.find((match) => match[1]?.trim() === domain);
@@ -33,6 +41,17 @@ const refactor: CommandModule = {
       const block = start < 0 ? '' : source.slice(start, next < 0 ? source.length : next);
       const tasks = block.split(/\r?\n/u).filter((line) => /^- \[ \]/u.test(line));
       if (!tasks.length) return 0;
+      if (tasks.length < 5) {
+        outcomes.push({
+          domain,
+          tasks,
+          status: 0,
+          attempts: 0,
+          skipped: true,
+          reason: 'small backlog: use the conversational refactor workflow',
+        });
+        return 0;
+      }
       const id = `refactor-${domain
         .toLowerCase()
         .replace(/[^a-z0-9]+/gu, '-')
@@ -76,9 +95,8 @@ const refactor: CommandModule = {
       ? ['shared', ...domains.filter((domain) => domain !== 'shared')]
       : domains;
     const sharedStatus = ordered[0] === 'shared' ? await runDomain('shared') : 0;
-    if (sharedStatus !== 0) return sharedStatus;
     const parallelDomains = ordered[0] === 'shared' ? ordered.slice(1) : ordered;
-    const statuses = await Promise.all(parallelDomains.map((domain) => runDomain(domain)));
+    const statuses = sharedStatus === 0 ? await Promise.all(parallelDomains.map((domain) => runDomain(domain))) : [];
     for (const item of completed) {
       source = source
         .split(/\r?\n/u)
@@ -93,8 +111,7 @@ const refactor: CommandModule = {
       `${JSON.stringify({ generatedAt: ctx.clock.now(), domains, outcomes }, null, 2)}\n`,
       'utf8',
     );
-    if (statuses.some((result) => result !== 0)) return Math.max(...statuses, 0);
-    return 0;
+    return Math.max(sharedStatus, ...statuses, 0);
   },
 };
 
