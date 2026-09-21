@@ -8,6 +8,7 @@ import fleet from '../../src/commands/fleet/index.ts';
 import loop from '../../src/commands/loop/index.ts';
 import { decideLoop } from '../../src/commands/loop/reducer.ts';
 import retro from '../../src/commands/retro/index.ts';
+import updatePipeline from '../../src/commands/update-pipeline/index.ts';
 import { captureStream, fakeCliContext } from '../registry/helpers.ts';
 
 describe('V2 workflow compatibility commands', () => {
@@ -177,6 +178,24 @@ describe('V2 workflow compatibility commands', () => {
         await fleet.run(ctx, { subVerb: 'plan', positionals: ['one', 'two', '--apply'], options: {}, json: false }),
       ).toBe(0);
       await expect(readFile(join(cwd, 'specs', 'reports', 'fleet.json'), 'utf8')).resolves.toContain('one');
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test('update-pipeline verifies the Pi bundle before planning reconciliation', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'cohorte-update-pipeline-'));
+    try {
+      const out = captureStream();
+      const ctx = fakeCliContext({
+        cwd,
+        stdio: { stdout: out.stream, stderr: out.stream, stdin: process.stdin },
+        assets: { verify: async () => ({ ok: true }), bundleManifest: async () => [] } as never,
+        install: { installDir: () => '/tmp/cohorte-install', bundleManifest: async () => [] } as never,
+      });
+      expect(await updatePipeline.run(ctx, { positionals: ['--plan'], options: {}, json: true })).toBe(0);
+      const lines = out.text().trim().split('\n');
+      expect(JSON.parse(lines.at(-1) ?? '')).toMatchObject({ mode: 'plan', bundleVerified: true, bundleFiles: 0 });
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }

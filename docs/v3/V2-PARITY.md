@@ -22,6 +22,7 @@ the configured Pi runtime.
 | Fleet plan/status/sync | `commands/fleet` | workflow tests and `fleet.json` | Implemented; dependency extraction from contracts remains limited |
 | Retro pattern mining and ratification | `commands/retro` | workflow tests | Implemented read-only scan and explicit convention write |
 | Design-system alignment | `commands/align-ds` | command tests, configured `design.live_snapshot_dir` | Implemented for the deterministic filesystem adapter: live source → committed snapshot → UI kit; external design connector remains an optional integration |
+| Pipeline update/reconcile | `commands/update-pipeline` | workflow tests, `.cohorte/update-pipeline.json` | Implemented for V3's externally refreshed install: verifies the pinned Pi bundle, then plans/applies project reconciliation with a durable report |
 | Ship preflight and release | `commands/ship`, `ship --apply` | CLI typecheck; release flow implementation | Implemented; CI watch and post-merge Kanban verification remain |
 | Obsidian Kanban mirroring | `commands/obsidian` and configured card moves | Obsidian command tests | Implemented for configured board moves |
 
