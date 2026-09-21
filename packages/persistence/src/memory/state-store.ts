@@ -674,6 +674,18 @@ export class MemoryStateStore implements StateStore {
     return row && copy(row);
   }
 
+  async listFindings(id: RunId, q: { phaseRunId?: string; status?: string } = {}): Promise<FindingRecord[]> {
+    return [...this.#live().findings.values()]
+      .filter(
+        (row) =>
+          row.runId === id &&
+          (q.phaseRunId === undefined || row.phaseRunId === q.phaseRunId) &&
+          (q.status === undefined || row.status === q.status),
+      )
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.findingId.localeCompare(b.findingId))
+      .map(copy);
+  }
+
   async verifyChain(id: RunId, key?: Uint8Array): Promise<VerifyChainResult> {
     const state = this.#live();
     const run = state.runs.get(id);

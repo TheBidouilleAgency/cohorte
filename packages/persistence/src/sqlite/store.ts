@@ -25,6 +25,7 @@ import {
   type EffectRecord,
   type EffectState,
   type EventRecord,
+  type FindingRecord,
   type LeaseToken,
   type LedgerEntry,
   type LockRecord,
@@ -355,6 +356,25 @@ export class SqliteStateStore implements StateStore {
 
   async getArtifact(id: RunId, artifact: ArtifactId): Promise<ArtifactRecord | undefined> {
     return getRow<ArtifactRecord>(this.#db(), 'artifacts', ['run_id', 'artifact_id'], [id, artifact]);
+  }
+
+  async listFindings(id: RunId, q: { phaseRunId?: string; status?: string } = {}): Promise<FindingRecord[]> {
+    const params: unknown[] = [id];
+    let sql = 'SELECT * FROM findings WHERE run_id=?';
+    if (q.phaseRunId !== undefined) {
+      sql += ' AND phase_run_id=?';
+      params.push(q.phaseRunId);
+    }
+    if (q.status !== undefined) {
+      sql += ' AND status=?';
+      params.push(q.status);
+    }
+    sql += ' ORDER BY created_at, finding_id';
+    return (
+      this.#db()
+        .prepare(sql)
+        .all(...params) as Row[]
+    ).map((row) => fromRow<FindingRecord>('findings', row));
   }
 
   async verifyChain(id: RunId, key?: Uint8Array): Promise<VerifyChainResult> {

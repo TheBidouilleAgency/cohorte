@@ -2,15 +2,95 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
+import brainstorm from '../../src/commands/brainstorm/index.ts';
 import config from '../../src/commands/config/index.ts';
 import gc from '../../src/commands/gc/index.ts';
 import init from '../../src/commands/init/index.ts';
 import migrate from '../../src/commands/migrate/index.ts';
 import policy from '../../src/commands/policy/index.ts';
+import spec from '../../src/commands/spec/index.ts';
 import update from '../../src/commands/update/index.ts';
 import { captureStream, fakeCliContext } from '../registry/helpers.ts';
 
 describe('project commands', () => {
+  test('brainstorm creates a draft V3 spec from an idea without overwriting existing work', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'cohorte-brainstorm-'));
+    try {
+      const out = captureStream();
+      const ctx = fakeCliContext({ cwd, stdio: { stdout: out.stream, stderr: out.stream, stdin: process.stdin } });
+      expect(
+        await brainstorm.run(ctx, {
+          positionals: ['Ajouter un calendrier équipe'],
+          options: {},
+          json: true,
+        }),
+      ).toBe(0);
+      const result = JSON.parse(out.text()) as { id: string; path: string; status: string };
+      expect(result).toMatchObject({ id: 'ajouter-un-calendrier-equipe', status: 'draft' });
+      await expect(readFile(result.path, 'utf8')).resolves.toContain('status: draft');
+      await expect(
+        readFile(join(cwd, 'specs', 'reports', 'ajouter-un-calendrier-equipe-brainstorm.md'), 'utf8'),
+      ).resolves.toContain('## Perspectives');
+
+      await expect(
+        brainstorm.run(ctx, {
+          positionals: ['Ajouter un calendrier équipe'],
+          options: {},
+          json: true,
+        }),
+      ).rejects.toThrow('refusing to overwrite');
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test('brainstorm --run delegates the panel to the native Pi BRAINSTORM phase', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'cohorte-brainstorm-run-'));
+    try {
+      const out = captureStream();
+      const calls: unknown[] = [];
+      const ctx = fakeCliContext({
+        cwd,
+        stdio: { stdout: out.stream, stderr: out.stream, stdin: process.stdin },
+        controller: {
+          send: async (_command: string, payload: unknown) => {
+            calls.push(payload);
+            return { status: 'pending', result: { runId: 'run_brainstorm' } };
+          },
+        } as never,
+        hostSpawner: { spawnDetached: async () => ({ pid: 1 }) } as never,
+      });
+      expect(
+        await brainstorm.run(ctx, {
+          positionals: ['Préparer le lancement', '--run'],
+          options: {},
+          json: true,
+        }),
+      ).toBe(4);
+      expect(calls[0]).toMatchObject({
+        runtime: 'pi',
+        phases: ['BRAINSTORM', 'SPEC', 'PREFLIGHT', 'BUILD', 'TEST', 'REVIEW', 'FIX', 'TEST', 'REVIEW', 'SHIP'],
+      });
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test('spec validate and freeze resolve legacy-compatible markdown specs by feature id', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'cohorte-spec-md-'));
+    try {
+      await mkdir(join(cwd, 'specs'), { recursive: true });
+      await writeFile(join(cwd, 'specs', 'calendar.md'), '---\nstatus: draft\n---\n\n# Calendar\n');
+      const out = captureStream();
+      const ctx = fakeCliContext({ cwd, stdio: { stdout: out.stream, stderr: out.stream, stdin: process.stdin } });
+      expect(await spec.run(ctx, { subVerb: 'validate', positionals: ['calendar'], options: {}, json: true })).toBe(0);
+      expect(await spec.run(ctx, { subVerb: 'freeze', positionals: ['calendar'], options: {}, json: true })).toBe(0);
+      await expect(readFile(join(cwd, 'specs', 'calendar.md'), 'utf8')).resolves.toContain('status: frozen');
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   test('config validates the generated project configuration', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'cohorte-project-'));
     await mkdir(join(cwd, '.cohorte'), { recursive: true });

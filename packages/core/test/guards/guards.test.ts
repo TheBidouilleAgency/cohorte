@@ -29,7 +29,7 @@ describe('pipeline guards', () => {
       },
       now: '2026-01-01T00:00:00.000Z',
     } as never;
-    expect(V3_0_GUARDS['phase.available'](context)).toMatchObject({ id: 'phase.available', ok: false });
+    expect(V3_0_GUARDS['phase.available'](context)).toMatchObject({ id: 'phase.available', ok: true });
     expect(V3_0_GUARDS['host.not-root'](context)).toMatchObject({ id: 'host.not-root', ok: false });
   });
 });

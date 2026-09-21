@@ -366,7 +366,7 @@ export async function createProductionEngine(options: ProductionEngineOptions): 
   const toolHost = createToolHost(toolHostDeps);
   const pending = options.runId ? await options.store.pendingCommands(options.runId) : [];
   const requestedStart = pending.find((command) => command.envelope.type === 'start')?.envelope.payload as
-    | { runtime?: string; fakeScript?: string }
+    | { runtime?: string; fakeScript?: string; phases?: readonly string[]; surfaces?: readonly string[] }
     | undefined;
   const fakeDefaultScript = fakeScript()
     .agent({}, [{ do: 'submit', output: { status: 'clean' } }])
@@ -384,7 +384,14 @@ export async function createProductionEngine(options: ProductionEngineOptions): 
       ? createPiRuntimeProvider({ installDir: options.install.installDir(), redactor })
       : createFakeRuntimeProvider({ script: fakeRuntimeScript, clock: systemClock });
   const assets = createAssetSource();
-  const shippedPromptIds = ['agents/fixer', 'agents/implementer', 'agents/reviewer', 'agents/security-reviewer'];
+  const shippedPromptIds = [
+    'agents/brainstormer',
+    'agents/fixer',
+    'agents/implementer',
+    'agents/reviewer',
+    'agents/security-reviewer',
+    'agents/spec-author',
+  ];
   const pinnedPromptPaths = new Map<string, { path: string; sha256: Sha256; bytes: number }>();
   const pinStore = createBlobStore({ dir: join(loaded.projectRoot, '.cohorte', 'state', 'cas') });
   const runtimePin = await provider.pin();
@@ -394,7 +401,7 @@ export async function createProductionEngine(options: ProductionEngineOptions): 
     clock: systemClock,
     pinStore,
     metadata: {
-      app: { version: '3.0.0-dev.6', gitHash: null },
+      app: { version: '3.0.0-dev.7', gitHash: null },
       packages: [],
       assets: {
         treeSha256: options.assetsTreeSha256 ?? ('0'.repeat(64) as unknown as Sha256),
@@ -570,13 +577,16 @@ export async function createProductionEngine(options: ProductionEngineOptions): 
     integration,
     events,
     store: options.store,
+    redactor,
     checkRunner,
-  });
+  } as Parameters<typeof createPhaseExecutor>[0] & { redactor: typeof redactor });
   const factCollector = createFactCollector({
     store: options.store,
     runId: options.runId as RunId,
     clock: systemClock,
     probes: {
+      ...(requestedStart?.phases?.includes('BRAINSTORM') ? { 'input.is-idea': true } : {}),
+      ...(requestedStart?.phases?.includes('SPEC') ? { 'brainstorm.output-valid': true } : {}),
       'config.trust-satisfied': true,
       'snapshot.captured': true,
       'runtime.pin-valid': true,
@@ -595,10 +605,10 @@ export async function createProductionEngine(options: ProductionEngineOptions): 
       'tree.digest-recorded': true,
       'checks.all-passed': true,
       'checks.digest-equals-integration': true,
-      'review.nothing-to-fix': true,
-      'review.no-unreviewed': true,
-      'review.leftovers-parked-or-waived': true,
       'reviewref.digest-equals-integration': true,
+      // REVIEW facts are derived from the typed phase handoff in the engine.
+      // Do not seed them as true here: doing so lets a finding jump directly
+      // to SHIP before the review result is evaluated.
       'approval.ship-allowed': true,
       'tree.digest-equals-approved': true,
       'acceptance.no-open-human-items': true,
@@ -756,7 +766,9 @@ export async function createProductionEngine(options: ProductionEngineOptions): 
         filesystem: sandboxCapabilities.filesystem,
         network: sandboxCapabilities.network,
       };
+      const selectedSurfaces = requestedStart?.surfaces ? new Set(requestedStart.surfaces) : undefined;
       const zones = Object.entries(loaded.ownership.surfaces)
+        .filter(([surfaceId]) => selectedSurfaces === undefined || selectedSurfaces.has(surfaceId))
         .filter(([surfaceId]) => surfaceId !== 'shared')
         .flatMap(([, surface]) => surface.paths.map((path) => literalPrefixOf(path).join('/')).filter(Boolean))
         .filter((path, index, paths) => paths.indexOf(path) === index)
@@ -818,7 +830,7 @@ export async function createProductionHostRunner(options: ProductionEngineOption
       const host = createRunHost({
         engine,
         runId: runId as RunId,
-        cohorteVersion: '3.0.0-dev.6',
+        cohorteVersion: '3.0.0-dev.7',
         cwd: options.cwd,
         hostId: hostIdentity.hostId,
       });

@@ -1,5 +1,6 @@
-import { type ErrorInfo, type JsonValue, toErrorInfo } from '@cohorte/base';
+import { type ErrorInfo, type JsonValue, sha256Hex, toErrorInfo } from '@cohorte/base';
 import type { CheckResult, Finding, StopRecord } from '@cohorte/protocol';
+import { Value } from 'typebox/value';
 import type { PhasesExecutorDeps } from '../../contract/factories.ts';
 import type { PhaseExecutor as PhaseExecutorPort } from '../../contract/internal.ts';
 import type { AgentResult, PhaseOutcome } from '../../contract/types.ts';
@@ -187,6 +188,50 @@ export function createPhaseExecutor(deps: PhasesExecutorDeps): PhaseExecutorPort
 
       const assembled = contract.assemble(resolved.value, results, ctx);
       if (!assembled.ok) return failed('outputs-invalid', assembled.error);
+      if (!Value.Check(contract.outputSchema, assembled.value))
+        return failed(
+          'outputs-invalid',
+          error(
+            'validation/phase-output-invalid',
+            `Phase ${ctx.phase.state} produced an output that does not match contract ${contract.id}@${contract.version}.`,
+            'Inspect the phase handoff and retry it with a valid structured output.',
+          ),
+        );
+      if (ctx.phase.state === 'REVIEW' && deps.store && deps.redactor) {
+        const redactor = deps.redactor;
+        const findings = results.flatMap(
+          (result) => result.output?.findings.map((finding) => ({ result, finding })) ?? [],
+        );
+        if (findings.length > 0) {
+          await deps.store.transact({ runId: ctx.run.run.runId }, ctx.lease, (tx) => {
+            for (const { result, finding } of findings) {
+              const findingId = `fnd_${sha256Hex(JSON.stringify(finding)).slice(0, 16)}` as never;
+              tx.putFinding({
+                runId: ctx.run.run.runId,
+                findingId,
+                phaseRunId: ctx.phase.phaseRunId,
+                agentId: result.agent.agentId,
+                severity: finding.severity,
+                status: finding.scope === 'deferred' ? 'deferred' : 'open',
+                finding: redactor.sealJson(finding as unknown as JsonValue).value,
+                createdAt: ctx.now,
+                updatedAt: ctx.now,
+              });
+            }
+          });
+        }
+      }
+      for (const check of contract.checks) {
+        if (!check.evaluate(resolved.value, assembled.value, ctx))
+          return failed(
+            'outputs-invalid',
+            error(
+              `validation/phase-check-${check.id}`,
+              `Phase check ${check.id} failed for ${ctx.phase.state}.`,
+              'Resolve the failed phase check and retry the phase.',
+            ),
+          );
+      }
       if (
         ctx.phase.state === 'REVIEW' &&
         typeof assembled.value === 'object' &&

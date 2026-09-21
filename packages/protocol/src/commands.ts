@@ -47,6 +47,8 @@ export type CommandAuth = Static<typeof CommandAuth>;
 const StartPayload = Type.Object({
   profile: PipelineProfile,
   spec: Type.Optional(Type.Union([Type.Object({ id: SpecId }), Type.Object({ path: Type.String() })])),
+  /** Optional surface scope used by fix/refactor follow-up runs. Omitted means the full ownership plan. */
+  surfaces: Type.Optional(Type.Array(SurfaceId)),
   reviewTarget: Type.Optional(
     Type.Union([
       Type.Object({ ref: Type.String() }),

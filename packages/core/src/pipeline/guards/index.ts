@@ -36,7 +36,7 @@ const hasSpec = (ctx: GuardContext): boolean => ctx.run.run.specId.length > 0 &&
 /** Guards with a local, deterministic derivation. All other guards consume a boolean fact and fail closed. */
 const DERIVED: Partial<Record<GuardId, Guard>> = {
   'input.is-idea': factGuard('input.is-idea'),
-  'phase.available': () => outcome('phase.available', false, 'BRAINSTORM/SPEC executors are not available in V3.0'),
+  'phase.available': () => outcome('phase.available', true),
   'brainstorm.output-valid': factGuard('brainstorm.output-valid'),
   'spec.schema-valid': derived('spec.schema-valid', hasSpec, 'run has no valid spec identity'),
   'spec.frozen': derived('spec.frozen', hasSpec, 'run has no frozen spec identity'),

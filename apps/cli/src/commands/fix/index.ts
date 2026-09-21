@@ -2,15 +2,76 @@
 // stub files that lie inside their owned paths; they never edit ... the registry"). Wave-0 stub: exits with the
 // documented not-available error (spec 24 `configuration/phase-not-available`); filled by the Wave-4/5
 // unit that owns `apps/cli/src/commands/fix/**`.
+import { access, readFile, writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import type { CommandModule } from '../../contract/index.ts';
+import { resolveSpecPath } from '../../project/spec-path.ts';
+import { moveConfiguredCard } from '../obsidian/index.ts';
+import run from '../run/index.ts';
+
+function surfacesFromReport(report: string): string[] {
+  const surfaces = new Set<string>();
+  for (const match of report.matchAll(/(?:^|\s)(apps|packages)\/([A-Za-z0-9._/-]+)/gu)) {
+    const path = `${match[1]}/${match[2]}`.split('/');
+    if (path.length >= 3) surfaces.add(path.slice(0, -1).join('-'));
+  }
+  return [...surfaces].sort();
+}
 
 const fix: CommandModule = {
   verb: 'fix',
   async run(ctx, args) {
     const runId = args.positionals[0];
     if (!runId) return 2;
+    const reportPath = args.positionals[1];
+    if (reportPath && !runId.startsWith('run_')) {
+      let specPath = resolveSpecPath(ctx.cwd, runId);
+      try {
+        await access(specPath);
+      } catch {
+        specPath = resolve(ctx.cwd, 'specs', `${runId}.md`);
+      }
+      let report: string;
+      try {
+        report = await readFile(reportPath, 'utf8');
+      } catch {
+        ctx.stdio.stderr.write(`review report not found: ${reportPath}\n`);
+        return 1;
+      }
+      try {
+        await access(specPath);
+      } catch {
+        ctx.stdio.stderr.write(`spec not found: ${specPath}\n`);
+        return 1;
+      }
+      const source = await readFile(specPath, 'utf8');
+      const heading = /\n## Remediation\n/u.test(source) ? '' : '\n\n## Remediation\n';
+      const entry = `\n\n### ${ctx.clock.now()}\n\n${report.trim()}\n`;
+      await writeFile(specPath, `${source.replace(/\s+$/u, '')}${heading}${entry}`, 'utf8');
+      await moveConfiguredCard(ctx.env.HOME ?? ctx.cwd, runId, 'fix');
+      const surfaces = surfacesFromReport(report);
+      const followUp = await run.run(ctx, {
+        ...args,
+        positionals: [
+          runId,
+          specPath,
+          '--profile',
+          'feature',
+          '--phases',
+          'PREFLIGHT,BUILD,TEST,REVIEW',
+          ...(surfaces.length > 0 ? ['--surfaces', surfaces.join(',')] : []),
+          '--with-fix',
+        ],
+      });
+      ctx.stdio.stdout.write(
+        `${JSON.stringify({ feature: runId, specPath, reportPath, status: 'remediation-recorded', surfaces, followUp })}\n`,
+      );
+      return followUp;
+    }
     const result = await ctx.controller.send('retry', { target: { kind: 'phase', state: 'FIX' } }, { runId });
     ctx.stdio.stdout.write(`${JSON.stringify(result)}\n`);
+    if (result.status === 'pending' || result.status === 'completed')
+      await moveConfiguredCard(ctx.env.HOME ?? ctx.cwd, runId, 'fix');
     return result.status === 'rejected' ? 3 : result.status === 'pending' ? 4 : 0;
   },
 };

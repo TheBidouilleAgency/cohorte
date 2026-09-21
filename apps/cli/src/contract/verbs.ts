@@ -27,6 +27,15 @@ export const VERBS: readonly VerbSpec[] = [
   { name: 'doctor', summary: 'Diagnose the installation, configuration and toolchain', json: true },
   { name: 'discover', summary: 'Print the deterministic project scan (no write)', json: true },
   { name: 'run', summary: 'Start a pipeline run', commandType: 'start', json: true },
+  { name: 'loop', summary: 'Run a feature through the durable V3 workflow' },
+  { name: 'build', summary: 'Run preflight, build and tests for a frozen feature' },
+  { name: 'intake', summary: 'Triage an idea into the Cohorte workflow' },
+  { name: 'audit', summary: 'Review a project or feature against its frozen contract' },
+  { name: 'refactor', summary: 'Run a scoped refactor through the pipeline' },
+  { name: 'fleet', summary: 'Run several features through isolated workflow runs' },
+  { name: 'retro', summary: 'Extract recurring review findings into conventions' },
+  { name: 'align-ds', summary: 'Align a configured design system adapter' },
+  { name: 'update-pipeline', summary: 'Refresh the project pipeline assets' },
   { name: 'status', summary: 'Show a run, or the project, status', commandType: 'status', json: true },
   {
     name: 'inspect',
@@ -77,7 +86,8 @@ export const VERBS: readonly VerbSpec[] = [
     // `commands/update/index.ts` reads `--check` from `args.options`/`args.positionals` like every other verb flag.
     summary: 'Check for a newer pinned install (offline, --check only in V3.0)',
   },
-  { name: 'brainstorm', summary: 'Not available in V3.0 (reserved verb id, DESIGN §9)' },
+  { name: 'brainstorm', summary: 'Create a draft feature spec from an idea' },
+  { name: 'patch', summary: 'Create a minimal regression patch spec' },
   {
     name: 'run-tool',
     summary: 'Run one tool directly (admin; policy.admin.runTool)',

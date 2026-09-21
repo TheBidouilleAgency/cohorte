@@ -3,7 +3,8 @@ import { dirname, join, resolve } from 'node:path';
 import { parse, stringify } from 'yaml';
 import type { CommandModule } from '../../contract/index.ts';
 
-type Card = { id: string; title: string; checked: boolean; column: string; line: number };
+export type ObsidianCard = { id: string; title: string; checked: boolean; column: string; line: number };
+type Card = ObsidianCard;
 
 const COLUMNS = ['Ideas', 'Brainstorm', 'Spec', 'Ready to build', 'Building', 'Review', 'Fix', 'Ship', 'Shipped'];
 const STAGES = new Map([
@@ -56,6 +57,11 @@ function parseCards(source: string): Card[] {
   return cards;
 }
 
+export async function configuredIdeas(home: string): Promise<ObsidianCard[]> {
+  const resolved = await boardPath(home);
+  return parseCards(await readFile(resolved.path, 'utf8')).filter((card) => card.column === 'Ideas');
+}
+
 async function loadUserConfig(home: string): Promise<{ path: string; value: Record<string, unknown> }> {
   const path = join(home, '.cohorte', 'config.yaml');
   try {
@@ -85,13 +91,22 @@ async function boardPath(home: string): Promise<{ config: { vaultPath: string; b
   return { config, path };
 }
 
-function replaceCard(source: string, id: string, target: string): string {
+function replaceCard(source: string, id: string, target: string, title = id): string {
   const lines = source.split(/\r?\n/);
   const cards = parseCards(source);
-  const card = cards.find((item) => item.id === id);
-  if (!card) throw new Error(`Obsidian card #${id} was not found`);
   if (!COLUMNS.includes(target)) throw new Error(`Unknown Obsidian column: ${target}`);
-  if (card.column === target) return source;
+  const matches = cards.filter((item) => item.id === id);
+  const card = matches[0];
+  if (!card) {
+    const heading = lines.indexOf(`## ${target}`);
+    if (heading < 0) throw new Error(`Obsidian column ${target} was not found`);
+    let insert = heading + 1;
+    while (insert < lines.length && !(lines[insert] ?? '').startsWith('## ')) insert++;
+    lines.splice(insert, 0, `- [ ] ${title}  #${id}`);
+    return lines.join('\n');
+  }
+  for (const duplicate of matches.slice(1).sort((a, b) => b.line - a.line)) lines.splice(duplicate.line, 1);
+  if (card.column === target) return lines.join('\n');
   const line = lines[card.line] ?? '';
   lines.splice(card.line, 1);
   let heading = lines.indexOf(`## ${target}`);
@@ -104,6 +119,21 @@ function replaceCard(source: string, id: string, target: string): string {
   while (insert < lines.length && !(lines[insert] ?? '').startsWith('## ')) insert++;
   lines.splice(insert, 0, line);
   return lines.join('\n');
+}
+
+/** Best-effort V2-compatible board mirror used by phase entry points. A missing or unconfigured board is a no-op. */
+export async function moveConfiguredCard(home: string, id: string, stage: string, title = id): Promise<boolean> {
+  try {
+    const resolved = await boardPath(home);
+    const source = await readFile(resolved.path, 'utf8');
+    const target = STAGES.get(stage) ?? stage;
+    const next = replaceCard(source, id, target, title);
+    if (next !== source) await writeFile(resolved.path, next, 'utf8');
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT' || String(error).includes('not configured')) return false;
+    throw error;
+  }
 }
 
 const obsidian: CommandModule = {

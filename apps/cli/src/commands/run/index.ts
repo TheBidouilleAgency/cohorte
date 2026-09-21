@@ -4,10 +4,12 @@
 // unit that owns `apps/cli/src/commands/run/**`.
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { CohorteError, errorOf, type Sha256, sha256Hex } from '@cohorte/base';
+import { CohorteError, errorOf, type Sha256, type SurfaceId, sha256Hex } from '@cohorte/base';
 import { loadConfig, resolveConfig } from '@cohorte/config';
 import { createKeyStore, createTrustStore } from '@cohorte/security/auth';
 import type { CommandModule } from '../../contract/index.ts';
+import { resolveSpecPath } from '../../project/spec-path.ts';
+import { moveConfiguredCard } from '../obsidian/index.ts';
 
 const run: CommandModule = {
   verb: 'run',
@@ -27,9 +29,23 @@ const run: CommandModule = {
         args.positionals[index - 1] !== '--runtime' &&
         args.positionals[index - 1] !== '--script' &&
         args.positionals[index - 1] !== '--model' &&
+        args.positionals[index - 1] !== '--wait' &&
+        args.positionals[index - 1] !== '--phases' &&
         !['feature', 'bugfix', 'review'].includes(value),
     );
     const model = valueAfter('--model');
+    const phasesValue = valueAfter('--phases');
+    const surfaces = args.positionals
+      .flatMap((value, index) =>
+        value === '--surface' && args.positionals[index + 1] ? [args.positionals[index + 1] as string] : [],
+      )
+      .concat((valueAfter('--surfaces') ?? '').split(',').filter(Boolean));
+    const phases = phasesValue
+      ?.split(',')
+      .map((value) => value.trim().toUpperCase())
+      .filter((value): value is 'BRAINSTORM' | 'SPEC' | 'PREFLIGHT' | 'BUILD' | 'TEST' | 'REVIEW' | 'FIX' | 'SHIP' =>
+        ['BRAINSTORM', 'SPEC', 'PREFLIGHT', 'BUILD', 'TEST', 'REVIEW', 'FIX', 'SHIP'].includes(value),
+      );
     const waitValue = valueAfter('--wait');
     const waitMs = waitValue === undefined ? undefined : Number(waitValue) * 1000;
     if (waitValue !== undefined && (!Number.isFinite(waitMs) || (waitMs as number) < 0)) return 2;
@@ -59,9 +75,13 @@ const run: CommandModule = {
     const payload = {
       profile,
       unattended: false,
-      ...(spec ? { spec: { path: spec } } : {}),
+      ...(spec ? { spec: { path: resolveSpecPath(ctx.cwd, spec) } } : {}),
       ...(valueAfter('--runtime') ? { runtime: valueAfter('--runtime') as string } : {}),
       ...(valueAfter('--script') ? { fakeScript: valueAfter('--script') as string } : {}),
+      ...(phasesValue !== undefined ? { phases: phases ?? [] } : {}),
+      ...(surfaces.length > 0 ? { surfaces: surfaces as SurfaceId[] } : {}),
+      ...(args.positionals.includes('--with-fix') ? { withFix: true } : {}),
+      ...(args.positionals.includes('--unattended') ? { unattended: true } : {}),
       ...(model ? { modelOverrides: { implementer: { provider: 'default', model } } } : {}),
       ...(consent ? { consent } : {}),
     };
@@ -75,6 +95,13 @@ const run: CommandModule = {
     }
     if (args.json) ctx.stdio.stdout.write(`${JSON.stringify(result)}\n`);
     else ctx.stdio.stdout.write(`${result.status}\n`);
+    if (result.status === 'pending' || result.status === 'completed') {
+      const card = spec
+        ?.replace(/\.ya?ml$/, '')
+        .split(/[\\/]/)
+        .pop();
+      if (card) await moveConfiguredCard(ctx.env.HOME ?? ctx.cwd, card, profile === 'review' ? 'review' : 'building');
+    }
     return result.status === 'rejected' ? 3 : result.status === 'pending' ? 4 : 0;
   },
 };
