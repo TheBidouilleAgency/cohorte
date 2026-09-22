@@ -8,8 +8,8 @@ Current baseline:
 
 | Status | Count |
 | --- | ---: |
-| Passed | 23 |
-| Partial | 5 |
+| Passed | 24 |
+| Partial | 4 |
 | Blocked | 1 |
 | Deferred | 1 |
 | Not started | 0 |
@@ -27,3 +27,7 @@ AC06 now has live evidence from three independent Codex perspective sessions plu
 synthesis session in a synthetic read-only repository; contributions, disagreements and the user
 answer are content-addressed in SQLite. AC07 validates completeness and references, derives the
 covered task plan, and requires a user approval bound to the exact final frozen-spec hash.
+AC26 qualifies an installed wheel upgrade from 0.1.0a1 to 0.1.0a2 on the six hosted CI
+OS/Python combinations. It checks preserved user configuration and project data, the schema 1→2
+migration with backup, and refusal of a future schema by the older installed binary. This does
+not certify a published release or real-host support.

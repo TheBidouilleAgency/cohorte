@@ -97,7 +97,9 @@ pre-release foundation, not a V2-parity or provider-support claim.
   verifies a database backup and supports an exercised rollback.
 - Monotonic SQLite schema upgrades: schema 1 upgrades to schema 2 under an exclusive transaction
   after a verified backup, existing data/configuration remains intact, and a future schema is
-  refused without a silent reset.
+  refused without a silent reset. An installed 0.1.0a1 wheel is upgraded in place to 0.1.0a2
+  in hosted Ubuntu, macOS and Windows CI on Python 3.12/3.13; external configuration, project
+  data and artifact bytes are compared across the upgrade.
 - François-facing stdio contract: capability-negotiated handshake, project/feature/request read
   models, grouped metrics, run controls, request responses and durable event replay/unsubscribe.
   Passive account status exposes no credentials. This is the Cohorte protocol surface; the external

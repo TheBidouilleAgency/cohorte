@@ -10,8 +10,8 @@
     "not_started": "No sufficient executable qualification exists yet."
   },
   "summary": {
-    "passed": 23,
-    "partial": 5,
+    "passed": 24,
+    "partial": 4,
     "blocked": 1,
     "deferred": 1,
     "not_started": 0
@@ -220,10 +220,10 @@
     {
       "id": "AC26",
       "title": "Packaging and upgrade",
-      "status": "partial",
+      "status": "passed",
       "evidence_class": "engine",
-      "evidence": ["tests/packaging/verify_clean_install.py", "tests/integration/test_migration.py::test_schema_v1_upgrade_is_backed_up_and_preserves_data", "tests/integration/test_migration.py::test_older_binary_refuses_future_schema"],
-      "remaining": ["Prove an installed-version upgrade preserves user configuration on every announced platform"]
+      "evidence": ["docs/evidence/g5-ac26-installed-upgrade.json", "tests/packaging/verify_clean_install.py", "tests/packaging/verify_upgrade.py", "tests/integration/test_migration.py::test_schema_v1_upgrade_is_backed_up_and_preserves_data", "tests/integration/test_migration.py::test_older_binary_refuses_future_schema"],
+      "remaining": []
     },
     {
       "id": "AC27",

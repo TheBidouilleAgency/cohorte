@@ -9,8 +9,8 @@ mandatory acceptance scenarios have current evidence for the exact candidate.
 | G1 | Contracts, state machine, SQLite, recovery primitives, CLI/protocol, fake-free unit tests | In progress; vertical and controller-crash recovery validated live |
 | G2 | Init through reviewed PR on a disposable repository | GitHub PR and Actions CI validated live; GitLab deferred at user request |
 | G3 | Parallel surfaces and workflow variants/integrations | Workflow variants and local-source align-ds validated live; file retrieval, Kanban projection and grouped project metrics pass locally; external providers remain open |
-| G4 | François, migration, upgrades, multi-platform packaging | V2 import, SQLite upgrades, François-facing stdio and Darwin Unix service with replay/live follow pass; Windows named-pipe lifecycle passes hosted CI on Python 3.12/3.13; external UI and release qualification remain open |
-| G5 | AC01–AC30 and model qualification corpus | In progress: 23 passed, 5 partial, 1 blocked and 1 deferred; the model corpus remains open |
+| G4 | François, migration, upgrades, multi-platform packaging | V2 import, installed a1→a2 wheel upgrade and SQLite migration pass hosted CI on Ubuntu, macOS and Windows with Python 3.12/3.13; François-facing stdio and Darwin Unix service with replay/live follow pass; Windows named-pipe lifecycle passes hosted CI; external UI and release qualification remain open |
+| G5 | AC01–AC30 and model qualification corpus | In progress: 24 passed, 4 partial, 1 blocked and 1 deferred; the model corpus remains open |
 
 Current automated evidence: strict model validation, DAG validation, subscription gating,
 write-conflict scheduling, reducer transitions, SQLite integrity and optimistic concurrency,
@@ -52,6 +52,8 @@ CI, not full real-host release support.
 The complete acceptance ledger is stored in `docs/qualification/ac-matrix.json`. AC01 clean
 installation evidence is recorded in `docs/evidence/g5-ac01-clean-install-darwin-arm64.json`; the
 same verifier is part of every operating-system CI job.
+Installed a1→a2 wheel upgrade evidence is recorded in
+`docs/evidence/g5-ac26-installed-upgrade.json`; the verifier runs in each hosted CI job.
 Codex control and hard-kill evidence is recorded in
 `docs/evidence/g5-codex-control-darwin-arm64.json`; its permission retry result is explicitly
 inconclusive and does not close AC30.
