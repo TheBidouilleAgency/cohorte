@@ -1,9 +1,0 @@
-# schema: skill
-# expect: /checks/0
-# why: spec 8's shell-string `command` became `argv` (D-25): the product is argv-only
-id: vitest-conventions
-version: 1.2.0
-appliesWhen: { languages: [typescript] }
-prompt: SKILL.md
-checks:
-  - { command: pnpm test }

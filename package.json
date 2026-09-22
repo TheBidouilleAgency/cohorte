@@ -1,63 +1,31 @@
 {
-  "name": "cohorte-monorepo",
+  "name": "cohorte",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@12.4.2",
   "engines": {
-    "node": "^24.16.0 || >=26.1.0"
+    "node": ">=24.16.0"
+  },
+  "bin": {
+    "cohorte": "dist/cli.js"
   },
   "scripts": {
-    "typecheck": "tsc -b && tsc -p tsconfig.tests.json",
-    "lint": "biome ci . && node scripts/check-layers.ts && node scripts/check-contract-words.ts && node scripts/check-prompts.ts",
-    "test": "vitest run --project unit --project integration",
-    "test:e2e": "vitest run --project e2e",
-    "test:live": "vitest run --config vitest.live.config.ts",
-    "ci:local": "node scripts/ci-local.ts",
-    "ci:lint": "biome ci . && node scripts/check-layers.ts && node scripts/check-contract-words.ts && node scripts/check-prompts.ts",
-    "ci:typecheck": "tsc -b && tsc -p tsconfig.tests.json",
-    "ci:unit": "vitest run --project unit",
-    "ci:integration": "vitest run --project integration",
-    "ci:schema-compat": "node scripts/schema-compat.ts --self",
-    "ci:migrations": "vitest run --project integration tests/integration/migrations",
-    "ci:packaging": "node scripts/build.ts --out .build/ci && node scripts/pack-check.ts .build/ci",
-    "ci:e2e-fake": "node scripts/build.ts --out .build/ci-e2e && COHORTE_E2E_BUILD_DIR=.build/ci-e2e vitest run --project e2e",
-    "ci:crash-matrix": "vitest run --project integration tests/integration/skeleton/engine-sqlite-fake.itest.ts && vitest run --project e2e tests/crash",
-    "ci:security": "vitest run --project e2e tests/security && vitest run --project e2e tests/e2e/vuln",
-    "ci:dogfood": "node scripts/build.ts --out .build/ci-dogfood && COHORTE_E2E_BUILD_DIR=.build/ci-dogfood vitest run --project e2e tests/dogfood",
-    "dogfood:install": "node scripts/dogfood-install.ts",
-    "ci:acceptance": "node scripts/build.ts --out .build/ci-acceptance && COHORTE_E2E_BUILD_DIR=.build/ci-acceptance vitest run --project e2e tests/acceptance",
-    "ci:pi-latest": "tsc -p tsconfig.tests.json && vitest run packages/runtime-pi/test",
-    "ci:live-provider": "pnpm test:live",
-    "verify": "pnpm install --frozen-lockfile --offline && tsc -b && tsc -p tsconfig.tests.json && biome ci . && node scripts/check-layers.ts && node scripts/check-contract-words.ts && node scripts/gen-schemas.ts --check && vitest run --project unit --project integration",
-    "unit:check": "node scripts/unit-check.ts",
-    "build": "node scripts/build.ts",
-    "pack:check": "node scripts/pack-check.ts",
-    "gen:schemas": "node scripts/gen-schemas.ts",
-    "checkpoint": "node scripts/checkpoint.ts"
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.test.json",
+    "test": "node --test test/*.test.ts",
+    "test:native": "node --test test/native.integration.ts",
+    "test:profile": "node --test test/profile.integration.ts",
+    "test:live": "node test/live.ts",
+    "start": "node src/cli.ts"
+  },
+  "dependencies": {
+    "ws": "8.21.3",
+    "xstate": "5.33.2"
   },
   "devDependencies": {
-    "@biomejs/biome": "catalog:",
-    "@cohorte/base": "workspace:*",
-    "@cohorte/config": "workspace:*",
-    "@cohorte/core": "workspace:*",
-    "@cohorte/git": "workspace:*",
-    "@cohorte/persistence": "workspace:*",
-    "@cohorte/project-model": "workspace:*",
-    "@cohorte/protocol": "workspace:*",
-    "@cohorte/providers": "workspace:*",
-    "@cohorte/runtime-contract": "workspace:*",
-    "@cohorte/runtime-fake": "workspace:*",
-    "@cohorte/runtime-pi": "workspace:*",
-    "@cohorte/security": "workspace:*",
-    "@cohorte/telemetry": "workspace:*",
-    "@cohorte/testkit": "workspace:*",
-    "@cohorte/tools": "workspace:*",
-    "@types/node": "catalog:",
-    "@types/picomatch": "catalog:",
-    "ajv": "catalog:",
-    "ajv-formats": "catalog:",
-    "tsdown": "catalog:",
-    "typescript": "catalog:",
-    "vitest": "catalog:"
-  }
+    "@types/node": "^24",
+    "@types/ws": "^8",
+    "typescript": "7.0.2"
+  },
+  "license": "AGPL-3.0-only"
 }

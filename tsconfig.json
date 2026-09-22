@@ -1,53 +1,17 @@
 {
-  "files": [],
-  "references": [
-    {
-      "path": "apps/cli"
-    },
-    {
-      "path": "packages/base"
-    },
-    {
-      "path": "packages/config"
-    },
-    {
-      "path": "packages/core"
-    },
-    {
-      "path": "packages/git"
-    },
-    {
-      "path": "packages/persistence"
-    },
-    {
-      "path": "packages/project-model"
-    },
-    {
-      "path": "packages/protocol"
-    },
-    {
-      "path": "packages/providers"
-    },
-    {
-      "path": "packages/runtime-contract"
-    },
-    {
-      "path": "packages/runtime-fake"
-    },
-    {
-      "path": "packages/runtime-pi"
-    },
-    {
-      "path": "packages/security"
-    },
-    {
-      "path": "packages/telemetry"
-    },
-    {
-      "path": "packages/testkit"
-    },
-    {
-      "path": "packages/tools"
-    }
-  ]
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "skipLibCheck": true,
+    "rewriteRelativeImportExtensions": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts"]
 }
