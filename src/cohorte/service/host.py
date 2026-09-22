@@ -108,7 +108,8 @@ async def serve(data_dir: Path) -> None:
                 writer.close()
 
         try:
-            if connection is None or _peer_uid(connection) != os.getuid():
+            current_uid = int(cast(Any, os).getuid())
+            if connection is None or _peer_uid(connection) != current_uid:
                 writer.close()
                 await writer.wait_closed()
                 return
@@ -143,7 +144,9 @@ async def serve(data_dir: Path) -> None:
             writer.close()
             await writer.wait_closed()
 
-    server = await asyncio.start_unix_server(handle, path=endpoint, limit=MAX_FRAME_BYTES + 1)
+    server = await cast(Any, asyncio).start_unix_server(
+        handle, path=endpoint, limit=MAX_FRAME_BYTES + 1
+    )
     os.chmod(endpoint, 0o600)
     identity = {
         "pid": os.getpid(),
@@ -165,7 +168,7 @@ async def serve(data_dir: Path) -> None:
 
 
 def rpc_call(endpoint: Path, method: str, params: dict[str, Any]) -> dict[str, Any]:
-    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+    with socket.socket(cast(Any, socket).AF_UNIX, socket.SOCK_STREAM) as client:
         client.settimeout(2)
         client.connect(str(endpoint))
         frames = [
