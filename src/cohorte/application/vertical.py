@@ -111,7 +111,8 @@ def plan_feature(profile: ProjectProfile, spec: FeatureSpec, base_commit: str) -
         criterion_ids=criteria,
         read_paths=["."],
         write_paths=write_paths,
-        account_ref=profile.agent_defaults.account_ref or "codex-native",
+        account_ref=profile.agent_defaults.account_ref
+        or f"{profile.agent_defaults.provider.value}-native",
         model=profile.agent_defaults.model or "account-default",
         check_ids=check_ids,
     )

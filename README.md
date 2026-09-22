@@ -4,13 +4,15 @@ Cohorte is a local, evidence-driven workflow engine for official coding-agent cl
 repository is a Python 3.12 rewrite built at the repository root. It does not depend on the former
 TypeScript/Pi implementations.
 
-The current Codex-only pre-release provides the deterministic core, bounded feature and Patch
+The current pre-release provides the deterministic core, bounded feature and Patch
 workflows, and overlap-aware Fleet execution:
 strict contracts, a pure workflow reducer, SQLite persistence, immutable artifacts, project
 discovery, DAG validation, isolated Git worktrees, controlled checks, independent read-only review,
 a review/fix loop, a JSON-RPC stdio bridge, and a CLI. Codex authentication and live execution are
-capability-gated. Claude remains disabled until a compatible account and pinned runtime have been
-validated.
+capability-gated. A Claude Agent SDK adapter is available through the optional `claude` dependency
+and `agent_defaults.provider: claude`; its workflow path has offline tests but no live qualification.
+Passive `auth status claude` checks the native CLI without exposing credentials. An explicit
+`auth verify claude --live` probe is available after confirming the account to use.
 
 ```bash
 uv sync --all-extras

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-# mypy: disable-error-code="import-untyped"
+# mypy: disable-error-code=import-untyped
 import hashlib
 import json
 import threading

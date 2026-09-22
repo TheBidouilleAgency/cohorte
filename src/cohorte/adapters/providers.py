@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import shutil
-import subprocess
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
-from cohorte.adapters.codex import inspect_codex_account
+from cohorte.adapters.claude import ClaudeAdapter, inspect_claude_account
+from cohorte.adapters.codex import CodexAdapter, inspect_codex_account
+from cohorte.domain.models import ProjectProfile, Provider
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,14 +34,18 @@ def inspect_runtime(provider: Literal["claude", "codex"]) -> PassiveRuntimeStatu
             executable=executable,
             certified=False,
         )
-    executable = shutil.which(provider)
-    if executable is None:
-        return PassiveRuntimeStatus(provider, "unavailable", "unknown", "unverified", None, None)
-    result = subprocess.run(
-        [executable, "--version"], capture_output=True, text=True, check=False, timeout=5
-    )
-    version = (result.stdout or result.stderr).strip()[:200] if result.returncode == 0 else None
-    # Presence and version do not prove auth or subscription routing.
+    status = inspect_claude_account()
     return PassiveRuntimeStatus(
-        provider, "not_configured", "unknown", "unverified", version, executable
+        provider,
+        status.connection_state.value,
+        status.effective_auth_mode.value,
+        status.billing_evidence.value,
+        status.runtime_version,
+        shutil.which("claude"),
     )
+
+
+def workflow_runtime(repository: Path, profile: ProjectProfile) -> CodexAdapter | ClaudeAdapter:
+    if profile.agent_defaults.provider == Provider.CLAUDE:
+        return ClaudeAdapter(repository, model=profile.agent_defaults.model)
+    return CodexAdapter(repository)

@@ -17,7 +17,7 @@ pre-release foundation, not a V2-parity or provider-support claim.
 - Passive Codex auth inspection and an explicit bounded live probe using the pinned SDK/runtime.
 - Live Codex evidence for subscription routing, read-only enforcement, interruption and resume on
   Darwin arm64 with SDK/runtime 0.155.1.
-- A Codex-only `loop` vertical with a frozen spec, deterministic task plan, isolated Git worktree,
+- A `loop` vertical with a frozen spec, deterministic task plan, isolated Git worktree,
   path ownership enforcement, bounded checks, independent read-only review, bounded fix cycles and
   candidate-bound ship evidence.
 - Live G1 vertical evidence on a disposable repository: workspace-write implementation, two passing
@@ -117,7 +117,11 @@ pre-release foundation, not a V2-parity or provider-support claim.
   bounded frames and the same start/status/stop RPC lifecycle. The Windows-only integration test is
   green in the Python 3.12/3.13 GitHub-hosted Windows CI matrix. This validates the runtime
   lifecycle, while release support still requires real-host and load-level qualification.
-- Passive Claude executable inspection which never claims provider support.
+- Claude Agent SDK adapter for brainstorm, build, review and fix, selected by the project profile
+  (or `brainstorm --provider claude`). Native CLI auth status is inspected passively; ambiguous API,
+  gateway and token overrides fail closed under `subscription_only`. SDK tool lists and pre-tool
+  path guards restrict reads and edits to the worktree. Adapter and routing tests are offline only;
+  the Claude account/runtime combination is not certified.
 - Live brainstorm preparation: product, architecture and QA run in distinct ephemeral read-only
   Codex sessions over one factual bundle, followed by a separately identified synthesis session.
   The brief retains contribution references, divergences, strong objections and user answers in a
@@ -134,8 +138,9 @@ pre-release foundation, not a V2-parity or provider-support claim.
 
 ## Deliberately unverified or incomplete
 
-- G0 Codex user questions, model catalogue and usage reporting; Claude remains unavailable pending
-  an account. Permission retry remains unqualified because the runtime emitted no command-level
+- G0 Codex user questions, model catalogue and usage reporting; Claude live auth, read-only,
+  mutation boundary, interruption and resume remain unqualified. Permission retry remains
+  unqualified because the Codex runtime emitted no command-level
   denial events during the live negative probe.
 - GitLab live delivery evidence and a persistent background controller remain open.
 - External Figma/Serena/Graphify validation remains open. Manual Patch reproduction remains blocked

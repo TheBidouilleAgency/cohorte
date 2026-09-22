@@ -14,10 +14,11 @@ from platformdirs import user_config_path, user_data_path
 from pydantic import BaseModel, ValidationError
 
 from cohorte import __version__
+from cohorte.adapters.claude import ClaudeAdapter
 from cohorte.adapters.codex import CodexAdapter
 from cohorte.adapters.git import GitRepository
 from cohorte.adapters.hosting import GitHubProvider, GitLabProvider
-from cohorte.adapters.providers import inspect_runtime
+from cohorte.adapters.providers import inspect_runtime, workflow_runtime
 from cohorte.application.delivery import ShipRunner
 from cohorte.application.durable import (
     RunStopped,
@@ -104,6 +105,7 @@ def _parser() -> argparse.ArgumentParser:
     brainstorm.add_argument("--prior-decision", action="append", default=[])
     brainstorm.add_argument("--perspective", action="append")
     brainstorm.add_argument("--repo", type=Path, default=Path.cwd())
+    brainstorm.add_argument("--provider", choices=["claude", "codex"])
     brainstorm.add_argument("--output", type=Path)
     brainstorm.add_argument("--live", action="store_true", required=True)
     freeze_request = sub.add_parser("spec-freeze-request")
@@ -425,6 +427,10 @@ def run(argv: list[str] | None = None) -> int:
             elif args.auth_command == "verify" and args.target == "codex" and args.live:
                 adapter = CodexAdapter(Path.cwd())
                 _emit(adapter.verify_full() if args.full else adapter.verify_live(), args.json)
+            elif args.auth_command == "verify" and args.target == "claude" and args.live:
+                if args.full:
+                    raise ValueError("Claude full G0 qualification is not implemented")
+                _emit(ClaudeAdapter(Path.cwd()).verify_live(), args.json)
             elif args.auth_command == "verify" and not args.live:
                 target = cast(Literal["claude", "codex"], args.target)
                 _emit(asdict(inspect_runtime(target)), args.json)
@@ -483,12 +489,33 @@ def run(argv: list[str] | None = None) -> int:
             )
         elif args.command == "brainstorm":
             from cohorte.application.preparation import BrainstormRunner, canonical_model_bytes
+            from cohorte.domain.models import ProjectProfile
 
             project = database.get_project(args.project_id)
             repository = args.repo.resolve(strict=True)
             if Path(project["root_path"]).resolve() != repository:
                 raise ValueError("brainstorm repository does not match the registered project")
-            brief = BrainstormRunner(CodexAdapter(repository)).run(
+            project_profile = (
+                ProjectProfile.model_validate(project["profile"])
+                if project.get("profile") is not None
+                else None
+            )
+            brainstorm_runtime: CodexAdapter | ClaudeAdapter
+            selected_provider = args.provider or (
+                project_profile.agent_defaults.provider.value
+                if project_profile is not None
+                else "codex"
+            )
+            if selected_provider == "claude":
+                brainstorm_runtime = ClaudeAdapter(
+                    repository,
+                    model=project_profile.agent_defaults.model
+                    if project_profile is not None
+                    else None,
+                )
+            else:
+                brainstorm_runtime = CodexAdapter(repository)
+            brief = BrainstormRunner(brainstorm_runtime).run(
                 repository,
                 args.feature_id,
                 args.idea,
@@ -639,7 +666,7 @@ def run(argv: list[str] | None = None) -> int:
                 run_id=args.run_id,
             )
             try:
-                patch_result = PatchRunner(CodexAdapter(repository)).run(
+                patch_result = PatchRunner(workflow_runtime(repository, profile)).run(
                     repository,
                     args.worktrees,
                     profile,
@@ -667,7 +694,9 @@ def run(argv: list[str] | None = None) -> int:
                 paths=args.path,
                 concerns=args.concern,
             )
-            audit_report = AuditRunner(CodexAdapter(args.repo)).run(args.repo, profile, audit_spec)
+            audit_report = AuditRunner(workflow_runtime(args.repo, profile)).run(
+                args.repo, profile, audit_spec
+            )
             report_ref = database.put_artifact(
                 "audit-report", audit_report.model_dump_json(indent=2).encode()
             )
@@ -771,7 +800,7 @@ def run(argv: list[str] | None = None) -> int:
                 run_id=args.run_id,
             )
             try:
-                refactor_result = RefactorRunner(CodexAdapter(repository)).run(
+                refactor_result = RefactorRunner(workflow_runtime(repository, profile)).run(
                     repository,
                     args.worktrees,
                     profile,
@@ -1087,7 +1116,7 @@ def run(argv: list[str] | None = None) -> int:
                 run_id=args.run_id,
             )
             try:
-                alignment_result = AlignmentRunner(CodexAdapter(repository)).run(
+                alignment_result = AlignmentRunner(workflow_runtime(repository, profile)).run(
                     repository,
                     args.worktrees,
                     profile,
@@ -1197,7 +1226,7 @@ def run(argv: list[str] | None = None) -> int:
 
             profile = ProjectProfile.model_validate_json(args.profile.read_text())
             specs = [FeatureSpec.model_validate_json(path.read_text()) for path in args.specs]
-            fleet_result = FleetRunner(CodexAdapter(args.repo)).run(
+            fleet_result = FleetRunner(workflow_runtime(args.repo, profile)).run(
                 args.repo,
                 args.worktrees,
                 profile,
@@ -1252,7 +1281,7 @@ def run(argv: list[str] | None = None) -> int:
                 project_id=profile.project_id,
                 run_id=args.run_id,
             )
-            runtime = CodexAdapter(args.repo)
+            runtime = workflow_runtime(args.repo, profile)
             try:
                 loop_result: Any
                 if len(spec.surfaces) > 1:
@@ -1314,7 +1343,7 @@ def run(argv: list[str] | None = None) -> int:
                 state = running
             repository = Path(context["repository"])
             worktree = Path(context["worktree"])
-            runtime = CodexAdapter(repository)
+            runtime = workflow_runtime(repository, profile)
             try:
                 resume_result: Any
                 if len(spec.surfaces) > 1:

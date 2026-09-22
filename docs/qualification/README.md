@@ -14,7 +14,8 @@ Current baseline:
 | Deferred | 1 |
 | Not started | 0 |
 
-François is explicitly deferred. Claude account qualification blocks AC02 and keeps AC03 partial.
+François is explicitly deferred. The Claude SDK adapter now has offline tests, while Claude account
+and runtime qualification still blocks AC02 and keeps AC03 partial.
 AC27 is qualified with bounded, redacted check logs and atomic CLI/RPC run exports. AC28 now
 classifies missing dependencies, unavailable container runtimes, network outages, and full disks as
 retryable environment failures while preserving durable state. AC29 now covers protocol versions,
