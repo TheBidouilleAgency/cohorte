@@ -324,6 +324,7 @@ class MultiSurfaceRunner:
         fix_cycles = initial_fix_cycles
         while True:
             checks = VerticalRunner._checks(candidate.root, profile, check_ids)
+            VerticalRunner._require_check_environment(checks)
             self._observe(
                 observe,
                 "checks",

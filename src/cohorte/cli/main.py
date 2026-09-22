@@ -25,6 +25,7 @@ from cohorte.application.multisurface import MultiSurfaceRunner
 from cohorte.application.service import CohorteService
 from cohorte.application.vertical import VerticalRunner
 from cohorte.domain.errors import CohorteError, ErrorCode
+from cohorte.domain.redaction import redact
 from cohorte.execution.checks import CheckRunner
 from cohorte.persistence.sqlite import Database
 from cohorte.protocol.rpc import MAX_FRAME_BYTES, RpcServer
@@ -45,6 +46,10 @@ def _parser() -> argparse.ArgumentParser:
     init.add_argument("--language", default="fr")
     status = sub.add_parser("status")
     status.add_argument("run", nargs="?")
+    export = sub.add_parser("export")
+    export.add_argument("run_id")
+    export.add_argument("--output", type=Path)
+    export.add_argument("--max-bytes", type=int, default=10 * 1024 * 1024)
     auth = sub.add_parser("auth")
     auth_sub = auth.add_subparsers(dest="auth_command", required=True)
     auth_status = auth_sub.add_parser("status")
@@ -238,6 +243,7 @@ def _fail(error: Exception, json_mode: bool, debug: bool = False) -> NoReturn:
             "remediation": "run cohorte doctor; retry with diagnostics enabled",
         }
         exit_code = 5
+    data = redact(data)
     if json_mode:
         print(json.dumps({"ok": False, "error": data}, ensure_ascii=False), file=sys.stdout)
     else:
@@ -367,6 +373,19 @@ def run(argv: list[str] | None = None) -> int:
                     "runs": [r.model_dump(mode="json") for r in service.database.list_runs()]
                 }
             _emit(payload, args.json)
+        elif args.command == "export":
+            exported = service.export_run(args.run_id, args.max_bytes)
+            if args.output is None:
+                _emit(exported, args.json)
+            else:
+                args.output.parent.mkdir(parents=True, exist_ok=True)
+                temporary = args.output.with_name(f".{args.output.name}.cohorte.tmp")
+                temporary.write_text(
+                    json.dumps(exported, ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8",
+                )
+                temporary.replace(args.output)
+                _emit({"path": str(args.output), "bytes": args.output.stat().st_size}, args.json)
         elif args.command == "auth":
             if args.auth_command == "status":
                 providers = [args.provider] if args.provider else ["claude", "codex"]

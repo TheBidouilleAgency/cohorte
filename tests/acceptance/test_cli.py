@@ -3,9 +3,12 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 from cohorte.application.maintenance import AuditFinding, AuditReport, AuditSpec
+from cohorte.domain.models import RunState, RunStatus, Stage
+from cohorte.persistence.sqlite import Database
 
 
 def run_cli(data_dir: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -208,3 +211,45 @@ def test_retro_rule_is_applied_only_after_request_approval(tmp_path: Path) -> No
     updated = json.loads(output_path.read_text())
     assert updated["revision"] == 2
     assert updated["conventions"] == ["Use one calculation convention."]
+
+
+def test_export_cli_writes_a_redacted_run_atomically(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    database = Database(data_dir / "cohorte.sqlite3")
+    database.register_project("project", str(tmp_path / "project"), "profile")
+    now = datetime.now(UTC)
+    database.create_run(
+        RunState(
+            id="export-run",
+            project_id="project",
+            feature_id="feature",
+            stage=Stage.PLAN,
+            status=RunStatus.RUNNING,
+            state_version=1,
+            base_commit="a" * 40,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    secret = "sk-fake-cli-secret"
+    database.append_event(
+        "agent.output", {"message": f"ANTHROPIC_API_KEY={secret}"}, run_id="export-run"
+    )
+    database.close()
+    destination = tmp_path / "exports" / "run.json"
+
+    result = run_cli(
+        data_dir,
+        "export",
+        "export-run",
+        "--output",
+        str(destination),
+        "--max-bytes",
+        "4096",
+    )
+
+    assert result.returncode == 0, result.stderr
+    exported = destination.read_text()
+    assert secret not in exported
+    assert "[REDACTED]" in exported
+    assert not destination.with_name(f".{destination.name}.cohorte.tmp").exists()

@@ -51,7 +51,12 @@ def _peer_uid(connection: Any) -> int:
     raise RuntimeError("this POSIX platform does not expose local peer credentials")
 
 
-async def serve(data_dir: Path) -> None:
+async def serve(
+    data_dir: Path,
+    *,
+    writer_timeout_seconds: float = 5,
+    socket_send_buffer_bytes: int | None = None,
+) -> None:
     if os.name == "nt":
         raise RuntimeError("Windows named-pipe transport requires a Windows host")
     data_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -71,6 +76,8 @@ async def serve(data_dir: Path) -> None:
 
     async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         connection = writer.get_extra_info("socket")
+        if connection is not None and socket_send_buffer_bytes is not None:
+            connection.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, socket_send_buffer_bytes)
         follower: asyncio.Task[None] | None = None
         write_lock = asyncio.Lock()
 
@@ -79,7 +86,7 @@ async def serve(data_dir: Path) -> None:
                 raise ValueError("outbound frame exceeds 1 MiB")
             async with write_lock:
                 writer.write(payload)
-                await asyncio.wait_for(writer.drain(), timeout=5)
+                await asyncio.wait_for(writer.drain(), timeout=writer_timeout_seconds)
 
         async def follow_events(after_seq: int, params: dict[str, Any]) -> None:
             cursor = after_seq

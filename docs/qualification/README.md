@@ -8,12 +8,16 @@ Current baseline:
 
 | Status | Count |
 | --- | ---: |
-| Passed | 14 |
-| Partial | 12 |
+| Passed | 17 |
+| Partial | 10 |
 | Blocked | 1 |
 | Deferred | 1 |
-| Not started | 2 |
+| Not started | 1 |
 
 François is explicitly deferred. Claude account qualification blocks AC02 and keeps AC03 partial.
-The next local tranche is AC27, AC28, and AC29. The next bounded Codex-live tranche is
+AC27 is qualified with bounded, redacted check logs and atomic CLI/RPC run exports. AC28 now
+classifies missing dependencies, unavailable container runtimes, network outages, and full disks as
+retryable environment failures while preserving durable state. AC29 now covers protocol versions,
+invalid and oversized frames, concurrent mutation deduplication, bounded replay, and slow-client
+reconnection without cursor gaps. The next bounded Codex-live tranche is
 AC04, AC11, AC16, AC17, and AC30.

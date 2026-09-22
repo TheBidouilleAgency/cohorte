@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -12,6 +13,7 @@ from uuid import uuid4
 
 from cohorte.domain.errors import CohorteError, ErrorCode
 from cohorte.domain.models import RunState
+from cohorte.domain.redaction import redact
 
 SCHEMA_VERSION = 2
 
@@ -763,6 +765,14 @@ class Database:
         event_type: str,
         data: dict[str, Any],
     ) -> int:
+        encoded = json.dumps(redact(data), separators=(",", ":"))
+        if len(encoded.encode()) > 512 * 1024:
+            raise CohorteError(
+                ErrorCode.OUTPUT_INVALID,
+                "event payload exceeds 512 KiB",
+                "the oversized event was not persisted",
+                remediation="store large content as an artifact and reference it from the event",
+            )
         cursor = tx.execute(
             "INSERT INTO events(event_id,schema_version,project_id,run_id,type,occurred_at,data_json) "
             "VALUES (?,1,?,?,?,?,?)",
@@ -772,7 +782,7 @@ class Database:
                 run_id,
                 event_type,
                 utc_now(),
-                json.dumps(data, separators=(",", ":")),
+                encoded,
             ),
         )
         if cursor.lastrowid is None:
@@ -797,7 +807,9 @@ class Database:
         ).fetchone()
         if row is None:
             raise KeyError(f"{run_id}:{event_type}")
-        return {**dict(row), "data": json.loads(row["data_json"])}
+        result = dict(row)
+        result["data"] = json.loads(result.pop("data_json"))
+        return result
 
     def events_after(
         self,
@@ -819,7 +831,109 @@ class Database:
             f"SELECT * FROM events WHERE {' AND '.join(clauses)} ORDER BY seq LIMIT ?",
             parameters,
         ).fetchall()
-        return [{**dict(row), "data": json.loads(row["data_json"])} for row in rows]
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            event = dict(row)
+            event["data"] = json.loads(event.pop("data_json"))
+            result.append(event)
+        return result
+
+    def export_run(self, run_id: str, max_bytes: int = 10 * 1024 * 1024) -> dict[str, Any]:
+        if max_bytes < 1024 or max_bytes > 50 * 1024 * 1024:
+            raise ValueError("run export limit must be between 1 KiB and 50 MiB")
+        run = self.connection.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
+        if run is None:
+            raise KeyError(run_id)
+
+        def rows(
+            query: str,
+            parameters: tuple[Any, ...],
+            json_columns: tuple[str, ...] = (),
+        ) -> list[dict[str, Any]]:
+            result: list[dict[str, Any]] = []
+            for row in self.connection.execute(query, parameters).fetchall():
+                item = dict(row)
+                for column in json_columns:
+                    raw = item.pop(column)
+                    item[column.removesuffix("_json")] = json.loads(raw)
+                result.append(item)
+            return result
+
+        request_rows = rows(
+            "SELECT * FROM requests WHERE run_id=? ORDER BY created_at,id",
+            (run_id,),
+            ("payload_json",),
+        )
+        request_ids = [str(item["id"]) for item in request_rows]
+        approvals: list[dict[str, Any]] = []
+        if request_ids:
+            placeholders = ",".join("?" for _ in request_ids)
+            approvals = rows(
+                f"SELECT * FROM approvals WHERE request_id IN ({placeholders}) ORDER BY created_at,id",
+                tuple(request_ids),
+                ("answer_json", "scope_json"),
+            )
+        run_document = dict(run)
+        run_document["state"] = json.loads(run_document.pop("state_json"))
+        document = redact(
+            {
+                "schema_version": 1,
+                "database_schema_version": SCHEMA_VERSION,
+                "exported_at": utc_now(),
+                "run": run_document,
+                "events": rows(
+                    "SELECT * FROM events WHERE run_id=? ORDER BY seq",
+                    (run_id,),
+                    ("data_json",),
+                ),
+                "requests": request_rows,
+                "approvals": approvals,
+                "tasks": rows(
+                    "SELECT * FROM tasks WHERE run_id=? ORDER BY id",
+                    (run_id,),
+                    ("payload_json",),
+                ),
+                "attempts": rows(
+                    "SELECT attempts.* FROM attempts JOIN tasks ON tasks.id=attempts.task_id "
+                    "WHERE tasks.run_id=? ORDER BY attempts.id",
+                    (run_id,),
+                    ("payload_json",),
+                ),
+                "sessions": rows(
+                    "SELECT sessions.* FROM sessions "
+                    "JOIN attempts ON attempts.id=sessions.attempt_id "
+                    "JOIN tasks ON tasks.id=attempts.task_id "
+                    "WHERE tasks.run_id=? ORDER BY sessions.id",
+                    (run_id,),
+                    ("payload_json",),
+                ),
+                "findings": rows(
+                    "SELECT * FROM findings WHERE run_id=? ORDER BY id",
+                    (run_id,),
+                    ("payload_json",),
+                ),
+                "checks": rows(
+                    "SELECT * FROM checks WHERE run_id=? ORDER BY id",
+                    (run_id,),
+                    ("payload_json",),
+                ),
+                "effects": rows(
+                    "SELECT * FROM effects WHERE run_id=? ORDER BY id",
+                    (run_id,),
+                    ("payload_json",),
+                ),
+            }
+        )
+        encoded = json.dumps(document, ensure_ascii=False, separators=(",", ":")).encode()
+        if len(encoded) > max_bytes:
+            raise CohorteError(
+                ErrorCode.OUTPUT_INVALID,
+                f"run export exceeds the {max_bytes}-byte limit",
+                "no export was returned",
+                remediation="raise --max-bytes within the allowed bound or export fewer records",
+                details={"actual_bytes": len(encoded), "max_bytes": max_bytes},
+            )
+        return cast(dict[str, Any], document)
 
     def create_request(
         self,
@@ -837,7 +951,7 @@ class Database:
                     request_id,
                     run_id,
                     kind,
-                    json.dumps(payload),
+                    json.dumps(redact(payload)),
                     subject_hash,
                     expires_at,
                     utc_now(),
@@ -885,8 +999,11 @@ class Database:
         subject_hash: str,
         client_identity: str = "local-cli",
     ) -> dict[str, Any]:
+        safe_response = redact(response)
         payload_hash = hashlib.sha256(
-            json.dumps({"request_id": request_id, "response": response}, sort_keys=True).encode()
+            json.dumps(
+                {"request_id": request_id, "response": safe_response}, sort_keys=True
+            ).encode()
         ).hexdigest()
         previous = self.connection.execute(
             "SELECT content_hash,result_json FROM operations WHERE request_id=?", (response_id,)
@@ -924,7 +1041,7 @@ class Database:
                     request_id,
                     client_identity,
                     "user",
-                    json.dumps(response),
+                    json.dumps(safe_response),
                     subject_hash,
                     json.dumps({}),
                     None,
@@ -944,25 +1061,54 @@ class Database:
         operation: Callable[[], dict[str, Any]],
     ) -> dict[str, Any]:
         content_hash = hashlib.sha256(json.dumps(params, sort_keys=True).encode()).hexdigest()
-        row = self.connection.execute(
-            "SELECT content_hash,result_json FROM operations WHERE request_id=?", (request_id,)
-        ).fetchone()
-        if row:
-            if row["content_hash"] != content_hash:
+        deadline = time.monotonic() + 5
+        while True:
+            owner = False
+            with self.transaction() as tx:
+                row = tx.execute(
+                    "SELECT content_hash,result_json FROM operations WHERE request_id=?",
+                    (request_id,),
+                ).fetchone()
+                if row is None:
+                    tx.execute(
+                        "INSERT INTO operations VALUES (?,?,?,?)",
+                        (request_id, content_hash, "null", utc_now()),
+                    )
+                    owner = True
+                elif row["content_hash"] != content_hash:
+                    raise CohorteError(
+                        ErrorCode.VERSION_CONFLICT,
+                        "request id reused with different content",
+                        "operation was rejected",
+                        remediation="use a new request_id",
+                    )
+                elif row["result_json"] != "null":
+                    return cast(dict[str, Any], json.loads(row["result_json"]))
+            if owner:
+                try:
+                    result = operation()
+                except Exception:
+                    with self.transaction() as tx:
+                        tx.execute(
+                            "DELETE FROM operations WHERE request_id=? AND result_json='null'",
+                            (request_id,),
+                        )
+                    raise
+                with self.transaction() as tx:
+                    tx.execute(
+                        "UPDATE operations SET result_json=? WHERE request_id=?",
+                        (json.dumps(result), request_id),
+                    )
+                return result
+            if time.monotonic() >= deadline:
                 raise CohorteError(
                     ErrorCode.VERSION_CONFLICT,
-                    "request id reused with different content",
-                    "operation was rejected",
-                    remediation="use a new request_id",
+                    "deduplicated operation is still in progress",
+                    "the duplicate request was not executed",
+                    retryable=True,
+                    remediation="retry with the same request_id",
                 )
-            return cast(dict[str, Any], json.loads(row["result_json"]))
-        result = operation()
-        with self.transaction() as tx:
-            tx.execute(
-                "INSERT INTO operations VALUES (?,?,?,?)",
-                (request_id, content_hash, json.dumps(result), utc_now()),
-            )
-        return result
+            time.sleep(0.01)
 
     def begin_effect(
         self, run_id: str, kind: str, dedupe_key: str, payload: dict[str, Any]

@@ -168,6 +168,7 @@ class VerticalRunner:
                 plan,
                 {"passed": all(item.status == "passed" for item in checks)},
             )
+            self._require_check_environment(checks)
             failed = [item for item in checks if item.status != "passed"]
             review = self.runtime.review(
                 candidate.root,
@@ -285,6 +286,22 @@ class VerticalRunner:
                 "fix attempt made no candidate change",
                 "delivery is blocked because the fix loop stagnated",
                 remediation="inspect the failed checks and findings before starting a new run",
+            )
+
+    @staticmethod
+    def _require_check_environment(checks: list[CheckExecution]) -> None:
+        unavailable = [check for check in checks if check.error_code == "CHECK_ENVIRONMENT"]
+        if unavailable:
+            issues = ", ".join(
+                f"{check.check_id}:{check.environment_issue}" for check in unavailable
+            )
+            raise CohorteError(
+                ErrorCode.CHECK_ENVIRONMENT,
+                f"checks could not run in the current environment: {issues}",
+                "the candidate was preserved and no automatic fix was attempted",
+                retryable=True,
+                remediation="restore the missing runtime resource and resume the run",
+                details={"checks": [asdict(check) for check in unavailable]},
             )
 
     @staticmethod

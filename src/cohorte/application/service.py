@@ -109,6 +109,9 @@ class CohorteService:
             run_id, WorkflowEvent(type=EventType.CANCEL, facts={"reason": reason})
         )[0]
 
+    def export_run(self, run_id: str, max_bytes: int = 10 * 1024 * 1024) -> dict[str, object]:
+        return self.database.export_run(run_id, max_bytes)
+
 
 def git_head(path: Path) -> str:
     result = subprocess.run(

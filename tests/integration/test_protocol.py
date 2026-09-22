@@ -5,7 +5,11 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from cohorte.application.service import CohorteService
+from cohorte.domain.errors import CohorteError, ErrorCode
+from cohorte.domain.models import RunState, RunStatus, Stage
 from cohorte.persistence.sqlite import Database
 from cohorte.protocol.rpc import MAX_FRAME_BYTES, RpcServer
 
@@ -122,6 +126,29 @@ def test_invalid_major_is_structured(tmp_path) -> None:
     database.close()
 
 
+def test_protocol_validation_error_redacts_input_secrets(tmp_path) -> None:
+    secret = "sk-fake-protocol-error"
+    database = Database(tmp_path / "db.sqlite3")
+    server = RpcServer(CohorteService(database))
+
+    response = call(
+        server,
+        "1",
+        "initialize",
+        {
+            "protocol_major": f"OPENAI_API_KEY={secret}",
+            "protocol_minor": 0,
+            "client": {"name": "test", "version": "1"},
+            "capabilities": [],
+        },
+    )
+
+    assert response["error"]["data"]["code"] == "PROTOCOL_INVALID"
+    assert secret not in json.dumps(response)
+    assert "[REDACTED]" in json.dumps(response)
+    database.close()
+
+
 def test_malformed_and_oversized_frames_are_rejected_without_dispatch(tmp_path) -> None:
     database = Database(tmp_path / "db.sqlite3")
     server = RpcServer(CohorteService(database))
@@ -132,6 +159,33 @@ def test_malformed_and_oversized_frames_are_rejected_without_dispatch(tmp_path) 
     assert malformed["error"]["data"]["code"] == "PROTOCOL_INVALID"
     assert oversized["error"]["data"]["code"] == "PROTOCOL_INVALID"
     assert server.initialized is False
+    database.close()
+
+
+def test_event_replay_is_frame_bounded_and_rejects_oversized_events(tmp_path) -> None:
+    database = Database(tmp_path / "db.sqlite3")
+    server = RpcServer(CohorteService(database))
+    call(
+        server,
+        "init",
+        "initialize",
+        {
+            "protocol_major": 1,
+            "protocol_minor": 0,
+            "client": {"name": "test", "version": "1"},
+            "capabilities": [],
+        },
+    )
+    for index in range(24):
+        database.append_event("agent.output", {"index": index, "text": "x" * 32_768})
+
+    replay = call(server, "replay", "events.subscribe", {"after_seq": 0})
+
+    assert len(json.dumps(replay).encode()) < MAX_FRAME_BYTES
+    assert 0 < len(replay["result"]["items"]) < 24
+    with pytest.raises(CohorteError) as caught:
+        database.append_event("agent.output", {"text": "x" * (512 * 1024)})
+    assert caught.value.code == ErrorCode.OUTPUT_INVALID
     database.close()
 
 
@@ -191,3 +245,122 @@ def test_two_protocol_clients_race_one_request_and_only_first_decision_wins(tmp_
         assert len(check.connection.execute("SELECT * FROM approvals").fetchall()) == 1
     finally:
         check.close()
+
+
+def test_two_protocol_clients_race_the_same_mutation_once(tmp_path) -> None:
+    path = tmp_path / "db.sqlite3"
+    setup = Database(path)
+    setup.register_project("project", "/tmp/project", "profile")
+    now = datetime.now(UTC)
+    setup.create_run(
+        RunState(
+            id="race-run",
+            project_id="project",
+            feature_id="feature",
+            stage=Stage.BUILD,
+            status=RunStatus.RUNNING,
+            state_version=1,
+            base_commit="a" * 40,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    setup.close()
+    barrier = threading.Barrier(2)
+
+    def pause(connection_id: str) -> dict:
+        database = Database(path)
+        try:
+            server = RpcServer(CohorteService(database), connection_id=connection_id)
+            call(
+                server,
+                "init",
+                "initialize",
+                {
+                    "protocol_major": 1,
+                    "protocol_minor": 0,
+                    "client": {"name": connection_id, "version": "1"},
+                    "capabilities": [],
+                },
+            )
+            barrier.wait(timeout=2)
+            return call(
+                server,
+                connection_id,
+                "runs.pause",
+                {"request_id": "pause-once", "run_id": "race-run", "expected_version": 1},
+            )
+        finally:
+            database.close()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        responses = list(executor.map(pause, ["client-one", "client-two"]))
+
+    assert responses[0]["result"] == responses[1]["result"]
+    assert responses[0]["result"]["state_version"] == 2
+    check = Database(path)
+    try:
+        assert check.get_run("race-run").status == RunStatus.PAUSED
+        assert (
+            check.connection.execute(
+                "SELECT COUNT(*) FROM events WHERE run_id=? AND type='run.state_changed'",
+                ("race-run",),
+            ).fetchone()[0]
+            == 1
+        )
+        assert check.connection.execute("SELECT COUNT(*) FROM operations").fetchone()[0] == 1
+    finally:
+        check.close()
+
+
+def test_protocol_exports_a_bounded_redacted_run(tmp_path) -> None:
+    secret = "sk-fake-protocol-secret"
+    database = Database(tmp_path / "db.sqlite3")
+    service = CohorteService(database)
+    project = tmp_path / "project"
+    project.mkdir()
+    initialized = service.init_project(project)
+    project_id = str(initialized["profile"]["project_id"])
+    now = datetime.now(UTC)
+    database.create_run(
+        RunState(
+            id="export-run",
+            project_id=project_id,
+            feature_id="feature",
+            stage=Stage.PLAN,
+            status=RunStatus.RUNNING,
+            state_version=1,
+            base_commit="a" * 40,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    database.append_event(
+        "agent.output", {"message": f"OPENAI_API_KEY={secret}"}, run_id="export-run"
+    )
+    server = RpcServer(service)
+    call(
+        server,
+        "init",
+        "initialize",
+        {
+            "protocol_major": 1,
+            "protocol_minor": 0,
+            "client": {"name": "test", "version": "1"},
+            "capabilities": [],
+        },
+    )
+
+    exported = call(server, "export", "runs.export", {"run_id": "export-run"})
+    oversized = call(
+        server,
+        "oversized",
+        "runs.export",
+        {"run_id": "export-run", "max_bytes": 768 * 1024 + 1},
+    )
+
+    assert secret not in json.dumps(exported)
+    assert "[REDACTED]" in json.dumps(exported)
+    assert exported["result"]["run"]["state"]["id"] == "export-run"
+    assert oversized["error"]["data"]["code"] == "PROTOCOL_INVALID"
+    database.close()

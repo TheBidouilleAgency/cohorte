@@ -10,11 +10,11 @@
     "not_started": "No sufficient executable qualification exists yet."
   },
   "summary": {
-    "passed": 14,
-    "partial": 12,
+    "passed": 17,
+    "partial": 10,
     "blocked": 1,
     "deferred": 1,
-    "not_started": 2
+    "not_started": 1
   },
   "criteria": [
     {
@@ -228,26 +228,26 @@
     {
       "id": "AC27",
       "title": "Logs and export",
-      "status": "partial",
+      "status": "passed",
       "evidence_class": "engine",
-      "evidence": ["tests/unit/test_codex_adapter.py::test_passive_status_recognizes_chatgpt_without_exposing_output", "tests/integration/test_protocol.py"],
-      "remaining": ["Implement and qualify database export", "Inject fake secrets and prove absence from every log and error channel", "Exercise log and export size limits"]
+      "evidence": ["tests/unit/test_redaction.py", "tests/unit/test_cli_errors.py::test_cli_error_redacts_secrets", "tests/integration/test_checks.py::test_check_runner_redacts_secrets_before_bounded_output", "tests/integration/test_database.py::test_run_export_is_complete_bounded_and_redacted_at_rest", "tests/integration/test_protocol.py::test_protocol_exports_a_bounded_redacted_run", "tests/integration/test_protocol.py::test_protocol_validation_error_redacts_input_secrets", "tests/acceptance/test_cli.py::test_export_cli_writes_a_redacted_run_atomically"],
+      "remaining": []
     },
     {
       "id": "AC28",
       "title": "Degraded environment",
-      "status": "not_started",
-      "evidence_class": "none",
-      "evidence": [],
-      "remaining": ["Qualify missing dependency", "Qualify missing container", "Qualify network outage", "Qualify disk-full state integrity"]
+      "status": "passed",
+      "evidence_class": "engine",
+      "evidence": ["tests/integration/test_degraded_environment.py"],
+      "remaining": []
     },
     {
       "id": "AC29",
       "title": "Protocol conformance",
-      "status": "partial",
+      "status": "passed",
       "evidence_class": "engine",
-      "evidence": ["tests/integration/test_protocol.py", "tests/integration/test_service_host.py"],
-      "remaining": ["Exercise malformed JSON and oversized frames", "Race deduplicated mutations", "Qualify a slow client and cursor continuity"]
+      "evidence": ["tests/integration/test_protocol.py::test_invalid_major_is_structured", "tests/integration/test_protocol.py::test_malformed_and_oversized_frames_are_rejected_without_dispatch", "tests/integration/test_protocol.py::test_event_replay_is_frame_bounded_and_rejects_oversized_events", "tests/integration/test_protocol.py::test_two_protocol_clients_race_the_same_mutation_once", "tests/integration/test_service_host.py::test_slow_client_is_disconnected_and_replays_from_last_sequence"],
+      "remaining": []
     },
     {
       "id": "AC30",

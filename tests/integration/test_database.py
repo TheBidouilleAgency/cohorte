@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 
 import pytest
@@ -168,3 +169,52 @@ def test_expired_task_lease_requeues_task(database: Database) -> None:
     assert database.task_records("expired-run")[0]["status"] == "queued"
     assert database.connection.execute("SELECT status FROM attempts").fetchone()[0] == "abandoned"
     assert database.connection.execute("SELECT COUNT(*) FROM leases").fetchone()[0] == 0
+
+
+def test_run_export_is_complete_bounded_and_redacted_at_rest(database: Database) -> None:
+    secret = "sk-fake-database-secret"
+    database.register_project("project", "/tmp/project", "profile")
+    now = datetime.now(UTC)
+    database.create_run(
+        RunState(
+            id="export-run",
+            project_id="project",
+            feature_id="feature",
+            stage=Stage.BUILD,
+            status=RunStatus.RUNNING,
+            state_version=1,
+            base_commit="a" * 40,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    database.append_event(
+        "agent.output",
+        {"OPENAI_API_KEY": secret, "message": f"token={secret}"},
+        run_id="export-run",
+    )
+    database.create_request("export-run", "approval", {"client_secret": secret}, "b" * 64)
+
+    stored_events = "".join(
+        str(row[0]) for row in database.connection.execute("SELECT data_json FROM events")
+    )
+    stored_requests = "".join(
+        str(row[0]) for row in database.connection.execute("SELECT payload_json FROM requests")
+    )
+    exported = database.export_run("export-run")
+    encoded = json.dumps(exported)
+
+    assert secret not in stored_events
+    assert secret not in stored_requests
+    assert secret not in encoded
+    assert "[REDACTED]" in encoded
+    assert exported["run"]["state"]["id"] == "export-run"
+    assert "state_json" not in exported["run"]
+    assert exported["events"]
+    assert exported["requests"]
+
+    database.append_event("large.output", {"output": "x" * 2048}, run_id="export-run")
+    with pytest.raises(CohorteError) as caught:
+        database.export_run("export-run", max_bytes=1024)
+    assert caught.value.code == ErrorCode.OUTPUT_INVALID
+    assert database.get_run("export-run").status == RunStatus.RUNNING

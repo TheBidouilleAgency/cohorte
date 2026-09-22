@@ -14,6 +14,7 @@ from cohorte.application.metrics import metrics_report
 from cohorte.application.service import CohorteService, git_head
 from cohorte.domain.errors import CohorteError, ErrorCode
 from cohorte.domain.models import EventType, Stage, WorkflowEvent
+from cohorte.domain.redaction import redact, redact_text
 from cohorte.protocol.models import InitializeParams, RespondParams, RpcRequest
 
 MAX_FRAME_BYTES = 1024 * 1024
@@ -52,7 +53,7 @@ class RpcServer:
                     "message": "Invalid params",
                     "data": {
                         "code": "PROTOCOL_INVALID",
-                        "message": str(error),
+                        "message": redact_text(str(error)),
                         "impact": "request was not applied",
                         "retryable": False,
                         "remediation": "send a valid cohorte/1 JSON-RPC request",
@@ -81,7 +82,7 @@ class RpcServer:
                     },
                 },
             }
-        return (json.dumps(response, separators=(",", ":")) + "\n").encode()
+        return (json.dumps(redact(response), separators=(",", ":")) + "\n").encode()
 
     def dispatch(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         if method == "initialize":
@@ -129,6 +130,7 @@ class RpcServer:
             "runs.start": self._runs_start,
             "runs.get": self._runs_get,
             "runs.list": self._runs_list,
+            "runs.export": self._runs_export,
             "runs.pause": lambda p: self._transition(p, EventType.PAUSE),
             "runs.resume": lambda p: self._transition(p, EventType.RESUME),
             "runs.cancel": lambda p: self._transition(p, EventType.CANCEL),
@@ -224,6 +226,12 @@ class RpcServer:
         items = self.service.database.list_runs(params.get("project_id"))
         return {"items": [item.model_dump(mode="json") for item in items], "cursor": None}
 
+    def _runs_export(self, params: dict[str, Any]) -> dict[str, Any]:
+        max_bytes = int(params.get("max_bytes", 512 * 1024))
+        if max_bytes > 768 * 1024:
+            raise ValueError("protocol run export limit cannot exceed 768 KiB")
+        return self.service.export_run(str(params["run_id"]), max_bytes)
+
     def _transition(self, params: dict[str, Any], event_type: EventType) -> dict[str, Any]:
         def operation() -> dict[str, Any]:
             current = self.service.database.get_run(str(params["run_id"]))
@@ -247,11 +255,19 @@ class RpcServer:
         return self._dedupe(params, operation)
 
     def _events(self, params: dict[str, Any]) -> dict[str, Any]:
-        items = self.service.database.events_after(
+        candidates = self.service.database.events_after(
             int(params.get("after_seq", 0)),
             params.get("run_id"),
             project_id=params.get("project_id"),
         )
+        items: list[dict[str, Any]] = []
+        encoded_bytes = 0
+        for event in candidates:
+            event_bytes = len(json.dumps(event, separators=(",", ":")).encode())
+            if items and encoded_bytes + event_bytes > 512 * 1024:
+                break
+            items.append(event)
+            encoded_bytes += event_bytes
         watermark = items[-1]["seq"] if items else int(params.get("after_seq", 0))
         return {
             "subscription_id": f"{self.connection_id}:events",

@@ -236,6 +236,7 @@ class FleetRunner:
                         details={"feature_id": feature_id, "error": str(error)},
                     ) from error
                 checks = self._checks_for_spec(candidate.root, profile, specs_by_id[feature_id])
+                VerticalRunner._require_check_environment(checks)
                 failed_check_ids = [check.check_id for check in checks if check.status != "passed"]
                 if failed_check_ids:
                     raise CohorteError(
@@ -270,6 +271,7 @@ class FleetRunner:
         fix_cycles = 0
         while True:
             checks = self._all_checks(candidate.root, profile, specs)
+            VerticalRunner._require_check_environment(checks)
             review = self._review(candidate, profile, specs, plan.base_commit)
             blocking = VerticalRunner._blocking_findings(profile, review)
             required_surfaces = {surface for spec in specs for surface in spec.surfaces}
