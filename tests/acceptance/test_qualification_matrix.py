@@ -12,8 +12,9 @@ def test_ac01_ac30_matrix_is_complete_honest_and_linked() -> None:
 
     assert [item["id"] for item in criteria] == [f"AC{index:02d}" for index in range(1, 31)]
     counts = Counter(item["status"] for item in criteria)
-    assert dict(counts) == matrix["summary"]
-    assert set(counts) == {"passed", "partial", "blocked", "deferred", "not_started"}
+    statuses = {"passed", "partial", "blocked", "deferred", "not_started"}
+    assert {status: counts.get(status, 0) for status in statuses} == matrix["summary"]
+    assert set(counts) <= statuses
 
     for item in criteria:
         if item["status"] == "passed":

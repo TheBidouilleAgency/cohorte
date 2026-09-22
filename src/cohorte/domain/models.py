@@ -309,6 +309,8 @@ class FeatureSpec(StrictModel):
     scenarios: list[Scenario] = Field(min_length=1)
     acceptance: list[Criterion] = Field(min_length=1)
     dod: DefinitionOfDone
+    test_strategy: list[str] = Field(default_factory=list)
+    error_cases: list[str] = Field(default_factory=list)
     contract_refs: list[ArtifactRef]
     dependencies: list[str]
     migrations: RequirementPlan
@@ -317,8 +319,18 @@ class FeatureSpec(StrictModel):
     rbac_requirements: list[str]
     open_questions: list[str]
 
+    @model_validator(mode="after")
+    def identifiers_are_unique(self) -> FeatureSpec:
+        scenario_ids = [scenario.id for scenario in self.scenarios]
+        criterion_ids = [criterion.id for criterion in self.acceptance]
+        if len(scenario_ids) != len(set(scenario_ids)):
+            raise ValueError("scenario ids must be unique")
+        if len(criterion_ids) != len(set(criterion_ids)):
+            raise ValueError("criterion ids must be unique")
+        return self
+
     def freezeable(self) -> bool:
-        return not self.open_questions
+        return not self.open_questions and bool(self.test_strategy) and bool(self.error_cases)
 
 
 class Task(StrictModel):

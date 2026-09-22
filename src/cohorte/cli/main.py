@@ -95,6 +95,27 @@ def _parser() -> argparse.ArgumentParser:
     intake_source.add_argument("--file", type=Path)
     intake_source.add_argument("--url")
     intake.add_argument("--title")
+    brainstorm = sub.add_parser("brainstorm")
+    brainstorm.add_argument("project_id")
+    brainstorm.add_argument("--feature-id", required=True)
+    brainstorm.add_argument("--idea", required=True)
+    brainstorm.add_argument("--context", default="")
+    brainstorm.add_argument("--answer", action="append", required=True)
+    brainstorm.add_argument("--prior-decision", action="append", default=[])
+    brainstorm.add_argument("--perspective", action="append")
+    brainstorm.add_argument("--repo", type=Path, default=Path.cwd())
+    brainstorm.add_argument("--output", type=Path)
+    brainstorm.add_argument("--live", action="store_true", required=True)
+    freeze_request = sub.add_parser("spec-freeze-request")
+    freeze_request.add_argument("draft", type=Path)
+    freeze_request.add_argument("--profile", type=Path, required=True)
+    freeze_request.add_argument("--repo", type=Path, default=Path.cwd())
+    freeze = sub.add_parser("spec-freeze")
+    freeze.add_argument("draft", type=Path)
+    freeze.add_argument("--profile", type=Path, required=True)
+    freeze.add_argument("--repo", type=Path, default=Path.cwd())
+    freeze.add_argument("--decision-id", required=True)
+    freeze.add_argument("--output", type=Path, required=True)
     patch_spec = sub.add_parser("patch-spec")
     patch_spec.add_argument("--source-artifact-id", required=True)
     patch_spec.add_argument("--source-revision", type=int, required=True)
@@ -292,6 +313,13 @@ def _schemas(output: Path) -> dict[str, Any]:
     from cohorte.application.metrics import MetricsReport
     from cohorte.application.migration import MigrationResult, V2MigrationPlan
     from cohorte.application.patch import PatchSpec
+    from cohorte.application.preparation import (
+        BrainstormBrief,
+        BrainstormContribution,
+        BrainstormSynthesis,
+        FrozenSpecResult,
+        SpecFreezePreparation,
+    )
     from cohorte.domain.models import FeatureSpec, ProjectProfile, RunState, TaskPlan
     from cohorte.protocol.models import EventEnvelope, RpcRequest
 
@@ -318,6 +346,11 @@ def _schemas(output: Path) -> dict[str, Any]:
         MetricsReport,
         V2MigrationPlan,
         MigrationResult,
+        BrainstormContribution,
+        BrainstormSynthesis,
+        BrainstormBrief,
+        SpecFreezePreparation,
+        FrozenSpecResult,
     ]
     for model in models:
         path = output / f"{model.__name__}.schema.json"
@@ -446,6 +479,78 @@ def run(argv: list[str] | None = None) -> int:
                     source_type=source_type,
                     locator=locator,
                 ),
+                args.json,
+            )
+        elif args.command == "brainstorm":
+            from cohorte.application.preparation import BrainstormRunner, canonical_model_bytes
+
+            project = database.get_project(args.project_id)
+            repository = args.repo.resolve(strict=True)
+            if Path(project["root_path"]).resolve() != repository:
+                raise ValueError("brainstorm repository does not match the registered project")
+            brief = BrainstormRunner(CodexAdapter(repository)).run(
+                repository,
+                args.feature_id,
+                args.idea,
+                args.context,
+                args.answer,
+                args.prior_decision,
+                args.perspective,
+            )
+            brief_ref = database.put_artifact(
+                "brainstorm-brief",
+                canonical_model_bytes(brief),
+                artifact_id=f"brief:{args.feature_id}",
+            )
+            database.ensure_feature(args.feature_id, args.project_id, args.idea[:200])
+            payload = {"brief": brief.model_dump(mode="json"), "brief_ref": brief_ref}
+            if args.output is not None:
+                args.output.parent.mkdir(parents=True, exist_ok=True)
+                temporary = args.output.with_name(f".{args.output.name}.cohorte.tmp")
+                temporary.write_bytes(canonical_model_bytes(brief))
+                temporary.replace(args.output)
+                payload["output"] = str(args.output)
+            _emit(payload, args.json)
+        elif args.command == "spec-freeze-request":
+            from cohorte.application.preparation import SpecFreezer
+            from cohorte.domain.models import FeatureSpec, ProjectProfile
+
+            draft = FeatureSpec.model_validate_json(args.draft.read_text())
+            profile = ProjectProfile.model_validate_json(args.profile.read_text())
+            base_commit = GitRepository(args.repo.resolve(strict=True)).head
+            prepared = SpecFreezer(database).prepare(draft, profile, base_commit)
+            _emit(prepared.model_dump(mode="json"), args.json)
+        elif args.command == "spec-freeze":
+            from cohorte.application.preparation import SpecFreezer, canonical_model_bytes
+            from cohorte.domain.models import FeatureSpec, ProjectProfile
+
+            draft = FeatureSpec.model_validate_json(args.draft.read_text())
+            profile = ProjectProfile.model_validate_json(args.profile.read_text())
+            repository = args.repo.resolve(strict=True)
+            frozen_result = SpecFreezer(database).freeze(
+                draft,
+                profile,
+                GitRepository(repository).head,
+                args.decision_id,
+            )
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            temporary = args.output.with_name(f".{args.output.name}.cohorte.tmp")
+            temporary.write_bytes(canonical_model_bytes(frozen_result.spec))
+            temporary.replace(args.output)
+            profile_ref = database.put_artifact("project-profile", canonical_model_bytes(profile))
+            database.ensure_project(
+                profile.project_id,
+                str(repository),
+                profile_ref["id"],
+            )
+            database.ensure_feature(
+                frozen_result.spec.feature_id,
+                profile.project_id,
+                frozen_result.spec.title,
+            )
+            database.set_feature_status(frozen_result.spec.feature_id, "frozen")
+            _emit(
+                {**frozen_result.model_dump(mode="json"), "output": str(args.output)},
                 args.json,
             )
         elif args.command == "patch-spec":

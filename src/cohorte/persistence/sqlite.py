@@ -345,6 +345,15 @@ class Database:
             return
         self.create_feature(feature_id, project_id, title, kind)
 
+    def set_feature_status(self, feature_id: str, status: str) -> None:
+        with self.transaction() as tx:
+            updated = tx.execute(
+                "UPDATE features SET status=?,updated_at=? WHERE id=?",
+                (status, utc_now(), feature_id),
+            ).rowcount
+        if updated != 1:
+            raise KeyError(feature_id)
+
     def list_projects(self) -> list[dict[str, Any]]:
         rows = self.connection.execute(
             "SELECT id,root_path,profile_artifact_id,created_at,updated_at "

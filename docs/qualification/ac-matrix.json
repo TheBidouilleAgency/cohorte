@@ -10,11 +10,11 @@
     "not_started": "No sufficient executable qualification exists yet."
   },
   "summary": {
-    "passed": 21,
-    "partial": 6,
+    "passed": 23,
+    "partial": 5,
     "blocked": 1,
     "deferred": 1,
-    "not_started": 1
+    "not_started": 0
   },
   "criteria": [
     {
@@ -60,18 +60,18 @@
     {
       "id": "AC06",
       "title": "Live brainstorm",
-      "status": "not_started",
-      "evidence_class": "none",
-      "evidence": [],
-      "remaining": ["Implement three distinct brainstorm sessions", "Persist contributions, divergence, and the user answer"]
+      "status": "passed",
+      "evidence_class": "live",
+      "evidence": ["docs/evidence/g5-codex-brainstorm-darwin-arm64.json", "tests/integration/test_preparation.py::test_brainstorm_uses_distinct_sessions_and_persists_divergence_and_user_answer", "tests/unit/test_codex_adapter.py::test_brainstorm_turn_exposes_native_session_and_uses_read_only_sandbox"],
+      "remaining": []
     },
     {
       "id": "AC07",
       "title": "Specification",
-      "status": "partial",
+      "status": "passed",
       "evidence_class": "engine",
-      "evidence": ["tests/unit/test_models.py::test_automatic_criterion_requires_check", "tests/unit/test_models.py::test_reducer_requires_evidence"],
-      "remaining": ["Implement draft completion and freeze workflow", "Bind freeze validation to the complete spec hash"]
+      "evidence": ["tests/integration/test_preparation.py::test_spec_freeze_refuses_incomplete_or_stale_draft_and_binds_exact_hash", "tests/integration/test_preparation.py::test_spec_freeze_cli_persists_frozen_feature_after_exact_approval", "tests/unit/test_models.py::test_automatic_criterion_requires_check", "tests/unit/test_models.py::test_reducer_requires_evidence"],
+      "remaining": []
     },
     {
       "id": "AC08",

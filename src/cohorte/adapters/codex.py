@@ -12,11 +12,17 @@ import time
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal, TypeVar, cast
 from uuid import uuid4
 
 from openai_codex import ApprovalMode, Codex, CodexConfig, Sandbox, is_retryable_error
 
+from cohorte.application.preparation import (
+    BrainstormContribution,
+    BrainstormPerspectiveTurn,
+    BrainstormSynthesis,
+    BrainstormSynthesisTurn,
+)
 from cohorte.application.vertical import AgentReport, AgentReview
 from cohorte.domain.auth import (
     AccountStatus,
@@ -29,8 +35,10 @@ from cohorte.domain.auth import (
     require_subscription,
 )
 from cohorte.domain.errors import CohorteError, ErrorCode
+from cohorte.domain.models import StrictModel
 
 _HARD_KILL_SIGNAL = int(getattr(signal, "SIGKILL", signal.SIGTERM))
+StructuredOutput = TypeVar("StructuredOutput", bound=StrictModel)
 
 
 def _capability(support: str, version: str | None = None, *limitations: str) -> Capability:
@@ -193,12 +201,22 @@ class CodexAdapter:
         self,
         workspace: Path,
         prompt: str,
-        output: type[AgentReport] | type[AgentReview],
+        output: type[StructuredOutput],
         sandbox: Sandbox,
-    ) -> AgentReport | AgentReview:
+    ) -> StructuredOutput:
+        value, _ = self._structured_turn_with_session(workspace, prompt, output, sandbox)
+        return value
+
+    def _structured_turn_with_session(
+        self,
+        workspace: Path,
+        prompt: str,
+        output: type[StructuredOutput],
+        sandbox: Sandbox,
+    ) -> tuple[StructuredOutput, str]:
         self._require_subscription()
 
-        def attempt() -> Any:
+        def attempt() -> tuple[Any, str]:
             with Codex(self._config()) as codex:
                 thread = codex.thread_start(
                     cwd=str(workspace.resolve(strict=True)),
@@ -207,17 +225,18 @@ class CodexAdapter:
                     approval_mode=ApprovalMode.deny_all,
                     service_name="cohorte-g1",
                 )
-                return thread.run(
+                result = thread.run(
                     prompt,
                     output_schema=strict_output_schema(output.model_json_schema()),
                     sandbox=sandbox,
                     approval_mode=ApprovalMode.deny_all,
                 )
+                return result, thread.id
 
-        result = bounded_provider_call(attempt)
+        result, session_ref = bounded_provider_call(attempt)
         raw = result.final_response or ""
         try:
-            return output.model_validate_json(raw)
+            return output.model_validate_json(raw), session_ref
         except (json.JSONDecodeError, ValueError) as error:
             raise CohorteError(
                 ErrorCode.OUTPUT_INVALID,
@@ -231,22 +250,33 @@ class CodexAdapter:
                 },
             ) from error
 
-    def build(self, workspace: Path, prompt: str) -> AgentReport:
-        return cast(
-            AgentReport,
-            self._structured_turn(workspace, prompt, AgentReport, Sandbox.workspace_write),
+    def brainstorm_perspective(
+        self, workspace: Path, prompt: str, perspective: str
+    ) -> BrainstormPerspectiveTurn:
+        contribution, session_ref = self._structured_turn_with_session(
+            workspace, prompt, BrainstormContribution, Sandbox.read_only
         )
+        return BrainstormPerspectiveTurn(
+            session_ref=session_ref,
+            contribution=contribution.model_copy(
+                update={"contribution_id": perspective, "perspective": perspective}
+            ),
+        )
+
+    def brainstorm_synthesis(self, workspace: Path, prompt: str) -> BrainstormSynthesisTurn:
+        synthesis, session_ref = self._structured_turn_with_session(
+            workspace, prompt, BrainstormSynthesis, Sandbox.read_only
+        )
+        return BrainstormSynthesisTurn(session_ref=session_ref, synthesis=synthesis)
+
+    def build(self, workspace: Path, prompt: str) -> AgentReport:
+        return self._structured_turn(workspace, prompt, AgentReport, Sandbox.workspace_write)
 
     def review(self, workspace: Path, prompt: str) -> AgentReview:
-        return cast(
-            AgentReview, self._structured_turn(workspace, prompt, AgentReview, Sandbox.read_only)
-        )
+        return self._structured_turn(workspace, prompt, AgentReview, Sandbox.read_only)
 
     def fix(self, workspace: Path, prompt: str) -> AgentReport:
-        return cast(
-            AgentReport,
-            self._structured_turn(workspace, prompt, AgentReport, Sandbox.workspace_write),
-        )
+        return self._structured_turn(workspace, prompt, AgentReport, Sandbox.workspace_write)
 
     def verify_live(self) -> dict[str, Any]:
         status = self._require_subscription()

@@ -8,11 +8,11 @@ Current baseline:
 
 | Status | Count |
 | --- | ---: |
-| Passed | 21 |
-| Partial | 6 |
+| Passed | 23 |
+| Partial | 5 |
 | Blocked | 1 |
 | Deferred | 1 |
-| Not started | 1 |
+| Not started | 0 |
 
 François is explicitly deferred. Claude account qualification blocks AC02 and keeps AC03 partial.
 AC27 is qualified with bounded, redacted check logs and atomic CLI/RPC run exports. AC28 now
@@ -23,3 +23,7 @@ reconnection without cursor gaps. AC04, AC11, AC16, and AC17 now cover provider 
 bounded overload retry, reviewer death, hard controller crashes, active-wave pause, descendant
 interruption, and uncertain termination. AC30 remains partial because the live permission probe
 emitted no command or auto-review event; model text is not treated as proof.
+AC06 now has live evidence from three independent Codex perspective sessions plus a separate
+synthesis session in a synthetic read-only repository; contributions, disagreements and the user
+answer are content-addressed in SQLite. AC07 validates completeness and references, derives the
+covered task plan, and requires a user approval bound to the exact final frozen-spec hash.

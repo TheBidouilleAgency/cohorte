@@ -20,6 +20,25 @@ uv run cohorte --json status
 uv run pytest
 ```
 
+Prepare a feature with independent product, architecture and QA sessions, then approve the exact
+completed spec before freezing it:
+
+```bash
+cohorte --json --data-dir /path/to/data brainstorm PROJECT_ID \
+  --feature-id safe-export --idea "Add a safe run export" \
+  --answer "Keep data local and require atomic output" \
+  --repo /path/to/project --output brief.json --live
+cohorte --json --data-dir /path/to/data spec-freeze-request draft.json \
+  --profile project.json --repo /path/to/project
+cohorte --json --data-dir /path/to/data approve REQUEST_ID
+cohorte --json --data-dir /path/to/data spec-freeze draft.json \
+  --profile project.json --repo /path/to/project \
+  --decision-id DECISION_ID --output frozen.json
+```
+
+The brainstorm keeps each native session reference, contribution and disagreement. Freeze rejects
+incomplete drafts and approvals for a different spec hash, profile, reference set or generated plan.
+
 Run the disposable Codex vertical with the included frozen example:
 
 ```bash

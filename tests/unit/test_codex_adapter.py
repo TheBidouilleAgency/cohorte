@@ -102,6 +102,32 @@ def test_review_parses_strict_json_enum(codex_class: Mock, _inspect: Mock, tmp_p
 
 @patch("cohorte.adapters.codex.inspect_codex_account", side_effect=subscription_status)
 @patch("cohorte.adapters.codex.Codex")
+def test_brainstorm_turn_exposes_native_session_and_uses_read_only_sandbox(
+    codex_class: Mock, _inspect: Mock, tmp_path
+) -> None:
+    client = codex_class.return_value.__enter__.return_value
+    thread = client.thread_start.return_value
+    thread.id = "native-session-product"
+    thread.run.return_value = SimpleNamespace(
+        final_response=(
+            '{"contribution_id":"model-value","perspective":"model-value",'
+            '"problem":"Problem","assumptions":[],"alternatives":[],"risks":[],'
+            '"questions":[],"disagreements":["Keep the objection"]}'
+        ),
+        status=SimpleNamespace(value="completed"),
+    )
+
+    turn = CodexAdapter(tmp_path).brainstorm_perspective(tmp_path, "facts", "product")
+
+    assert turn.session_ref == "native-session-product"
+    assert turn.contribution.perspective == "product"
+    assert turn.contribution.disagreements == ["Keep the objection"]
+    assert client.thread_start.call_args.kwargs["ephemeral"] is True
+    assert client.thread_start.call_args.kwargs["sandbox"].value == "read-only"
+
+
+@patch("cohorte.adapters.codex.inspect_codex_account", side_effect=subscription_status)
+@patch("cohorte.adapters.codex.Codex")
 def test_live_probe_is_read_only_ephemeral_and_deny_all(
     codex_class: Mock, _inspect: Mock, tmp_path
 ) -> None:

@@ -112,6 +112,16 @@ pre-release foundation, not a V2-parity or provider-support claim.
   green in the Python 3.12/3.13 GitHub-hosted Windows CI matrix. This validates the runtime
   lifecycle, while release support still requires real-host and load-level qualification.
 - Passive Claude executable inspection which never claims provider support.
+- Live brainstorm preparation: product, architecture and QA run in distinct ephemeral read-only
+  Codex sessions over one factual bundle, followed by a separately identified synthesis session.
+  The brief retains contribution references, divergences, strong objections and user answers in a
+  content-addressed SQLite artifact; only user answers become decisions. Invalid contribution
+  references receive at most two bounded correction attempts.
+- Complete spec freeze workflow: draft schema and semantic completeness, surface/check/reference
+  resolution and task-plan coverage are verified before an approval request is created. The user
+  decision targets the canonical hash of the exact final `frozen` document and current profile;
+  any later draft, profile, reference or plan change refuses the freeze. The CLI writes the approved
+  document atomically and advances the durable feature status to `frozen`.
 - Machine-checked AC01–AC30 qualification ledger with explicit passed, partial, blocked, deferred
   and not-started states. The first tranche adds a clean wheel-install verifier, multi-stack
   discovery coverage and an out-of-scope ownership rejection regression.
@@ -122,8 +132,8 @@ pre-release foundation, not a V2-parity or provider-support claim.
   an account. Permission retry remains unqualified because the runtime emitted no command-level
   denial events during the live negative probe.
 - GitLab live delivery evidence and a persistent background controller remain open.
-- Full brainstorm/spec UX and external Figma/Serena/Graphify validation. Manual Patch reproduction
-  remains blocked until candidate-bound human evidence is implemented.
+- External Figma/Serena/Graphify validation remains open. Manual Patch reproduction remains blocked
+  until candidate-bound human evidence is implemented.
 - Windows real-host and load-level slow-client qualification, and the François UI client.
 - Multi-platform packaging and the AC01–AC30 qualification matrix.
 
