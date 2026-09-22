@@ -51,6 +51,7 @@ def test_kanban_projection_is_idempotent_backed_up_and_bounded(
     first = apply_projection(config, plan_projection(config, card))
     assert first.status == "applied"
     assert first.backup_path is not None
+    assert "·" in board.read_text(encoding="utf-8")
     assert board.read_text().count("cohorte:feature:feature-one") == 2
     assert untouched.read_text() == "do not scan or change"
     second = apply_projection(config, plan_projection(config, card))

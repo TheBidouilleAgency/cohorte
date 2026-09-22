@@ -95,12 +95,13 @@ def _safe_file(root: Path, relative: str) -> Path:
 
 def _inspect_yaml(content: bytes, relative: str) -> tuple[bool, list[str]]:
     suffix = Path(relative).suffix
-    yaml_content = content
-    if suffix in {".md", ".markdown"} and content.startswith(b"---\n"):
-        end = content.find(b"\n---\n", 4)
+    normalized = content.replace(b"\r\n", b"\n")
+    yaml_content = normalized
+    if suffix in {".md", ".markdown"} and normalized.startswith(b"---\n"):
+        end = normalized.find(b"\n---\n", 4)
         if end < 0:
             return False, [f"{relative} has unterminated YAML frontmatter; imported as text"]
-        yaml_content = content[4:end]
+        yaml_content = normalized[4:end]
     elif suffix not in {".yaml", ".yml"}:
         return False, []
     parsed = yaml.safe_load(yaml_content)

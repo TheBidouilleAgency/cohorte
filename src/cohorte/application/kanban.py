@@ -144,7 +144,7 @@ def apply_projection(config: KanbanConfig, plan: KanbanProjectionPlan) -> Kanban
     backup = backup_root / f"{hashlib.sha256(str(board).encode()).hexdigest()[:12]}-{timestamp}.md"
     shutil.copy2(board, backup)
     temporary = board.with_name(f".{board.name}.cohorte-{os.getpid()}.tmp")
-    temporary.write_text(plan.content)
+    temporary.write_text(plan.content, encoding="utf-8", newline="\n")
     os.replace(temporary, board)
     return KanbanProjectionResult(
         status="applied",

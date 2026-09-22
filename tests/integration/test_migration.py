@@ -67,8 +67,8 @@ def test_v2_plan_refuses_symlinks_even_when_they_point_inside_source(tmp_path: P
 def test_v2_plan_excludes_secret_keys_in_markdown_frontmatter(tmp_path: Path) -> None:
     source = tmp_path / "v2"
     (source / "specs").mkdir(parents=True)
-    (source / "specs" / "unsafe.md").write_text(
-        "---\napi_key: never-import\n---\n# Historical spec\n"
+    (source / "specs" / "unsafe.md").write_bytes(
+        b"---\r\napi_key: never-import\r\n---\r\n# Historical spec\r\n"
     )
 
     plan = plan_v2_migration(source)
