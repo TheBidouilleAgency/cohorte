@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "baseImage": "node:24-alpine",
+  "nodeHeapMb": 384,
+  "copyPaths": ["src", "contract", "package.json", "tsconfig.json", "vite.config.ts", "eslint.config.js"],
+  "config": {
+    "model": "gpt-6-astra",
+    "codex": "codex",
+    "docker": "docker",
+    "image": "prepared",
+    "checks": [
+      [
+        "vitest",
+        "run",
+        "src/features/notifications/notifications.test.ts",
+        "--maxWorkers=1",
+        "--minWorkers=1",
+        "--no-file-parallelism",
+        "--cache=false"
+      ],
+      ["tsc", "--noEmit"],
+      ["eslint", "src/features/notifications/notifications.ts", "src/features/notifications/notifications.test.ts"]
+    ],
+    "writablePaths": [
+      "src/features/notifications/notifications.ts",
+      "src/features/notifications/notifications.test.ts"
+    ],
+    "maxRounds": 2,
+    "timeoutMs": 600000
+  }
+}

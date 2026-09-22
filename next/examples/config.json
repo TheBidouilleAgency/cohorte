@@ -1,0 +1,10 @@
+{
+  "model": "gpt-6-astra",
+  "codex": "codex",
+  "docker": "docker",
+  "image": "node:24-alpine",
+  "checks": [["node", "--test"]],
+  "writablePaths": ["src", "test"],
+  "maxRounds": 2,
+  "timeoutMs": 180000
+}
