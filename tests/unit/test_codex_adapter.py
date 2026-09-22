@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import signal
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -258,8 +259,9 @@ def test_killed_reviewer_never_returns_accepted_review(
     result = CodexAdapter(tmp_path, {"PATH": "/bin"}).verify_reviewer_death()
 
     assert result["review_accepted"] is False
-    assert result["process_signal"] == "SIGKILL"
-    kill.assert_called_once_with(4321, 9)
+    expected_signal = int(getattr(signal, "SIGKILL", signal.SIGTERM))
+    assert result["process_signal"] == signal.Signals(expected_signal).name
+    kill.assert_called_once_with(4321, expected_signal)
 
 
 @patch("cohorte.adapters.codex.inspect_codex_account", side_effect=subscription_status)
