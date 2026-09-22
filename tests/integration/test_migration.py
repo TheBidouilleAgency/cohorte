@@ -169,6 +169,7 @@ def test_older_binary_refuses_future_schema(tmp_path: Path) -> None:
     with pytest.raises(CohorteError) as caught:
         Database(path)
     assert caught.value.code == ErrorCode.RUNTIME_INCOMPATIBLE
+    path.unlink()
 
 
 def test_plan_schema_round_trip(tmp_path: Path) -> None:

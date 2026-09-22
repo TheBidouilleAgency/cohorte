@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+from contextlib import closing
 from pathlib import Path
 
 OLD_COMMIT = "ccb23fb6726287bb60056566c8c14ab28cb9727e"
@@ -42,7 +43,7 @@ def cli(command: Path, config: Path, data: Path, *args: str) -> dict[str, object
 
 
 def snapshot(path: Path) -> dict[str, object]:
-    with sqlite3.connect(path) as db:
+    with closing(sqlite3.connect(path, isolation_level=None)) as db:
         integrity = db.execute("PRAGMA integrity_check").fetchone()[0]
         if integrity != "ok":
             raise RuntimeError(f"database integrity failed: {integrity}")
@@ -119,7 +120,7 @@ def main() -> None:
         future = root / "future-data"
         future.mkdir()
         future_db = future / "cohorte.sqlite3"
-        with sqlite3.connect(future_db) as db:
+        with closing(sqlite3.connect(future_db, isolation_level=None)) as db:
             db.execute("PRAGMA user_version=999")
         future_hash = hashlib.sha256(future_db.read_bytes()).hexdigest()
         old_response = run(
@@ -153,7 +154,7 @@ def main() -> None:
         legacy_data = root / "legacy-data"
         legacy_data.mkdir()
         legacy_db = legacy_data / "cohorte.sqlite3"
-        with sqlite3.connect(legacy_db) as db:
+        with closing(sqlite3.connect(legacy_db, isolation_level=None)) as db:
             db.executescript(
                 "CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);"
                 "INSERT INTO schema_migrations VALUES(1, '2026-09-21T00:00:00+00:00');"
@@ -164,13 +165,13 @@ def main() -> None:
         migrated = cli(command, config, legacy_data, "doctor")
         if migrated["database"]["schema_version"] != 2:
             raise RuntimeError("installed wheel did not migrate schema 1 to 2")
-        with sqlite3.connect(legacy_db) as db:
+        with closing(sqlite3.connect(legacy_db, isolation_level=None)) as db:
             if db.execute("SELECT value FROM sentinel").fetchone()[0] != "preserved":
                 raise RuntimeError("schema upgrade lost legacy user data")
         backups = list(legacy_data.glob("cohorte.sqlite3.pre-v2-*.bak"))
         if len(backups) != 1:
             raise RuntimeError("schema migration did not create exactly one backup")
-        with sqlite3.connect(backups[0]) as db:
+        with closing(sqlite3.connect(backups[0], isolation_level=None)) as db:
             if db.execute("PRAGMA user_version").fetchone()[0] != 1:
                 raise RuntimeError("pre-migration backup has the wrong schema")
             if db.execute("SELECT value FROM sentinel").fetchone()[0] != "preserved":
