@@ -14,8 +14,9 @@ Current baseline:
 | Deferred | 1 |
 | Not started | 0 |
 
-François is explicitly deferred. The Claude SDK adapter now has offline tests, while Claude account
-and runtime qualification still blocks AC02 and keeps AC03 partial.
+François is explicitly deferred. The Claude SDK adapter has offline tests, but the live SDK probe
+reported that the organization disabled Claude subscription access. Passive auth status reported a
+connected subscription; it did not make an SDK turn possible. AC02 remains blocked and AC03 partial.
 AC27 is qualified with bounded, redacted check logs and atomic CLI/RPC run exports. AC28 now
 classifies missing dependencies, unavailable container runtimes, network outages, and full disks as
 retryable environment failures while preserving durable state. AC29 now covers protocol versions,

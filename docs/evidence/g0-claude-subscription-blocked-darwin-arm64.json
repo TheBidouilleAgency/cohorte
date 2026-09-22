@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "gate": "G0",
+  "provider": "claude",
+  "platform": {
+    "os": "Darwin",
+    "architecture": "arm64",
+    "version": "25.5.0"
+  },
+  "sdk": {
+    "package": "claude-agent-sdk",
+    "version": "0.2.157"
+  },
+  "runtime_version": "2.1.276 (Claude Code)",
+  "passive_status": {
+    "connection_state": "connected",
+    "effective_auth_mode": "subscription",
+    "billing_evidence": "runtime_reported",
+    "certified": false
+  },
+  "live_probe": {
+    "policy": "one turn, no tools, dontAsk, no project/user settings or MCP servers",
+    "result": "blocked",
+    "reason": "the organization disabled Claude subscription access for Claude Code",
+    "api_fallback_used": false
+  },
+  "recorded_at": "2026-09-22T22:54:10Z",
+  "contains_credentials": false,
+  "limitations": [
+    "The passive CLI status proves a configured account, not usable SDK subscription access.",
+    "No Claude smoke, read-only, mutation boundary, interruption, or resume capability is certified.",
+    "The account identity and organization were not recorded."
+  ]
+}

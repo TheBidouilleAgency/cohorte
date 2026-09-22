@@ -8,7 +8,11 @@ from unittest.mock import Mock, patch
 import claude_agent_sdk
 import pytest
 
-from cohorte.adapters.claude import ClaudeAdapter, inspect_claude_account
+from cohorte.adapters.claude import (
+    ClaudeAdapter,
+    inspect_claude_account,
+    raise_claude_result_error,
+)
 from cohorte.adapters.providers import workflow_runtime
 from cohorte.domain.auth import (
     BillingEvidence,
@@ -160,3 +164,14 @@ def test_profile_selects_claude_runtime(tmp_path) -> None:  # type: ignore[no-un
         agent_defaults=AgentDefaults(provider=Provider.CLAUDE),
     )
     assert isinstance(workflow_runtime(tmp_path, profile), ClaudeAdapter)
+
+
+def test_disabled_subscription_is_reported_without_api_fallback() -> None:
+    with pytest.raises(CohorteError) as raised:
+        raise_claude_result_error(
+            "Your organization has disabled Claude subscription access for Claude Code "
+            "· Use an Anthropic API key instead"
+        )
+    assert raised.value.code == ErrorCode.PROVIDER_UNAVAILABLE
+    assert "API key" not in raised.value.as_data()["message"]
+    assert "subscription" in raised.value.impact

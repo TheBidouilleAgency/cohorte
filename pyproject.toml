@@ -49,3 +49,7 @@ ignore = ["E501"]
 python_version = "3.12"
 strict = true
 packages = ["cohorte"]
+
+[[tool.mypy.overrides]]
+module = "cohorte.service.windows_pipe"
+disable_error_code = ["import-untyped"]

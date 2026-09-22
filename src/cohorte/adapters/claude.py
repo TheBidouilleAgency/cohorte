@@ -8,7 +8,7 @@ import subprocess
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any, NoReturn, TypeVar
 
 from cohorte.application.preparation import (
     BrainstormContribution,
@@ -69,6 +69,22 @@ def claude_capabilities(version: str | None) -> CapabilitySet:
         native_auth_status=supported,
         model_catalog=unknown,
         usage_reporting=unknown,
+    )
+
+
+def raise_claude_result_error(result: str | None) -> NoReturn:
+    if result and "organization has disabled claude subscription access" in result.lower():
+        raise CohorteError(
+            ErrorCode.PROVIDER_UNAVAILABLE,
+            "Claude subscription access is disabled for this organization",
+            "the phase cannot start through the subscription",
+            remediation="ask the organization admin to enable access or select an eligible Claude account",
+        )
+    raise CohorteError(
+        ErrorCode.OUTPUT_INVALID,
+        "Claude turn failed",
+        "the workflow phase was rejected",
+        remediation="inspect provider diagnostics and retry the phase",
     )
 
 
@@ -238,12 +254,7 @@ class ClaudeAdapter:
                 async for message in client.receive_response():
                     if isinstance(message, ResultMessage):
                         if message.is_error:
-                            raise CohorteError(
-                                ErrorCode.OUTPUT_INVALID,
-                                "Claude turn failed",
-                                "the workflow phase was rejected",
-                                remediation="inspect provider diagnostics and retry the phase",
-                            )
+                            raise_claude_result_error(message.result)
                         return (
                             message.structured_output
                             if message.structured_output is not None
@@ -327,10 +338,12 @@ class ClaudeAdapter:
                 await client.query("Reply with exactly G0_CLAUDE_OK. Do not use any tool.")
                 async for message in client.receive_response():
                     if isinstance(message, ResultMessage):
-                        return message.result if not message.is_error else None
+                        if message.is_error:
+                            raise_claude_result_error(message.result)
+                        return message.result
             return None
 
-        if asyncio.run(run()) != "G0_CLAUDE_OK":
+        if (asyncio.run(run()) or "").strip() != "G0_CLAUDE_OK":
             raise CohorteError(
                 ErrorCode.OUTPUT_INVALID,
                 "Claude live probe returned an unexpected response",

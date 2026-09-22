@@ -30,16 +30,16 @@
       "title": "Both provider logins",
       "status": "blocked",
       "evidence_class": "live",
-      "evidence": ["docs/evidence/g0-codex-darwin-arm64.json"],
-      "remaining": ["Qualify native Claude login with a real account", "Exercise both native login flows without copying credentials"]
+      "evidence": ["docs/evidence/g0-codex-darwin-arm64.json", "docs/evidence/g0-claude-subscription-blocked-darwin-arm64.json"],
+      "remaining": ["Enable Claude subscription access for the selected organization or connect an eligible account", "Exercise both native login flows without copying credentials"]
     },
     {
       "id": "AC03",
       "title": "Effective subscription routing",
       "status": "partial",
       "evidence_class": "mixed",
-      "evidence": ["docs/evidence/g0-codex-darwin-arm64.json", "tests/unit/test_codex_adapter.py::test_live_probe_refuses_api_mode"],
-      "remaining": ["Qualify the Claude subscription path"]
+      "evidence": ["docs/evidence/g0-codex-darwin-arm64.json", "docs/evidence/g0-claude-subscription-blocked-darwin-arm64.json", "tests/unit/test_codex_adapter.py::test_live_probe_refuses_api_mode", "tests/unit/test_claude_adapter.py::test_disabled_subscription_is_reported_without_api_fallback"],
+      "remaining": ["Qualify a successful Claude SDK subscription turn after organization access is enabled"]
     },
     {
       "id": "AC04",

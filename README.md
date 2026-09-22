@@ -13,6 +13,8 @@ capability-gated. A Claude Agent SDK adapter is available through the optional `
 and `agent_defaults.provider: claude`; its workflow path has offline tests but no live qualification.
 Passive `auth status claude` checks the native CLI without exposing credentials. An explicit
 `auth verify claude --live` probe is available after confirming the account to use.
+The current native account reports a subscription, but the live SDK probe is blocked by its
+organization policy; Claude remains unqualified until that policy or account changes.
 
 ```bash
 uv sync --all-extras
