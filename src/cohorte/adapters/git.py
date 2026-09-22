@@ -5,6 +5,19 @@ import os
 import subprocess
 from pathlib import Path
 
+_RUNTIME_DIRECTORIES = frozenset({"__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache"})
+_RUNTIME_FILES = frozenset({".coverage"})
+_RUNTIME_SUFFIXES = frozenset({".pyc", ".pyo"})
+
+
+def _is_runtime_artifact(path: str) -> bool:
+    candidate = Path(path)
+    return (
+        any(part in _RUNTIME_DIRECTORIES for part in candidate.parts)
+        or candidate.name in _RUNTIME_FILES
+        or candidate.suffix in _RUNTIME_SUFFIXES
+    )
+
 
 class GitRepository:
     def __init__(self, root: Path) -> None:
@@ -40,7 +53,8 @@ class GitRepository:
     def changed_files(self, base_commit: str) -> list[str]:
         tracked = self._run("diff", "--name-only", "--relative", base_commit, "--").splitlines()
         untracked = self._run("ls-files", "--others", "--exclude-standard", "-z").split("\0")
-        return sorted({path for path in [*tracked, *untracked] if path})
+        visible_untracked = [path for path in untracked if path and not _is_runtime_artifact(path)]
+        return sorted({path for path in [*tracked, *visible_untracked] if path})
 
     def diff(self, base_commit: str) -> str:
         return self._run("diff", "--binary", "--no-ext-diff", base_commit, "--")
@@ -104,12 +118,16 @@ class GitRepository:
     def snapshot_digest(self) -> str:
         digest = hashlib.sha256()
         for directory, names, files in os.walk(self.root):
-            names[:] = sorted(name for name in names if name != ".git")
+            names[:] = sorted(
+                name for name in names if name != ".git" and name not in _RUNTIME_DIRECTORIES
+            )
             for name in sorted(files):
                 path = Path(directory, name)
                 if ".git" in path.relative_to(self.root).parts:
                     continue
                 relative = path.relative_to(self.root).as_posix()
+                if _is_runtime_artifact(relative):
+                    continue
                 digest.update(relative.encode())
                 digest.update(b"\0")
                 digest.update(path.read_bytes())
