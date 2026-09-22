@@ -57,6 +57,9 @@ Installed a1→a2 wheel upgrade evidence is recorded in
 Codex control and hard-kill evidence is recorded in
 `docs/evidence/g5-codex-control-darwin-arm64.json`; its permission retry result is explicitly
 inconclusive and does not close AC30.
+Direct read-only command refusals are recorded in
+`docs/evidence/g5-ac30-runtime-sandbox-darwin-arm64.json`; agent-driven retry evidence is still
+missing, so AC30 remains partial.
 Live multi-session brainstorm evidence is recorded in
 `docs/evidence/g5-codex-brainstorm-darwin-arm64.json`; it uses a synthetic read-only repository and
 does not expose the Cohorte source checkout.

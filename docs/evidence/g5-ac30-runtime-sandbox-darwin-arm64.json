@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "gate": "G5",
+  "criterion": "AC30",
+  "scenario": "codex-runtime-direct-command-denial",
+  "status": "partial",
+  "checked_at": "2026-09-22T21:51:22Z",
+  "platform": {
+    "os": "Darwin",
+    "version": "26.5.1",
+    "architecture": "arm64",
+    "python": "3.13.15"
+  },
+  "runtime": {
+    "codex_cli": "0.155.1",
+    "openai_codex_sdk": "0.155.1",
+    "api_routing_environment_removed": true,
+    "sandbox_policy": "readOnly"
+  },
+  "direct_command_probe": {
+    "reproduction": "env -u OPENAI_API_KEY -u OPENAI_BASE_URL uv run python tests/live/verify_codex_command_sandbox.py",
+    "commands": ["touch <random marker>", "python3 -c <write second random marker>"],
+    "exit_codes": [1, 1],
+    "permission_denial_stderr_observed": true,
+    "marker_files_absent": true,
+    "same_read_only_policy_for_both_requests": true,
+    "status": "passed"
+  },
+  "agent_turn_probe": {
+    "two_mutation_command_events_observed": false,
+    "model_claim_of_denial_accepted_as_evidence": false,
+    "status": "inconclusive"
+  },
+  "contains_credentials": false,
+  "limitations": [
+    "Direct command/exec calls use an internal SDK client for a pinned-version diagnostic; they do not prove agent-driven tool retries.",
+    "AC30 remains partial until the agent emits two denied command events without permission escalation."
+  ]
+}

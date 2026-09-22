@@ -253,6 +253,7 @@ def test_permission_retry_requires_two_denied_commands(
                     command=f"touch {first}",
                     status=SimpleNamespace(value="failed"),
                     exit_code=1,
+                    aggregated_output="touch: Operation not permitted",
                 ),
                 SimpleNamespace(
                     command=f"python write {second}",
@@ -268,6 +269,79 @@ def test_permission_retry_requires_two_denied_commands(
 
     assert result["attempts"] == 2
     assert result["automatic_elevation"] is False
+
+
+@patch("cohorte.adapters.codex.inspect_codex_account", side_effect=subscription_status)
+@patch("cohorte.adapters.codex.Codex")
+def test_permission_retry_rejects_duplicate_attempts(
+    codex_class: Mock, _inspect: Mock, tmp_path
+) -> None:
+    client = codex_class.return_value.__enter__.return_value
+    thread = client.thread_start.return_value
+
+    def run(prompt: str, **_kwargs):
+        first = prompt.split("touch ", 1)[1].split("`", 1)[0]
+        second = prompt.split("Path('", 1)[1].split("')", 1)[0]
+        return SimpleNamespace(
+            items=[
+                SimpleNamespace(
+                    command=f"touch {first}",
+                    status=SimpleNamespace(value="failed"),
+                    exit_code=1,
+                    aggregated_output="Operation not permitted",
+                ),
+                SimpleNamespace(
+                    command=f"touch {first}",
+                    status=SimpleNamespace(value="failed"),
+                    exit_code=1,
+                    aggregated_output="Operation not permitted",
+                ),
+                SimpleNamespace(
+                    command=f"python write {second}",
+                    status=SimpleNamespace(value="completed"),
+                    exit_code=1,
+                    aggregated_output="Operation not permitted",
+                ),
+            ]
+        )
+
+    thread.run.side_effect = run
+    with pytest.raises(CohorteError) as caught:
+        CodexAdapter(tmp_path, {"PATH": "/bin"}).verify_permission_retry()
+    assert caught.value.code == ErrorCode.CAPABILITY_MISSING
+
+
+@patch("cohorte.adapters.codex.inspect_codex_account", side_effect=subscription_status)
+@patch("cohorte.adapters.codex.Codex")
+def test_permission_retry_rejects_unrelated_command_failure(
+    codex_class: Mock, _inspect: Mock, tmp_path
+) -> None:
+    client = codex_class.return_value.__enter__.return_value
+    thread = client.thread_start.return_value
+
+    def run(prompt: str, **_kwargs):
+        first = prompt.split("touch ", 1)[1].split("`", 1)[0]
+        second = prompt.split("Path('", 1)[1].split("')", 1)[0]
+        return SimpleNamespace(
+            items=[
+                SimpleNamespace(
+                    command=f"touch {first}",
+                    status=SimpleNamespace(value="failed"),
+                    exit_code=1,
+                    aggregated_output="invalid command",
+                ),
+                SimpleNamespace(
+                    command=f"python write {second}",
+                    status=SimpleNamespace(value="declined"),
+                    exit_code=None,
+                ),
+            ]
+        )
+
+    thread.run.side_effect = run
+    with pytest.raises(CohorteError) as caught:
+        CodexAdapter(tmp_path, {"PATH": "/bin"}).verify_permission_retry()
+    assert caught.value.code == ErrorCode.CAPABILITY_MISSING
 
 
 @patch("cohorte.adapters.codex.os.kill")

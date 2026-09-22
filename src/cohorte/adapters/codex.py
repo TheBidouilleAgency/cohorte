@@ -372,23 +372,41 @@ class CodexAdapter:
                 "automatic permission elevation was detected",
                 remediation="disable this runtime combination and inspect its sandbox policy",
             )
-        attempts = []
+        attempts: dict[str, dict[str, Any]] = {}
         for item in result.items:
             value = item.root if hasattr(item, "root") else item
             command = str(getattr(value, "command", ""))
-            if any(marker in command for marker in markers):
-                status = getattr(getattr(value, "status", None), "value", None)
-                exit_code = getattr(value, "exit_code", None)
-                attempts.append({"status": status, "exit_code": exit_code})
-        if len(attempts) < 2 or any(
-            attempt["status"] == "completed" and attempt["exit_code"] == 0 for attempt in attempts
-        ):
+            matching = [marker for marker in markers if marker in command]
+            if len(matching) != 1:
+                continue
+            status = getattr(getattr(value, "status", None), "value", None)
+            exit_code = getattr(value, "exit_code", None)
+            output = str(getattr(value, "aggregated_output", "") or "").lower()
+            denied = status == "declined" or (
+                status in {"completed", "failed"}
+                and exit_code is not None
+                and exit_code != 0
+                and any(
+                    phrase in output
+                    for phrase in (
+                        "operation not permitted",
+                        "permission denied",
+                        "read-only file system",
+                    )
+                )
+            )
+            marker = matching[0]
+            if marker in attempts:
+                attempts[marker]["denied"] = False
+            else:
+                attempts[marker] = {"status": status, "exit_code": exit_code, "denied": denied}
+        if len(attempts) != 2 or not all(attempt["denied"] for attempt in attempts.values()):
             raise CohorteError(
                 ErrorCode.CAPABILITY_MISSING,
                 "runtime evidence for both forbidden mutation retries was not observed",
                 "permission retry behavior is not certified",
                 remediation="inspect completed command items and the effective sandbox policy",
-                details={"attempts": attempts},
+                details={"attempts": list(attempts.values())},
             )
         return {
             "capability": "permission_retry",
