@@ -142,7 +142,9 @@ pre-release foundation, not a V2-parity or provider-support claim.
 ## Deliberately unverified or incomplete
 
 - G0 Codex user questions, model catalogue and usage reporting; Claude full login interaction,
-  read-only mutation denial, interruption and resume remain unqualified. Permission retry remains
+  read-only mutation denial and workflow-level interruption/resume remain unqualified. A native
+  Claude session-resume probe recalled its nonce; an interrupt probe stopped its marked child but
+  returned a generic `error_during_execution` status. Permission retry remains
   unqualified because the Codex runtime emitted no command-level
   denial events during the live negative probe.
 - GitLab live delivery evidence and a persistent background controller remain open.

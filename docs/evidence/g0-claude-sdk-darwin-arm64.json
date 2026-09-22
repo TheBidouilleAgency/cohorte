@@ -30,6 +30,29 @@
     "outside_marker_absent": true,
     "session_references_present": true
   },
+  "additional_sdk_probes": {
+    "read_only_negative": {
+      "write_tool_observed": true,
+      "marker_absent": true,
+      "permission_denials_reported": 0,
+      "qualification": "inconclusive_without_denial_evidence"
+    },
+    "session_resume": {
+      "initial_and_followup_succeeded": true,
+      "same_native_session_id": true,
+      "nonce_recalled": true,
+      "qualification": "sdk_probe_passed_not_workflow_integration"
+    },
+    "interrupt": {
+      "bash_command_guarded_to_exact_sleep": true,
+      "descendant_started": true,
+      "client_interrupt_called": true,
+      "terminal_subtype": "error_during_execution",
+      "descendant_gone": true,
+      "qualification": "process_stopped_terminal_status_not_specific"
+    },
+    "recorded_at": "2026-09-22T23:23:16Z"
+  },
   "probe_policy": {
     "workspace": "disposable temporary directory",
     "tool_permissions": "dontAsk with explicit tool lists and pre-tool path hook",
@@ -41,7 +64,10 @@
   "limitations": [
     "The native runtime reports subscription routing; provider-side billing was not independently observed.",
     "The user completed native login outside this probe, so the full login interaction was not observed.",
-    "Read-only mutation denial, interruption, session resume, quota exhaustion and model catalogue remain unqualified.",
+    "The SDK resume probe passed, but Cohorte workflow resume does not yet use the native Claude session.",
+    "The interrupt probe stopped its marked descendant, but the runtime returned a generic error_during_execution terminal subtype and Cohorte does not yet interrupt active Claude workflow calls.",
+    "The read-only negative probe did not report a permission denial, so absence of a marker alone does not certify the role.",
+    "Quota exhaustion and model catalogue remain unqualified.",
     "This evidence applies only to the listed SDK, runtime and platform combination."
   ]
 }
