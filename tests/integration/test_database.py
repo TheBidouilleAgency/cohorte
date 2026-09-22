@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 
 import pytest
 
 from cohorte.application.durable import RunStopped, SqliteRunJournal
+from cohorte.application.service import CohorteService
 from cohorte.domain.errors import CohorteError, ErrorCode
 from cohorte.domain.models import RunState, RunStatus, Stage
 from cohorte.persistence.sqlite import Database
@@ -100,6 +102,37 @@ def test_phase_checkpoint_preserves_pause_and_advances_resume_stage(database: Da
     checkpoint = database.get_run("paused-run")
     assert checkpoint.status == RunStatus.PAUSED
     assert checkpoint.stage == Stage.CHECKS
+
+
+def test_run_journal_observes_control_from_another_database_connection(
+    database: Database, tmp_path
+) -> None:  # type: ignore[no-untyped-def]
+    database.register_project("project", str(tmp_path), "profile")
+    now = datetime.now(UTC)
+    database.create_run(
+        RunState(
+            id="active-run",
+            project_id="project",
+            feature_id="feature",
+            stage=Stage.BUILD,
+            status=RunStatus.RUNNING,
+            state_version=1,
+            base_commit="a" * 40,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    journal = SqliteRunJournal(database, "active-run")
+    assert journal.stop_requested() is None
+
+    controller = Database(tmp_path / "state.sqlite3")
+    try:
+        CohorteService(controller).pause("active-run")
+        assert journal.stop_requested() == RunStatus.PAUSED
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            assert executor.submit(journal.stop_requested).result() == RunStatus.PAUSED
+    finally:
+        controller.close()
 
 
 def test_task_lease_generation_rejects_stale_worker(database: Database) -> None:

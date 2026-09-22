@@ -5,8 +5,8 @@ mandatory acceptance scenarios have current evidence for the exact candidate.
 
 | Gate | Scope | Current state |
 | --- | --- | --- |
-| G0 | Real provider auth, subscription route, capabilities, stop/resume | Codex 0.155.1 passed smoke/read-only/interrupt/resume on Darwin arm64; Claude 2.1.280 passed SDK smoke, structured read, workspace edit, outside-write denial and native session-resume probe. Its interrupt probe stopped a descendant but returned a generic terminal error; workflow-level cancel/resume and read-only denial remain open |
-| G1 | Contracts, state machine, SQLite, recovery primitives, CLI/protocol, fake-free unit tests | In progress; vertical and controller-crash recovery validated live |
+| G0 | Real provider auth, subscription route, capabilities, stop/resume | Codex 0.155.1 passed smoke/read-only/interrupt/resume on Darwin arm64; Claude 2.1.280 passed SDK smoke, structured read, workspace edit, outside-write denial, guarded read-only denial, native session-resume, CLI cancel and CLI pause/resume probes. Full login interaction and safe native mid-turn recovery remain open |
+| G1 | Contracts, state machine, SQLite, recovery primitives, CLI/protocol, fake-free unit tests | In progress; Codex and Claude single-surface verticals and controller-crash recovery validated live |
 | G2 | Init through reviewed PR on a disposable repository | GitHub PR and Actions CI validated live; GitLab deferred at user request |
 | G3 | Parallel surfaces and workflow variants/integrations | Workflow variants and local-source align-ds validated live; file retrieval, Kanban projection and grouped project metrics pass locally; external providers remain open |
 | G4 | François, migration, upgrades, multi-platform packaging | V2 import, installed a1→a2 wheel upgrade and SQLite migration pass hosted CI on Ubuntu, macOS and Windows with Python 3.12/3.13; François-facing stdio and Darwin Unix service with replay/live follow pass; Windows named-pipe lifecycle passes hosted CI; external UI and release qualification remain open |

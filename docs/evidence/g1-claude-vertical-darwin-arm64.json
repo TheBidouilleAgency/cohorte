@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "gate": "G1-partial",
+  "provider": "claude",
+  "platform": {"os": "Darwin", "architecture": "arm64"},
+  "sdk": {"package": "claude-agent-sdk", "version": "0.2.157"},
+  "runtime_version": "2.1.280 (Claude Code)",
+  "auth": {"effective_mode": "subscription", "api_routing_environment_removed": true},
+  "fixture": {
+    "feature_id": "friendly-greeting",
+    "profile": "examples/g1/profile.json with provider claude and model sonnet",
+    "source_checkout_modified": false,
+    "base_commit_unchanged": true,
+    "commit_created": false,
+    "push_performed": false
+  },
+  "candidate": {
+    "changed_files": ["greeting.py", "test_greeting.py"],
+    "ownership_check": "passed"
+  },
+  "checks": {"unit": "passed"},
+  "review": {"verdict": "ready", "covered_surfaces": ["python-core"]},
+  "fix_cycles": 0,
+  "ready_to_ship": true,
+  "persistence": {
+    "run_reloaded_from_sqlite": true,
+    "stage": "ship",
+    "status": "waiting_user",
+    "phase_events": [
+      "phase.build.completed",
+      "phase.checks.completed",
+      "phase.review.completed"
+    ],
+    "ship_request_created": true
+  },
+  "control": {
+    "cancel_active_build": "cancelled_without_completed_phase",
+    "pause_active_build": "paused_at_build",
+    "resume_after_pause": "ship_waiting_user_ready_to_ship"
+  },
+  "recorded_at": "2026-09-22T23:42:51Z",
+  "contains_credentials": false,
+  "limitations": [
+    "This is one bounded single-surface Claude workflow, not full G1 or G0 qualification.",
+    "No failed-check/fix cycle, crash recovery or multi-surface wave was exercised live with Claude. CLI cancel and pause/resume were exercised on separate disposable single-surface runs.",
+    "The source and worktree were disposable; no commit, push or pull request was created by this probe."
+  ]
+}

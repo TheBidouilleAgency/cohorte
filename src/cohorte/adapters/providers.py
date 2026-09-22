@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import shutil
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
 from cohorte.adapters.claude import ClaudeAdapter, inspect_claude_account
 from cohorte.adapters.codex import CodexAdapter, inspect_codex_account
-from cohorte.domain.models import ProjectProfile, Provider
+from cohorte.domain.models import ProjectProfile, Provider, RunStatus
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,7 +46,14 @@ def inspect_runtime(provider: Literal["claude", "codex"]) -> PassiveRuntimeStatu
     )
 
 
-def workflow_runtime(repository: Path, profile: ProjectProfile) -> CodexAdapter | ClaudeAdapter:
+def workflow_runtime(
+    repository: Path,
+    profile: ProjectProfile,
+    *,
+    stop_requested: Callable[[], RunStatus | None] | None = None,
+) -> CodexAdapter | ClaudeAdapter:
     if profile.agent_defaults.provider == Provider.CLAUDE:
-        return ClaudeAdapter(repository, model=profile.agent_defaults.model)
+        return ClaudeAdapter(
+            repository, model=profile.agent_defaults.model, stop_requested=stop_requested
+        )
     return CodexAdapter(repository)

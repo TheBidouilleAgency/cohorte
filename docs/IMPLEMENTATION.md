@@ -120,11 +120,15 @@ pre-release foundation, not a V2-parity or provider-support claim.
 - Claude Agent SDK adapter for brainstorm, build, review and fix, selected by the project profile
   (or `brainstorm --provider claude`). Native CLI auth status is inspected passively; ambiguous API,
   gateway and token overrides fail closed under `subscription_only`. SDK tool lists and pre-tool
-  path guards restrict reads and edits to the worktree. Adapter and routing tests are offline only;
-  a live Claude no-tool smoke, structured read, workspace edit and outside-write denial passed on
-  Darwin arm64 after the user connected a new account. The prior account was refused by its
+  path guards restrict reads and edits to the worktree. The adapter now observes durable run
+  pause/cancel state during active turns and calls native `interrupt()`. Live CLI probes stopped an
+  active run as `cancelled` and paused then resumed another run to `waiting_user`. A live Claude
+  no-tool smoke, structured read, workspace
+  edit, outside-write denial, guarded read-only write denial and single-surface build/check/review
+  workflow passed on Darwin arm64 after the user connected a new account. The prior account was refused by its
   organization policy, and Cohorte did not switch to API billing. See
-  `docs/evidence/g0-claude-sdk-darwin-arm64.json` and the earlier blocked-account evidence.
+  `docs/evidence/g0-claude-sdk-darwin-arm64.json`,
+  `docs/evidence/g1-claude-vertical-darwin-arm64.json` and the earlier blocked-account evidence.
 - Live brainstorm preparation: product, architecture and QA run in distinct ephemeral read-only
   Codex sessions over one factual bundle, followed by a separately identified synthesis session.
   The brief retains contribution references, divergences, strong objections and user answers in a
@@ -141,10 +145,14 @@ pre-release foundation, not a V2-parity or provider-support claim.
 
 ## Deliberately unverified or incomplete
 
-- G0 Codex user questions, model catalogue and usage reporting; Claude full login interaction,
-  read-only mutation denial and workflow-level interruption/resume remain unqualified. A native
-  Claude session-resume probe recalled its nonce; an interrupt probe stopped its marked child but
-  returned a generic `error_during_execution` status. Permission retry remains
+- G0 Codex user questions, model catalogue and usage reporting; Claude full login interaction and
+  safe native session recovery inside a workflow remain unqualified. A native Claude session-resume
+  probe recalled its nonce, but no in-flight session is reused after a crash. The interrupt probe
+  stopped its marked child but returned a generic `error_during_execution` status; the workflow
+  adapter maps a concurrent persisted pause/cancel to `RunStopped` after calling `interrupt()`.
+  CLI pause/resume has been validated from the build stage on a disposable single-surface run;
+  native mid-turn session reuse and exactly-once effects are not established.
+  Permission retry remains
   unqualified because the Codex runtime emitted no command-level
   denial events during the live negative probe.
 - GitLab live delivery evidence and a persistent background controller remain open.

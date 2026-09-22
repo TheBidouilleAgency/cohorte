@@ -5,11 +5,13 @@ import json
 import os
 import shutil
 import subprocess
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, NoReturn, TypeVar
 
+from cohorte.application.durable import RunStopped
 from cohorte.application.preparation import (
     BrainstormContribution,
     BrainstormPerspectiveTurn,
@@ -27,7 +29,7 @@ from cohorte.domain.auth import (
     require_subscription,
 )
 from cohorte.domain.errors import CohorteError, ErrorCode
-from cohorte.domain.models import StrictModel
+from cohorte.domain.models import RunStatus, StrictModel
 
 StructuredOutput = TypeVar("StructuredOutput", bound=StrictModel)
 _ROUTING_KEYS = frozenset(
@@ -164,11 +166,16 @@ def inspect_claude_account(
 
 class ClaudeAdapter:
     def __init__(
-        self, cwd: Path, environ: Mapping[str, str] | None = None, model: str | None = None
+        self,
+        cwd: Path,
+        environ: Mapping[str, str] | None = None,
+        model: str | None = None,
+        stop_requested: Callable[[], RunStatus | None] | None = None,
     ) -> None:
         self.cwd = cwd.resolve(strict=True)
         self.environ = dict(os.environ if environ is None else environ)
         self.model = model
+        self.stop_requested = stop_requested
 
     def _require_subscription(self) -> AccountStatus:
         status = inspect_claude_account(environ=self.environ)
@@ -178,6 +185,10 @@ class ClaudeAdapter:
     def _structured_turn_with_session(
         self, workspace: Path, prompt: str, output: type[StructuredOutput], read_only: bool
     ) -> tuple[StructuredOutput, str]:
+        if self.stop_requested is not None:
+            stopped = self.stop_requested()
+            if stopped is not None:
+                raise RunStopped(stopped.value)
         self._require_subscription()
         try:
             from claude_agent_sdk import (
@@ -253,17 +264,47 @@ class ClaudeAdapter:
 
         async def run() -> tuple[Any, str]:
             async with ClaudeSDKClient(options=options) as client:
-                await client.query(prompt)
-                async for message in client.receive_response():
-                    if isinstance(message, ResultMessage):
-                        if message.is_error:
-                            raise_claude_result_error(message.result)
-                        return (
-                            message.structured_output
-                            if message.structured_output is not None
-                            else message.result,
-                            message.session_id,
-                        )
+                stop_status: RunStatus | None = None
+
+                async def watch_stop() -> None:
+                    nonlocal stop_status
+                    assert self.stop_requested is not None
+                    while True:
+                        status = self.stop_requested()
+                        if status is not None:
+                            stop_status = status
+                            await client.interrupt()
+                            return
+                        await asyncio.sleep(0.2)
+
+                watcher = (
+                    asyncio.create_task(watch_stop()) if self.stop_requested is not None else None
+                )
+                try:
+                    await client.query(prompt)
+                    async for message in client.receive_response():
+                        if watcher is not None and watcher.done():
+                            watcher.result()
+                        if stop_status is not None:
+                            raise RunStopped(stop_status.value)
+                        if isinstance(message, ResultMessage):
+                            if message.is_error:
+                                raise_claude_result_error(message.result)
+                            return (
+                                message.structured_output
+                                if message.structured_output is not None
+                                else message.result,
+                                message.session_id,
+                            )
+                    if watcher is not None and watcher.done():
+                        watcher.result()
+                    if stop_status is not None:
+                        raise RunStopped(stop_status.value)
+                finally:
+                    if watcher is not None:
+                        watcher.cancel()
+                        with suppress(asyncio.CancelledError):
+                            await watcher
             raise CohorteError(
                 ErrorCode.OUTPUT_INVALID,
                 "Claude turn ended without a result",
@@ -272,11 +313,9 @@ class ClaudeAdapter:
 
         raw, session_ref = asyncio.run(run())
         try:
-            value = (
-                output.model_validate_json(raw)
-                if isinstance(raw, str)
-                else output.model_validate(raw)
-            )
+            # The SDK returns structured_output as a Python dict. Validate it
+            # through JSON mode so strict wire enums retain their string form.
+            value = output.model_validate_json(raw if isinstance(raw, str) else json.dumps(raw))
         except (ValueError, TypeError) as error:
             raise CohorteError(
                 ErrorCode.OUTPUT_INVALID,

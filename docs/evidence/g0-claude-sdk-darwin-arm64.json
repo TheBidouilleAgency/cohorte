@@ -53,6 +53,43 @@
     },
     "recorded_at": "2026-09-22T23:23:16Z"
   },
+  "new_probes": {
+    "read_only_guard_negative": {
+      "write_tool_exposed_in_disposable_probe": true,
+      "pre_tool_hook_write_attempts": 1,
+      "sdk_permission_denials": 1,
+      "marker_absent": true,
+      "qualification": "sdk_hook_denial_passed; production_read_only_tool_list_remains_more_restrictive"
+    },
+    "adapter_in_flight_cancel": {
+      "persisted_stop_watcher_unit_test": "passed",
+      "cross_connection_sqlite_pause_test": "passed",
+      "live_adapter_stop": "RunStopped(cancelled)",
+      "live_elapsed_seconds": 1.78,
+      "qualification": "adapter_cancel_passed"
+    },
+    "cli_control": {
+      "cancel_during_build": {
+        "cancel_command_exit": 0,
+        "loop_command_exit": 0,
+        "run_status": "cancelled",
+        "completed_phase_events": 0,
+        "elapsed_seconds": 2.3
+      },
+      "pause_then_resume": {
+        "pause_command_exit": 0,
+        "paused_stage": "build",
+        "paused_status": "paused",
+        "resume_command_exit": 0,
+        "final_stage": "ship",
+        "final_status": "waiting_user",
+        "ready_to_ship": true
+      },
+      "source_checkout_unchanged": true,
+      "qualification": "disposable_single_surface_cli_round_trips_passed"
+    },
+    "recorded_at": "2026-09-22T23:42:51Z"
+  },
   "probe_policy": {
     "workspace": "disposable temporary directory",
     "tool_permissions": "dontAsk with explicit tool lists and pre-tool path hook",
@@ -65,8 +102,8 @@
     "The native runtime reports subscription routing; provider-side billing was not independently observed.",
     "The user completed native login outside this probe, so the full login interaction was not observed.",
     "The SDK resume probe passed, but Cohorte workflow resume does not yet use the native Claude session.",
-    "The interrupt probe stopped its marked descendant, but the runtime returned a generic error_during_execution terminal subtype and Cohorte does not yet interrupt active Claude workflow calls.",
-    "The read-only negative probe did not report a permission denial, so absence of a marker alone does not certify the role.",
+    "The interrupt probe stopped its marked descendant, but the runtime returned a generic error_during_execution terminal subtype. Cohorte CLI cancellation and pause/resume passed on disposable single-surface runs; these do not prove safe native mid-turn recovery or exactly-once effects.",
+    "The original production-config read-only negative probe did not report a permission denial because Write was disallowed before the hook. A separate disposable probe exposed Write to the SDK and proved the pre-tool hook denied it with a permission denial and absent marker.",
     "Quota exhaustion and model catalogue remain unqualified.",
     "This evidence applies only to the listed SDK, runtime and platform combination."
   ]

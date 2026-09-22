@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -150,6 +152,21 @@ class SqliteRunJournal:
     def __init__(self, database: Database, run_id: str) -> None:
         self.database = database
         self.run_id = run_id
+
+    def stop_requested(self) -> RunStatus | None:
+        # Worker surfaces may run in threads. A short-lived read-only
+        # connection also sees pause/cancel transitions from other processes.
+        connection = sqlite3.connect(f"{self.database.path.resolve().as_uri()}?mode=ro", uri=True)
+        try:
+            row = connection.execute(
+                "SELECT state_json FROM runs WHERE id = ?", (self.run_id,)
+            ).fetchone()
+        finally:
+            connection.close()
+        if row is None:
+            raise KeyError(self.run_id)
+        status = RunStatus(json.loads(row[0])["status"])
+        return status if status in {RunStatus.PAUSED, RunStatus.CANCELLED} else None
 
     def __call__(self, phase: str, data: dict[str, Any]) -> None:
         current = self.database.get_run(self.run_id)

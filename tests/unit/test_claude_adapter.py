@@ -14,6 +14,7 @@ from cohorte.adapters.claude import (
     raise_claude_result_error,
 )
 from cohorte.adapters.providers import workflow_runtime
+from cohorte.application.durable import RunStopped
 from cohorte.domain.auth import (
     BillingEvidence,
     ConnectionState,
@@ -24,6 +25,7 @@ from cohorte.domain.models import (
     AgentDefaults,
     ProjectProfile,
     Provider,
+    RunStatus,
     StrictModel,
     Surface,
     VcsConfig,
@@ -155,6 +157,45 @@ def test_structured_review_uses_read_only_tools_and_validates_result(
     assert asyncio.run(write_decision("escape/outside")) == "deny"
 
 
+def test_claude_structured_review_accepts_wire_enum(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:  # type: ignore[no-untyped-def]
+    class FakeResult:
+        is_error = False
+        result = None
+        session_id = "review-session"
+
+        def __init__(self) -> None:
+            self.structured_output = {
+                "verdict": "ready",
+                "covered_surfaces": ["core"],
+                "findings": [],
+            }
+
+    class FakeClient:
+        def __init__(self, options) -> None:  # type: ignore[no-untyped-def]
+            pass
+
+        async def __aenter__(self):  # type: ignore[no-untyped-def]
+            return self
+
+        async def __aexit__(self, *args):  # type: ignore[no-untyped-def]
+            return None
+
+        async def query(self, prompt) -> None:  # type: ignore[no-untyped-def]
+            pass
+
+        async def receive_response(self):  # type: ignore[no-untyped-def]
+            yield FakeResult()
+
+    monkeypatch.setattr(claude_agent_sdk, "ClaudeSDKClient", FakeClient)
+    monkeypatch.setattr(claude_agent_sdk, "ResultMessage", FakeResult)
+    adapter = ClaudeAdapter(tmp_path, {"PATH": "/bin"})
+    monkeypatch.setattr(adapter, "_require_subscription", lambda: None)
+    review = adapter.review(tmp_path, "review")
+    assert review.verdict.value == "ready"
+
+
 def test_profile_selects_claude_runtime(tmp_path) -> None:  # type: ignore[no-untyped-def]
     profile = ProjectProfile(
         project_id="sample",
@@ -165,6 +206,59 @@ def test_profile_selects_claude_runtime(tmp_path) -> None:  # type: ignore[no-un
         agent_defaults=AgentDefaults(provider=Provider.CLAUDE),
     )
     assert isinstance(workflow_runtime(tmp_path, profile), ClaudeAdapter)
+
+
+@pytest.mark.parametrize("stop_status", [RunStatus.PAUSED, RunStatus.CANCELLED])
+def test_active_claude_turn_interrupts_when_run_stops(
+    monkeypatch: pytest.MonkeyPatch, tmp_path, stop_status: RunStatus
+) -> None:  # type: ignore[no-untyped-def]
+    state: dict[str, RunStatus | None] = {"status": None}
+    clients = []
+
+    class FakeResult:
+        is_error = True
+        result = "generic interruption error"
+        session_id = "claude-session"
+        structured_output = None
+
+    class FakeClient:
+        def __init__(self, options) -> None:  # type: ignore[no-untyped-def]
+            self.interrupted = asyncio.Event()
+            self.interrupt_calls = 0
+            clients.append(self)
+
+        async def __aenter__(self):  # type: ignore[no-untyped-def]
+            return self
+
+        async def __aexit__(self, *args):  # type: ignore[no-untyped-def]
+            return None
+
+        async def query(self, prompt) -> None:  # type: ignore[no-untyped-def]
+            state["status"] = stop_status
+
+        async def interrupt(self) -> None:
+            self.interrupt_calls += 1
+            self.interrupted.set()
+
+        async def receive_response(self):  # type: ignore[no-untyped-def]
+            await asyncio.wait_for(self.interrupted.wait(), timeout=2)
+            yield FakeResult()
+
+    monkeypatch.setattr(claude_agent_sdk, "ClaudeSDKClient", FakeClient)
+    monkeypatch.setattr(claude_agent_sdk, "ResultMessage", FakeResult)
+    adapter = ClaudeAdapter(tmp_path, {"PATH": "/bin"}, stop_requested=lambda: state["status"])
+    monkeypatch.setattr(adapter, "_require_subscription", lambda: None)
+
+    with pytest.raises(RunStopped, match=stop_status.value):
+        adapter._structured_turn_with_session(tmp_path, "review", Answer, True)
+    assert clients[0].interrupt_calls == 1
+
+
+def test_claude_turn_does_not_start_after_cancel(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    adapter = ClaudeAdapter(tmp_path, stop_requested=lambda: RunStatus.CANCELLED)
+    monkeypatch.setattr(adapter, "_require_subscription", lambda: pytest.fail("auth was queried"))
+    with pytest.raises(RunStopped, match="cancelled"):
+        adapter._structured_turn_with_session(tmp_path, "review", Answer, True)
 
 
 def test_disabled_subscription_is_reported_without_api_fallback() -> None:

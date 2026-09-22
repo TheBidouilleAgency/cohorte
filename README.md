@@ -10,12 +10,14 @@ strict contracts, a pure workflow reducer, SQLite persistence, immutable artifac
 discovery, DAG validation, isolated Git worktrees, controlled checks, independent read-only review,
 a review/fix loop, a JSON-RPC stdio bridge, and a CLI. Codex authentication and live execution are
 capability-gated. A Claude Agent SDK adapter is available through the optional `claude` dependency
-and `agent_defaults.provider: claude`; its workflow path has offline tests but no live qualification.
+and `agent_defaults.provider: claude`; a bounded single-surface Claude workflow has passed live
+build, checks and review on Darwin arm64.
 Passive `auth status claude` checks the native CLI without exposing credentials. An explicit
 `auth verify claude --live` probe is available after confirming the account to use.
-The newly connected native account passed the Claude SDK smoke, a structured read, a workspace
-edit and an outside-write denial on Darwin arm64. G0 remains partial until the remaining Claude
-permission, interruption and resume scenarios are exercised.
+The connected native account passed the Claude SDK smoke, structured read, workspace edit,
+outside-write denial, a guarded read-only write denial, and CLI cancellation/pause/resume probes.
+G0 remains partial: the full login interaction and safe native session recovery inside a workflow
+are not yet qualified.
 
 ```bash
 uv sync --all-extras

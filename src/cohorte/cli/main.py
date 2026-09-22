@@ -665,14 +665,17 @@ def run(argv: list[str] | None = None) -> int:
                 project_id=profile.project_id,
                 run_id=args.run_id,
             )
+            journal = SqliteRunJournal(database, args.run_id)
             try:
-                patch_result = PatchRunner(workflow_runtime(repository, profile)).run(
+                patch_result = PatchRunner(
+                    workflow_runtime(repository, profile, stop_requested=journal.stop_requested)
+                ).run(
                     repository,
                     args.worktrees,
                     profile,
                     patch_document,
                     args.run_id,
-                    observe=SqliteRunJournal(database, args.run_id),
+                    observe=journal,
                 )
             except RunStopped:
                 _emit(database.get_run(args.run_id).model_dump(mode="json"), args.json)
@@ -799,15 +802,18 @@ def run(argv: list[str] | None = None) -> int:
                 project_id=profile.project_id,
                 run_id=args.run_id,
             )
+            journal = SqliteRunJournal(database, args.run_id)
             try:
-                refactor_result = RefactorRunner(workflow_runtime(repository, profile)).run(
+                refactor_result = RefactorRunner(
+                    workflow_runtime(repository, profile, stop_requested=journal.stop_requested)
+                ).run(
                     repository,
                     args.worktrees,
                     profile,
                     selection,
                     backlog,
                     args.run_id,
-                    observe=SqliteRunJournal(database, args.run_id),
+                    observe=journal,
                 )
             except RunStopped:
                 _emit(database.get_run(args.run_id).model_dump(mode="json"), args.json)
@@ -1115,15 +1121,18 @@ def run(argv: list[str] | None = None) -> int:
                 project_id=profile.project_id,
                 run_id=args.run_id,
             )
+            journal = SqliteRunJournal(database, args.run_id)
             try:
-                alignment_result = AlignmentRunner(workflow_runtime(repository, profile)).run(
+                alignment_result = AlignmentRunner(
+                    workflow_runtime(repository, profile, stop_requested=journal.stop_requested)
+                ).run(
                     repository,
                     args.worktrees,
                     profile,
                     alignment_selection,
                     plan,
                     args.run_id,
-                    observe=SqliteRunJournal(database, args.run_id),
+                    observe=journal,
                 )
             except RunStopped:
                 _emit(database.get_run(args.run_id).model_dump(mode="json"), args.json)
@@ -1281,7 +1290,8 @@ def run(argv: list[str] | None = None) -> int:
                 project_id=profile.project_id,
                 run_id=args.run_id,
             )
-            runtime = workflow_runtime(args.repo, profile)
+            journal = SqliteRunJournal(database, args.run_id)
+            runtime = workflow_runtime(args.repo, profile, stop_requested=journal.stop_requested)
             try:
                 loop_result: Any
                 if len(spec.surfaces) > 1:
@@ -1291,7 +1301,7 @@ def run(argv: list[str] | None = None) -> int:
                         profile,
                         spec,
                         args.run_id,
-                        observe=SqliteRunJournal(database, args.run_id),
+                        observe=journal,
                         task_journal=SqliteTaskJournal(database, args.run_id),
                     )
                 else:
@@ -1301,7 +1311,7 @@ def run(argv: list[str] | None = None) -> int:
                         profile,
                         spec,
                         args.run_id,
-                        observe=SqliteRunJournal(database, args.run_id),
+                        observe=journal,
                     )
             except RunStopped:
                 _emit(database.get_run(args.run_id).model_dump(mode="json"), args.json)
@@ -1343,7 +1353,8 @@ def run(argv: list[str] | None = None) -> int:
                 state = running
             repository = Path(context["repository"])
             worktree = Path(context["worktree"])
-            runtime = workflow_runtime(repository, profile)
+            journal = SqliteRunJournal(database, args.run_id)
+            runtime = workflow_runtime(repository, profile, stop_requested=journal.stop_requested)
             try:
                 resume_result: Any
                 if len(spec.surfaces) > 1:
@@ -1356,7 +1367,7 @@ def run(argv: list[str] | None = None) -> int:
                         existing_worktree=worktree if worktree.exists() else None,
                         resume_stage=state.stage,
                         initial_fix_cycles=state.fix_cycles,
-                        observe=SqliteRunJournal(database, args.run_id),
+                        observe=journal,
                         task_journal=SqliteTaskJournal(database, args.run_id),
                     )
                 else:
@@ -1369,7 +1380,7 @@ def run(argv: list[str] | None = None) -> int:
                         existing_worktree=worktree if worktree.exists() else None,
                         resume_stage=state.stage,
                         initial_fix_cycles=state.fix_cycles,
-                        observe=SqliteRunJournal(database, args.run_id),
+                        observe=journal,
                     )
             except RunStopped:
                 _emit(database.get_run(args.run_id).model_dump(mode="json"), args.json)
