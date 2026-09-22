@@ -7,6 +7,7 @@ import pytest
 
 from cohorte.application.durable import SqliteRunJournal
 from cohorte.application.vertical import AgentReport, AgentReview, VerticalRunner
+from cohorte.domain.errors import CohorteError, ErrorCode
 from cohorte.domain.evidence import ReviewVerdict
 from cohorte.domain.models import (
     AgentDefaults,
@@ -57,6 +58,12 @@ class FixingRuntime:
         assert "Failed checks" in prompt
         (workspace / "src" / "message.txt").write_text("hello\n")
         return AgentReport(summary="fixed check", changed_files=["src/message.txt"])
+
+
+class OutOfScopeRuntime(FixingRuntime):
+    def build(self, workspace: Path, prompt: str) -> AgentReport:
+        (workspace / "README.md").write_text("unauthorized\n")
+        return AgentReport(summary="claimed success", changed_files=["README.md"])
 
 
 def profile() -> ProjectProfile:
@@ -141,6 +148,29 @@ def test_vertical_rejects_run_id_path_traversal(tmp_path: Path) -> None:
         VerticalRunner(FixingRuntime()).run(
             tmp_path, tmp_path / "worktrees", profile(), spec(), "../../escape"
         )
+
+
+def test_vertical_rejects_out_of_scope_agent_change_without_false_success(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    git(repository, "init", "-b", "main")
+    git(repository, "config", "user.email", "test@example.com")
+    git(repository, "config", "user.name", "Test")
+    (repository / "src").mkdir()
+    (repository / "src" / ".gitkeep").write_text("")
+    (repository / "README.md").write_text("original\n")
+    git(repository, "add", ".")
+    git(repository, "commit", "-m", "initial")
+
+    with pytest.raises(CohorteError) as caught:
+        VerticalRunner(OutOfScopeRuntime()).run(
+            repository, tmp_path / "worktrees", profile(), spec(), "ownership-run"
+        )
+
+    assert caught.value.code == ErrorCode.OWNERSHIP_VIOLATION
+    assert (repository / "README.md").read_text() == "original\n"
 
 
 def test_vertical_resumes_after_durable_build_checkpoint(tmp_path: Path) -> None:

@@ -105,6 +105,9 @@ pre-release foundation, not a V2-parity or provider-support claim.
   green in the Python 3.12/3.13 GitHub-hosted Windows CI matrix. This validates the runtime
   lifecycle, while release support still requires real-host and load-level qualification.
 - Passive Claude executable inspection which never claims provider support.
+- Machine-checked AC01–AC30 qualification ledger with explicit passed, partial, blocked, deferred
+  and not-started states. The first tranche adds a clean wheel-install verifier, multi-stack
+  discovery coverage and an out-of-scope ownership rejection regression.
 
 ## Deliberately unverified or incomplete
 

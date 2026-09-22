@@ -121,4 +121,5 @@ By default, Cohorte stores configuration and state outside target repositories u
 standard directories. Pass `--config-dir` and `--data-dir` for isolated automation. Cohorte never
 stores provider tokens.
 
-See [the implementation status](docs/IMPLEMENTATION.md) and [protocol reference](docs/PROTOCOL.md).
+See [the implementation status](docs/IMPLEMENTATION.md), [qualification matrix](docs/qualification/README.md)
+and [protocol reference](docs/PROTOCOL.md).

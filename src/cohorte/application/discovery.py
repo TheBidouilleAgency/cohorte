@@ -56,8 +56,11 @@ def discover_project(root: Path, language: str = "fr") -> tuple[ProjectProfile, 
         package_manager = "pnpm" if (root / "pnpm-lock.yaml").is_file() else "npm"
         run = [package_manager, "test"]
         checks.append(CheckDefinition(id="tests", argv=run, timeout_seconds=900))
+        workspace_manifests = [*root.glob("*/package.json"), *root.glob("*/*/package.json")]
         workspace_roots = [
-            p.parent.relative_to(root).as_posix() for p in root.glob("*/package.json")
+            path.parent.relative_to(root).as_posix()
+            for path in workspace_manifests
+            if not {"node_modules", ".git"}.intersection(path.relative_to(root).parts)
         ]
         paths = sorted(set(workspace_roots)) or ["src" if (root / "src").exists() else "."]
         for path in paths:

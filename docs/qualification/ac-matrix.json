@@ -1,0 +1,261 @@
+{
+  "schema_version": 1,
+  "source": "Cohorte complete specification, section 06 acceptance matrix",
+  "candidate": "PR-41",
+  "policy": {
+    "passed": "Every expected behavior has executable or live evidence for the stated boundary.",
+    "partial": "Some required behavior is proven, but at least one mandatory part is missing.",
+    "blocked": "Qualification requires an unavailable account or external prerequisite.",
+    "deferred": "The user explicitly removed this criterion from the current qualification scope.",
+    "not_started": "No sufficient executable qualification exists yet."
+  },
+  "summary": {
+    "passed": 12,
+    "partial": 14,
+    "blocked": 1,
+    "deferred": 1,
+    "not_started": 2
+  },
+  "criteria": [
+    {
+      "id": "AC01",
+      "title": "Clean installation",
+      "status": "passed",
+      "evidence_class": "engine",
+      "evidence": ["docs/evidence/g5-ac01-clean-install-darwin-arm64.json", "tests/packaging/verify_clean_install.py", ".github/workflows/ci.yml"],
+      "remaining": []
+    },
+    {
+      "id": "AC02",
+      "title": "Both provider logins",
+      "status": "blocked",
+      "evidence_class": "live",
+      "evidence": ["docs/evidence/g0-codex-darwin-arm64.json"],
+      "remaining": ["Qualify native Claude login with a real account", "Exercise both native login flows without copying credentials"]
+    },
+    {
+      "id": "AC03",
+      "title": "Effective subscription routing",
+      "status": "partial",
+      "evidence_class": "mixed",
+      "evidence": ["docs/evidence/g0-codex-darwin-arm64.json", "tests/unit/test_codex_adapter.py::test_live_probe_refuses_api_mode"],
+      "remaining": ["Qualify the Claude subscription path"]
+    },
+    {
+      "id": "AC04",
+      "title": "Expired authentication and quota",
+      "status": "partial",
+      "evidence_class": "engine",
+      "evidence": ["tests/unit/test_auth.py::test_exhausted_quota_never_falls_back"],
+      "remaining": ["Prove run suspension and result preservation for expired auth and exhausted quota", "Prove bounded retry behavior"]
+    },
+    {
+      "id": "AC05",
+      "title": "Multi-stack initialization",
+      "status": "passed",
+      "evidence_class": "engine",
+      "evidence": ["tests/integration/test_discovery.py"],
+      "remaining": []
+    },
+    {
+      "id": "AC06",
+      "title": "Live brainstorm",
+      "status": "not_started",
+      "evidence_class": "none",
+      "evidence": [],
+      "remaining": ["Implement three distinct brainstorm sessions", "Persist contributions, divergence, and the user answer"]
+    },
+    {
+      "id": "AC07",
+      "title": "Specification",
+      "status": "partial",
+      "evidence_class": "engine",
+      "evidence": ["tests/unit/test_models.py::test_automatic_criterion_requires_check", "tests/unit/test_models.py::test_reducer_requires_evidence"],
+      "remaining": ["Implement draft completion and freeze workflow", "Bind freeze validation to the complete spec hash"]
+    },
+    {
+      "id": "AC08",
+      "title": "Parallel execution",
+      "status": "passed",
+      "evidence_class": "live",
+      "evidence": ["docs/evidence/g3-codex-multisurface-darwin-arm64.json", "tests/unit/test_scheduler.py", "tests/integration/test_multisurface.py"],
+      "remaining": []
+    },
+    {
+      "id": "AC09",
+      "title": "Path ownership",
+      "status": "passed",
+      "evidence_class": "engine",
+      "evidence": ["tests/integration/test_vertical.py::test_vertical_rejects_out_of_scope_agent_change_without_false_success"],
+      "remaining": []
+    },
+    {
+      "id": "AC10",
+      "title": "Independent checks",
+      "status": "passed",
+      "evidence_class": "engine",
+      "evidence": ["tests/integration/test_vertical.py::test_vertical_runs_build_check_fix_and_independent_review", "tests/integration/test_checks.py"],
+      "remaining": []
+    },
+    {
+      "id": "AC11",
+      "title": "Independent review",
+      "status": "partial",
+      "evidence_class": "mixed",
+      "evidence": ["docs/evidence/g1-codex-vertical-darwin-arm64.json", "tests/unit/test_evidence.py::test_ship_gate_rejects_dead_reviewer_surface"],
+      "remaining": ["Kill a real reviewer process and prove the review remains incomplete"]
+    },
+    {
+      "id": "AC12",
+      "title": "Fix loop",
+      "status": "partial",
+      "evidence_class": "engine",
+      "evidence": ["tests/integration/test_vertical.py::test_vertical_runs_build_check_fix_and_independent_review"],
+      "remaining": ["Prove stagnation detection", "Exercise the maximum fix-cycle boundary explicitly"]
+    },
+    {
+      "id": "AC13",
+      "title": "Evidence freshness",
+      "status": "passed",
+      "evidence_class": "engine",
+      "evidence": ["tests/unit/test_evidence.py::test_ship_gate_rejects_stale_proof", "tests/integration/test_delivery.py::test_ship_rejects_candidate_changed_after_review"],
+      "remaining": []
+    },
+    {
+      "id": "AC14",
+      "title": "GitHub and GitLab delivery",
+      "status": "partial",
+      "evidence_class": "mixed",
+      "evidence": ["docs/evidence/g2-github-darwin-arm64.json", "tests/unit/test_hosting.py"],
+      "remaining": ["Run live GitLab delivery", "Qualify configured release notes"]
+    },
+    {
+      "id": "AC15",
+      "title": "Lost pull-request response",
+      "status": "passed",
+      "evidence_class": "engine",
+      "evidence": ["tests/integration/test_delivery.py::test_ship_recovers_pr_created_before_ack_without_duplicate", "docs/evidence/g2-local-delivery.json"],
+      "remaining": []
+    },
+    {
+      "id": "AC16",
+      "title": "Controller crash with a live worker",
+      "status": "partial",
+      "evidence_class": "live",
+      "evidence": ["docs/evidence/g3-codex-mid-wave-recovery-darwin-arm64.json", "tests/integration/test_database.py::test_task_lease_generation_rejects_stale_worker"],
+      "remaining": ["Use an operating-system SIGKILL instead of an injected boundary failure", "Prove no concurrent writer resumes while the original worker is alive"]
+    },
+    {
+      "id": "AC17",
+      "title": "Pause and cancellation",
+      "status": "partial",
+      "evidence_class": "mixed",
+      "evidence": ["docs/evidence/g1-codex-recovery-darwin-arm64.json", "docs/evidence/g0-codex-darwin-arm64.json"],
+      "remaining": ["Stop new dispatches while a turn is active", "Verify interruption of descendant processes", "Record uncertain termination when death cannot be proven"]
+    },
+    {
+      "id": "AC18",
+      "title": "FIFO decisions",
+      "status": "partial",
+      "evidence_class": "engine",
+      "evidence": ["tests/integration/test_database.py::test_request_response_is_fifo_and_idempotent"],
+      "remaining": ["Race two independent protocol clients against the same request"]
+    },
+    {
+      "id": "AC19",
+      "title": "Francois client",
+      "status": "deferred",
+      "evidence_class": "engine",
+      "evidence": ["docs/evidence/g4-local-francois-protocol.json", "tests/integration/test_service_host.py"],
+      "remaining": ["Validate the external Francois client and UI; explicitly deferred by the user"]
+    },
+    {
+      "id": "AC20",
+      "title": "Intake and Patch",
+      "status": "passed",
+      "evidence_class": "live",
+      "evidence": ["docs/evidence/g3-codex-intake-patch-darwin-arm64.json", "tests/integration/test_patch.py", "tests/unit/test_intake.py"],
+      "remaining": []
+    },
+    {
+      "id": "AC21",
+      "title": "Fleet",
+      "status": "passed",
+      "evidence_class": "live",
+      "evidence": ["docs/evidence/g3-codex-fleet-darwin-arm64.json", "tests/integration/test_fleet.py"],
+      "remaining": []
+    },
+    {
+      "id": "AC22",
+      "title": "Audit, refactor, and retro",
+      "status": "passed",
+      "evidence_class": "live",
+      "evidence": ["docs/evidence/g3-codex-maintenance-darwin-arm64.json", "tests/integration/test_maintenance.py"],
+      "remaining": []
+    },
+    {
+      "id": "AC23",
+      "title": "Design and retrieval",
+      "status": "partial",
+      "evidence_class": "mixed",
+      "evidence": ["docs/evidence/g3-local-design-retrieval.json", "docs/evidence/g3-codex-align-ds-darwin-arm64.json"],
+      "remaining": ["Capture real snapshots from every externally claimed provider", "Validate external provider unavailability paths"]
+    },
+    {
+      "id": "AC24",
+      "title": "Obsidian projection",
+      "status": "passed",
+      "evidence_class": "engine",
+      "evidence": ["docs/evidence/g3-local-kanban-metrics.json", "tests/integration/test_kanban_metrics.py"],
+      "remaining": []
+    },
+    {
+      "id": "AC25",
+      "title": "V2 migration",
+      "status": "passed",
+      "evidence_class": "engine",
+      "evidence": ["docs/evidence/g4-local-v2-migration-upgrade.json", "tests/integration/test_migration.py"],
+      "remaining": []
+    },
+    {
+      "id": "AC26",
+      "title": "Packaging and upgrade",
+      "status": "partial",
+      "evidence_class": "engine",
+      "evidence": ["tests/packaging/verify_clean_install.py", "tests/integration/test_migration.py::test_schema_v1_upgrade_is_backed_up_and_preserves_data", "tests/integration/test_migration.py::test_older_binary_refuses_future_schema"],
+      "remaining": ["Prove an installed-version upgrade preserves user configuration on every announced platform"]
+    },
+    {
+      "id": "AC27",
+      "title": "Logs and export",
+      "status": "partial",
+      "evidence_class": "engine",
+      "evidence": ["tests/unit/test_codex_adapter.py::test_passive_status_recognizes_chatgpt_without_exposing_output", "tests/integration/test_protocol.py"],
+      "remaining": ["Implement and qualify database export", "Inject fake secrets and prove absence from every log and error channel", "Exercise log and export size limits"]
+    },
+    {
+      "id": "AC28",
+      "title": "Degraded environment",
+      "status": "not_started",
+      "evidence_class": "none",
+      "evidence": [],
+      "remaining": ["Qualify missing dependency", "Qualify missing container", "Qualify network outage", "Qualify disk-full state integrity"]
+    },
+    {
+      "id": "AC29",
+      "title": "Protocol conformance",
+      "status": "partial",
+      "evidence_class": "engine",
+      "evidence": ["tests/integration/test_protocol.py", "tests/integration/test_service_host.py"],
+      "remaining": ["Exercise malformed JSON and oversized frames", "Race deduplicated mutations", "Qualify a slow client and cursor continuity"]
+    },
+    {
+      "id": "AC30",
+      "title": "Permissions",
+      "status": "partial",
+      "evidence_class": "live",
+      "evidence": ["docs/evidence/g0-codex-darwin-arm64.json", "tests/unit/test_codex_adapter.py::test_live_probe_is_read_only_ephemeral_and_deny_all"],
+      "remaining": ["Attempt forbidden tools in live workflows", "Prove retries never elevate permissions automatically"]
+    }
+  ]
+}
