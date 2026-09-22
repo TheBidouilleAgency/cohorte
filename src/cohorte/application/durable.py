@@ -4,12 +4,51 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from cohorte.domain.errors import CohorteError, ErrorCode
 from cohorte.domain.models import RunStatus, Stage, Task
 from cohorte.persistence.sqlite import Database
 
 
 class RunStopped(Exception):
     pass
+
+
+_AUTH_ERRORS = {
+    ErrorCode.AUTH_REQUIRED,
+    ErrorCode.AUTH_MODE_MISMATCH,
+    ErrorCode.AUTH_MODE_UNVERIFIED,
+}
+
+
+def record_run_error(database: Database, run_id: str, error: Exception) -> None:
+    current = database.get_run(run_id)
+    code = error.code if isinstance(error, CohorteError) else None
+    if code in _AUTH_ERRORS:
+        status, event_type = RunStatus.WAITING_AUTH, "run.waiting_auth"
+    elif code == ErrorCode.QUOTA_EXHAUSTED:
+        status, event_type = RunStatus.WAITING_QUOTA, "run.waiting_quota"
+    elif code == ErrorCode.PROVIDER_UNAVAILABLE:
+        status, event_type = RunStatus.PAUSED, "run.suspended"
+    elif code == ErrorCode.EFFECT_UNCERTAIN:
+        status, event_type = RunStatus.BLOCKED_UNCERTAIN, "run.effect_uncertain"
+    elif code == ErrorCode.WORKER_NOT_STOPPED:
+        status, event_type = RunStatus.BLOCKED, "run.blocked"
+    else:
+        status, event_type = RunStatus.FAILED, "run.failed"
+    updated = current.model_copy(
+        update={
+            "status": status,
+            "state_version": current.state_version + 1,
+            "updated_at": datetime.now(UTC),
+        }
+    )
+    data = error.as_data() if isinstance(error, CohorteError) else {"message": str(error)}
+    database.update_run(
+        updated,
+        current.state_version,
+        event_type,
+        data,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,6 +74,11 @@ class SqliteTaskJournal:
                 task.id,
                 {"task": task.model_dump(mode="json")},
             )
+
+    def require_dispatch_allowed(self) -> None:
+        status = self.database.get_run(self.run_id).status
+        if status in {RunStatus.PAUSED, RunStatus.CANCELLED}:
+            raise RunStopped(status.value)
 
     def records(self) -> dict[str, dict[str, Any]]:
         return {

@@ -229,6 +229,8 @@ class MultiSurfaceRunner:
         if resume_stage != Stage.BUILD:
             completed = set(tasks_by_id)
         while len(completed) != len(plan.tasks):
+            if task_journal is not None:
+                task_journal.require_dispatch_allowed()
             batch = schedule_ready(
                 plan.tasks,
                 completed,

@@ -639,20 +639,45 @@ class Database:
     ) -> dict[str, Any]:
         key = self._task_key(run_id, task_id)
         attempt_id = f"{key}:{ordinal}"
-        owner_id = key
         expires_at = datetime.now(UTC).timestamp() + 1800
         expires = datetime.fromtimestamp(expires_at, UTC).isoformat()
         with self.transaction() as tx:
             current = tx.execute(
-                "SELECT generation FROM leases WHERE resource_type='task' AND resource_id=?",
+                "SELECT generation,owner_id,expires_at FROM leases "
+                "WHERE resource_type='task' AND resource_id=?",
                 (key,),
             ).fetchone()
-            generation = (int(current[0]) if current else 0) + 1
+            if current is not None and datetime.fromisoformat(current["expires_at"]) > datetime.now(
+                UTC
+            ):
+                raise CohorteError(
+                    ErrorCode.WORKER_NOT_STOPPED,
+                    f"task {task_id} still has an active worker lease",
+                    "a concurrent attempt was not started",
+                    retryable=True,
+                    remediation="wait for confirmed worker termination or lease expiry",
+                    details={"owner_id": current["owner_id"], "expires_at": current["expires_at"]},
+                )
+            if current is not None:
+                tx.execute(
+                    "UPDATE attempts SET status='abandoned' WHERE task_id=? AND status='running'",
+                    (key,),
+                )
+                tx.execute(
+                    "DELETE FROM leases WHERE resource_type='task' AND resource_id=?",
+                    (key,),
+                )
+            task_row = tx.execute(
+                "SELECT lease_generation FROM tasks WHERE id=?", (key,)
+            ).fetchone()
+            if task_row is None:
+                raise KeyError(key)
+            generation = int(task_row["lease_generation"]) + 1
             tx.execute(
                 "INSERT INTO leases(resource_type,resource_id,generation,owner_id,expires_at) "
                 "VALUES ('task',?,?,?,?) ON CONFLICT(resource_type,resource_id) DO UPDATE SET "
                 "generation=excluded.generation,owner_id=excluded.owner_id,expires_at=excluded.expires_at",
-                (key, generation, owner_id, expires),
+                (key, generation, attempt_id, expires),
             )
             tx.execute(
                 "UPDATE attempts SET status='abandoned' WHERE task_id=? AND status='running'",
@@ -690,7 +715,11 @@ class Database:
                 "WHERE resource_type='task' AND resource_id=?",
                 (key,),
             ).fetchone()
-            if lease is None or int(lease["generation"]) != generation or lease["owner_id"] != key:
+            if (
+                lease is None
+                or int(lease["generation"]) != generation
+                or lease["owner_id"] != attempt_id
+            ):
                 raise CohorteError(
                     ErrorCode.VERSION_CONFLICT,
                     f"stale lease completion for task {task_id}",

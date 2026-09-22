@@ -120,6 +120,14 @@ def test_task_lease_generation_rejects_stale_worker(database: Database) -> None:
     )
     database.prepare_task("lease-run", "task", {"task": {"id": "task"}})
     first = database.start_task_attempt("lease-run", "task", 1, {"ordinal": 1})
+    with pytest.raises(CohorteError) as active:
+        database.start_task_attempt("lease-run", "task", 2, {"ordinal": 2})
+    assert active.value.code == ErrorCode.WORKER_NOT_STOPPED
+    database.connection.execute(
+        "UPDATE leases SET expires_at=?",
+        ((now.replace(year=now.year - 1)).isoformat(),),
+    )
+    database.expire_stale_task_leases(now)
     second = database.start_task_attempt("lease-run", "task", 2, {"ordinal": 2})
 
     with pytest.raises(CohorteError) as caught:

@@ -19,7 +19,12 @@ from cohorte.adapters.git import GitRepository
 from cohorte.adapters.hosting import GitHubProvider, GitLabProvider
 from cohorte.adapters.providers import inspect_runtime
 from cohorte.application.delivery import ShipRunner
-from cohorte.application.durable import RunStopped, SqliteRunJournal, SqliteTaskJournal
+from cohorte.application.durable import (
+    RunStopped,
+    SqliteRunJournal,
+    SqliteTaskJournal,
+    record_run_error,
+)
 from cohorte.application.fleet import FleetRunner
 from cohorte.application.multisurface import MultiSurfaceRunner
 from cohorte.application.service import CohorteService
@@ -320,20 +325,6 @@ def _schemas(output: Path) -> dict[str, Any]:
     return {"written": [f"{model.__name__}.schema.json" for model in models]}
 
 
-def _mark_run_failed(database: Database, run_id: str) -> None:
-    from cohorte.domain.models import RunStatus
-
-    current = database.get_run(run_id)
-    failed = current.model_copy(
-        update={
-            "status": RunStatus.FAILED,
-            "state_version": current.state_version + 1,
-            "updated_at": datetime.now(UTC),
-        }
-    )
-    database.update_run(failed, current.state_version, "run.failed", {})
-
-
 def _create_ship_request(database: Database, run_id: str, result: Any) -> str:
     payload = {
         "candidate_tree_hash": result.candidate_tree_hash,
@@ -554,8 +545,8 @@ def run(argv: list[str] | None = None) -> int:
             except RunStopped:
                 _emit(database.get_run(args.run_id).model_dump(mode="json"), args.json)
                 return 0
-            except Exception:
-                _mark_run_failed(database, args.run_id)
+            except Exception as error:
+                record_run_error(database, args.run_id, error)
                 raise
             request_id = _create_ship_request(database, args.run_id, patch_result.candidate)
             _emit({**asdict(patch_result), "ship_request_id": request_id}, args.json)
@@ -687,8 +678,8 @@ def run(argv: list[str] | None = None) -> int:
             except RunStopped:
                 _emit(database.get_run(args.run_id).model_dump(mode="json"), args.json)
                 return 0
-            except Exception:
-                _mark_run_failed(database, args.run_id)
+            except Exception as error:
+                record_run_error(database, args.run_id, error)
                 raise
             request_id = _create_ship_request(database, args.run_id, refactor_result.candidate)
             _emit({**asdict(refactor_result), "ship_request_id": request_id}, args.json)
@@ -1003,8 +994,8 @@ def run(argv: list[str] | None = None) -> int:
             except RunStopped:
                 _emit(database.get_run(args.run_id).model_dump(mode="json"), args.json)
                 return 0
-            except Exception:
-                _mark_run_failed(database, args.run_id)
+            except Exception as error:
+                record_run_error(database, args.run_id, error)
                 raise
             request_id = _create_ship_request(database, args.run_id, alignment_result.candidate)
             _emit({**asdict(alignment_result), "ship_request_id": request_id}, args.json)
@@ -1181,8 +1172,8 @@ def run(argv: list[str] | None = None) -> int:
             except RunStopped:
                 _emit(database.get_run(args.run_id).model_dump(mode="json"), args.json)
                 return 0
-            except Exception:
-                _mark_run_failed(database, args.run_id)
+            except Exception as error:
+                record_run_error(database, args.run_id, error)
                 raise
             request_id = _create_ship_request(database, args.run_id, loop_result)
             _emit({**asdict(loop_result), "ship_request_id": request_id}, args.json)
@@ -1249,8 +1240,8 @@ def run(argv: list[str] | None = None) -> int:
             except RunStopped:
                 _emit(database.get_run(args.run_id).model_dump(mode="json"), args.json)
                 return 0
-            except Exception:
-                _mark_run_failed(database, args.run_id)
+            except Exception as error:
+                record_run_error(database, args.run_id, error)
                 raise
             request_id = _create_ship_request(database, args.run_id, resume_result)
             _emit({**asdict(resume_result), "ship_request_id": request_id}, args.json)

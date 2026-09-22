@@ -44,6 +44,13 @@ pre-release foundation, not a V2-parity or provider-support claim.
   branch identities, produced commits and integration commits. A live controller-crash scenario
   recovered the still-`running` client task from its existing commit, completed with exactly three
   attempts and zero remaining leases, then passed checks and the bounded review/fix/re-review cycle.
+- Provider auth expiry and exhausted quota suspend runs in `waiting_auth` or `waiting_quota` while
+  preserving their stage and candidate. Transient overload retry is limited to two attempts.
+- Active task leases cannot be replaced before expiry. A POSIX `SIGKILL` qualification leaves a
+  worker alive after controller death, rejects concurrent recovery, then resumes only after worker
+  termination and lease expiry.
+- A live Codex interrupt probe observes a marked descendant before interruption and proves it is
+  gone afterward. A killed reviewer yields `TransportClosedError` and no accepted review.
 - G3 Fleet: cross-feature write-set overlap matrix, derived and explicit dependencies, bounded
   parallel feature waves, isolated feature worktrees, serialized integration, per-feature
   revalidation after every base change, global checks and cross-feature review.
@@ -111,10 +118,10 @@ pre-release foundation, not a V2-parity or provider-support claim.
 
 ## Deliberately unverified or incomplete
 
-- G0 Codex quota exhaustion, auth expiry, user questions, model catalogue and usage reporting;
-  Claude remains unavailable pending an account.
-- GitLab live delivery evidence, background workers with immediate mid-turn control, and hard-kill
-  process-tree recovery beyond the validated deterministic controller-crash boundary.
+- G0 Codex user questions, model catalogue and usage reporting; Claude remains unavailable pending
+  an account. Permission retry remains unqualified because the runtime emitted no command-level
+  denial events during the live negative probe.
+- GitLab live delivery evidence and a persistent background controller remain open.
 - Full brainstorm/spec UX and external Figma/Serena/Graphify validation. Manual Patch reproduction
   remains blocked until candidate-bound human evidence is implemented.
 - Windows real-host and load-level slow-client qualification, and the François UI client.

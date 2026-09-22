@@ -5,9 +5,11 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import pytest
+from openai_codex import ServerBusyError
 
 from cohorte.adapters.codex import (
     CodexAdapter,
+    bounded_provider_call,
     inspect_codex_account,
     sanitized_provider_env,
     strict_output_schema,
@@ -17,6 +19,8 @@ from cohorte.domain.auth import (
     BillingEvidence,
     ConnectionState,
     EffectiveAuthMode,
+    Quota,
+    QuotaState,
 )
 from cohorte.domain.errors import CohorteError, ErrorCode
 from cohorte.domain.evidence import ReviewVerdict
@@ -123,8 +127,57 @@ def test_live_probe_refuses_api_mode(inspect: Mock, tmp_path) -> None:
     assert caught.value.code == ErrorCode.AUTH_MODE_MISMATCH
 
 
+@pytest.mark.parametrize(
+    ("account", "expected_code"),
+    [
+        (
+            subscription_status().model_copy(update={"connection_state": ConnectionState.EXPIRED}),
+            ErrorCode.AUTH_REQUIRED,
+        ),
+        (
+            subscription_status().model_copy(update={"quota": Quota(state=QuotaState.EXHAUSTED)}),
+            ErrorCode.QUOTA_EXHAUSTED,
+        ),
+    ],
+)
 @patch("cohorte.adapters.codex.Codex")
-def test_read_only_probe_requires_marker_to_stay_absent(codex_class: Mock, tmp_path) -> None:
+def test_adapter_suspends_before_start_for_expired_auth_or_quota(
+    codex_class: Mock, account: AccountStatus, expected_code: ErrorCode, tmp_path
+) -> None:
+    with (
+        patch("cohorte.adapters.codex.inspect_codex_account", return_value=account),
+        pytest.raises(CohorteError) as caught,
+    ):
+        CodexAdapter(tmp_path).verify_live()
+
+    assert caught.value.code == expected_code
+    codex_class.assert_not_called()
+
+
+@patch("cohorte.adapters.codex.time.sleep")
+def test_provider_retry_is_bounded_and_only_for_transient_overload(sleep: Mock) -> None:
+    operation = Mock(
+        side_effect=[
+            ServerBusyError(-32000, "busy", {"codex_error_info": "server_overloaded"}),
+            "completed",
+        ]
+    )
+
+    assert bounded_provider_call(operation) == "completed"
+    assert operation.call_count == 2
+    sleep.assert_called_once_with(0.25)
+
+    permanent = Mock(side_effect=RuntimeError("permanent"))
+    with pytest.raises(RuntimeError, match="permanent"):
+        bounded_provider_call(permanent)
+    assert permanent.call_count == 1
+
+
+@patch("cohorte.adapters.codex.inspect_codex_account", side_effect=subscription_status)
+@patch("cohorte.adapters.codex.Codex")
+def test_read_only_probe_requires_marker_to_stay_absent(
+    codex_class: Mock, _inspect: Mock, tmp_path
+) -> None:
     client = codex_class.return_value.__enter__.return_value
     thread = client.thread_start.return_value
     thread.run.return_value = SimpleNamespace(status=SimpleNamespace(value="completed"))
@@ -138,21 +191,82 @@ def test_read_only_probe_requires_marker_to_stay_absent(codex_class: Mock, tmp_p
 
 
 @patch("cohorte.adapters.codex.time.sleep")
+@patch("cohorte.adapters.codex._matching_process_ids", side_effect=[[123], []])
+@patch("cohorte.adapters.codex.inspect_codex_account", side_effect=subscription_status)
 @patch("cohorte.adapters.codex.Codex")
 def test_interrupt_probe_requires_interrupted_terminal_status(
-    codex_class: Mock, sleep: Mock, tmp_path
+    codex_class: Mock, _inspect: Mock, _processes: Mock, sleep: Mock, tmp_path
 ) -> None:
     client = codex_class.return_value.__enter__.return_value
     handle = client.thread_start.return_value.turn.return_value
     handle.run.return_value = SimpleNamespace(status=SimpleNamespace(value="interrupted"))
     result = CodexAdapter(tmp_path, {"PATH": "/bin"}).verify_interrupt()
     assert result["status"] == "passed"
+    assert result["descendant_termination_proven"] is True
     handle.interrupt.assert_called_once_with()
-    sleep.assert_called_once_with(0.5)
+    sleep.assert_not_called()
 
 
+@patch("cohorte.adapters.codex.inspect_codex_account", side_effect=subscription_status)
 @patch("cohorte.adapters.codex.Codex")
-def test_resume_probe_checks_nonce_across_clients(codex_class: Mock, tmp_path) -> None:
+def test_permission_retry_requires_two_denied_commands(
+    codex_class: Mock, _inspect: Mock, tmp_path
+) -> None:
+    client = codex_class.return_value.__enter__.return_value
+    thread = client.thread_start.return_value
+    markers: list[str] = []
+
+    def run(prompt: str, **_kwargs):
+        markers.extend(part for part in prompt.split() if ".cohorte-denied-" in part)
+        first = prompt.split("touch ", 1)[1].split("`", 1)[0]
+        second = prompt.split("Path('", 1)[1].split("')", 1)[0]
+        return SimpleNamespace(
+            items=[
+                SimpleNamespace(
+                    command=f"touch {first}",
+                    status=SimpleNamespace(value="failed"),
+                    exit_code=1,
+                ),
+                SimpleNamespace(
+                    command=f"python write {second}",
+                    status=SimpleNamespace(value="declined"),
+                    exit_code=None,
+                ),
+            ]
+        )
+
+    thread.run.side_effect = run
+
+    result = CodexAdapter(tmp_path, {"PATH": "/bin"}).verify_permission_retry()
+
+    assert result["attempts"] == 2
+    assert result["automatic_elevation"] is False
+
+
+@patch("cohorte.adapters.codex.os.kill")
+@patch("cohorte.adapters.codex.inspect_codex_account", side_effect=subscription_status)
+@patch("cohorte.adapters.codex.Codex")
+def test_killed_reviewer_never_returns_accepted_review(
+    codex_class: Mock, _inspect: Mock, kill: Mock, tmp_path
+) -> None:
+    client = codex_class.return_value
+    client._client._proc.pid = 4321
+    client.thread_start.return_value.turn.return_value.run.side_effect = RuntimeError(
+        "transport closed"
+    )
+
+    result = CodexAdapter(tmp_path, {"PATH": "/bin"}).verify_reviewer_death()
+
+    assert result["review_accepted"] is False
+    assert result["process_signal"] == "SIGKILL"
+    kill.assert_called_once_with(4321, 9)
+
+
+@patch("cohorte.adapters.codex.inspect_codex_account", side_effect=subscription_status)
+@patch("cohorte.adapters.codex.Codex")
+def test_resume_probe_checks_nonce_across_clients(
+    codex_class: Mock, _inspect: Mock, tmp_path
+) -> None:
     client = codex_class.return_value.__enter__.return_value
     original = client.thread_start.return_value
     original.id = "thread-1"

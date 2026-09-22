@@ -10,8 +10,8 @@
     "not_started": "No sufficient executable qualification exists yet."
   },
   "summary": {
-    "passed": 17,
-    "partial": 10,
+    "passed": 21,
+    "partial": 6,
     "blocked": 1,
     "deferred": 1,
     "not_started": 1
@@ -44,10 +44,10 @@
     {
       "id": "AC04",
       "title": "Expired authentication and quota",
-      "status": "partial",
+      "status": "passed",
       "evidence_class": "engine",
-      "evidence": ["tests/unit/test_auth.py::test_exhausted_quota_never_falls_back"],
-      "remaining": ["Prove run suspension and result preservation for expired auth and exhausted quota", "Prove bounded retry behavior"]
+      "evidence": ["tests/unit/test_codex_adapter.py::test_adapter_suspends_before_start_for_expired_auth_or_quota", "tests/integration/test_provider_suspension.py::test_auth_and_quota_failures_suspend_run_without_losing_results", "tests/unit/test_codex_adapter.py::test_provider_retry_is_bounded_and_only_for_transient_overload"],
+      "remaining": []
     },
     {
       "id": "AC05",
@@ -100,10 +100,10 @@
     {
       "id": "AC11",
       "title": "Independent review",
-      "status": "partial",
-      "evidence_class": "mixed",
-      "evidence": ["docs/evidence/g1-codex-vertical-darwin-arm64.json", "tests/unit/test_evidence.py::test_ship_gate_rejects_dead_reviewer_surface"],
-      "remaining": ["Kill a real reviewer process and prove the review remains incomplete"]
+      "status": "passed",
+      "evidence_class": "live",
+      "evidence": ["docs/evidence/g1-codex-vertical-darwin-arm64.json", "docs/evidence/g5-codex-control-darwin-arm64.json", "tests/unit/test_evidence.py::test_ship_gate_rejects_dead_reviewer_surface", "tests/unit/test_codex_adapter.py::test_killed_reviewer_never_returns_accepted_review"],
+      "remaining": []
     },
     {
       "id": "AC12",
@@ -140,18 +140,18 @@
     {
       "id": "AC16",
       "title": "Controller crash with a live worker",
-      "status": "partial",
-      "evidence_class": "live",
-      "evidence": ["docs/evidence/g3-codex-mid-wave-recovery-darwin-arm64.json", "tests/integration/test_database.py::test_task_lease_generation_rejects_stale_worker"],
-      "remaining": ["Use an operating-system SIGKILL instead of an injected boundary failure", "Prove no concurrent writer resumes while the original worker is alive"]
+      "status": "passed",
+      "evidence_class": "mixed",
+      "evidence": ["docs/evidence/g3-codex-mid-wave-recovery-darwin-arm64.json", "docs/evidence/g5-codex-control-darwin-arm64.json", "tests/integration/test_controller_sigkill.py", "tests/integration/test_database.py::test_task_lease_generation_rejects_stale_worker"],
+      "remaining": []
     },
     {
       "id": "AC17",
       "title": "Pause and cancellation",
-      "status": "partial",
+      "status": "passed",
       "evidence_class": "mixed",
-      "evidence": ["docs/evidence/g1-codex-recovery-darwin-arm64.json", "docs/evidence/g0-codex-darwin-arm64.json"],
-      "remaining": ["Stop new dispatches while a turn is active", "Verify interruption of descendant processes", "Record uncertain termination when death cannot be proven"]
+      "evidence": ["docs/evidence/g1-codex-recovery-darwin-arm64.json", "docs/evidence/g5-codex-control-darwin-arm64.json", "tests/integration/test_multisurface.py::test_pause_during_active_wave_prevents_next_wave_dispatch", "tests/integration/test_provider_suspension.py::test_uncertain_termination_blocks_run_and_preserves_candidate"],
+      "remaining": []
     },
     {
       "id": "AC18",
@@ -254,8 +254,8 @@
       "title": "Permissions",
       "status": "partial",
       "evidence_class": "live",
-      "evidence": ["docs/evidence/g0-codex-darwin-arm64.json", "tests/unit/test_codex_adapter.py::test_live_probe_is_read_only_ephemeral_and_deny_all"],
-      "remaining": ["Attempt forbidden tools in live workflows", "Prove retries never elevate permissions automatically"]
+      "evidence": ["docs/evidence/g0-codex-darwin-arm64.json", "docs/evidence/g5-codex-control-darwin-arm64.json", "tests/unit/test_codex_adapter.py::test_live_probe_is_read_only_ephemeral_and_deny_all"],
+      "remaining": ["Obtain runtime command or auto-review events proving both forbidden mutation attempts were denied", "Prove retries never elevate permissions automatically from runtime evidence rather than model text"]
     }
   ]
 }

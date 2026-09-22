@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "gate": "G5",
+  "scenario": "codex-control-and-hard-kill-qualification",
+  "checked_at": "2026-09-22T20:11:15Z",
+  "platform": {
+    "os": "Darwin",
+    "version": "25.5.0",
+    "architecture": "arm64",
+    "python": "3.13.15"
+  },
+  "runtime": {
+    "codex_cli": "0.155.1",
+    "openai_codex_sdk": "0.155.1",
+    "api_routing_environment_removed": true
+  },
+  "reviewer_death": {
+    "signal": "SIGKILL",
+    "transport_failure": "TransportClosedError",
+    "review_accepted": false,
+    "status": "passed"
+  },
+  "interrupt": {
+    "turn_status": "interrupted",
+    "marked_descendant_started": true,
+    "marked_descendant_termination_proven": true,
+    "status": "passed"
+  },
+  "controller_crash": {
+    "test": "tests/integration/test_controller_sigkill.py",
+    "controller_signal": "SIGKILL",
+    "worker_alive_after_controller_death": true,
+    "concurrent_writer_rejected_before_and_after_controller_death": true,
+    "resume_after_worker_death_and_lease_expiry": true,
+    "status": "passed"
+  },
+  "permission_retry": {
+    "marker_files_absent": true,
+    "command_or_auto_review_events_observed": 0,
+    "model_claimed_two_denials": true,
+    "status": "inconclusive"
+  },
+  "contains_credentials": false,
+  "limitations": [
+    "The permission probe did not emit command or auto-review events, so model text is not accepted as proof and AC30 remains partial.",
+    "The SIGKILL controller test uses a real local worker process and the production SQLite lease implementation; it is not a killed paid model turn.",
+    "Claude remains unavailable and is not certified."
+  ]
+}

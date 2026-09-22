@@ -8,8 +8,8 @@ Current baseline:
 
 | Status | Count |
 | --- | ---: |
-| Passed | 17 |
-| Partial | 10 |
+| Passed | 21 |
+| Partial | 6 |
 | Blocked | 1 |
 | Deferred | 1 |
 | Not started | 1 |
@@ -19,5 +19,7 @@ AC27 is qualified with bounded, redacted check logs and atomic CLI/RPC run expor
 classifies missing dependencies, unavailable container runtimes, network outages, and full disks as
 retryable environment failures while preserving durable state. AC29 now covers protocol versions,
 invalid and oversized frames, concurrent mutation deduplication, bounded replay, and slow-client
-reconnection without cursor gaps. The next bounded Codex-live tranche is
-AC04, AC11, AC16, AC17, and AC30.
+reconnection without cursor gaps. AC04, AC11, AC16, and AC17 now cover provider suspension,
+bounded overload retry, reviewer death, hard controller crashes, active-wave pause, descendant
+interruption, and uncertain termination. AC30 remains partial because the live permission probe
+emitted no command or auto-review event; model text is not treated as proof.

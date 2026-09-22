@@ -9,8 +9,9 @@ from pathlib import Path
 
 import pytest
 
-from cohorte.application.durable import SqliteRunJournal, SqliteTaskJournal
+from cohorte.application.durable import RunStopped, SqliteRunJournal, SqliteTaskJournal
 from cohorte.application.multisurface import MultiSurfaceRunner, plan_multisurface
+from cohorte.application.service import CohorteService
 from cohorte.application.vertical import AgentReport, AgentReview
 from cohorte.domain.evidence import ReviewVerdict
 from cohorte.domain.models import (
@@ -212,6 +213,65 @@ def test_multisurface_plan_maps_surface_dependencies() -> None:
     assert tasks["build-backend"].depends_on == ["build-contract"]
     assert tasks["build-client"].depends_on == ["build-contract"]
     assert tasks["build-backend"].read_paths == ["contract"]
+
+
+def test_pause_during_active_wave_prevents_next_wave_dispatch(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    git(repository, "init", "-b", "main")
+    git(repository, "config", "user.email", "test@example.com")
+    git(repository, "config", "user.name", "Test")
+    for directory in ("contract", "backend", "client"):
+        (repository / directory).mkdir()
+        (repository / directory / ".gitkeep").write_text("")
+    git(repository, "add", ".")
+    git(repository, "commit", "-m", "initial")
+    path = tmp_path / "state.sqlite3"
+    database = Database(path)
+    database.register_project("multi-demo", str(repository), "profile")
+    database.create_run(
+        RunState(
+            id="pause-wave",
+            project_id="multi-demo",
+            feature_id="multi-change",
+            stage=Stage.BUILD,
+            status=RunStatus.RUNNING,
+            state_version=1,
+            base_commit=git(repository, "rev-parse", "HEAD"),
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+        )
+    )
+
+    class PausingRuntime(ParallelRuntime):
+        def build(self, workspace: Path, prompt: str) -> AgentReport:
+            result = super().build(workspace, prompt)
+            if "build-contract" in prompt:
+                control = Database(path)
+                try:
+                    CohorteService(control).pause("pause-wave", "pause during active turn")
+                finally:
+                    control.close()
+            return result
+
+    runtime = PausingRuntime()
+    with pytest.raises(RunStopped, match="paused"):
+        MultiSurfaceRunner(runtime).run(
+            repository,
+            tmp_path / "worktrees",
+            profile(),
+            spec(),
+            "pause-wave",
+            task_journal=SqliteTaskJournal(database, "pause-wave"),
+        )
+
+    assert runtime.build_order == ["build-contract"]
+    assert database.get_run("pause-wave").status == RunStatus.PAUSED
+    assert {row["status"] for row in database.task_records("pause-wave")} == {
+        "integrated",
+        "queued",
+    }
+    database.close()
 
 
 def test_multisurface_recovers_committed_parallel_task_without_rebuilding(
