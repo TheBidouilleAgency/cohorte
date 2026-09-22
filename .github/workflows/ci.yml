@@ -13,6 +13,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: ${{ matrix.python }}
@@ -23,3 +25,4 @@ jobs:
       - run: uv run pytest
       - run: uv build
       - run: uv run python tests/packaging/verify_clean_install.py
+      - run: uv run python tests/packaging/verify_upgrade.py

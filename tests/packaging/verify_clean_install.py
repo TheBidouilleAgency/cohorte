@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 from pathlib import Path
 
 
@@ -14,7 +15,9 @@ def run(*argv: str) -> subprocess.CompletedProcess[str]:
 
 def main() -> None:
     repository = Path(__file__).resolve().parents[2]
-    wheels = sorted((repository / "dist").glob("cohorte_local-*.whl"))
+    project = tomllib.loads((repository / "pyproject.toml").read_text())
+    expected_version = project["project"]["version"]
+    wheels = sorted((repository / "dist").glob(f"cohorte_local-{expected_version}-*.whl"))
     if len(wheels) != 1:
         raise RuntimeError(f"expected exactly one Cohorte wheel, found {len(wheels)}")
     uv = shutil.which("uv")
@@ -32,7 +35,7 @@ def main() -> None:
         run(uv, "pip", "install", "--python", str(python), str(wheels[0]))
 
         version = run(str(command), "--version").stdout.strip()
-        if version != "cohorte 0.1.0a1":
+        if version != f"cohorte {expected_version}":
             raise RuntimeError(f"unexpected installed version: {version}")
         help_text = run(str(command), "--help").stdout
         if "Local coding-agent workflow engine" not in help_text:
