@@ -32,16 +32,21 @@ def git(root: Path, *args: str) -> str:
 
 
 class FleetRuntime:
-    def __init__(self) -> None:
+    def __init__(self, expected_concurrency: int = 1) -> None:
         self.lock = threading.Lock()
         self.active = 0
         self.max_active = 0
+        self.start_barrier = (
+            threading.Barrier(expected_concurrency) if expected_concurrency > 1 else None
+        )
 
     def build(self, workspace: Path, prompt: str) -> AgentReport:
         with self.lock:
             self.active += 1
             self.max_active = max(self.max_active, self.active)
         try:
+            if self.start_barrier is not None:
+                self.start_barrier.wait(timeout=300)
             time.sleep(0.05)
             if '"feature_id": "api-feature"' in prompt:
                 target = workspace / "api.py"
@@ -165,7 +170,7 @@ def repository(tmp_path: Path) -> Path:
 
 def test_fleet_parallelizes_disjoint_features_and_revalidates_each(tmp_path: Path) -> None:
     root = repository(tmp_path)
-    runtime = FleetRuntime()
+    runtime = FleetRuntime(expected_concurrency=2)
     specs = [feature("api-feature", "api", "api-check"), feature("web-feature", "web", "web-check")]
 
     result = FleetRunner(runtime).run(root, tmp_path / "worktrees", profile(), specs, "fleet-one")
