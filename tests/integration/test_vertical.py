@@ -66,6 +66,19 @@ class OutOfScopeRuntime(FixingRuntime):
         return AgentReport(summary="claimed success", changed_files=["README.md"])
 
 
+class StagnatingRuntime(FixingRuntime):
+    def fix(self, workspace: Path, prompt: str) -> AgentReport:
+        self.fixes += 1
+        return AgentReport(summary="claimed fix without a change", changed_files=[])
+
+
+class ExhaustingRuntime(FixingRuntime):
+    def fix(self, workspace: Path, prompt: str) -> AgentReport:
+        self.fixes += 1
+        (workspace / "src" / "message.txt").write_text(f"still-wrong-{self.fixes}\n")
+        return AgentReport(summary="changed but still wrong", changed_files=["src/message.txt"])
+
+
 def profile() -> ProjectProfile:
     return ProjectProfile(
         schema_version=1,
@@ -171,6 +184,38 @@ def test_vertical_rejects_out_of_scope_agent_change_without_false_success(
 
     assert caught.value.code == ErrorCode.OWNERSHIP_VIOLATION
     assert (repository / "README.md").read_text() == "original\n"
+
+
+@pytest.mark.parametrize(
+    ("case", "runtime", "message", "expected_fixes"),
+    [
+        ("stagnation", StagnatingRuntime(), "no candidate change", 1),
+        ("exhaustion", ExhaustingRuntime(), "fix-cycle limit", 2),
+    ],
+)
+def test_vertical_blocks_stagnation_and_fix_cycle_exhaustion(
+    tmp_path: Path,
+    case: str,
+    runtime: FixingRuntime,
+    message: str,
+    expected_fixes: int,
+) -> None:
+    repository = tmp_path / case
+    repository.mkdir()
+    git(repository, "init", "-b", "main")
+    git(repository, "config", "user.email", "test@example.com")
+    git(repository, "config", "user.name", "Test")
+    (repository / "src").mkdir()
+    (repository / "src" / ".gitkeep").write_text("")
+    git(repository, "add", ".")
+    git(repository, "commit", "-m", "initial")
+
+    with pytest.raises(CohorteError, match=message):
+        VerticalRunner(runtime).run(
+            repository, tmp_path / f"{case}-worktrees", profile(), spec(), f"{case}-run"
+        )
+
+    assert runtime.fixes == expected_fixes
 
 
 def test_vertical_resumes_after_durable_build_checkpoint(tmp_path: Path) -> None:

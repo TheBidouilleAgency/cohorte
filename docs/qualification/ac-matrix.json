@@ -10,8 +10,8 @@
     "not_started": "No sufficient executable qualification exists yet."
   },
   "summary": {
-    "passed": 12,
-    "partial": 14,
+    "passed": 14,
+    "partial": 12,
     "blocked": 1,
     "deferred": 1,
     "not_started": 2
@@ -108,10 +108,10 @@
     {
       "id": "AC12",
       "title": "Fix loop",
-      "status": "partial",
+      "status": "passed",
       "evidence_class": "engine",
-      "evidence": ["tests/integration/test_vertical.py::test_vertical_runs_build_check_fix_and_independent_review"],
-      "remaining": ["Prove stagnation detection", "Exercise the maximum fix-cycle boundary explicitly"]
+      "evidence": ["tests/integration/test_vertical.py::test_vertical_runs_build_check_fix_and_independent_review", "tests/integration/test_vertical.py::test_vertical_blocks_stagnation_and_fix_cycle_exhaustion"],
+      "remaining": []
     },
     {
       "id": "AC13",
@@ -156,10 +156,10 @@
     {
       "id": "AC18",
       "title": "FIFO decisions",
-      "status": "partial",
+      "status": "passed",
       "evidence_class": "engine",
-      "evidence": ["tests/integration/test_database.py::test_request_response_is_fifo_and_idempotent"],
-      "remaining": ["Race two independent protocol clients against the same request"]
+      "evidence": ["tests/integration/test_database.py::test_request_response_is_fifo_and_idempotent", "tests/integration/test_protocol.py::test_two_protocol_clients_race_one_request_and_only_first_decision_wins"],
+      "remaining": []
     },
     {
       "id": "AC19",

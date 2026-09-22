@@ -293,6 +293,7 @@ class FleetRunner:
                     remediation="inspect global checks and fleet review evidence",
                 )
             fix_cycles += 1
+            before_fix = candidate.snapshot_digest()
             self.runtime.fix(
                 candidate.root,
                 "Fix the fleet integration candidate without committing or pushing.\n"
@@ -312,6 +313,7 @@ class FleetRunner:
                     "fleet candidate was rejected",
                     remediation="restore out-of-scope files and retry",
                 )
+            VerticalRunner._require_fix_progress(before_fix, candidate.snapshot_digest())
 
         return FleetResult(
             fleet_id=fleet_id,

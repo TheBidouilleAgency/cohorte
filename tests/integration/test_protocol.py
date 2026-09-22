@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 
 from cohorte.application.service import CohorteService
 from cohorte.persistence.sqlite import Database
-from cohorte.protocol.rpc import RpcServer
+from cohorte.protocol.rpc import MAX_FRAME_BYTES, RpcServer
 
 
 def call(server: RpcServer, identifier: str, method: str, params: dict | None = None) -> dict:
@@ -118,3 +120,74 @@ def test_invalid_major_is_structured(tmp_path) -> None:
     )
     assert response["error"]["data"]["code"] == "PROTOCOL_INCOMPATIBLE"
     database.close()
+
+
+def test_malformed_and_oversized_frames_are_rejected_without_dispatch(tmp_path) -> None:
+    database = Database(tmp_path / "db.sqlite3")
+    server = RpcServer(CohorteService(database))
+
+    malformed = json.loads(server.handle_line(b"{"))
+    oversized = json.loads(server.handle_line(b"x" * (MAX_FRAME_BYTES + 1)))
+
+    assert malformed["error"]["data"]["code"] == "PROTOCOL_INVALID"
+    assert oversized["error"]["data"]["code"] == "PROTOCOL_INVALID"
+    assert server.initialized is False
+    database.close()
+
+
+def test_two_protocol_clients_race_one_request_and_only_first_decision_wins(tmp_path) -> None:
+    path = tmp_path / "db.sqlite3"
+    setup = Database(path)
+    subject = "a" * 64
+    request_id = setup.create_request(None, "approval", {"action": "ship"}, subject)
+    setup.close()
+    barrier = threading.Barrier(2)
+
+    def respond(response_id: str, approved: bool) -> dict:
+        database = Database(path)
+        try:
+            server = RpcServer(CohorteService(database), connection_id=response_id)
+            call(
+                server,
+                "init",
+                "initialize",
+                {
+                    "protocol_major": 1,
+                    "protocol_minor": 0,
+                    "client": {"name": response_id, "version": "1"},
+                    "capabilities": [],
+                },
+            )
+            barrier.wait(timeout=2)
+            return call(
+                server,
+                response_id,
+                "requests.respond",
+                {
+                    "request_id": request_id,
+                    "response_id": response_id,
+                    "response": {"approved": approved},
+                    "subject_hash": subject,
+                },
+            )
+        finally:
+            database.close()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        responses = list(
+            executor.map(
+                lambda values: respond(*values),
+                [("client-one", True), ("client-two", False)],
+            )
+        )
+
+    winners = [response for response in responses if "result" in response]
+    losers = [response for response in responses if "error" in response]
+    assert len(winners) == 1
+    assert len(losers) == 1
+    assert losers[0]["error"]["data"]["code"] == "REQUEST_ALREADY_RESOLVED"
+    check = Database(path)
+    try:
+        assert len(check.connection.execute("SELECT * FROM approvals").fetchall()) == 1
+    finally:
+        check.close()

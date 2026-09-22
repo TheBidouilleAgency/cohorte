@@ -206,12 +206,14 @@ class VerticalRunner:
                     remediation="inspect check and review evidence, then start a new run",
                 )
             fix_cycles += 1
+            before_fix = candidate.snapshot_digest()
             actionable = review.findings if review.verdict != ReviewVerdict.READY else blocking
             self.runtime.fix(
                 candidate.root,
                 self._fix_prompt(spec, failed, actionable),
             )
             self._require_owned(candidate.changed_files(plan.base_commit), task.write_paths)
+            self._require_fix_progress(before_fix, candidate.snapshot_digest())
             self._observe(observe, "fix", candidate, plan, {"fix_cycles": fix_cycles})
 
         identity = self._identity(candidate, plan, profile, spec)
@@ -273,6 +275,16 @@ class VerticalRunner:
                 f"files changed outside task ownership: {', '.join(violations)}",
                 "candidate was rejected",
                 remediation="restore out-of-scope files and retry",
+            )
+
+    @staticmethod
+    def _require_fix_progress(before: str, after: str) -> None:
+        if before == after:
+            raise CohorteError(
+                ErrorCode.REVIEW_INCOMPLETE,
+                "fix attempt made no candidate change",
+                "delivery is blocked because the fix loop stagnated",
+                remediation="inspect the failed checks and findings before starting a new run",
             )
 
     @staticmethod

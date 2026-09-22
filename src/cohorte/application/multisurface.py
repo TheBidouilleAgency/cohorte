@@ -352,9 +352,11 @@ class MultiSurfaceRunner:
                     remediation="inspect global checks and integration review evidence",
                 )
             fix_cycles += 1
+            before_fix = candidate.snapshot_digest()
             self.runtime.fix(candidate.root, VerticalRunner._fix_prompt(spec, failed, blocking))
             owned = [path for task in plan.tasks for path in task.write_paths]
             VerticalRunner._require_owned(candidate.changed_files(plan.base_commit), owned)
+            VerticalRunner._require_fix_progress(before_fix, candidate.snapshot_digest())
             self._observe(observe, "fix", candidate, plan, {"fix_cycles": fix_cycles})
 
         identity = VerticalRunner._identity(candidate, plan, profile, spec)
