@@ -121,9 +121,10 @@ pre-release foundation, not a V2-parity or provider-support claim.
   (or `brainstorm --provider claude`). Native CLI auth status is inspected passively; ambiguous API,
   gateway and token overrides fail closed under `subscription_only`. SDK tool lists and pre-tool
   path guards restrict reads and edits to the worktree. Adapter and routing tests are offline only;
-  the Claude account/runtime combination is not certified. A live no-tool SDK probe was refused
-  because the organization disabled Claude subscription access; Cohorte does not switch to API
-  billing. See `docs/evidence/g0-claude-subscription-blocked-darwin-arm64.json`.
+  a live Claude no-tool smoke, structured read, workspace edit and outside-write denial passed on
+  Darwin arm64 after the user connected a new account. The prior account was refused by its
+  organization policy, and Cohorte did not switch to API billing. See
+  `docs/evidence/g0-claude-sdk-darwin-arm64.json` and the earlier blocked-account evidence.
 - Live brainstorm preparation: product, architecture and QA run in distinct ephemeral read-only
   Codex sessions over one factual bundle, followed by a separately identified synthesis session.
   The brief retains contribution references, divergences, strong objections and user answers in a
@@ -140,8 +141,8 @@ pre-release foundation, not a V2-parity or provider-support claim.
 
 ## Deliberately unverified or incomplete
 
-- G0 Codex user questions, model catalogue and usage reporting; Claude live subscription access, read-only,
-  mutation boundary, interruption and resume remain unqualified. Permission retry remains
+- G0 Codex user questions, model catalogue and usage reporting; Claude full login interaction,
+  read-only mutation denial, interruption and resume remain unqualified. Permission retry remains
   unqualified because the Codex runtime emitted no command-level
   denial events during the live negative probe.
 - GitLab live delivery evidence and a persistent background controller remain open.

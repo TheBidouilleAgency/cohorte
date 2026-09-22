@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "gate": "G0",
+  "provider": "claude",
+  "platform": {
+    "os": "Darwin",
+    "architecture": "arm64",
+    "version": "25.5.0"
+  },
+  "sdk": {
+    "package": "claude-agent-sdk",
+    "version": "0.2.157"
+  },
+  "runtime_version": "2.1.280 (Claude Code)",
+  "auth": {
+    "connection_state": "connected",
+    "effective_mode": "subscription",
+    "billing_evidence": "runtime_reported",
+    "api_fallback_used": false
+  },
+  "checks": {
+    "no_tool_smoke": "passed",
+    "structured_read": "passed",
+    "read_nonce_matched": true,
+    "source_file_unchanged": true,
+    "workspace_write": "passed",
+    "written_nonce_matched": true,
+    "outside_write": "denied",
+    "sdk_permission_denials": 1,
+    "outside_marker_absent": true,
+    "session_references_present": true
+  },
+  "probe_policy": {
+    "workspace": "disposable temporary directory",
+    "tool_permissions": "dontAsk with explicit tool lists and pre-tool path hook",
+    "settings_sources": [],
+    "mcp_servers": []
+  },
+  "recorded_at": "2026-09-22T23:11:25Z",
+  "contains_credentials": false,
+  "limitations": [
+    "The native runtime reports subscription routing; provider-side billing was not independently observed.",
+    "The user completed native login outside this probe, so the full login interaction was not observed.",
+    "Read-only mutation denial, interruption, session resume, quota exhaustion and model catalogue remain unqualified.",
+    "This evidence applies only to the listed SDK, runtime and platform combination."
+  ]
+}

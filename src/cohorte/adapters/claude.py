@@ -243,7 +243,10 @@ class ClaudeAdapter:
             setting_sources=[],
             mcp_servers={},
             strict_mcp_config=True,
-            hooks={"PreToolUse": [HookMatcher(hooks=[guard_tool])]},
+            hooks={
+                "PreToolUse": [HookMatcher(matcher="Read|Grep|Glob|Edit|Write", hooks=[guard_tool])]
+            },
+            max_turns=20 if read_only else 40,
             env=sanitized_claude_env(self.environ),
             output_format={"type": "json_schema", "schema": output.model_json_schema()},
         )

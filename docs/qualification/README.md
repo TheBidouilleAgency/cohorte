@@ -8,15 +8,17 @@ Current baseline:
 
 | Status | Count |
 | --- | ---: |
-| Passed | 24 |
+| Passed | 25 |
 | Partial | 4 |
-| Blocked | 1 |
+| Blocked | 0 |
 | Deferred | 1 |
 | Not started | 0 |
 
-François is explicitly deferred. The Claude SDK adapter has offline tests, but the live SDK probe
-reported that the organization disabled Claude subscription access. Passive auth status reported a
-connected subscription; it did not make an SDK turn possible. AC02 remains blocked and AC03 partial.
+François is explicitly deferred. A newly connected Claude account passed a live SDK subscription
+smoke, a structured read, a workspace edit and an observed denial of an outside write. AC03 now
+passes at the runtime-reported subscription boundary. AC02 remains partial because the complete
+native Claude login interaction was performed by the user and not observed by Cohorte. The earlier
+organization-policy refusal remains as historical evidence for the previous account.
 AC27 is qualified with bounded, redacted check logs and atomic CLI/RPC run exports. AC28 now
 classifies missing dependencies, unavailable container runtimes, network outages, and full disks as
 retryable environment failures while preserving durable state. AC29 now covers protocol versions,

@@ -127,6 +127,7 @@ def test_structured_review_uses_read_only_tools_and_validates_result(
     assert {"Bash", "Edit", "Write", "Task"} <= set(options.disallowed_tools)
     assert options.setting_sources == []
     assert options.strict_mcp_config is True
+    assert options.hooks["PreToolUse"][0].matcher == "Read|Grep|Glob|Edit|Write"
     guard = options.hooks["PreToolUse"][0].hooks[0]
 
     async def decision(tool: str, path: str) -> str:
