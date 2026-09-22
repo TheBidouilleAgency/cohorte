@@ -54,7 +54,7 @@ class GitRepository:
         # prepared worktree still runs concurrently.
         with _WORKTREE_CREATE_LOCK:
             self._run("worktree", "add", "-b", branch, str(destination), start_point or self.head)
-        return GitRepository(destination)
+            return GitRepository(destination)
 
     def changed_files(self, base_commit: str) -> list[str]:
         tracked = self._run("diff", "--name-only", "--relative", base_commit, "--").splitlines()
