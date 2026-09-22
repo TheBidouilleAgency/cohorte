@@ -39,6 +39,54 @@ def test_doctor_is_honest_about_provider_support(tmp_path: Path) -> None:
     assert all(provider["certified"] is False for provider in payload["data"]["providers"])
 
 
+def test_unavailable_external_context_is_explicit_at_cli_boundary(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    data_dir = tmp_path / "data"
+    project.mkdir()
+    initialized = run_cli(data_dir, "init", str(project))
+    assert initialized.returncode == 0, initialized.stderr
+    profile = json.loads(initialized.stdout)["data"]["profile"]
+    profile["integrations"]["design"] = {
+        "enabled": True,
+        "provider": "figma",
+        "source": "design-id",
+    }
+    profile["integrations"]["retrieval"] = {
+        "provider": "graphify",
+        "fallback_to_files": False,
+        "roots": ["."],
+    }
+    profile_path = tmp_path / "profile.json"
+    profile_path.write_text(json.dumps(profile))
+
+    output = tmp_path / "snapshot.json"
+    design = run_cli(
+        data_dir,
+        "design-snapshot",
+        "--profile",
+        str(profile_path),
+        "--repo",
+        str(project),
+        "--output",
+        str(output),
+    )
+    assert design.returncode == 3
+    assert json.loads(design.stdout)["error"]["code"] == "DESIGN_UNAVAILABLE"
+    assert not output.exists()
+
+    retrieval = run_cli(
+        data_dir,
+        "retrieve",
+        "needle",
+        "--profile",
+        str(profile_path),
+        "--repo",
+        str(project),
+    )
+    assert retrieval.returncode == 3
+    assert json.loads(retrieval.stdout)["error"]["code"] == "RETRIEVAL_UNAVAILABLE"
+
+
 def test_migration_cli_plans_applies_and_rolls_back_v2_metadata(tmp_path: Path) -> None:
     source = tmp_path / "v2"
     (source / "specs").mkdir(parents=True)

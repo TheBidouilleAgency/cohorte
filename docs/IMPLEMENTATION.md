@@ -100,6 +100,10 @@ pre-release foundation, not a V2-parity or provider-support claim.
   refused without a silent reset. An installed 0.1.0a1 wheel is upgraded in place to 0.1.0a2
   in hosted Ubuntu, macOS and Windows CI on Python 3.12/3.13; external configuration, project
   data and artifact bytes are compared across the upgrade.
+- Design/retrieval availability: absent external connections return explicit CLI errors; runtime
+  port failures block design capture or trigger only an explicitly configured retrieval file
+  fallback. Provider error text is redacted before it enters captures or CLI responses. No external
+  design/retrieval provider is claimed as live-qualified.
 - François-facing stdio contract: capability-negotiated handshake, project/feature/request read
   models, grouped metrics, run controls, request responses and durable event replay/unsubscribe.
   Passive account status exposes no credentials. This is the Cohorte protocol surface; the external

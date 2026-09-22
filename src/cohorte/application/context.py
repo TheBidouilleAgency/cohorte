@@ -10,6 +10,7 @@ from pydantic import Field
 
 from cohorte.domain.errors import CohorteError, ErrorCode
 from cohorte.domain.models import DesignConfig, RetrievalConfig, StrictModel
+from cohorte.domain.redaction import redact_text
 
 
 class DesignDocument(StrictModel):
@@ -216,7 +217,7 @@ def capture_design(config: DesignConfig, port: DesignPort | None = None) -> Desi
         )
     try:
         document = port.fetch(config.source or "")
-    except (OSError, ValueError, json.JSONDecodeError) as error:
+    except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
         return DesignCapture(
             status="blocked",
             provider=config.provider,
@@ -225,7 +226,7 @@ def capture_design(config: DesignConfig, port: DesignPort | None = None) -> Desi
             sha256=None,
             captured_at=now,
             content=None,
-            error=str(error),
+            error=redact_text(str(error)),
         )
     if document.provider != config.provider:
         raise CohorteError(
@@ -345,7 +346,7 @@ def retrieve_context(
                 captured_at=datetime.now(UTC),
             )
         except (OSError, RuntimeError, ValueError) as error:
-            failure = str(error)
+            failure = redact_text(str(error))
     else:
         failure = f"{config.provider} retrieval connection is unavailable"
     if not config.fallback_to_files:

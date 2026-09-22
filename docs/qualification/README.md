@@ -24,6 +24,10 @@ bounded overload retry, reviewer death, hard controller crashes, active-wave pau
 interruption, and uncertain termination. AC30 remains partial: two direct app-server commands
 were denied by the read-only sandbox, but the agent-driven probe emitted no mutation command
 event. Model text is not proof of a denied agent retry or of absent automatic escalation.
+AC23 now handles missing connections at the CLI and runtime failures in design/retrieval ports:
+design capture blocks, retrieval blocks or uses only an explicitly enabled file fallback, and
+provider error text is redacted. Real Figma, Serena and Graphify snapshots and outages remain
+unqualified.
 AC06 now has live evidence from three independent Codex perspective sessions plus a separate
 synthesis session in a synthetic read-only repository; contributions, disagreements and the user
 answer are content-addressed in SQLite. AC07 validates completeness and references, derives the

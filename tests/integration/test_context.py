@@ -16,7 +16,12 @@ from cohorte.domain.models import DesignConfig, RetrievalConfig
 
 class BrokenRetrievalPort:
     def search(self, query: str, limit: int) -> list[RetrievalHit]:
-        raise RuntimeError("graph index offline")
+        raise RuntimeError("graph index offline; access_token=sk-fake-never-store")
+
+
+class BrokenDesignPort:
+    def fetch(self, source: str):
+        raise RuntimeError("design service offline; access_token=sk-fake-never-store")
 
 
 def test_disabled_design_is_explicitly_skipped() -> None:
@@ -40,6 +45,18 @@ def test_file_design_snapshot_captures_content_version_and_hash(
     assert capture.content == {"version": "tokens-v2", "tokens": {"space-md": "16px"}}
 
 
+def test_external_design_failure_is_blocked_and_redacted() -> None:
+    capture = capture_design(
+        DesignConfig(enabled=True, provider="figma", source="design-id"),
+        BrokenDesignPort(),
+    )
+    assert capture.status == "blocked"
+    assert capture.provider == "figma"
+    assert capture.content is None
+    assert "design service offline" in (capture.error or "")
+    assert "sk-fake-never-store" not in capture.model_dump_json()
+
+
 def test_configured_retrieval_failure_is_visible_without_fallback(
     tmp_path: Path,
 ) -> None:
@@ -52,6 +69,7 @@ def test_configured_retrieval_failure_is_visible_without_fallback(
         )
     assert caught.value.code == ErrorCode.RETRIEVAL_UNAVAILABLE
     assert "graph index offline" in caught.value.message
+    assert "sk-fake-never-store" not in caught.value.message
 
 
 def test_explicit_retrieval_fallback_is_labeled_and_bounded(tmp_path: Path) -> None:
@@ -69,7 +87,9 @@ def test_explicit_retrieval_fallback_is_labeled_and_bounded(tmp_path: Path) -> N
     assert result.status == "fallback"
     assert result.configured_provider == "serena"
     assert result.effective_provider == "files"
-    assert result.fallback_reason == "graph index offline"
+    assert result.fallback_reason is not None
+    assert result.fallback_reason.startswith("graph index offline")
+    assert "sk-fake-never-store" not in result.model_dump_json()
     assert result.hits[0].path == "module.py"
 
 
