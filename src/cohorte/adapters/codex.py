@@ -30,6 +30,8 @@ from cohorte.domain.auth import (
 )
 from cohorte.domain.errors import CohorteError, ErrorCode
 
+_HARD_KILL_SIGNAL = int(getattr(signal, "SIGKILL", signal.SIGTERM))
+
 
 def _capability(support: str, version: str | None = None, *limitations: str) -> Capability:
     return Capability(
@@ -420,7 +422,7 @@ class CodexAdapter:
         if remaining:
             for process_id in remaining:
                 with contextlib.suppress(ProcessLookupError):
-                    os.kill(process_id, signal.SIGKILL)
+                    os.kill(process_id, _HARD_KILL_SIGNAL)
             raise CohorteError(
                 ErrorCode.EFFECT_UNCERTAIN,
                 "Codex reported interruption while a marked descendant remained alive",
@@ -460,7 +462,7 @@ class CodexAdapter:
                     "reviewer runtime process was unavailable",
                     "review death could not be exercised",
                 )
-            os.kill(int(process.pid), signal.SIGKILL)
+            os.kill(int(process.pid), _HARD_KILL_SIGNAL)
             try:
                 handle.run()
             except Exception as error:
@@ -478,7 +480,7 @@ class CodexAdapter:
         return {
             "capability": "reviewer_death",
             "status": "passed",
-            "process_signal": "SIGKILL",
+            "process_signal": signal.Signals(_HARD_KILL_SIGNAL).name,
             "review_accepted": False,
             "failure_type": type(failure).__name__,
         }
