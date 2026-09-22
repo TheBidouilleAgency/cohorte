@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "project_id": "g2-github-demo",
+  "name": "G2 disposable GitHub delivery",
+  "language": "en",
+  "metadata_mode": "local",
+  "vcs": {
+    "host": "github",
+    "remote": "origin",
+    "default_branch": "main",
+    "feature_branch_prefix": "feature/",
+    "patch_branch_prefix": "fix/"
+  },
+  "surfaces": [
+    {
+      "id": "python-core",
+      "label": "Python core",
+      "paths": ["greeting.py", "test_greeting.py"],
+      "depends_on": [],
+      "role_profile": "implementer",
+      "check_ids": ["unit"],
+      "uses_design": false
+    }
+  ],
+  "checks": [
+    {
+      "id": "unit",
+      "argv": ["python3", "-m", "unittest", "-v"],
+      "cwd": ".",
+      "timeout_seconds": 30,
+      "required": true,
+      "scope": "project",
+      "environment_ref": null,
+      "produces": []
+    }
+  ],
+  "contract": {"enabled": false, "mechanism": "none", "paths": []},
+  "execution": {"mode": "local", "dependency_setup": null},
+  "agent_defaults": {
+    "provider": "codex",
+    "account_ref": "codex-native",
+    "model": null,
+    "role_profile": "implementer"
+  },
+  "policy": {
+    "auth_mode": "subscription_only",
+    "max_fix_cycles": 2,
+    "max_parallel_per_account": 1,
+    "max_parallel_global": 1,
+    "require_frozen_spec": true,
+    "review_blocking_severities": ["critical", "high"],
+    "ship_authorization": "explicit_or_pregranted"
+  },
+  "integrations": {
+    "retrieval": {"provider": "none"},
+    "design": {"enabled": false},
+    "rbac": {"enabled": false},
+    "kanban": {"enabled": false},
+    "release_notes": {"enabled": false}
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "gate": "G3",
+  "scenario": "codex-live-overlap-aware-fleet",
+  "status": "passed",
+  "checked_at": "2026-09-22T15:46:32Z",
+  "platform": "Darwin 25.5.0 arm64",
+  "python": "3.13.15",
+  "codex_cli": "0.155.1",
+  "openai_codex_sdk": "0.155.1",
+  "authentication": {
+    "mode": "subscription_only",
+    "api_environment_removed": true
+  },
+  "fleet": {
+    "id": "g3-fleet-live-1",
+    "base_commit": "dd0fbe018c59aaa42e778fc67129ddb79f7882f0",
+    "candidate_tree_hash": "6de89fe337c71f377593deef099a44b598e2bee18aaf005ac2d3abdd624bc91d",
+    "max_feature_parallelism": 2,
+    "fix_cycles": 0,
+    "ready_to_ship": true
+  },
+  "plan": {
+    "feature_ids": ["api-base", "web-banner", "api-followup"],
+    "waves": [
+      ["api-base", "web-banner"],
+      ["api-followup"]
+    ],
+    "overlap": {
+      "left_feature": "api-base",
+      "right_feature": "api-followup",
+      "paths": ["api.py", "test_api.py", "test_api_followup.py"]
+    },
+    "derived_dependency": "api-followup depends on api-base"
+  },
+  "integration": {
+    "api_base_commit": "93845059b53bb2e21b02537f5202f364ad1fe51a",
+    "web_integration_head": "afbdef7a6ff0c2ad2961ec564df92d6aa490f55f",
+    "api_followup_base": "afbdef7a6ff0c2ad2961ec564df92d6aa490f55f",
+    "api_followup_integration_head": "f389363dde8589269b63597febfd548bf9414482",
+    "followup_started_from_updated_base": true,
+    "feature_revalidations": 3,
+    "all_revalidation_checks_passed": true
+  },
+  "final_validation": {
+    "changed_files": [
+      "api.py",
+      "test_api.py",
+      "test_api_followup.py",
+      "test_web.py",
+      "web.py"
+    ],
+    "global_unit_tests": 6,
+    "global_unit_status": "passed",
+    "review_verdict": "ready",
+    "covered_surfaces": ["api", "web"],
+    "blocking_findings": 0
+  },
+  "limitations": [
+    "This local scenario did not push the fleet branch or open a pull request.",
+    "Fleet crash recovery across the feature integration boundary is not separately validated.",
+    "The remaining G3 workflow variants and external integrations remain open."
+  ]
+}

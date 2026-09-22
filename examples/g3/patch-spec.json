@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "patch_id": "fix-total-addition",
+  "revision": 1,
+  "status": "frozen",
+  "title": "Fix total addition",
+  "source_ref": {
+    "id": "replace-with-intake-source-artifact",
+    "revision": 1,
+    "sha256": "d596f84f9fef4c146eadb7e2fa1cecb4f2a4bd559cc065e9ff3b2a9db06d3cba"
+  },
+  "reproduction": "Run python3 -m unittest -v test_calc.py and observe 6 != 5",
+  "observed_behavior": "total(2, 3) returns 6 because the implementation multiplies",
+  "expected_behavior": "total(2, 3) returns 5 and the committed regression test passes",
+  "surfaces": ["python"],
+  "write_paths": ["calc.py"],
+  "regression_mode": "automatic",
+  "regression_check_ids": ["regression"],
+  "in_scope": ["Change total to add its two integer arguments"],
+  "out_of_scope": ["Change the public API or test file"],
+  "rollback": "Revert the calc.py candidate change",
+  "open_questions": []
+}

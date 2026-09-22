@@ -1,0 +1,57 @@
+{
+  "gate": "G3",
+  "scenario": "codex-live-audit-refactor-retro",
+  "status": "passed",
+  "checked_at": "2026-09-22T16:43:00Z",
+  "platform": "Darwin 25.5.0 arm64",
+  "python": "3.13.15",
+  "codex_cli": "0.155.1",
+  "openai_codex_sdk": "0.155.1",
+  "authentication": {
+    "mode": "subscription_only",
+    "api_environment_removed": true,
+    "disposable_source_export_authorized": true
+  },
+  "audit": {
+    "base_commit": "b8154571eb21f31141226997af12cdf2c0be4825",
+    "source_tree_hash": "a931d078515a59c4d351cee20e689a5ee7f53e9c8f15c69e7f5b71ea2f209548",
+    "final_tree_hash": "a931d078515a59c4d351cee20e689a5ee7f53e9c8f15c69e7f5b71ea2f209548",
+    "source_unchanged": true,
+    "bounded_paths": ["calc.py"],
+    "covered_surfaces": ["python"],
+    "finding_id": "finding-baee177758e3",
+    "finding_fingerprint": "baee177758e390f7464cabb5618a4249f85c14b249d583e3e9a58cc82b4e5c08",
+    "finding_origin": "deterministic Python identical-branch rule merged with read-only Codex review"
+  },
+  "refactor": {
+    "run_id": "g3-refactor-live-20260922",
+    "request_id": "5d62cded-a879-4890-9366-c4786d870da8",
+    "decision_id": "5f5770eb-fd09-41ca-888b-e5c65fc69edc",
+    "selection_subject_hash": "e55b3e8a301ec10a5fe93f8f4a19be6f49c1dd84b3c9afa9db737f9bf8430870",
+    "base_commit": "b8154571eb21f31141226997af12cdf2c0be4825",
+    "candidate_tree_hash": "cb0e6aace2cef03f87cdf1ebafad25d81b7ce22522dbcfddce0781e6a7511081",
+    "changed_files": ["calc.py"],
+    "baseline_check": "passed",
+    "candidate_check": "passed",
+    "review_verdict": "ready",
+    "fix_cycles": 0,
+    "final_stage": "ship",
+    "final_status": "waiting_user",
+    "ship_request_id": "e0e1c8aa-5e02-4a66-b3fb-764f5dbe9cef"
+  },
+  "retro": {
+    "observations": 2,
+    "repeated_fingerprint": "baee177758e390f7464cabb5618a4249f85c14b249d583e3e9a58cc82b4e5c08",
+    "proposal_id": "avoid-identical-branches",
+    "ratification_request_id": "ee1906ea-75f0-44b3-9562-8e8d889a1b16",
+    "decision_id": "94d34a83-c744-4a08-a4f0-a3109851db85",
+    "profile_before_revision": 1,
+    "profile_after_revision": 2,
+    "applied_rule": "Collapse structurally identical conditional branches."
+  },
+  "limitations": [
+    "The live audit used one deterministic Python rule; the generic Codex reviewer returned no additional findings.",
+    "No remote push or pull request was performed for the refactor candidate.",
+    "The disposable scenario covered one Python surface and one regression check."
+  ]
+}

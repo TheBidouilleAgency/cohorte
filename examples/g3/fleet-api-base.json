@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "feature_id": "api-base",
+  "revision": 1,
+  "status": "frozen",
+  "title": "Add API identifier normalization",
+  "brief_ref": null,
+  "problem": "The disposable API cannot normalize external identifiers.",
+  "in_scope": ["Add normalize_identifier(value)", "Trim whitespace", "Reject blank values with ValueError", "Add standard-library tests"],
+  "out_of_scope": ["Network access", "Third-party dependencies"],
+  "surfaces": ["api"],
+  "scenarios": [{"id": "normalize-id", "given": "a padded identifier", "when": "it is normalized", "then": "the trimmed identifier is returned"}],
+  "acceptance": [{"id": "api-normalizes", "statement": "normalize_identifier('  abc  ') returns 'abc' and blank input raises ValueError", "verification": "automatic", "check_ids": ["api-base-check"], "surface_ids": ["api"], "evidence_required": ["unit output"]}],
+  "dod": {"required_checks": ["api-base-check"], "review_required": true, "manual_validations": []},
+  "contract_refs": [],
+  "dependencies": [],
+  "migrations": {"required": false, "plan": "No migration."},
+  "rollback": {"required": false, "plan": "Remove api.py and test_api.py."},
+  "design_refs": [],
+  "rbac_requirements": [],
+  "open_questions": []
+}

@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "gate": "G0",
+  "provider": "codex",
+  "platform": {
+    "os": "Darwin",
+    "architecture": "arm64",
+    "version": "26.5.1"
+  },
+  "cohorte_version": "0.1.0a1",
+  "sdk": {
+    "package": "openai-codex",
+    "version": "0.155.1"
+  },
+  "runtime_version": "codex-cli 0.155.1",
+  "auth": {
+    "effective_mode": "subscription",
+    "evidence": "runtime_reported",
+    "api_routing_environment_removed": true
+  },
+  "checks": {
+    "smoke": "passed",
+    "read_only_role": "passed",
+    "workspace_marker_absent": true,
+    "interrupt": "passed",
+    "interrupted_terminal_status_observed": true,
+    "session_resume": "passed",
+    "resume_nonce_verified": true
+  },
+  "probe_policy": {
+    "sandbox": "read-only",
+    "approval_mode": "deny_all",
+    "smoke_thread_ephemeral": true
+  },
+  "checked_at": "2026-09-22T11:00:52.658451+00:00",
+  "contains_credentials": false,
+  "limitations": [
+    "This certifies only the listed SDK/runtime/platform combination.",
+    "Quota exhaustion, auth expiry, user questions, model catalog, and usage reporting remain unverified.",
+    "Claude is unavailable and not certified."
+  ]
+}

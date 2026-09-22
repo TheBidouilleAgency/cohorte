@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "feature_id": "web-banner",
+  "revision": 1,
+  "status": "frozen",
+  "title": "Add a web banner presenter",
+  "brief_ref": null,
+  "problem": "The disposable web surface cannot render a stable banner.",
+  "in_scope": ["Add render_banner(message)", "Trim the message", "Return [ message ]", "Add standard-library tests"],
+  "out_of_scope": ["HTML", "Third-party dependencies"],
+  "surfaces": ["web"],
+  "scenarios": [{"id": "render-banner", "given": "a padded message", "when": "the banner is rendered", "then": "the trimmed message is wrapped in brackets"}],
+  "acceptance": [{"id": "web-renders", "statement": "render_banner('  Ready  ') returns '[ Ready ]'", "verification": "automatic", "check_ids": ["web-check"], "surface_ids": ["web"], "evidence_required": ["unit output"]}],
+  "dod": {"required_checks": ["web-check"], "review_required": true, "manual_validations": []},
+  "contract_refs": [],
+  "dependencies": [],
+  "migrations": {"required": false, "plan": "No migration."},
+  "rollback": {"required": false, "plan": "Remove web.py and test_web.py."},
+  "design_refs": [],
+  "rbac_requirements": [],
+  "open_questions": []
+}

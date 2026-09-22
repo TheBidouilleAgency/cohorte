@@ -1,0 +1,55 @@
+{
+  "gate": "G3",
+  "scenario": "codex-live-intake-patch",
+  "status": "passed",
+  "checked_at": "2026-09-22T16:09:47Z",
+  "platform": "Darwin 25.5.0 arm64",
+  "python": "3.13.15",
+  "codex_cli": "0.155.1",
+  "openai_codex_sdk": "0.155.1",
+  "authentication": {
+    "mode": "subscription_only",
+    "api_environment_removed": true
+  },
+  "intake": {
+    "source_type": "text",
+    "source_sha256": "d596f84f9fef4c146eadb7e2fa1cecb4f2a4bd559cc065e9ff3b2a9db06d3cba",
+    "triage": "patch",
+    "provenance_persisted": true,
+    "untrusted_instructions_ignored": true
+  },
+  "patch": {
+    "id": "fix-total-addition",
+    "run_id": "g3-patch-live-20260922",
+    "base_commit": "b12a7103bfcd24a18947a30c857a360391db5264",
+    "candidate_tree_hash": "cb0e6aace2cef03f87cdf1ebafad25d81b7ce22522dbcfddce0781e6a7511081",
+    "source_artifact_revision": 1,
+    "frozen": true,
+    "write_paths": ["calc.py"],
+    "changed_files": ["calc.py"]
+  },
+  "regression": {
+    "check_id": "regression",
+    "before_status": "failed",
+    "before_assertion": "6 != 5",
+    "after_status": "passed",
+    "same_committed_test": true
+  },
+  "review": {
+    "verdict": "ready",
+    "covered_surfaces": ["python"],
+    "findings": 0,
+    "fix_cycles": 0
+  },
+  "durability": {
+    "final_stage": "ship",
+    "final_status": "waiting_user",
+    "ship_request_id": "d305ddf0-68bf-4935-86c6-3bc3450ae2bb",
+    "ship_subject_hash_matches_candidate": true
+  },
+  "limitations": [
+    "The intake source was inline text; file input is covered locally and URL input remains without live remote evidence.",
+    "Manual regression evidence acceptance is deliberately refused until a candidate-bound human decision flow is implemented.",
+    "No remote push or pull request was performed for this local patch scenario."
+  ]
+}

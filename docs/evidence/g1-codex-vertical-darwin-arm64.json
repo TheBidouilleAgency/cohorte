@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "gate": "G1-partial",
+  "provider": "codex",
+  "platform": {"os": "Darwin", "architecture": "arm64"},
+  "cohorte_version": "0.1.0a1",
+  "sdk": {"package": "openai-codex", "version": "0.155.1"},
+  "auth": {
+    "effective_mode": "subscription",
+    "api_routing_environment_removed": true
+  },
+  "fixture": {
+    "feature_id": "friendly-greeting",
+    "base_commit": "3c9aa42e073045b599ce0f059be8f096382684ae",
+    "branch": "cohorte/friendly-greeting-live-5",
+    "source_checkout_modified": false,
+    "commit_created": false,
+    "push_performed": false
+  },
+  "candidate": {
+    "tree_hash": "9e9e03acb27b71964c9ce2772d56920a113e38edda3fc468c08ef497d2246739",
+    "changed_files": ["greeting.py", "test_greeting.py"],
+    "ownership_check": "passed"
+  },
+  "checks": [
+    {
+      "id": "unit",
+      "status": "passed",
+      "exit_code": 0,
+      "tests_run": 2,
+      "output_truncated": false
+    }
+  ],
+  "review": {
+    "session": "independent_ephemeral",
+    "sandbox": "read-only",
+    "approval_mode": "deny_all",
+    "verdict": "ready",
+    "covered_surfaces": ["python-core"],
+    "findings": []
+  },
+  "fix_cycles": 0,
+  "ready_to_ship": true,
+  "persistence": {
+    "run_reloaded_from_sqlite": true,
+    "stage": "ship",
+    "status": "waiting_user",
+    "state_version": 2,
+    "candidate_hash_matched": true,
+    "ship_request_created": true
+  },
+  "contains_credentials": false,
+  "limitations": [
+    "This is a bounded single-surface Codex vertical, not completion of all G1 requirements.",
+    "The deterministic test suite separately exercises a forced failed-check and fix cycle.",
+    "No commit, push, pull request, CI tracking, Claude execution, or multi-platform run is certified."
+  ]
+}

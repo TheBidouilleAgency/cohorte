@@ -1,0 +1,45 @@
+{
+  "gate": "G4",
+  "scenario": "bounded-v2-import-database-upgrade-and-rollback",
+  "status": "passed-locally",
+  "checked_at": "2026-09-22T17:33:32Z",
+  "migration": {
+    "plan_id": "v2-1a8a045e4da7c4cd",
+    "planned_files": 4,
+    "explicit_mappings": 6,
+    "explicit_losses": 3,
+    "excluded": [".cohorte/project.yaml", ".env"],
+    "shell_values_executed": false,
+    "active_runs_imported": false,
+    "imported_files": 4,
+    "backup_created": true,
+    "rollback_verified": true,
+    "rollback_exercised": true
+  },
+  "upgrade": {
+    "from_schema": 1,
+    "to_schema": 2,
+    "exclusive_migration": true,
+    "pre_upgrade_backup": true,
+    "existing_data_preserved": true,
+    "external_config_preserved": true,
+    "future_schema_refused": true
+  },
+  "automated_coverage": [
+    "exact file list and hashes",
+    "credential file and credential-like YAML exclusion",
+    "shell-like YAML retained as inert data",
+    "symlink rejection",
+    "source mutation after planning rejection",
+    "historical non-certified import and spec revalidation marker",
+    "atomic artifact/import transaction",
+    "backup integrity and rollback",
+    "schema 1 to 2 migration and schema 999 refusal",
+    "CLI plan, apply and rollback"
+  ],
+  "limitations": [
+    "This is local deterministic evidence, not a migration of a user's production V2 data.",
+    "Imported specs are historical artifacts and must pass V3 validation before build.",
+    "Packaging installation and upgrade remain to be qualified on each supported operating system."
+  ]
+}

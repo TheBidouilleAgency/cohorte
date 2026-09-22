@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "feature_id": "friendly-greeting",
+  "revision": 1,
+  "status": "frozen",
+  "title": "Add a normalized greeting",
+  "brief_ref": null,
+  "problem": "The disposable project needs a small deterministic behavior for G1 validation.",
+  "in_scope": ["Add greet(name) returning Hello, <trimmed name>!", "Reject blank names with ValueError", "Add standard-library unit tests"],
+  "out_of_scope": ["CLI", "third-party dependencies"],
+  "surfaces": ["python-core"],
+  "scenarios": [
+    {"id": "trim-name", "given": "a name padded with spaces", "when": "greet is called", "then": "the returned greeting uses the trimmed name"},
+    {"id": "blank-name", "given": "a blank name", "when": "greet is called", "then": "ValueError is raised"}
+  ],
+  "acceptance": [
+    {"id": "greeting", "statement": "greet('  Ada  ') returns 'Hello, Ada!'", "verification": "automatic", "check_ids": ["unit"], "evidence_required": ["unit output"]},
+    {"id": "blank-rejected", "statement": "greet rejects whitespace-only names with ValueError", "verification": "automatic", "check_ids": ["unit"], "evidence_required": ["unit output"]}
+  ],
+  "dod": {"required_checks": ["unit"], "review_required": true, "manual_validations": []},
+  "contract_refs": [],
+  "dependencies": [],
+  "migrations": {"required": false, "plan": "No migration."},
+  "rollback": {"required": false, "plan": "Delete the two feature files."},
+  "design_refs": [],
+  "rbac_requirements": [],
+  "open_questions": []
+}

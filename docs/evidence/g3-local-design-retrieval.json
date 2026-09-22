@@ -1,0 +1,43 @@
+{
+  "gate": "G3",
+  "scenario": "local-design-snapshot-and-file-retrieval",
+  "status": "passed",
+  "checked_at": "2026-09-22T16:50:08Z",
+  "design": {
+    "configured_provider": "file",
+    "source": "design-system.json",
+    "version": "tokens-v1",
+    "content_sha256": "f385c857845d993509a559227a37d415a702edd19e0d5e9385f13777bcee051e",
+    "artifact_sha256": "e3b76994ccc4ecb012bba1084b92b69caf1936e8b81faf366d4d31a3b559509b",
+    "status": "captured"
+  },
+  "retrieval": {
+    "configured_provider": "files",
+    "effective_provider": "files",
+    "query": "total",
+    "hits": 4,
+    "bounded_roots": ["calc.py", "test_calc.py"],
+    "artifact_sha256": "0dd3e7bd5b7f59dbfd19ab8fdd9585faa5fab74435f1be12a9b11a8ea02e5a17",
+    "status": "ok"
+  },
+  "alignment": {
+    "status": "changes",
+    "source_version": "tokens-v1",
+    "source_sha256": "f385c857845d993509a559227a37d415a702edd19e0d5e9385f13777bcee051e",
+    "snapshot_sha256": "d17e03bb6ca38a3ff16f581330985cd94ae459510ee671f22d0af51705278f1a",
+    "delta_count": 4,
+    "exact_hash_approval_created": true,
+    "bounded_build_review": "passed with fake runtime in automated integration test",
+    "live_codex": "not run"
+  },
+  "failure_evidence": {
+    "figma_without_connection": "DESIGN_UNAVAILABLE",
+    "graphify_without_connection_or_fallback": "RETRIEVAL_UNAVAILABLE",
+    "explicit_file_fallback": "covered by automated integration test"
+  },
+  "limitations": [
+    "This evidence validates the local file adapters only.",
+    "Figma, Serena and Graphify are not claimed as supported or live-validated.",
+    "Design alignment passes locally but the Codex live run still requires explicit fixture-export authorization."
+  ]
+}

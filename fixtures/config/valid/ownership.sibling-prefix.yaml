@@ -1,5 +1,0 @@
-# schema: ownership
-# why: apps/api and apps/api-gateway are disjoint: overlap is decided by path SEGMENT, never by startsWith
-surfaces:
-  api: { paths: ["apps/api/**"], owners: [implementer], reviewers: [] }
-  gateway: { paths: ["apps/api-gateway/**"], owners: [implementer], reviewers: [] }

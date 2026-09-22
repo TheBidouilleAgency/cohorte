@@ -1,0 +1,36 @@
+{
+  "gate": "G3",
+  "scenario": "local-obsidian-projection-and-durable-metrics",
+  "status": "passed",
+  "checked_at": "2026-09-22T17:14:09Z",
+  "kanban": {
+    "provider": "obsidian",
+    "board_path": "Project/Board.md",
+    "feature_id": "align-design-tokens",
+    "state_version": 4,
+    "first_projection": "applied",
+    "retry_projection": "unchanged",
+    "single_card": true,
+    "backup_count_after_retry": 1,
+    "private_file_unchanged": true,
+    "concurrent_write_rejection": "covered by automated integration test"
+  },
+  "metrics": {
+    "project_id": "repo",
+    "runs": 1,
+    "outcomes": {"waiting_user": 1},
+    "mean_run_duration_seconds": 136.591576,
+    "fix_cycles": 0,
+    "input_tokens": null,
+    "input_tokens_availability": "unavailable",
+    "output_tokens": null,
+    "output_tokens_availability": "unavailable",
+    "estimated_cost": null,
+    "estimated_cost_availability": "unavailable"
+  },
+  "limitations": [
+    "The Obsidian scenario uses a disposable local vault, not a user's real vault.",
+    "Provider usage was unavailable and is deliberately not reported as zero.",
+    "Groups are derived from durable run, phase and provider events; unavailable provider fields remain null."
+  ]
+}

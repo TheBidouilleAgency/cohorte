@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "gate": "G2-partial",
+  "provider": "github",
+  "platform": {"os": "Darwin", "architecture": "arm64"},
+  "repository": {
+    "name_with_owner": "EnzoTheBidouille/cohorte-g2-validation-20260922",
+    "visibility": "private",
+    "default_branch": "main"
+  },
+  "run": {
+    "id": "github-g2-ci-1",
+    "base_commit": "17b53e3d59fa70f714c952f1f0a9d350eb19af6c",
+    "candidate_tree_hash": "322e0ff81dc70b81deda87ac28ce8f74d855b1d1ccdbc454935429d9575a8d9b",
+    "status": "completed"
+  },
+  "delivery": {
+    "branch": "cohorte/friendly-greeting-github-g2-ci-1",
+    "head_sha": "80b83de88e5b10eeeff54151f451a8d14aec8a42",
+    "pull_request": 2,
+    "pull_request_state": "OPEN",
+    "merge_state": "CLEAN",
+    "commit_effect": "completed",
+    "push_effect": "completed",
+    "pull_request_effect": "completed",
+    "approval_count": 1,
+    "merged": false,
+    "deployed": false
+  },
+  "ci": {
+    "status": "ci_passed",
+    "required_checks": ["unit"],
+    "unit_state": "SUCCESS",
+    "unit_bucket": "pass"
+  },
+  "recovery_observation": {
+    "initial_ssh_push_failed": true,
+    "repository_creation_reconciled": true,
+    "https_retry_succeeded": true,
+    "duplicate_repository_created": false,
+    "duplicate_pull_request_created": false
+  },
+  "contains_credentials": false,
+  "limitations": [
+    "GitLab live delivery remains unverified.",
+    "No merge or deployment was performed."
+  ]
+}

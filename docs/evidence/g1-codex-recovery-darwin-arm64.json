@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "gate": "G1-partial",
+  "scenario": "controller-interrupted-during-review",
+  "provider": "codex",
+  "platform": {"os": "Darwin", "architecture": "arm64"},
+  "sdk": {"package": "openai-codex", "version": "0.155.1"},
+  "auth": {
+    "effective_mode": "subscription",
+    "api_routing_environment_removed": true
+  },
+  "run": {
+    "id": "recovery-1",
+    "base_commit": "5f3f4bb2d45ddf3c82ec87d222dd06ab0794b23d",
+    "candidate_tree_hash": "05ada0717819ba136b8edaae4ba7ce7dcd372dc5bff471aea2a97f5c4c3e9cf0",
+    "interrupted_stage": "review",
+    "interrupted_status": "running",
+    "recovered_stage": "ship",
+    "recovered_status": "waiting_user"
+  },
+  "journal_counts": {
+    "phase.build.completed": 1,
+    "phase.checks.completed": 2,
+    "phase.review.completed": 1,
+    "ship_requests": 1
+  },
+  "recovery": {
+    "same_worktree": true,
+    "same_candidate_hash": true,
+    "build_reexecuted": false,
+    "safe_checks_reexecuted": true,
+    "review_reexecuted": true,
+    "second_resume_was_noop": true,
+    "ready_to_ship": true
+  },
+  "contains_credentials": false,
+  "limitations": [
+    "Pause and cancel are cooperative at phase boundaries; immediate mid-turn control requires a background worker controller.",
+    "No commit, push, pull request or CI effect was executed.",
+    "This evidence covers one Codex provider and one Darwin arm64 environment."
+  ]
+}
