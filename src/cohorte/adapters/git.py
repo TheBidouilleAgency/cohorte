@@ -3,11 +3,13 @@ from __future__ import annotations
 import hashlib
 import os
 import subprocess
+import threading
 from pathlib import Path
 
 _RUNTIME_DIRECTORIES = frozenset({"__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache"})
 _RUNTIME_FILES = frozenset({".coverage"})
 _RUNTIME_SUFFIXES = frozenset({".pyc", ".pyo"})
+_WORKTREE_CREATE_LOCK = threading.Lock()
 
 
 def _is_runtime_artifact(path: str) -> bool:
@@ -47,7 +49,11 @@ class GitRepository:
         destination = destination.resolve()
         if destination.exists():
             raise ValueError(f"worktree destination already exists: {destination}")
-        self._run("worktree", "add", "-b", branch, str(destination), start_point or self.head)
+        # Concurrent `git worktree add` calls can observe partially-written metadata on
+        # Windows. Only serialize repository bookkeeping; the work inside each
+        # prepared worktree still runs concurrently.
+        with _WORKTREE_CREATE_LOCK:
+            self._run("worktree", "add", "-b", branch, str(destination), start_point or self.head)
         return GitRepository(destination)
 
     def changed_files(self, base_commit: str) -> list[str]:
