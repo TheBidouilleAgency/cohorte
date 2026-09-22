@@ -257,8 +257,8 @@ def _doctor(service: CohorteService, args: argparse.Namespace) -> dict[str, Any]
         "data_dir": str(args.data_dir),
         "config_dir": str(args.config_dir),
         "providers": [asdict(claude), asdict(codex)],
-        "support_claim": "codex-bounded-live-align-local-integrations-migration-darwin-service",
-        "next_validation": "Run the named-pipe test on Windows, validate the external Francois client, then complete the AC01-AC30 matrix.",
+        "support_claim": "codex-bounded-live-align-local-integrations-migration-darwin-service-windows-ci-pipe",
+        "next_validation": "Validate the external Francois client and Windows slow-client behavior, then complete the AC01-AC30 matrix.",
     }
 
 

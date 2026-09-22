@@ -18,12 +18,13 @@ deduplicated RPC shutdown instead of signaling an unverified PID. Each connectio
 handshake state; disconnecting a client does not change workflow state. On the socket,
 `events.subscribe` returns the durable replay and watermark, then emits `events.notification`
 frames for later events. A bounded writer timeout disconnects a slow client; it resumes from its
-last processed sequence. Windows runtime qualification remains a later gate.
+last processed sequence. The equivalent Windows live-follow behavior remains a later gate.
 
 The Windows backend is implemented with `pywin32`: a deterministic local named pipe, remote-client
 rejection, a DACL containing only the current user SID, and a per-user-session mutex preventing a
 second service instance. It shares the same JSON-RPC dispatcher and lifecycle commands. Its runtime
-test is restricted to the Windows CI jobs; no Windows support claim is made from Darwin results.
+test passes on GitHub-hosted Windows with Python 3.12 and 3.13; this is CI lifecycle evidence rather
+than a complete Windows release-support claim.
 Live follow is withheld from the Windows capability list until asynchronous slow-writer behavior is
 validated on a real Windows host.
 

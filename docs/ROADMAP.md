@@ -9,7 +9,7 @@ mandatory acceptance scenarios have current evidence for the exact candidate.
 | G1 | Contracts, state machine, SQLite, recovery primitives, CLI/protocol, fake-free unit tests | In progress; vertical and controller-crash recovery validated live |
 | G2 | Init through reviewed PR on a disposable repository | GitHub PR and Actions CI validated live; GitLab deferred at user request |
 | G3 | Parallel surfaces and workflow variants/integrations | Workflow variants and local-source align-ds validated live; file retrieval, Kanban projection and grouped project metrics pass locally; external providers remain open |
-| G4 | François, migration, upgrades, multi-platform packaging | V2 import, SQLite upgrades, François-facing stdio and Darwin Unix service with replay/live follow pass; Windows named pipe is implemented with runtime CI pending; external UI and multi-platform qualification remain open |
+| G4 | François, migration, upgrades, multi-platform packaging | V2 import, SQLite upgrades, François-facing stdio and Darwin Unix service with replay/live follow pass; Windows named-pipe lifecycle passes hosted CI on Python 3.12/3.13; external UI and release qualification remain open |
 | G5 | AC01–AC30 and model qualification corpus | Not started |
 
 Current automated evidence: strict model validation, DAG validation, subscription gating,
@@ -46,8 +46,9 @@ Local François-facing protocol evidence is recorded in
 `docs/evidence/g4-local-francois-protocol.json`; it is not external UI evidence.
 Darwin Unix-service evidence is recorded in
 `docs/evidence/g4-local-service-host-darwin-arm64.json`.
-The Windows implementation boundary is recorded in
-`docs/evidence/g4-windows-named-pipe-implementation.json`; it is not runtime support evidence.
+The hosted Windows runtime result is recorded in
+`docs/evidence/g4-windows-named-pipe-implementation.json`; it validates the named-pipe lifecycle in
+CI, not full real-host release support.
 
 The following labels are prohibited until G5: “V2 parity”, “Claude supported”, “François
 integrated”, and “multi-platform supported”. Codex support is limited to the exact combination in

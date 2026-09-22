@@ -114,7 +114,8 @@ cohorte --json --data-dir /path/to/data service stop
 
 On POSIX this uses a private Unix socket and verifies the connecting process belongs to the same
 user. On Windows it uses a local named pipe with a DACL restricted to the current user SID. No
-network port is opened. Windows runtime support remains under qualification.
+network port is opened. The lifecycle passes on GitHub-hosted Windows 3.12 and 3.13; release support
+still requires real-host and slow-client qualification.
 
 By default, Cohorte stores configuration and state outside target repositories using platform
 standard directories. Pass `--config-dir` and `--data-dir` for isolated automation. Cohorte never

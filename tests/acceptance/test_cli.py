@@ -31,7 +31,7 @@ def test_doctor_is_honest_about_provider_support(tmp_path: Path) -> None:
     payload = json.loads(result.stdout)
     assert (
         payload["data"]["support_claim"]
-        == "codex-bounded-live-align-local-integrations-migration-darwin-service"
+        == "codex-bounded-live-align-local-integrations-migration-darwin-service-windows-ci-pipe"
     )
     assert all(provider["certified"] is False for provider in payload["data"]["providers"])
 

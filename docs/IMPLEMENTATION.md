@@ -102,8 +102,8 @@ pre-release foundation, not a V2-parity or provider-support claim.
   notifications without a query gap. This path is validated on Darwin arm64.
 - Windows named-pipe backend: user-SID-only DACL, remote-client rejection, single-service mutex,
   bounded frames and the same start/status/stop RPC lifecycle. The Windows-only integration test is
-  part of the existing Python 3.12/3.13 Windows CI matrix. Runtime support remains unverified until
-  that job and a real-host qualification artifact are available.
+  green in the Python 3.12/3.13 GitHub-hosted Windows CI matrix. This validates the runtime
+  lifecycle, while release support still requires real-host and load-level qualification.
 - Passive Claude executable inspection which never claims provider support.
 
 ## Deliberately unverified or incomplete
@@ -114,8 +114,7 @@ pre-release foundation, not a V2-parity or provider-support claim.
   process-tree recovery beyond the validated deterministic controller-crash boundary.
 - Full brainstorm/spec UX and external Figma/Serena/Graphify validation. Manual Patch reproduction
   remains blocked until candidate-bound human evidence is implemented.
-- Windows named-pipe runtime qualification, load-level slow-client qualification and François UI
-  client.
+- Windows real-host and load-level slow-client qualification, and the François UI client.
 - Multi-platform packaging and the AC01–AC30 qualification matrix.
 
 These items remain blocked on implementation or live evidence. Mocks must not be reported as

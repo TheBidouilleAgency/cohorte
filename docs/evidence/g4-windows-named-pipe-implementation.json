@@ -1,8 +1,16 @@
 {
   "gate": "G4",
-  "scenario": "windows-named-pipe-implementation",
-  "status": "implemented-runtime-unverified",
-  "checked_at": "2026-09-22T18:24:00Z",
+  "scenario": "windows-named-pipe-runtime-ci",
+  "status": "passed-hosted-ci",
+  "checked_at": "2026-09-22T18:54:00Z",
+  "candidate_commit": "ad93ee1",
+  "ci": {
+    "provider": "github-actions",
+    "run_id": 35770347616,
+    "url": "https://github.com/TheBidouilleAgency/cohorte/actions/runs/35770347616",
+    "windows_python_3_12": "passed",
+    "windows_python_3_13": "passed"
+  },
   "implementation": {
     "transport": "windows-named-pipe",
     "network_port_opened": false,
@@ -17,7 +25,7 @@
   "automated_test": {
     "file": "tests/integration/test_windows_pipe.py",
     "matrix": ["windows-latest/python-3.12", "windows-latest/python-3.13"],
-    "local_result": "platform-skipped on Darwin",
+    "result": "passed on both hosted Windows jobs",
     "required_runtime_assertions": [
       "current SID is available",
       "background service starts",
@@ -27,7 +35,7 @@
     ]
   },
   "limitations": [
-    "No Windows host was available in this session, so this is not Windows support evidence.",
+    "Hosted CI validates the lifecycle but does not establish release support on user-managed Windows hosts.",
     "Live event follow remains disabled on the Windows pipe until bounded asynchronous writes are validated there.",
     "The external Francois client remains unvalidated."
   ]
