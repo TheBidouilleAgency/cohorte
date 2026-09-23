@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import os
 import re
@@ -21,6 +22,22 @@ def project_version(root: Path = ROOT) -> str:
     version = tomllib.loads((root / "pyproject.toml").read_text())["project"]["version"]
     if not isinstance(version, str) or VERSION.fullmatch(version) is None:
         raise ValueError(f"unsupported release version: {version}")
+    module = ast.parse((root / "src/cohorte/__init__.py").read_text())
+    runtime = next(
+        (
+            node.value.value
+            for node in module.body
+            if isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name) and target.id == "__version__"
+                for target in node.targets
+            )
+            and isinstance(node.value, ast.Constant)
+        ),
+        None,
+    )
+    if runtime != version:
+        raise ValueError(f"runtime version {runtime!r} differs from package version {version!r}")
     return version
 
 

@@ -5,8 +5,15 @@ with the newest version first. Describe the verified scope and known limitations
 
 ## Unreleased
 
-- Name the upcoming Python distribution `cohorte-engine`; the CLI remains `cohorte`.
-- The first Python release has not been published yet.
+_No changes recorded yet._
+
+## 1.0.0a1 — 2026-09-23
+
+- First scoped preview of the Python Cohorte engine, published as `cohorte-engine` with the `cohorte` CLI. It is separate from the earlier npm package and its version series.
+- Add durable SQLite workflows, isolated worktrees, review and fix gates, Fleet scheduling, V2 import, and local `cohorte/1` JSON-RPC service with event replay and run controls.
+- Add official Codex and Claude SDK adapters, native login handoff, and common redacted turn, tool and usage events. Live provider evidence is currently bounded to the qualified Darwin arm64 accounts and runtimes.
+- Qualify wheel installation and upgrade checks in CI on Ubuntu, macOS and Windows with Python 3.12 and 3.13; GitHub and GitLab delivery have also been exercised on disposable repositories.
+- Scope limits: François's Python-service PR remains open, so real François UI integration is not yet certified. The two-provider model corpus and real-host qualification across all target platforms are not complete. This alpha is not a V2-parity or full-platform support claim.
 
 ## 0.1.0a1 — unreleased
 

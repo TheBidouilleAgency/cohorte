@@ -152,7 +152,7 @@ wheels = [
 
 [[package]]
 name = "cohorte-engine"
-version = "0.1.0a2"
+version = "1.0.0a1"
 source = { editable = "." }
 dependencies = [
     { name = "openai-codex" },

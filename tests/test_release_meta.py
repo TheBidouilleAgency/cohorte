@@ -39,7 +39,17 @@ def test_release_notes_reject_empty_or_placeholder_content(notes: str) -> None:
 
 def test_project_version_comes_from_python_metadata(tmp_path: Path) -> None:
     (tmp_path / "pyproject.toml").write_text('[project]\nversion = "1.0.0a1"\n')
+    (tmp_path / "src/cohorte").mkdir(parents=True)
+    (tmp_path / "src/cohorte/__init__.py").write_text('__version__ = "1.0.0a1"\n')
     assert project_version(tmp_path) == "1.0.0a1"
+
+
+def test_release_rejects_runtime_version_drift(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text('[project]\nversion = "1.0.0a1"\n')
+    (tmp_path / "src/cohorte").mkdir(parents=True)
+    (tmp_path / "src/cohorte/__init__.py").write_text('__version__ = "0.1.0a2"\n')
+    with pytest.raises(ValueError, match="runtime version"):
+        project_version(tmp_path)
 
 
 def test_discord_payload_uses_release_notes_and_link_without_webhook() -> None:

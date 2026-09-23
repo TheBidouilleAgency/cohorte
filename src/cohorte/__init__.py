@@ -1,3 +1,3 @@
 """Cohorte public package."""
 
-__version__ = "0.1.0a2"
+__version__ = "1.0.0a1"

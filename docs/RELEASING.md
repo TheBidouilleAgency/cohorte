@@ -21,10 +21,10 @@ that François integration or the complete G5 corpus has passed.
 
 ## Each dev release
 
-1. Choose the next Python version, for example `0.1.0a3` or `1.0.0a1`. On a branch, run
-   `uv version 0.1.0a3 --no-sync` (substitute the chosen version). Commit both `pyproject.toml`
-   and `uv.lock`.
-2. Add a `CHANGELOG.md` section headed `## 0.1.0a3 — YYYY-MM-DD`, with concrete bullets. State
+1. Choose the next Python version, for example `1.0.0a1`. On a branch, run
+   `uv version 1.0.0a1 --no-sync` (substitute the chosen version). Commit both `pyproject.toml`
+   and `uv.lock`, then set `src/cohorte/__init__.py` to the same version.
+2. Add a `CHANGELOG.md` section headed `## 1.0.0a1 — YYYY-MM-DD`, with concrete bullets. State
    the verified platforms/providers and any open qualification gates. The release check rejects
    a missing section, empty bullets, and TODO placeholders.
 3. Run `python scripts/release_meta.py check`, then open and merge a PR to `main` after CI is
@@ -38,7 +38,7 @@ that François integration or the complete G5 corpus has passed.
    published version in an isolated environment. Example:
 
    ```bash
-   uvx --from 'cohorte-engine==0.1.0a3' cohorte --version
+   uvx --from 'cohorte-engine==1.0.0a1' cohorte --version
    ```
 
 The GitHub release and Discord post happen only after PyPI accepts the package. If PyPI
