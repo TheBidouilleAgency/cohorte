@@ -102,6 +102,51 @@ def test_review_parses_strict_json_enum(codex_class: Mock, _inspect: Mock, tmp_p
 
 @patch("cohorte.adapters.codex.inspect_codex_account", side_effect=subscription_status)
 @patch("cohorte.adapters.codex.Codex")
+def test_codex_turn_emits_content_free_common_events(
+    codex_class: Mock, _inspect: Mock, tmp_path
+) -> None:
+    emitted: list[tuple[str, dict]] = []
+    client = codex_class.return_value.__enter__.return_value
+    thread = client.thread_start.return_value
+    thread.id = "native-session"
+    thread.run.return_value = SimpleNamespace(
+        final_response='{"verdict":"ready","covered_surfaces":["core"],"findings":[]}',
+        status=SimpleNamespace(value="completed"),
+        usage=SimpleNamespace(
+            total=SimpleNamespace(input_tokens=120, output_tokens=30, cached_input_tokens=20)
+        ),
+        items=[
+            SimpleNamespace(
+                root=SimpleNamespace(
+                    type="commandExecution",
+                    status=SimpleNamespace(value="completed"),
+                    command="PRIVATE_COMMAND_PAYLOAD",
+                )
+            )
+        ],
+    )
+
+    CodexAdapter(tmp_path, event_sink=lambda kind, data: emitted.append((kind, data))).review(
+        tmp_path, "PRIVATE_PROMPT"
+    )
+
+    assert [kind for kind, _ in emitted] == [
+        "agent.turn.started",
+        "agent.usage",
+        "agent.tool",
+        "agent.turn.finished",
+    ]
+    assert emitted[1][1]["input_tokens"] == 120
+    assert emitted[1][1]["cache_tokens"] == 20
+    assert emitted[1][1]["estimated_cost"] is None
+    assert emitted[2][1]["tool"] == "command"
+    assert emitted[2][1]["decision"] == "unknown"
+    assert emitted[3][1]["status"] == "completed"
+    assert "PRIVATE_" not in str(emitted)
+
+
+@patch("cohorte.adapters.codex.inspect_codex_account", side_effect=subscription_status)
+@patch("cohorte.adapters.codex.Codex")
 def test_brainstorm_turn_exposes_native_session_and_uses_read_only_sandbox(
     codex_class: Mock, _inspect: Mock, tmp_path
 ) -> None:

@@ -18,6 +18,10 @@ The connected native account passed the Claude SDK smoke, structured read, works
 outside-write denial, a guarded read-only write denial, and CLI cancellation/pause/resume probes.
 G0 remains partial: the full login interaction and safe native session recovery inside a workflow
 are not yet qualified.
+Both adapters now persist common turn, tool and usage events for workflow runs. The event payloads
+contain provider, phase, access and bounded metadata, without prompts, responses, commands or file
+paths. SDK token accounting can differ, and Claude's reported cost is an estimate rather than a
+provider billing statement.
 
 ```bash
 uv sync --all-extras

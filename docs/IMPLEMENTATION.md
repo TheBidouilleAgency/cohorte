@@ -108,6 +108,15 @@ pre-release foundation, not a V2-parity or provider-support claim.
   models, grouped metrics, run controls, request responses and durable event replay/unsubscribe.
   Passive account status exposes no credentials. This is the Cohorte protocol surface; the external
   François UI remains unvalidated.
+- Unified agent events: Claude and Codex workflow turns persist `agent.turn.started`,
+  `agent.turn.finished`, `agent.tool` and `agent.usage` with the same provider/phase/access fields;
+  SDK permission-denial counts use `agent.permission.denials`. The SQLite journal and `events.subscribe`
+  expose the same content-free data. Tool decisions are observed at Claude's pre-tool hook and from
+  Codex's terminal item list; an unknown decision stays unknown. Token counts follow each SDK's
+  accounting, cache tokens mean cache reads, and Claude's `estimated_cost` is not a billing fact.
+  Live single-surface workflows on both providers persisted build/review usage and tool events on
+  Darwin arm64. Brainstorm, Audit and Fleet use project-scoped events when no durable run ID exists;
+  see `docs/evidence/g3-unified-agent-events-darwin-arm64.json`.
 - Persistent POSIX service host: the CLI starts, probes and stops a background Unix-socket host;
   filesystem permissions and kernel peer credentials restrict it to the local user. Connections
   reuse the same RPC implementation, enforce bounded frames and writer drain timeouts, and a client

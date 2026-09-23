@@ -4,6 +4,7 @@ import json
 import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from cohorte.domain.errors import CohorteError, ErrorCode
@@ -146,12 +147,30 @@ class SqliteTaskJournal:
         self.database.mark_task_integrated(self.run_id, task_id, integration_commit)
 
 
+class SqliteAgentEventSink:
+    """Write agent events from either the controller or parallel worker threads."""
+
+    def __init__(self, path: Path, project_id: str, run_id: str | None = None) -> None:
+        self.path = path
+        self.project_id = project_id
+        self.run_id = run_id
+
+    def __call__(self, event_type: str, data: dict[str, Any]) -> None:
+        writer = Database(self.path)
+        try:
+            writer.append_event(event_type, data, project_id=self.project_id, run_id=self.run_id)
+        finally:
+            writer.close()
+
+
 class SqliteRunJournal:
     """Persist completed phase boundaries with optimistic run-state updates."""
 
     def __init__(self, database: Database, run_id: str) -> None:
         self.database = database
         self.run_id = run_id
+        self.project_id = database.get_run(run_id).project_id
+        self.agent_event = SqliteAgentEventSink(database.path, self.project_id, run_id)
 
     def stop_requested(self) -> RunStatus | None:
         # Worker surfaces may run in threads. A short-lived read-only

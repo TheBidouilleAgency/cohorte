@@ -196,6 +196,76 @@ def test_claude_structured_review_accepts_wire_enum(
     assert review.verdict.value == "ready"
 
 
+def test_claude_turn_emits_content_free_common_events(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:  # type: ignore[no-untyped-def]
+    emitted: list[tuple[str, dict]] = []
+
+    class FakeResult:
+        is_error = False
+        result = None
+        session_id = "native-session"
+        total_cost_usd = 0.02
+
+        def __init__(self) -> None:
+            self.structured_output = {
+                "verdict": "ready",
+                "covered_surfaces": ["core"],
+                "findings": [],
+            }
+            self.usage = {
+                "input_tokens": 42,
+                "output_tokens": 7,
+                "cache_read_input_tokens": 11,
+            }
+            self.permission_denials = [{}]
+
+    class FakeClient:
+        def __init__(self, options) -> None:  # type: ignore[no-untyped-def]
+            self.options = options
+
+        async def __aenter__(self):  # type: ignore[no-untyped-def]
+            return self
+
+        async def __aexit__(self, *args):  # type: ignore[no-untyped-def]
+            return None
+
+        async def query(self, prompt) -> None:  # type: ignore[no-untyped-def]
+            guard = self.options.hooks["PreToolUse"][0].hooks[0]
+            await guard(
+                {"tool_name": "Write", "tool_input": {"file_path": "../PRIVATE_PATH"}},
+                None,
+                {"signal": None},
+            )
+
+        async def receive_response(self):  # type: ignore[no-untyped-def]
+            yield FakeResult()
+
+    monkeypatch.setattr(claude_agent_sdk, "ClaudeSDKClient", FakeClient)
+    monkeypatch.setattr(claude_agent_sdk, "ResultMessage", FakeResult)
+    adapter = ClaudeAdapter(
+        tmp_path,
+        {"PATH": "/bin"},
+        event_sink=lambda kind, data: emitted.append((kind, data)),
+    )
+    monkeypatch.setattr(adapter, "_require_subscription", lambda: None)
+    adapter.review(tmp_path, "PRIVATE_PROMPT")
+
+    assert [kind for kind, _ in emitted] == [
+        "agent.turn.started",
+        "agent.tool",
+        "agent.usage",
+        "agent.permission.denials",
+        "agent.turn.finished",
+    ]
+    assert emitted[1][1]["decision"] == "deny"
+    assert emitted[2][1]["input_tokens"] == 42
+    assert emitted[2][1]["estimated_cost"] == 0.02
+    assert emitted[3][1]["count"] == 1
+    assert emitted[4][1]["status"] == "completed"
+    assert "PRIVATE_" not in str(emitted)
+
+
 def test_profile_selects_claude_runtime(tmp_path) -> None:  # type: ignore[no-untyped-def]
     profile = ProjectProfile(
         project_id="sample",
@@ -214,6 +284,7 @@ def test_active_claude_turn_interrupts_when_run_stops(
 ) -> None:  # type: ignore[no-untyped-def]
     state: dict[str, RunStatus | None] = {"status": None}
     clients = []
+    emitted: list[tuple[str, dict]] = []
 
     class FakeResult:
         is_error = True
@@ -246,12 +317,21 @@ def test_active_claude_turn_interrupts_when_run_stops(
 
     monkeypatch.setattr(claude_agent_sdk, "ClaudeSDKClient", FakeClient)
     monkeypatch.setattr(claude_agent_sdk, "ResultMessage", FakeResult)
-    adapter = ClaudeAdapter(tmp_path, {"PATH": "/bin"}, stop_requested=lambda: state["status"])
+    adapter = ClaudeAdapter(
+        tmp_path,
+        {"PATH": "/bin"},
+        stop_requested=lambda: state["status"],
+        event_sink=lambda kind, data: emitted.append((kind, data)),
+    )
     monkeypatch.setattr(adapter, "_require_subscription", lambda: None)
 
     with pytest.raises(RunStopped, match=stop_status.value):
         adapter._structured_turn_with_session(tmp_path, "review", Answer, True)
     assert clients[0].interrupt_calls == 1
+    assert emitted[-1] == (
+        "agent.turn.finished",
+        {"provider": "claude", "phase": "probe", "access": "read_only", "status": "stopped"},
+    )
 
 
 def test_claude_turn_does_not_start_after_cancel(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:  # type: ignore[no-untyped-def]

@@ -8,6 +8,7 @@ from typing import Literal
 
 from cohorte.adapters.claude import ClaudeAdapter, inspect_claude_account
 from cohorte.adapters.codex import CodexAdapter, inspect_codex_account
+from cohorte.adapters.events import AgentEventSink
 from cohorte.domain.models import ProjectProfile, Provider, RunStatus
 
 
@@ -51,9 +52,13 @@ def workflow_runtime(
     profile: ProjectProfile,
     *,
     stop_requested: Callable[[], RunStatus | None] | None = None,
+    event_sink: AgentEventSink | None = None,
 ) -> CodexAdapter | ClaudeAdapter:
     if profile.agent_defaults.provider == Provider.CLAUDE:
         return ClaudeAdapter(
-            repository, model=profile.agent_defaults.model, stop_requested=stop_requested
+            repository,
+            model=profile.agent_defaults.model,
+            stop_requested=stop_requested,
+            event_sink=event_sink,
         )
-    return CodexAdapter(repository)
+    return CodexAdapter(repository, event_sink=event_sink)

@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, NoReturn, TypeVar
 
+from cohorte.adapters.events import AgentEvents, AgentEventSink, claude_usage
 from cohorte.application.durable import RunStopped
 from cohorte.application.preparation import (
     BrainstormContribution,
@@ -171,11 +172,13 @@ class ClaudeAdapter:
         environ: Mapping[str, str] | None = None,
         model: str | None = None,
         stop_requested: Callable[[], RunStatus | None] | None = None,
+        event_sink: AgentEventSink | None = None,
     ) -> None:
         self.cwd = cwd.resolve(strict=True)
         self.environ = dict(os.environ if environ is None else environ)
         self.model = model
         self.stop_requested = stop_requested
+        self.event_sink = event_sink
 
     def _require_subscription(self) -> AccountStatus:
         status = inspect_claude_account(environ=self.environ)
@@ -183,13 +186,19 @@ class ClaudeAdapter:
         return status
 
     def _structured_turn_with_session(
-        self, workspace: Path, prompt: str, output: type[StructuredOutput], read_only: bool
+        self,
+        workspace: Path,
+        prompt: str,
+        output: type[StructuredOutput],
+        read_only: bool,
+        phase: str = "probe",
     ) -> tuple[StructuredOutput, str]:
         if self.stop_requested is not None:
             stopped = self.stop_requested()
             if stopped is not None:
                 raise RunStopped(stopped.value)
         self._require_subscription()
+        events = AgentEvents(self.event_sink, "claude", phase, read_only)
         try:
             from claude_agent_sdk import (
                 ClaudeAgentOptions,
@@ -207,7 +216,6 @@ class ClaudeAdapter:
                 "the phase cannot start",
                 remediation="install the claude optional dependency",
             ) from error
-
         workspace = workspace.resolve(strict=True)
         tools = ["Read", "Grep", "Glob"]
         if not read_only:
@@ -227,6 +235,13 @@ class ClaudeAdapter:
             if permitted and path is not None:
                 target = (workspace / path).resolve()
                 permitted = target == workspace or workspace in target.parents
+            if name in {"Read", "Grep", "Glob", "Edit", "Write"}:
+                events.tool(
+                    str(name).lower(),
+                    decision="allow" if permitted else "deny",
+                    outcome="unknown" if permitted else "denied",
+                    source="pre_tool_hook",
+                )
             if permitted:
                 return {
                     "hookSpecificOutput": {
@@ -261,6 +276,7 @@ class ClaudeAdapter:
             env=sanitized_claude_env(self.environ),
             output_format={"type": "json_schema", "schema": output.model_json_schema()},
         )
+        events.started()
 
         async def run() -> tuple[Any, str]:
             async with ClaudeSDKClient(options=options) as client:
@@ -288,6 +304,14 @@ class ClaudeAdapter:
                         if stop_status is not None:
                             raise RunStopped(stop_status.value)
                         if isinstance(message, ResultMessage):
+                            claude_usage(
+                                events,
+                                getattr(message, "usage", None),
+                                getattr(message, "total_cost_usd", None),
+                            )
+                            denials = getattr(message, "permission_denials", None)
+                            if isinstance(denials, list) and denials:
+                                events.permission_denials(len(denials))
                             if message.is_error:
                                 raise_claude_result_error(message.result)
                             return (
@@ -311,31 +335,43 @@ class ClaudeAdapter:
                 "the workflow phase was rejected",
             )
 
-        raw, session_ref = asyncio.run(run())
         try:
-            # The SDK returns structured_output as a Python dict. Validate it
-            # through JSON mode so strict wire enums retain their string form.
-            value = output.model_validate_json(raw if isinstance(raw, str) else json.dumps(raw))
-        except (ValueError, TypeError) as error:
-            raise CohorteError(
-                ErrorCode.OUTPUT_INVALID,
-                f"Claude returned invalid structured output for {output.__name__}",
-                "the workflow phase was rejected",
-                remediation="inspect provider diagnostics and retry the phase",
-                details={"validation_error": str(error)[:2000]},
-            ) from error
+            raw, session_ref = asyncio.run(run())
+            try:
+                # SDK structured_output is a dict; JSON mode accepts wire enums.
+                value = output.model_validate_json(raw if isinstance(raw, str) else json.dumps(raw))
+            except (ValueError, TypeError) as error:
+                raise CohorteError(
+                    ErrorCode.OUTPUT_INVALID,
+                    f"Claude returned invalid structured output for {output.__name__}",
+                    "the workflow phase was rejected",
+                    remediation="inspect provider diagnostics and retry the phase",
+                    details={"validation_error": str(error)[:2000]},
+                ) from error
+        except RunStopped:
+            events.stopped()
+            raise
+        except Exception as error:
+            events.failed(error)
+            raise
+        events.finished(session_ref)
         return value, session_ref
 
     def _structured_turn(
-        self, workspace: Path, prompt: str, output: type[StructuredOutput], read_only: bool
+        self,
+        workspace: Path,
+        prompt: str,
+        output: type[StructuredOutput],
+        read_only: bool,
+        phase: str,
     ) -> StructuredOutput:
-        return self._structured_turn_with_session(workspace, prompt, output, read_only)[0]
+        return self._structured_turn_with_session(workspace, prompt, output, read_only, phase)[0]
 
     def brainstorm_perspective(
         self, workspace: Path, prompt: str, perspective: str
     ) -> BrainstormPerspectiveTurn:
         contribution, session_ref = self._structured_turn_with_session(
-            workspace, prompt, BrainstormContribution, True
+            workspace, prompt, BrainstormContribution, True, "brainstorm_perspective"
         )
         return BrainstormPerspectiveTurn(
             session_ref=session_ref,
@@ -346,18 +382,18 @@ class ClaudeAdapter:
 
     def brainstorm_synthesis(self, workspace: Path, prompt: str) -> BrainstormSynthesisTurn:
         synthesis, session_ref = self._structured_turn_with_session(
-            workspace, prompt, BrainstormSynthesis, True
+            workspace, prompt, BrainstormSynthesis, True, "brainstorm_synthesis"
         )
         return BrainstormSynthesisTurn(session_ref=session_ref, synthesis=synthesis)
 
     def build(self, workspace: Path, prompt: str) -> AgentReport:
-        return self._structured_turn(workspace, prompt, AgentReport, False)
+        return self._structured_turn(workspace, prompt, AgentReport, False, "build")
 
     def review(self, workspace: Path, prompt: str) -> AgentReview:
-        return self._structured_turn(workspace, prompt, AgentReview, True)
+        return self._structured_turn(workspace, prompt, AgentReview, True, "review")
 
     def fix(self, workspace: Path, prompt: str) -> AgentReport:
-        return self._structured_turn(workspace, prompt, AgentReport, False)
+        return self._structured_turn(workspace, prompt, AgentReport, False, "fix")
 
     def verify_live(self) -> dict[str, Any]:
         status = self._require_subscription()

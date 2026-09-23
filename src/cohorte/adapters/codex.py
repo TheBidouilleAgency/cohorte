@@ -17,6 +17,7 @@ from uuid import uuid4
 
 from openai_codex import ApprovalMode, Codex, CodexConfig, Sandbox, is_retryable_error
 
+from cohorte.adapters.events import AgentEvents, AgentEventSink, codex_tools, codex_usage
 from cohorte.application.preparation import (
     BrainstormContribution,
     BrainstormPerspectiveTurn,
@@ -184,9 +185,15 @@ def inspect_codex_account(executable: str | None = None) -> AccountStatus:
 
 
 class CodexAdapter:
-    def __init__(self, cwd: Path, environ: Mapping[str, str] | None = None) -> None:
+    def __init__(
+        self,
+        cwd: Path,
+        environ: Mapping[str, str] | None = None,
+        event_sink: AgentEventSink | None = None,
+    ) -> None:
         self.cwd = cwd.resolve(strict=True)
         self.environ = sanitized_provider_env(environ)
+        self.event_sink = event_sink
 
     def _config(self) -> CodexConfig:
         return CodexConfig(env=self.environ)
@@ -203,8 +210,9 @@ class CodexAdapter:
         prompt: str,
         output: type[StructuredOutput],
         sandbox: Sandbox,
+        phase: str,
     ) -> StructuredOutput:
-        value, _ = self._structured_turn_with_session(workspace, prompt, output, sandbox)
+        value, _ = self._structured_turn_with_session(workspace, prompt, output, sandbox, phase)
         return value
 
     def _structured_turn_with_session(
@@ -213,8 +221,11 @@ class CodexAdapter:
         prompt: str,
         output: type[StructuredOutput],
         sandbox: Sandbox,
+        phase: str = "probe",
     ) -> tuple[StructuredOutput, str]:
         self._require_subscription()
+        events = AgentEvents(self.event_sink, "codex", phase, sandbox == Sandbox.read_only)
+        events.started()
 
         def attempt() -> tuple[Any, str]:
             with Codex(self._config()) as codex:
@@ -233,28 +244,36 @@ class CodexAdapter:
                 )
                 return result, thread.id
 
-        result, session_ref = bounded_provider_call(attempt)
-        raw = result.final_response or ""
         try:
-            return output.model_validate_json(raw), session_ref
-        except (json.JSONDecodeError, ValueError) as error:
-            raise CohorteError(
-                ErrorCode.OUTPUT_INVALID,
-                f"Codex returned invalid structured output for {output.__name__}",
-                "the workflow phase was rejected",
-                remediation="inspect provider diagnostics and retry the phase",
-                details={
-                    "turn_status": result.status.value,
-                    "validation_error": str(error)[:2000],
-                    "response_excerpt": raw[:2000],
-                },
-            ) from error
+            result, session_ref = bounded_provider_call(attempt)
+            codex_usage(events, getattr(result, "usage", None))
+            codex_tools(events, getattr(result, "items", None))
+            raw = result.final_response or ""
+            try:
+                value = output.model_validate_json(raw)
+            except (json.JSONDecodeError, ValueError) as error:
+                raise CohorteError(
+                    ErrorCode.OUTPUT_INVALID,
+                    f"Codex returned invalid structured output for {output.__name__}",
+                    "the workflow phase was rejected",
+                    remediation="inspect provider diagnostics and retry the phase",
+                    details={
+                        "turn_status": result.status.value,
+                        "validation_error": str(error)[:2000],
+                        "response_excerpt": raw[:2000],
+                    },
+                ) from error
+        except Exception as error:
+            events.failed(error)
+            raise
+        events.finished(session_ref)
+        return value, session_ref
 
     def brainstorm_perspective(
         self, workspace: Path, prompt: str, perspective: str
     ) -> BrainstormPerspectiveTurn:
         contribution, session_ref = self._structured_turn_with_session(
-            workspace, prompt, BrainstormContribution, Sandbox.read_only
+            workspace, prompt, BrainstormContribution, Sandbox.read_only, "brainstorm_perspective"
         )
         return BrainstormPerspectiveTurn(
             session_ref=session_ref,
@@ -265,18 +284,20 @@ class CodexAdapter:
 
     def brainstorm_synthesis(self, workspace: Path, prompt: str) -> BrainstormSynthesisTurn:
         synthesis, session_ref = self._structured_turn_with_session(
-            workspace, prompt, BrainstormSynthesis, Sandbox.read_only
+            workspace, prompt, BrainstormSynthesis, Sandbox.read_only, "brainstorm_synthesis"
         )
         return BrainstormSynthesisTurn(session_ref=session_ref, synthesis=synthesis)
 
     def build(self, workspace: Path, prompt: str) -> AgentReport:
-        return self._structured_turn(workspace, prompt, AgentReport, Sandbox.workspace_write)
+        return self._structured_turn(
+            workspace, prompt, AgentReport, Sandbox.workspace_write, "build"
+        )
 
     def review(self, workspace: Path, prompt: str) -> AgentReview:
-        return self._structured_turn(workspace, prompt, AgentReview, Sandbox.read_only)
+        return self._structured_turn(workspace, prompt, AgentReview, Sandbox.read_only, "review")
 
     def fix(self, workspace: Path, prompt: str) -> AgentReport:
-        return self._structured_turn(workspace, prompt, AgentReport, Sandbox.workspace_write)
+        return self._structured_turn(workspace, prompt, AgentReport, Sandbox.workspace_write, "fix")
 
     def verify_live(self) -> dict[str, Any]:
         status = self._require_subscription()

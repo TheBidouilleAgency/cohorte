@@ -22,6 +22,7 @@ from cohorte.adapters.providers import inspect_runtime, workflow_runtime
 from cohorte.application.delivery import ShipRunner
 from cohorte.application.durable import (
     RunStopped,
+    SqliteAgentEventSink,
     SqliteRunJournal,
     SqliteTaskJournal,
     record_run_error,
@@ -506,15 +507,17 @@ def run(argv: list[str] | None = None) -> int:
                 if project_profile is not None
                 else "codex"
             )
+            agent_events = SqliteAgentEventSink(database.path, args.project_id)
             if selected_provider == "claude":
                 brainstorm_runtime = ClaudeAdapter(
                     repository,
                     model=project_profile.agent_defaults.model
                     if project_profile is not None
                     else None,
+                    event_sink=agent_events,
                 )
             else:
-                brainstorm_runtime = CodexAdapter(repository)
+                brainstorm_runtime = CodexAdapter(repository, event_sink=agent_events)
             brief = BrainstormRunner(brainstorm_runtime).run(
                 repository,
                 args.feature_id,
@@ -668,7 +671,12 @@ def run(argv: list[str] | None = None) -> int:
             journal = SqliteRunJournal(database, args.run_id)
             try:
                 patch_result = PatchRunner(
-                    workflow_runtime(repository, profile, stop_requested=journal.stop_requested)
+                    workflow_runtime(
+                        repository,
+                        profile,
+                        stop_requested=journal.stop_requested,
+                        event_sink=journal.agent_event,
+                    )
                 ).run(
                     repository,
                     args.worktrees,
@@ -697,9 +705,13 @@ def run(argv: list[str] | None = None) -> int:
                 paths=args.path,
                 concerns=args.concern,
             )
-            audit_report = AuditRunner(workflow_runtime(args.repo, profile)).run(
-                args.repo, profile, audit_spec
-            )
+            audit_report = AuditRunner(
+                workflow_runtime(
+                    args.repo,
+                    profile,
+                    event_sink=SqliteAgentEventSink(database.path, profile.project_id),
+                )
+            ).run(args.repo, profile, audit_spec)
             report_ref = database.put_artifact(
                 "audit-report", audit_report.model_dump_json(indent=2).encode()
             )
@@ -805,7 +817,12 @@ def run(argv: list[str] | None = None) -> int:
             journal = SqliteRunJournal(database, args.run_id)
             try:
                 refactor_result = RefactorRunner(
-                    workflow_runtime(repository, profile, stop_requested=journal.stop_requested)
+                    workflow_runtime(
+                        repository,
+                        profile,
+                        stop_requested=journal.stop_requested,
+                        event_sink=journal.agent_event,
+                    )
                 ).run(
                     repository,
                     args.worktrees,
@@ -1124,7 +1141,12 @@ def run(argv: list[str] | None = None) -> int:
             journal = SqliteRunJournal(database, args.run_id)
             try:
                 alignment_result = AlignmentRunner(
-                    workflow_runtime(repository, profile, stop_requested=journal.stop_requested)
+                    workflow_runtime(
+                        repository,
+                        profile,
+                        stop_requested=journal.stop_requested,
+                        event_sink=journal.agent_event,
+                    )
                 ).run(
                     repository,
                     args.worktrees,
@@ -1235,7 +1257,13 @@ def run(argv: list[str] | None = None) -> int:
 
             profile = ProjectProfile.model_validate_json(args.profile.read_text())
             specs = [FeatureSpec.model_validate_json(path.read_text()) for path in args.specs]
-            fleet_result = FleetRunner(workflow_runtime(args.repo, profile)).run(
+            fleet_result = FleetRunner(
+                workflow_runtime(
+                    args.repo,
+                    profile,
+                    event_sink=SqliteAgentEventSink(database.path, profile.project_id),
+                )
+            ).run(
                 args.repo,
                 args.worktrees,
                 profile,
@@ -1291,7 +1319,12 @@ def run(argv: list[str] | None = None) -> int:
                 run_id=args.run_id,
             )
             journal = SqliteRunJournal(database, args.run_id)
-            runtime = workflow_runtime(args.repo, profile, stop_requested=journal.stop_requested)
+            runtime = workflow_runtime(
+                args.repo,
+                profile,
+                stop_requested=journal.stop_requested,
+                event_sink=journal.agent_event,
+            )
             try:
                 loop_result: Any
                 if len(spec.surfaces) > 1:
@@ -1354,7 +1387,12 @@ def run(argv: list[str] | None = None) -> int:
             repository = Path(context["repository"])
             worktree = Path(context["worktree"])
             journal = SqliteRunJournal(database, args.run_id)
-            runtime = workflow_runtime(repository, profile, stop_requested=journal.stop_requested)
+            runtime = workflow_runtime(
+                repository,
+                profile,
+                stop_requested=journal.stop_requested,
+                event_sink=journal.agent_event,
+            )
             try:
                 resume_result: Any
                 if len(spec.surfaces) > 1:
