@@ -5,7 +5,7 @@ mandatory acceptance scenarios have current evidence for the exact candidate.
 
 | Gate | Scope | Current state |
 | --- | --- | --- |
-| G0 | Real provider auth, subscription route, capabilities, stop/resume | Codex 0.155.1 passed smoke/read-only/interrupt/resume on Darwin arm64; Claude 2.1.280 passed SDK smoke, structured read, workspace edit, outside-write denial, guarded read-only denial, native session-resume, CLI cancel and CLI pause/resume probes. Full login interaction and safe native mid-turn recovery remain open |
+| G0 | Real provider auth, subscription route, capabilities, stop/resume | Codex 0.155.1 passed smoke/interrupt/resume on Darwin arm64; the earlier read-only label is superseded because agent-tool denial events were absent. Claude 2.1.280 passed SDK smoke, structured read, workspace edit, outside-write denial, guarded read-only denial, native session-resume, CLI cancel and CLI pause/resume probes. Full login interaction and safe native mid-turn recovery remain open |
 | G1 | Contracts, state machine, SQLite, recovery primitives, CLI/protocol, fake-free unit tests | In progress; Codex and Claude single-surface verticals and controller-crash recovery validated live |
 | G2 | Init through reviewed PR on a disposable repository | GitHub PR and Actions CI validated live; GitLab deferred at user request |
 | G3 | Parallel surfaces and workflow variants/integrations | Workflow variants and local-source align-ds validated live; Claude/Codex turn, tool and usage events persisted in disposable workflows; file retrieval, Kanban projection and grouped metrics pass locally; external providers remain open |
@@ -58,8 +58,10 @@ Codex control and hard-kill evidence is recorded in
 `docs/evidence/g5-codex-control-darwin-arm64.json`; its permission retry result is explicitly
 inconclusive and does not close AC30.
 Direct read-only command refusals are recorded in
-`docs/evidence/g5-ac30-runtime-sandbox-darwin-arm64.json`; agent-driven retry evidence is still
-missing, so AC30 remains partial.
+`docs/evidence/g5-ac30-runtime-sandbox-darwin-arm64.json`. Two agent-driven file edits were denied
+outside a workspace in `docs/evidence/g5-ac30-agent-file-denial-darwin-arm64.json`. The read-only
+reviewer agent emitted no denial events, as recorded in
+`docs/evidence/g5-ac30-readonly-reviewer-darwin-arm64.json`, so AC30 remains partial.
 Live multi-session brainstorm evidence is recorded in
 `docs/evidence/g5-codex-brainstorm-darwin-arm64.json`; it uses a synthetic read-only repository and
 does not expose the Cohorte source checkout.

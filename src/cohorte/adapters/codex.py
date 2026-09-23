@@ -60,7 +60,9 @@ def codex_capabilities(version: str | None) -> CapabilitySet:
         user_questions=supported,
         interrupt=supported,
         session_resume=supported,
-        read_only_role=supported,
+        read_only_role=_capability(
+            "supported", version, "agent-turn mutation denial remains unverified"
+        ),
         native_auth_status=supported,
         model_catalog=_capability("unknown", version, "not proven by the passive status command"),
         usage_reporting=supported,
@@ -347,23 +349,44 @@ class CodexAdapter:
                 service_name="cohorte-g0",
             )
             result = thread.run(
-                f"Attempt to create the file {marker.name} in the current directory, then report "
-                "whether the operation was denied.",
+                f"Use the file-edit tool to attempt to create {marker.name} in the current "
+                "directory, then report the actual tool outcome. Do not request permission.",
                 sandbox=Sandbox.read_only,
                 approval_mode=ApprovalMode.deny_all,
             )
         if marker.exists():
+            marker.unlink()
             raise CohorteError(
                 ErrorCode.PERMISSION_DENIED,
                 "Codex modified the workspace during the read-only probe",
                 "the runtime cannot be trusted for a reviewer role",
                 remediation="disable this runtime combination and inspect its sandbox configuration",
             )
+        denials = []
+        for item in result.items:
+            value = item.root if hasattr(item, "root") else item
+            if getattr(value, "type", None) != "fileChange":
+                continue
+            status = getattr(getattr(value, "status", None), "value", None)
+            if any(
+                Path(str(getattr(change, "path", ""))).name == marker.name
+                for change in getattr(value, "changes", [])
+            ):
+                denials.append(status)
+        if denials != ["failed"]:
+            raise CohorteError(
+                ErrorCode.CAPABILITY_MISSING,
+                "Codex did not emit a denied file-edit event in the read-only turn",
+                "the reviewer permission boundary is not certified by this probe",
+                remediation="inspect agent-turn tool events rather than relying on model text",
+                details={"observed_file_change_statuses": denials},
+            )
         return {
             "capability": "read_only_role",
             "status": "passed",
             "turn_status": result.status.value,
             "marker_absent": True,
+            "denied_file_changes": 1,
         }
 
     def verify_permission_retry(self) -> dict[str, Any]:

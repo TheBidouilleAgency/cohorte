@@ -87,6 +87,12 @@ def subscription_status() -> AccountStatus:
     )
 
 
+def test_read_only_capability_reports_qualification_limit() -> None:
+    from cohorte.adapters.codex import codex_capabilities
+
+    assert "unverified" in codex_capabilities("0.155.1").read_only_role.limitations[0]
+
+
 @patch("cohorte.adapters.codex.inspect_codex_account", side_effect=subscription_status)
 @patch("cohorte.adapters.codex.Codex")
 def test_review_parses_strict_json_enum(codex_class: Mock, _inspect: Mock, tmp_path) -> None:
@@ -253,14 +259,65 @@ def test_read_only_probe_requires_marker_to_stay_absent(
 ) -> None:
     client = codex_class.return_value.__enter__.return_value
     thread = client.thread_start.return_value
-    thread.run.return_value = SimpleNamespace(status=SimpleNamespace(value="completed"))
+
+    def run(prompt: str, **_kwargs):
+        marker = prompt.split("create ", 1)[1].split(" ", 1)[0]
+        return SimpleNamespace(
+            status=SimpleNamespace(value="completed"),
+            items=[
+                SimpleNamespace(
+                    type="fileChange",
+                    status=SimpleNamespace(value="failed"),
+                    changes=[SimpleNamespace(path=marker)],
+                )
+            ],
+        )
+
+    thread.run.side_effect = run
     result = CodexAdapter(tmp_path, {"PATH": "/bin"}).verify_read_only()
     assert result == {
         "capability": "read_only_role",
         "status": "passed",
         "turn_status": "completed",
         "marker_absent": True,
+        "denied_file_changes": 1,
     }
+
+
+@patch("cohorte.adapters.codex.inspect_codex_account", side_effect=subscription_status)
+@patch("cohorte.adapters.codex.Codex")
+def test_read_only_probe_rejects_model_only_denial(
+    codex_class: Mock, _inspect: Mock, tmp_path
+) -> None:
+    client = codex_class.return_value.__enter__.return_value
+    client.thread_start.return_value.run.return_value = SimpleNamespace(
+        status=SimpleNamespace(value="completed"),
+        final_response="The write was denied.",
+        items=[],
+    )
+
+    with pytest.raises(CohorteError) as caught:
+        CodexAdapter(tmp_path, {"PATH": "/bin"}).verify_read_only()
+    assert caught.value.code == ErrorCode.CAPABILITY_MISSING
+
+
+@patch("cohorte.adapters.codex.inspect_codex_account", side_effect=subscription_status)
+@patch("cohorte.adapters.codex.Codex")
+def test_read_only_probe_rejects_created_marker(
+    codex_class: Mock, _inspect: Mock, tmp_path
+) -> None:
+    client = codex_class.return_value.__enter__.return_value
+
+    def run(prompt: str, **_kwargs):
+        marker = prompt.split("create ", 1)[1].split(" ", 1)[0]
+        (tmp_path / marker).write_text("unexpected")
+        return SimpleNamespace(status=SimpleNamespace(value="completed"), items=[])
+
+    client.thread_start.return_value.run.side_effect = run
+    with pytest.raises(CohorteError) as caught:
+        CodexAdapter(tmp_path, {"PATH": "/bin"}).verify_read_only()
+    assert caught.value.code == ErrorCode.PERMISSION_DENIED
+    assert not list(tmp_path.glob(".cohorte-g0-*"))
 
 
 @patch("cohorte.adapters.codex.time.sleep")
