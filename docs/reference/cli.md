@@ -30,9 +30,11 @@ Forme générale : `cohorte [--json] [--config-dir DIR] [--data-dir DIR] COMMAND
 
 ## Cadrage et spec
 
+`intake` reçoit et trie une demande venue d’un ticket, d’un texte ou d’une URL. C’est une étape facultative avant `brainstorm` pour les fonctionnalités ou `patch-spec` pour les bugs. Elle conserve les réponses mais ne modifie pas le code. Si vous partez d’une idée déjà claire, lancez directement `brainstorm`.
+
 | Commande | Usage |
 | --- | --- |
-| `intake [PROJECT_ID] [--text TEXTE | --file FILE | --url URL] [--title TITRE]` | Trier une entrée. Sans source, ouvre le mode guidé. Les questions et réponses sont conservées avec leur révision. |
+| `intake [PROJECT_ID] [--text TEXTE | --file FILE | --url URL] [--title TITRE]` | Recevoir une demande et la classer : fonctionnalité, correctif ou questions à préciser. Sans source, ouvre le mode guidé. Les réponses sont conservées avec leur révision. |
 | `intake --continue FEATURE_ID [--answer N=RÉPONSE] [--route feature\|patch]` | Reprendre un triage du projet courant. Dans un terminal, les questions et le choix de parcours sont proposés. En JSON, fournissez les réponses ou le parcours explicitement. |
 | `brainstorm --from-intake FEATURE_ID [--live]` | Démarrer le panel depuis une demande classée « feature » en reprenant les réponses, questions ouvertes et la provenance de la source. |
 | `brainstorm [PROJECT_ID] [--feature-id ID] [--idea TEXTE] [--answer TEXTE] [--context TEXTE] [--provider codex|claude] [--output FILE] [--live]` | Exécuter le panel ou recueillir les réponses guidées ; `--answer` et `--perspective` sont répétables. Si le panel pose des questions bloquantes, le terminal propose d’y répondre et de relancer un tour. |

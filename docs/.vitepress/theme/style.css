@@ -1,0 +1,21 @@
+:root {
+  --vp-c-brand-1: #a94c00;
+  --vp-c-brand-2: #d46305;
+  --vp-c-brand-3: #f5851f;
+  --vp-c-brand-soft: #fff0df;
+}
+
+.dark {
+  --vp-c-brand-1: #f9a24f;
+  --vp-c-brand-2: #f5851f;
+  --vp-c-brand-3: #cf6510;
+  --vp-c-brand-soft: #39281a;
+}
+
+.VPHome img[src*='parcours-v3.gif'] {
+  display: block;
+  width: 100%;
+  max-width: 1000px;
+  margin: 0 auto 2rem;
+  border-radius: 18px;
+}

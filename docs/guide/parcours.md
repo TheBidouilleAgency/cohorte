@@ -2,7 +2,11 @@
 
 ## 1. Découvrir et cadrer
 
-Dans le dépôt cible, `cohorte init .` crée le profil local. Relisez-le avec `cohorte profile show`, corrigez-le avec `cohorte profile edit`, puis utilisez `cohorte intake` pour trier une demande ou `cohorte brainstorm` pour explorer une idée. Si le triage demande des précisions, `cohorte intake --continue IDENTIFIANT` reprend les questions et conserve les réponses dans une nouvelle révision. Pour une demande classée « feature », `cohorte brainstorm --from-intake IDENTIFIANT` reprend sa provenance et ses réponses. `cohorte brief show IDENTIFIANT` permet de relire le brief complet sans relancer le panel. `cohorte status` affiche les fonctionnalités, runs et décisions en attente du projet courant.
+Dans le dépôt cible, `cohorte init .` enregistre un profil local. Relisez-le avec `cohorte profile show` et corrigez-le avec `cohorte profile edit`.
+
+Si vous partez d’une **idée**, lancez directement `cohorte brainstorm`. Si vous avez une **demande à comprendre** (ticket, message, URL), `cohorte intake` la reçoit, pose les questions manquantes et propose une route « fonctionnalité » ou « correctif ». Ce triage est facultatif et ne modifie pas le code. `cohorte intake --continue IDENTIFIANT` reprend les questions et enregistre les réponses dans une nouvelle révision. Pour une fonctionnalité, `cohorte brainstorm --from-intake IDENTIFIANT` transmet ce contexte au panel ; pour un bug, `cohorte patch-spec --from-intake IDENTIFIANT` prépare le correctif.
+
+`cohorte brief show IDENTIFIANT` relit le brief complet sans relancer le panel. `cohorte status` affiche les fonctionnalités, runs et décisions en attente du projet courant.
 
 Après le premier tour, le terminal propose de répondre aux questions bloquantes et de relancer le panel. Vous pouvez arrêter puis reprendre avec `cohorte brainstorm --continue IDENTIFIANT` : les nouvelles réponses s’ajoutent au brief précédent, et la nouvelle révision référence l’ancienne. Une réponse laissée vide reste ouverte. Le panel réévalue sa recommandation ; il ne transforme pas son accord en décision utilisateur.
 

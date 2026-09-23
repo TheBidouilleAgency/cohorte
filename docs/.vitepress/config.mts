@@ -5,9 +5,11 @@ export default defineConfig({
   title: 'Cohorte',
   description: 'Documentation du moteur local de workflows pour agents de code',
   base: '/cohorte/',
+  head: [['link', { rel: 'icon', type: 'image/svg+xml', href: '/cohorte/cohorte-avatar.svg' }]],
   cleanUrls: true,
   lastUpdated: true,
   themeConfig: {
+    logo: '/cohorte-mark.svg',
     nav: [
       { text: 'Démarrer', link: '/guide/installation' },
       { text: 'Parcours', link: '/guide/parcours' },

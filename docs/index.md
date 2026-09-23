@@ -3,8 +3,11 @@ layout: home
 
 hero:
   name: Cohorte
-  text: Des workflows de développement supervisés
-  tagline: Cadrez une idée, préparez une spec vérifiable et exécutez des agents de code dans des worktrees isolés.
+  text: Du besoin à une PR contrôlée
+  tagline: Cadrez une demande, gardez les décisions visibles et faites travailler les agents dans des worktrees isolés.
+  image:
+    src: /cohorte-mark.svg
+    alt: Signe Cohorte
   actions:
     - theme: brand
       text: Démarrer
@@ -14,15 +17,16 @@ hero:
       link: /guide/parcours
 
 features:
-  - title: Un profil par projet
-    details: Cohorte découvre les surfaces et les checks, puis vous laisse corriger ce qu’il ne peut pas déduire.
-  - title: Des décisions visibles
-    details: Le brief, la spec gelée, les revues et les approbations sont conservés comme artefacts vérifiables.
-  - title: Une exécution isolée
-    details: Les workflows utilisent des worktrees Git et contrôlent les chemins, checks et étapes de livraison.
+  - title: Comprendre avant de coder
+    details: Une demande peut être triée, discutée par un panel puis transformée en spec vérifiable.
+  - title: Garder le fil des décisions
+    details: Réponses, briefs, specs, revues et approbations sont conservés avec leurs révisions.
+  - title: Exécuter avec contrôle
+    details: Les agents travaillent dans des worktrees Git ; checks, revue et livraison ont leurs propres validations.
 ---
 
-La version Python s’installe depuis PyPI avec `uv tool install 'cohorte-engine==1.0.0a3'` et fournit la commande `cohorte`. `npm install -g cohorte` vise l’ancien paquet npm.
-Cette documentation décrit l’interface disponible dans le dépôt. La version installée peut différer : vérifiez-la avec `cohorte --version`.
+![Parcours Cohorte V3 : init, intake, brainstorm, spec, start et ship](/parcours-v3.gif)
 
-Le parcours humain est actuellement guidé jusqu’au brainstorm. La création d’une spec à partir du brief et le lancement d’un workflow restent des étapes explicites ; consultez les [limites actuelles](/guide/parcours#limites-actuelles) avant un premier lancement.
+`intake` veut simplement dire **recevoir et trier une demande**. Vous pouvez le sauter si vous partez d’une idée et lancer directement `brainstorm`. Le [guide de premiers pas](/guide/demarrage) explique quoi lancer selon votre situation et à quel moment le code est modifié.
+
+La version Python publiée sur PyPI s’installe avec `uv tool install 'cohorte-engine==1.0.0a4'` et fournit `cohorte`. L’ancien paquet npm correspond à V2. Les nouveaux parcours de triage et de spec décrits ici sont présents dans le dépôt et attendent une prochaine publication ; vérifiez la version utilisée avec `cohorte --version`.
