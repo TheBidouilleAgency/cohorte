@@ -69,7 +69,11 @@ def _feature_id(database: Database, project_id: str, supplied: str | None, statu
 
 
 def _new_draft(
-    brief: BrainstormBrief, brief_ref: ArtifactRef, profile: ProjectProfile
+    brief: BrainstormBrief,
+    brief_ref: ArtifactRef,
+    profile: ProjectProfile,
+    database: Database,
+    repository: Path,
 ) -> FeatureSpec:
     synthesis = brief.synthesis
     print(f"\nIdée : {brief.idea}\nProblème : {synthesis.problem}")
@@ -90,11 +94,27 @@ def _new_draft(
     for surface in profile.surfaces:
         print(f"  {surface.id} · {', '.join(surface.paths)}")
     suggested_surface = profile.surfaces[0].id if len(profile.surfaces) == 1 else ""
-    surface_id = _ask("Surface à modifier (une seule dans ce parcours)", suggested_surface)
+    selected = _ask("Surfaces à modifier (IDs séparés par des virgules)", suggested_surface)
+    surface_ids = [item.strip() for item in selected.split(",") if item.strip()]
     surfaces = {item.id: item for item in profile.surfaces}
-    if surface_id not in surfaces:
-        raise ValueError("choose one surface ID from the stored profile")
-    check_ids = surfaces[surface_id].check_ids
+    if (
+        not surface_ids
+        or len(surface_ids) != len(set(surface_ids))
+        or not set(surface_ids) <= surfaces.keys()
+    ):
+        raise ValueError("choose distinct surface IDs from the stored profile")
+    check_ids = list(
+        dict.fromkeys(check for sid in surface_ids for check in surfaces[sid].check_ids)
+    )
+    contract_refs: list[ArtifactRef] = []
+    if len(surface_ids) > 1:
+        contract_path = Path(_ask("Chemin du contrat partagé dans le dépôt"))
+        resolved = (repository / contract_path).resolve(strict=True)
+        if not resolved.is_relative_to(repository) or not resolved.is_file():
+            raise ValueError("contract must be a file in the registered repository")
+        contract_refs.append(
+            ArtifactRef.model_validate(database.put_artifact("contract", resolved.read_bytes()))
+        )
     title = _ask("Titre", brief.idea[:200])
     problem = _ask("Problème à résoudre", synthesis.problem)
     scope = _ask("Résultat dans le périmètre", synthesis.in_scope[0] if synthesis.in_scope else "")
@@ -106,17 +126,70 @@ def _new_draft(
     given = _ask("Scénario — étant donné")
     when = _ask("Scénario — quand")
     then = _ask("Scénario — alors")
+    scenarios = [Scenario(id="primary", given=given, when=when, then=then)]
+    while _yes("Ajouter un autre scénario ?"):
+        index = len(scenarios) + 1
+        scenarios.append(
+            Scenario(
+                id=f"scenario-{index}",
+                given=_ask(f"Scénario {index} — étant donné"),
+                when=_ask(f"Scénario {index} — quand"),
+                then=_ask(f"Scénario {index} — alors"),
+            )
+        )
     if synthesis.criterion_leads:
         print(f"Piste de critère du panel : {synthesis.criterion_leads[0]}")
     statement = _ask("Critère d'acceptation observable et vérifiable")
-    if check_ids:
-        print(f"Checks de la surface : {', '.join(check_ids)}")
+    if surfaces[surface_ids[0]].check_ids:
+        print(f"Checks de {surface_ids[0]} : {', '.join(surfaces[surface_ids[0]].check_ids)}")
     check_id = _ask(
         "Check qui prouve ce critère (Entrée = revue)",
         required=False,
     )
-    if check_id and check_id not in check_ids:
+    if check_id and check_id not in surfaces[surface_ids[0]].check_ids:
         raise ValueError("criterion check must belong to the chosen surface")
+    acceptance = [
+        Criterion(
+            id="primary",
+            statement=statement,
+            verification="automatic" if check_id else "review",
+            check_ids=[check_id] if check_id else [],
+            surface_ids=[surface_ids[0]],
+        )
+    ]
+    for surface_id in surface_ids[1:]:
+        statement = _ask(f"Critère observable pour {surface_id}")
+        print(f"Checks de {surface_id} : {', '.join(surfaces[surface_id].check_ids) or 'aucun'}")
+        check_id = _ask("Check qui prouve ce critère (Entrée = revue)", required=False)
+        if check_id and check_id not in surfaces[surface_id].check_ids:
+            raise ValueError("criterion check must belong to the chosen surface")
+        acceptance.append(
+            Criterion(
+                id=f"criterion-{surface_id}",
+                statement=statement,
+                verification="automatic" if check_id else "review",
+                check_ids=[check_id] if check_id else [],
+                surface_ids=[surface_id],
+            )
+        )
+    while _yes("Ajouter un autre critère ?"):
+        index = len(acceptance) + 1
+        target = _ask("Surface du critère", surface_ids[0])
+        if target not in surface_ids:
+            raise ValueError("criterion surface must be in the selected scope")
+        statement = _ask("Critère observable")
+        check_id = _ask("Check qui prouve ce critère (Entrée = revue)", required=False)
+        if check_id and check_id not in surfaces[target].check_ids:
+            raise ValueError("criterion check must belong to the chosen surface")
+        acceptance.append(
+            Criterion(
+                id=f"criterion-{index}",
+                statement=statement,
+                verification="automatic" if check_id else "review",
+                check_ids=[check_id] if check_id else [],
+                surface_ids=[target],
+            )
+        )
     test_strategy = _ask("Stratégie de test")
     error_case = _ask("Cas d'erreur à vérifier")
     migrations = _ask("Migration nécessaire ? Si non, indiquer pourquoi", "Aucune migration prévue")
@@ -130,21 +203,13 @@ def _new_draft(
         problem="\n".join([problem, *decisions]),
         in_scope=[scope],
         out_of_scope=[outside] if outside else [],
-        surfaces=[surface_id],
-        scenarios=[Scenario(id="primary", given=given, when=when, then=then)],
-        acceptance=[
-            Criterion(
-                id="primary",
-                statement=statement,
-                verification="automatic" if check_id else "review",
-                check_ids=[check_id] if check_id else [],
-                surface_ids=[surface_id],
-            )
-        ],
+        surfaces=surface_ids,
+        scenarios=scenarios,
+        acceptance=acceptance,
         dod=DefinitionOfDone(required_checks=check_ids),
         test_strategy=[test_strategy],
         error_cases=[error_case],
-        contract_refs=[],
+        contract_refs=contract_refs,
         dependencies=[],
         migrations=RequirementPlan(
             required=migrations != "Aucune migration prévue", plan=migrations
@@ -177,6 +242,48 @@ def guided_spec(
     if draft_path.exists() and not refresh:
         draft = FeatureSpec.model_validate_json(draft_path.read_text(encoding="utf-8"))
         print(f"Brouillon existant : {draft_path}")
+        latest = database.latest_artifact(f"brief:{selected}")
+        latest_ref = ArtifactRef.model_validate(
+            {key: latest[key] for key in ("id", "revision", "sha256")}
+        )
+        if draft.brief_ref != latest_ref:
+            print(
+                f"Nouveau brief disponible : révision {latest_ref.revision}. "
+                "Le brouillon reste inchangé tant que tu ne le rattaches pas."
+            )
+            if _yes("Rattacher ce brief en conservant le brouillon ?"):
+                newer_brief = BrainstormBrief.model_validate_json(latest["content"])
+                if newer_brief.feature_id != selected:
+                    raise ValueError("newer brief belongs to another feature")
+                newly_open = [
+                    question
+                    for question in newer_brief.synthesis.blocking_questions
+                    if question not in draft.open_questions and question not in draft.problem
+                ]
+                draft = draft.model_copy(
+                    update={
+                        "brief_ref": latest_ref,
+                        "open_questions": [*draft.open_questions, *newly_open],
+                        "revision": draft.revision + 1,
+                    }
+                )
+                print(f"Brief rattaché ; {len(newly_open)} nouvelle(s) question(s) à trancher.")
+        if draft.open_questions:
+            remaining: list[str] = []
+            decisions: list[str] = []
+            for question in draft.open_questions:
+                answer = _ask(f"{question} (Entrée = encore ouvert)", required=False)
+                if answer:
+                    decisions.append(f"{question} {answer}")
+                else:
+                    remaining.append(question)
+            draft = draft.model_copy(
+                update={
+                    "problem": "\n".join([draft.problem, *decisions]),
+                    "open_questions": remaining,
+                    "revision": draft.revision + (1 if decisions else 0),
+                }
+            )
     else:
         stored = database.latest_artifact(f"brief:{selected}")
         brief = BrainstormBrief.model_validate_json(stored["content"])
@@ -185,7 +292,7 @@ def guided_spec(
         brief_ref = ArtifactRef.model_validate(
             {key: stored[key] for key in ("id", "revision", "sha256")}
         )
-        draft = _new_draft(brief, brief_ref, profile)
+        draft = _new_draft(brief, brief_ref, profile, database, repository)
         _save(draft_path, canonical_model_bytes(draft))
     editor = os.environ.get("VISUAL") or os.environ.get("EDITOR")
     if editor and _yes("Ouvrir le brouillon JSON dans l'éditeur pour le compléter ?"):

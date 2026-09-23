@@ -313,6 +313,25 @@ class Database:
             raise KeyError(artifact_id)
         return self.get_artifact(artifact_id, int(row["revision"]), limit=2 * 1024 * 1024)
 
+    def latest_intake_report(self, feature_id: str) -> dict[str, Any]:
+        try:
+            return self.latest_artifact(f"intake:{feature_id}")
+        except KeyError:
+            pass
+        if not feature_id.startswith("intake-"):
+            raise KeyError(feature_id)
+        source_prefix = feature_id.removeprefix("intake-")
+        rows = self.connection.execute(
+            "SELECT id, revision FROM artifacts WHERE kind='intake-report' "
+            "ORDER BY created_at DESC, revision DESC"
+        ).fetchall()
+        for row in rows:
+            stored = self.get_artifact(row["id"], int(row["revision"]), limit=2 * 1024 * 1024)
+            document = json.loads(stored["content"])
+            if document.get("source_sha256", "").startswith(source_prefix):
+                return stored
+        raise KeyError(feature_id)
+
     def register_project(self, project_id: str, root_path: str, profile_artifact_id: str) -> None:
         now = utc_now()
         with self.transaction() as tx:
@@ -363,6 +382,15 @@ class Database:
             updated = tx.execute(
                 "UPDATE features SET status=?,updated_at=? WHERE id=?",
                 (status, utc_now(), feature_id),
+            ).rowcount
+        if updated != 1:
+            raise KeyError(feature_id)
+
+    def set_feature_kind(self, feature_id: str, kind: str) -> None:
+        with self.transaction() as tx:
+            updated = tx.execute(
+                "UPDATE features SET kind=?,updated_at=? WHERE id=?",
+                (kind, utc_now(), feature_id),
             ).rowcount
         if updated != 1:
             raise KeyError(feature_id)

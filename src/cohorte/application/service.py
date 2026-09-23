@@ -110,9 +110,29 @@ class CohorteService:
     ) -> dict[str, object]:
         report = classify_intake(source, source_type, locator, title)
         feature_id = f"intake-{hashlib.sha256(source.encode()).hexdigest()[:12]}"
+        try:
+            existing = self.database.get_feature(feature_id)
+        except KeyError:
+            existing = None
+        if existing is not None:
+            if existing["project_id"] != project_id:
+                raise ValueError("intake source is already registered in another project")
+            stored = self.database.latest_intake_report(feature_id)
+            stored_report = json.loads(stored["content"])
+            if stored_report["source_sha256"] != report.source_sha256:
+                raise ValueError("intake source ID collision")
+            artifact = self.database.put_artifact("intake-source", source.encode(), "text/plain")
+            return {
+                "feature_id": feature_id,
+                "source_ref": artifact,
+                "report_ref": {key: stored[key] for key in ("id", "revision", "sha256")},
+                "report": stored_report,
+            }
         artifact = self.database.put_artifact("intake-source", source.encode(), "text/plain")
         report_artifact = self.database.put_artifact(
-            "intake-report", report.model_dump_json(indent=2).encode()
+            "intake-report",
+            report.model_dump_json(indent=2).encode(),
+            artifact_id=f"intake:{feature_id}",
         )
         self.database.ensure_feature(feature_id, project_id, report.title, kind=report.triage.value)
         return {

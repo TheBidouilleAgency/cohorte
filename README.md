@@ -52,6 +52,8 @@ cohorte profile show
 cohorte profile edit
 cohorte status
 cohorte intake
+cohorte intake --continue FEATURE_ID
+cohorte brainstorm --from-intake FEATURE_ID
 cohorte brainstorm
 cohorte brainstorm --continue FEATURE_ID
 cohorte brief show FEATURE_ID
@@ -74,16 +76,15 @@ latest brief, preserving the earlier answers and linking revisions. For scripts,
 The generated commands are candidates: confirm service setup and migrations before running
 project-wide checks in a monorepo.
 
-`status` shows the current project's features, runs and pending run decisions. `intake` can capture
-a short text, file or URL through terminal prompts and shows its triage result. `spec` uses a stored
-brainstorm brief to collect a single-surface draft, keeps unanswered questions open, then shows the
-exact candidate hash before an explicit freeze decision. `start` verifies the frozen spec and the
-approved profile snapshot before asking to launch a live worktree run. These two commands require
-an interactive terminal; the explicit file-based commands remain available for automation and
-multi-surface specs. See the [CLI experience audit](docs/CLI-UX-AUDIT.md) for the remaining UX gaps.
-After another brainstorm round, an existing spec draft still uses its original brief until
-`cohorte spec FEATURE_ID --refresh` replaces that draft; review any existing edits first.
-The guided commands were introduced in `1.0.0a3`. Verify the installed version with
+`status` shows the current project's features, runs and pending run decisions. `intake` captures
+text, a file or a URL, then stores follow-up answers and the chosen route in linked revisions.
+`brainstorm --from-intake FEATURE_ID` carries those answers and source provenance into the panel.
+`spec` collects multiple surfaces, scenarios and criteria, keeps unanswered questions open, and
+shows the exact candidate hash before an explicit freeze decision. A later brief can be attached
+to an existing draft without erasing its scenarios or criteria. `start` verifies the frozen spec
+and approved profile snapshot before asking to launch a live worktree run. The explicit file-based
+commands remain available for automation. See the [CLI experience audit](docs/CLI-UX-AUDIT.md).
+These newer guided flows require a release newer than `1.0.0a4`; verify the installed version with
 `cohorte --version` before using them in another project.
 
 For external context, set `integrations.retrieval.provider` to `serena` or `graphify` in the
@@ -143,6 +144,9 @@ overlapping write sets, integrates each candidate in order and reruns its declar
 base changes.
 
 Capture a ticket, freeze a bounded patch, and run it with a pre-existing regression:
+
+For a guided preparation after `intake` routes the request to `patch`, run
+`cohorte patch-spec --from-intake FEATURE_ID` and review the generated `patch.json`.
 
 ```bash
 cohorte --json --data-dir /path/to/data intake PROJECT_ID --file ticket.txt

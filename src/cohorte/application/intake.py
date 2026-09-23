@@ -9,7 +9,7 @@ from urllib.request import Request, urlopen
 
 from pydantic import Field
 
-from cohorte.domain.models import Sha256, StrictModel
+from cohorte.domain.models import ArtifactRef, Sha256, StrictModel
 
 MAX_INTAKE_BYTES = 2 * 1024 * 1024
 
@@ -26,6 +26,11 @@ class IntakeTriage(StrEnum):
     QUESTIONS = "questions"
 
 
+class IntakeAnswer(StrictModel):
+    question: str = Field(min_length=1)
+    answer: str = Field(min_length=1)
+
+
 class IntakeReport(StrictModel):
     schema_version: int = 1
     source_type: IntakeSourceType
@@ -36,8 +41,40 @@ class IntakeReport(StrictModel):
     triage: IntakeTriage
     reasons: list[str]
     questions: list[str]
+    answers: list[IntakeAnswer] = Field(default_factory=list)
+    previous_report_ref: ArtifactRef | None = None
     content: str = Field(min_length=1, max_length=MAX_INTAKE_BYTES)
     untrusted_instructions_ignored: bool = True
+
+
+def answer_intake(
+    report: IntakeReport,
+    answers: list[IntakeAnswer],
+    route: IntakeTriage | None = None,
+    previous_ref: ArtifactRef | None = None,
+) -> IntakeReport:
+    if not answers and route is None:
+        raise ValueError("intake follow-up needs an answer or an explicit route")
+    pending = set(report.questions)
+    if any(item.question not in pending for item in answers):
+        raise ValueError("intake answer does not match an open question")
+    if len({item.question for item in answers}) != len(answers):
+        raise ValueError("intake question answered more than once")
+    if route == IntakeTriage.QUESTIONS:
+        raise ValueError("explicit intake route must be feature or patch")
+    answered = {item.question for item in answers}
+    reasons = [*report.reasons]
+    if route is not None:
+        reasons.append(f"user selected {route.value} route")
+    return report.model_copy(
+        update={
+            "answers": [*report.answers, *answers],
+            "questions": [question for question in report.questions if question not in answered],
+            "triage": route or report.triage,
+            "reasons": reasons,
+            "previous_report_ref": previous_ref,
+        }
+    )
 
 
 def _decode(raw: bytes) -> str:

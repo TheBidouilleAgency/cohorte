@@ -8,18 +8,16 @@ project, show short results, and ask for decisions only when the necessary evide
 | --- | --- | --- |
 | `doctor`, `auth` | Explicit diagnostics and provider account operations | Responses are mostly raw objects; a short health summary would be easier to scan. |
 | `init`, `profile` | Concise discovery, stored profile review/edit/refresh | Discovery is evidence based but does not resolve ownership, contracts, design sources or service setup automatically. |
-| `intake`, `status` | Project inferred from the directory; intake prompts and status summary | Intake reports questions but does not collect follow-up answers or carry them into brainstorm automatically. Triage cannot replace a product decision. |
+| `intake`, `status` | Project inferred from the directory; intake answers, route and revisions are stored and handed to brainstorm or guided patch preparation | Triage still needs an explicit human route when the source is ambiguous. |
 | `brainstorm` | Guided questions, follow-up rounds over linked brief revisions, and concise synthesis; full brief persisted | The panel runs live, so provider access and project context still determine answer quality. `brief show` reads only the latest revision; history has no human-facing browser yet. |
-| Spec preparation and freeze | `spec` asks blocking questions, resumes an existing draft and offers exact-hash approval | New brainstorm rounds do not silently rewrite a spec draft. `--refresh` replaces it explicitly. Multi-surface specs and richer criteria still need the file-based path. |
+| Spec preparation and freeze | `spec` asks blocking questions, resumes a draft, supports multiple surfaces, scenarios and criteria, and offers exact-hash approval | A newer brief is attached only after an explicit prompt. Editing an existing scenario or criterion still uses the JSON editor. |
 | Build and delivery | `start` verifies a guided frozen spec and current profile, then asks before launching a live worktree run | Ship remains a separate explicit approval and command; Fleet and expert runs still need explicit paths and IDs. |
-| Patch and maintenance | `patch-spec`, `patch`, `audit`, `refactor`, `retro`, `align-ds-*` are explicit | These expert flows need separate wizards with scope and evidence review; silently inferring write paths or approvals would be unsafe. |
+| Patch and maintenance | `patch-spec --from-intake` guides a bounded patch; `patch`, `audit`, `refactor`, `retro`, `align-ds-*` remain explicit | Maintenance flows need separate wizards with scope and evidence review; write paths and approvals remain explicit. |
 | Integrations and operations | `retrieve`, `design-snapshot`, `kanban-project`, `migrate`, `rpc`, `service`, `schemas`, `check`, `metrics`, `export` remain explicit | These are primarily diagnostic, integration or automation commands. Give them concise human summaries where useful, but keep all protocol and migration inputs explicit. |
 
-The next connected-flow gap is carrying intake questions and answers into a brainstorm without
-copying them manually. After that, spec editing needs multiple scenarios, criteria and surfaces,
-with an explicit way to reconcile a newer brief instead of replacing a draft wholesale. A guided
-delivery review can follow. Patch and maintenance still need dedicated guided flows. A GUI can use
-the same persisted profile, artifacts and decisions.
+The connected intake, brainstorm, spec and patch preparation flows are now guided. Editing an
+existing scenario or criterion, browsing history, and the expert maintenance and delivery flows
+remain separate UX work. A GUI can use the same persisted profile, artifacts and decisions.
 
 The two-round Codex probe on a disposable project is recorded in
 [`g5-codex-iterative-brainstorm-darwin-arm64.json`](evidence/g5-codex-iterative-brainstorm-darwin-arm64.json).
