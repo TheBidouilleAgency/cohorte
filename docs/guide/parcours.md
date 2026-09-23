@@ -2,7 +2,7 @@
 
 ## 1. Découvrir et cadrer
 
-Dans le dépôt cible, `cohorte init .` crée le profil local. Relisez-le avec `cohorte profile show`, corrigez-le avec `cohorte profile edit`, puis utilisez `cohorte intake` pour trier une demande ou `cohorte brainstorm` pour explorer une idée. `cohorte status` affiche les fonctionnalités, runs et décisions en attente du projet courant.
+Dans le dépôt cible, `cohorte init .` crée le profil local. Relisez-le avec `cohorte profile show`, corrigez-le avec `cohorte profile edit`, puis utilisez `cohorte intake` pour trier une demande ou `cohorte brainstorm` pour explorer une idée. `cohorte brief show IDENTIFIANT` permet de relire le brief complet sans relancer le panel. `cohorte status` affiche les fonctionnalités, runs et décisions en attente du projet courant.
 
 Une commande de brainstorm peut aussi être entièrement explicite :
 

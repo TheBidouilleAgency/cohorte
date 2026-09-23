@@ -34,6 +34,7 @@ Forme générale : `cohorte [--json] [--config-dir DIR] [--data-dir DIR] COMMAND
 | --- | --- |
 | `intake [PROJECT_ID] [--text TEXTE | --file FILE | --url URL] [--title TITRE]` | Trier une entrée. Sans source, ouvre le mode guidé. |
 | `brainstorm [PROJECT_ID] [--feature-id ID] [--idea TEXTE] [--answer TEXTE] [--context TEXTE] [--provider codex|claude] [--output FILE] [--live]` | Exécuter le panel ou recueillir les réponses guidées ; `--answer` et `--perspective` sont répétables. |
+| `brief show FEATURE_ID` | Relire le dernier brief enregistré pour une fonctionnalité du projet courant, sans relancer le panel. `cohorte --json brief show FEATURE_ID` renvoie le brief complet. |
 | `spec-freeze-request DRAFT --profile PROFILE [--repo DIR]` | Demander l’approbation d’une spec précise. |
 | `spec-freeze DRAFT --profile PROFILE --decision-id ID --output FILE [--repo DIR]` | Produire la spec gelée après décision correspondante. |
 | `spec [FEATURE_ID] [--refresh]` | Préparer et geler une spec à une surface depuis un brief enregistré, dans un terminal. `--refresh` remplace le brouillon local. |

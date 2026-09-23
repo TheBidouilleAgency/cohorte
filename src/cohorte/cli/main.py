@@ -71,6 +71,10 @@ def _parser() -> argparse.ArgumentParser:
             child.add_argument("project_id", nargs="?")
     status = sub.add_parser("status")
     status.add_argument("run", nargs="?")
+    brief = sub.add_parser("brief", help="read a stored brainstorm brief")
+    brief_sub = brief.add_subparsers(dest="brief_command", required=True)
+    brief_show = brief_sub.add_parser("show", help="show the latest brief for a feature")
+    brief_show.add_argument("feature_id")
     export = sub.add_parser("export")
     export.add_argument("run_id")
     export.add_argument("--output", type=Path)
@@ -800,6 +804,30 @@ def run(argv: list[str] | None = None) -> int:
                 print(f"\nBrief enregistré : {brief_ref['id']} (révision {brief_ref['revision']})")
             else:
                 _emit(payload, args.json)
+        elif args.command == "brief":
+            from cohorte.application.preparation import BrainstormBrief
+            from cohorte.cli.brief import print_brief
+
+            project = _project_for_path(database, Path.cwd())
+            try:
+                feature = database.get_feature(args.feature_id)
+            except KeyError as error:
+                raise ValueError(f"unknown feature in this project: {args.feature_id}") from error
+            if feature["project_id"] != project["id"]:
+                raise ValueError(f"unknown feature in this project: {args.feature_id}")
+            try:
+                stored = database.latest_artifact(f"brief:{args.feature_id}")
+            except KeyError as error:
+                raise ValueError(f"no brainstorm brief for feature: {args.feature_id}") from error
+            brief = BrainstormBrief.model_validate_json(stored["content"])
+            payload = {
+                "brief": brief.model_dump(mode="json"),
+                "brief_ref": {key: stored[key] for key in ("id", "revision", "sha256")},
+            }
+            if args.json:
+                _emit(payload, True)
+            else:
+                print_brief(brief, stored["revision"])
         elif args.command == "spec":
             from cohorte.cli.guided_feature import guided_spec
 

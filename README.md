@@ -53,6 +53,7 @@ cohorte profile edit
 cohorte status
 cohorte intake
 cohorte brainstorm
+cohorte brief show FEATURE_ID
 cohorte spec
 cohorte start
 ```
@@ -63,7 +64,9 @@ and edit the stored JSON profile before relying on it for a workflow; `cohorte i
 explicitly replaces edits with a fresh discovery. `cohorte profile apply reviewed.json` applies a
 validated profile from a file, with a revision check. The guided brainstorm asks for the idea,
 audience, observed problem, desired outcome and constraints, then prints a short synthesis. Its
-full brief remains stored in Cohorte. For scripts, keep using `--json`, explicit flags and `--live`.
+full brief remains stored in Cohorte and can be read with `cohorte brief show FEATURE_ID` without
+rerunning the panel. For scripts, use `cohorte --json brief show FEATURE_ID` to read the complete
+stored document; new brainstorm runs still require explicit flags and `--live`.
 The generated commands are candidates: confirm service setup and migrations before running
 project-wide checks in a monorepo.
 
