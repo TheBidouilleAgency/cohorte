@@ -24,10 +24,12 @@ Capturez ensuite une demande et explorez une idée :
 ```bash
 cohorte intake
 cohorte brainstorm
+cohorte spec
+cohorte start
 cohorte status
 ```
 
-Le terminal demande les informations manquantes. Le brainstorm lance un panel produit, architecture et QA lorsque l’accès fournisseur est disponible. Il affiche une synthèse courte et conserve le brief complet. Il ne modifie pas le code du projet.
+Le terminal demande les informations manquantes. Le brainstorm lance un panel produit, architecture et QA lorsque l’accès fournisseur est disponible. Il affiche une synthèse courte et conserve le brief complet. Il ne modifie pas le code du projet. `spec` prépare ensuite un brouillon pour une seule surface, laisse les questions sans réponse ouvertes et demande une approbation liée au contenu exact. `start` affiche le périmètre et demande un accord avant de lancer les agents dans un worktree. **Ces deux commandes ne sont pas dans la version PyPI `1.0.0a2`** : avant la prochaine publication, utilisez `uv run cohorte` depuis le dépôt Cohorte pour les essayer.
 
 Pour un script, placez `--json` **avant** la sous-commande et fournissez les arguments explicites :
 
@@ -40,4 +42,4 @@ cohorte --json brainstorm mon-projet \
 
 `--live` autorise les appels effectifs au fournisseur pour les commandes qui le demandent. La sortie JSON est destinée à l’automatisation ; la sortie humaine résume les éléments utiles.
 
-Le brief obtenu n’est pas encore une spec gelée. Le [parcours complet](/guide/parcours) décrit les étapes suivantes et les limites de l’interface actuelle.
+Le brief obtenu n’est pas encore une spec gelée. Le [parcours complet](/guide/parcours) décrit les décisions et les limites de l’interface actuelle.

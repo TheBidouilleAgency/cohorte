@@ -16,7 +16,9 @@ Le brief contient les objections et questions bloquantes. Répondez à ces quest
 
 ## 2. Préparer et geler une spec
 
-La CLI ne transforme pas encore automatiquement un brief en brouillon de spec. Préparez le fichier de spec au format attendu par le moteur, puis demandez et appliquez l’approbation de son contenu exact :
+Dans un terminal, `cohorte spec` reprend le brief enregistré et le profil courant. Il recueille un scénario, un critère, les checks, les cas d’erreur et le retour arrière pour une surface. Si une question bloquante reste sans réponse, le brouillon est conservé dans les données locales et le gel n’est pas proposé. Une nouvelle invocation permet de reprendre ce brouillon ; `--refresh` recommence depuis le brief. Après affichage du contenu, il faut taper `oui` pour approuver le hash exact de la spec et du profil.
+
+Pour un workflow automatisé ou une spec multi-surface, préparez le fichier au format attendu par le moteur, puis utilisez les commandes explicites :
 
 ```bash
 cohorte --json spec-freeze-request draft.json \
@@ -31,7 +33,7 @@ cohorte --json spec-freeze draft.json \
 
 ## 3. Construire et contrôler
 
-Après le gel, lancez le workflow dans un dépôt de test ou sur une branche adaptée :
+Après un gel guidé, `cohorte start` vérifie la spec et le profil approuvés, affiche le périmètre et attend votre `oui` avant de lancer le run. Le travail se fait dans un worktree sous les données locales de Cohorte. Pour un workflow automatisé ou une spec préparée manuellement, utilisez `loop` dans un dépôt de test ou sur une branche adaptée :
 
 ```bash
 cohorte --json loop frozen.json \
@@ -61,6 +63,6 @@ cohorte --json delivery-status RUN_ID --live --watch
 
 ## Limites actuelles
 
-- Le guidage s’arrête après `init`, `profile`, `intake`, `status` et `brainstorm`. La préparation de spec, le lancement et la maintenance nécessitent des fichiers, chemins et identifiants explicites.
+- `spec` et `start` guident une fonctionnalité à une seule surface. Les specs multi-surfaces, les critères multiples, Fleet et la maintenance nécessitent encore des fichiers et identifiants explicites. `ship` garde une approbation et une commande séparées.
 - La découverte du profil ne peut pas déduire seule l’ownership, les migrations, les sources de design ou les conventions d’un monorepo.
 - Les preuves d’intégration live dépendent des comptes et services disponibles. Un test local ou une CI verte ne qualifie pas automatiquement toutes les combinaisons de fournisseurs et plateformes. Consultez la [matrice de qualification](/qualification/README).
