@@ -24,6 +24,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: '3.12'
+          enable-cache: false
       - name: Validate version and release notes
         run: python scripts/release_meta.py check
       - id: version
@@ -78,6 +79,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: '3.12'
+          enable-cache: false
       - name: Post changelog to the Cohorte Discord thread
         env:
           DISCORD_FORUM_WEBHOOK: ${{ secrets.DISCORD_FORUM_WEBHOOK }}
