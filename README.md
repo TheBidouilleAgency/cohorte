@@ -40,7 +40,7 @@ Both providers fail visibly when unavailable; file fallback requires
 `integrations.design.source` and a locally supplied `FIGMA_ACCESS_TOKEN` with
 `file_content:read` scope. The token is never part of the profile. To verify a real Figma snapshot
 without printing its contents, run `python tests/live/verify_figma_snapshot.py --source <file-or-node-url>`
-in a shell where the token is already set.
+in a shell where the token is already set, or enter it at the hidden prompt.
 
 Prepare a feature with independent product, architecture and QA sessions, then approve the exact
 completed spec before freezing it:

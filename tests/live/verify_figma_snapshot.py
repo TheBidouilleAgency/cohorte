@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 import os
 import subprocess
@@ -37,7 +38,9 @@ def main() -> None:
     parser.add_argument("--source", required=True, help="Figma file or node URL, or file key")
     args = parser.parse_args()
     if not os.getenv("FIGMA_ACCESS_TOKEN"):
-        raise RuntimeError("FIGMA_ACCESS_TOKEN is unavailable")
+        if not sys.stdin.isatty():
+            raise RuntimeError("FIGMA_ACCESS_TOKEN is unavailable")
+        os.environ["FIGMA_ACCESS_TOKEN"] = getpass.getpass("Figma token: ")
     with tempfile.TemporaryDirectory(prefix="cohorte-ac23-figma-") as directory:
         base = Path(directory)
         repository = base / "project"
