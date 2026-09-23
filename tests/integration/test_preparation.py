@@ -41,12 +41,14 @@ class PanelRuntime:
     def __init__(self, reuse_session: bool = False) -> None:
         self.reuse_session = reuse_session
         self.calls: list[str] = []
+        self.prompts: list[str] = []
 
     def brainstorm_perspective(
         self, workspace: Path, prompt: str, perspective: str
     ) -> BrainstormPerspectiveTurn:
         assert '"idea": "Add safe export"' in prompt
         self.calls.append(perspective)
+        self.prompts.append(prompt)
         return BrainstormPerspectiveTurn(
             session_ref="same" if self.reuse_session else f"session-{perspective}",
             contribution=BrainstormContribution(
@@ -63,6 +65,7 @@ class PanelRuntime:
 
     def brainstorm_synthesis(self, workspace: Path, prompt: str) -> BrainstormSynthesisTurn:
         assert all(f'"contribution_id": "{item}"' in prompt for item in self.calls)
+        self.prompts.append(prompt)
         return BrainstormSynthesisTurn(
             session_ref="same" if self.reuse_session else "session-synthesis",
             synthesis=BrainstormSynthesis(
@@ -216,6 +219,42 @@ def test_brainstorm_rejects_reused_runtime_session(tmp_path: Path) -> None:
             ["Keep exports local"],
         )
     assert caught.value.code == ErrorCode.CAPABILITY_MISSING
+
+
+def test_brainstorm_continuation_links_rounds_and_revisits_previous_synthesis(
+    tmp_path: Path,
+) -> None:
+    first = BrainstormRunner(PanelRuntime()).run(
+        tmp_path, "safe-export", "Add safe export", "Local workflow engine", ["Keep exports local"]
+    )
+    database = Database(tmp_path / "state.sqlite3")
+    reference = ArtifactRef.model_validate(
+        database.put_artifact(
+            "brainstorm-brief", canonical_model_bytes(first), artifact_id="brief:safe-export"
+        )
+    )
+    runtime = PanelRuntime()
+    continued = BrainstormRunner(runtime).run(
+        tmp_path,
+        "safe-export",
+        "Add safe export",
+        "Local workflow engine",
+        ["Which filename? export.json"],
+        previous_brief=first,
+        previous_brief_ref=reference,
+    )
+    assert continued.previous_brief_ref == reference
+    assert continued.user_answers == ["Keep exports local", "Which filename? export.json"]
+    assert continued.decisions == continued.user_answers
+    assert all('"previous_round":' in prompt for prompt in runtime.prompts)
+    assert all("Which filename? export.json" in prompt for prompt in runtime.prompts)
+    assert all(
+        '"new_user_answers": ["Which filename? export.json"]' in prompt
+        for prompt in runtime.prompts
+    )
+    assert all('"contributions":' in prompt for prompt in runtime.prompts)
+    assert "previous_brief_ref" in canonical_model_bytes(continued).decode()
+    database.close()
 
 
 def test_brainstorm_retries_invalid_synthesis_with_a_bounded_correction(tmp_path: Path) -> None:

@@ -13,6 +13,8 @@ def _items(label: str, values: list[str]) -> None:
 def print_brief(brief: BrainstormBrief, revision: int) -> None:
     synthesis = brief.synthesis
     print(f"Brief {brief.feature_id} · révision {revision}")
+    if brief.previous_brief_ref is not None:
+        print(f"Suite de la révision {brief.previous_brief_ref.revision}")
     print(f"Idée : {brief.idea}")
     _items("Réponses fournies", brief.user_answers)
     _items("Décisions antérieures", brief.prior_decisions)

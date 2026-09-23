@@ -33,13 +33,15 @@ Forme générale : `cohorte [--json] [--config-dir DIR] [--data-dir DIR] COMMAND
 | Commande | Usage |
 | --- | --- |
 | `intake [PROJECT_ID] [--text TEXTE | --file FILE | --url URL] [--title TITRE]` | Trier une entrée. Sans source, ouvre le mode guidé. |
-| `brainstorm [PROJECT_ID] [--feature-id ID] [--idea TEXTE] [--answer TEXTE] [--context TEXTE] [--provider codex|claude] [--output FILE] [--live]` | Exécuter le panel ou recueillir les réponses guidées ; `--answer` et `--perspective` sont répétables. |
+| `brainstorm [PROJECT_ID] [--feature-id ID] [--idea TEXTE] [--answer TEXTE] [--context TEXTE] [--provider codex|claude] [--output FILE] [--live]` | Exécuter le panel ou recueillir les réponses guidées ; `--answer` et `--perspective` sont répétables. Si le panel pose des questions bloquantes, le terminal propose d’y répondre et de relancer un tour. |
+| `brainstorm --continue FEATURE_ID [--answer TEXTE] [--live]` | Reprendre le dernier brief du projet courant avec de nouvelles réponses. Sans `--answer`, le terminal pose les questions encore ouvertes. En JSON, fournir au moins un `--answer` et `--live`. |
 | `brief show FEATURE_ID` | Relire le dernier brief enregistré pour une fonctionnalité du projet courant, sans relancer le panel. `cohorte --json brief show FEATURE_ID` renvoie le brief complet. |
 | `spec-freeze-request DRAFT --profile PROFILE [--repo DIR]` | Demander l’approbation d’une spec précise. |
 | `spec-freeze DRAFT --profile PROFILE --decision-id ID --output FILE [--repo DIR]` | Produire la spec gelée après décision correspondante. |
 | `spec [FEATURE_ID] [--refresh]` | Préparer et geler une spec à une surface depuis un brief enregistré, dans un terminal. `--refresh` remplace le brouillon local. |
 
 `brainstorm` accepte aussi `--prior-decision` répétable. Pour les specs multi-surfaces et les critères multiples, utilisez le brouillon JSON et les commandes explicites.
+Chaque tour conserve son propre brief et une référence vers le tour précédent. `brief show` lit le dernier tour. Si un brouillon de spec existe déjà, `spec FEATURE_ID --refresh` le remplace depuis ce dernier brief ; relisez ses modifications avant cette opération. Une spec gelée ne se réouvre pas par un nouveau brainstorm.
 
 ## Exécution et livraison
 

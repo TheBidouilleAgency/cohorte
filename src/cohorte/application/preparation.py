@@ -4,7 +4,7 @@ import hashlib
 import json
 import re
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from pydantic import Field
 
@@ -70,6 +70,7 @@ class BrainstormBrief(StrictModel):
     user_answers: list[str] = Field(min_length=1)
     decisions: list[str]
     panel_executed: bool
+    previous_brief_ref: ArtifactRef | None = None
 
 
 class BrainstormRuntime(Protocol):
@@ -93,8 +94,25 @@ class BrainstormRunner:
         user_answers: list[str],
         prior_decisions: list[str] | None = None,
         perspectives: list[str] | None = None,
+        *,
+        previous_brief: BrainstormBrief | None = None,
+        previous_brief_ref: ArtifactRef | None = None,
     ) -> BrainstormBrief:
-        panel = perspectives or ["product", "architecture", "qa"]
+        if (previous_brief is None) != (previous_brief_ref is None):
+            raise ValueError("continuation requires both the previous brief and its reference")
+        if previous_brief is not None and previous_brief.feature_id != feature_id:
+            raise ValueError("previous brief belongs to another feature")
+        if previous_brief is not None and previous_brief.idea != idea:
+            raise ValueError("continued brainstorm must keep its original idea")
+        panel = (
+            perspectives
+            or (previous_brief.panel if previous_brief else None)
+            or [
+                "product",
+                "architecture",
+                "qa",
+            ]
+        )
         if len(panel) < 3 or len(panel) != len(set(panel)):
             raise ValueError("brainstorm panel requires at least three distinct perspectives")
         if re.fullmatch(r"[a-z0-9-]{1,80}", feature_id) is None:
@@ -105,12 +123,36 @@ class BrainstormRunner:
             raise ValueError("perspectives must be lowercase slug identifiers")
         if not user_answers or any(not answer.strip() for answer in user_answers):
             raise ValueError("at least one user answer is required")
-        facts = {
+        all_answers = [*(previous_brief.user_answers if previous_brief else []), *user_answers]
+        all_prior_decisions = list(
+            dict.fromkeys(
+                [
+                    *(previous_brief.prior_decisions if previous_brief else []),
+                    *(prior_decisions or []),
+                ]
+            )
+        )
+        facts: dict[str, Any] = {
             "idea": idea,
             "project_context": project_context,
-            "prior_decisions": prior_decisions or [],
-            "user_answers": user_answers,
+            "prior_decisions": all_prior_decisions,
+            "user_answers": all_answers,
         }
+        if previous_brief is not None and previous_brief_ref is not None:
+            facts["new_user_answers"] = user_answers
+            facts["previous_round"] = {
+                "brief_ref": previous_brief_ref.model_dump(mode="json"),
+                "synthesis": previous_brief.synthesis.model_dump(mode="json"),
+                "contributions": [
+                    item.model_dump(mode="json") for item in previous_brief.contributions
+                ],
+            }
+        continuation_instruction = (
+            "Revisit the previous round using the new user answers. Resolve answered questions, "
+            "retain unresolved questions, and explain changed recommendations. "
+            if previous_brief is not None
+            else ""
+        )
         contributions: list[BrainstormContribution] = []
         sessions: list[str] = []
         for perspective in panel:
@@ -118,6 +160,7 @@ class BrainstormRunner:
                 "Act as a configurable product-development perspective, never as a real person. "
                 "Analyze the same factual bundle independently. Return the problem, assumptions, "
                 "alternatives, risks, questions, and explicit disagreements.\n"
+                f"{continuation_instruction}"
                 f"Perspective: {perspective}\nFacts: {json.dumps(facts, ensure_ascii=False)}"
             )
             turn = self.runtime.brainstorm_perspective(workspace, prompt, perspective)
@@ -132,6 +175,7 @@ class BrainstormRunner:
             "strong objections and divergences, and do not turn agent agreement into a user decision. "
             "Produce problem, beneficiaries, scope, options, recommendation, blocking and non-blocking "
             "questions, and candidate acceptance criteria.\n"
+            f"{continuation_instruction}"
             f"Facts: {json.dumps(facts, ensure_ascii=False)}\n"
             f"Contributions: {json.dumps([item.model_dump(mode='json') for item in contributions], ensure_ascii=False)}"
         )
@@ -169,14 +213,15 @@ class BrainstormRunner:
             feature_id=feature_id,
             idea=idea,
             project_context=project_context,
-            prior_decisions=prior_decisions or [],
+            prior_decisions=all_prior_decisions,
             panel=panel,
             session_refs=sessions,
             contributions=contributions,
             synthesis=synthesis_turn.synthesis,
-            user_answers=user_answers,
-            decisions=user_answers,
+            user_answers=all_answers,
+            decisions=[*(previous_brief.decisions if previous_brief else []), *user_answers],
             panel_executed=True,
+            previous_brief_ref=previous_brief_ref,
         )
 
 

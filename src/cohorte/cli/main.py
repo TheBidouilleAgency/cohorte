@@ -122,6 +122,12 @@ def _parser() -> argparse.ArgumentParser:
     brainstorm = sub.add_parser("brainstorm")
     brainstorm.add_argument("project_id", nargs="?")
     brainstorm.add_argument("--feature-id")
+    brainstorm.add_argument(
+        "--continue",
+        dest="continue_feature_id",
+        metavar="FEATURE_ID",
+        help="answer open questions and continue a stored brainstorm",
+    )
     brainstorm.add_argument("--idea")
     brainstorm.add_argument("--context", default="")
     brainstorm.add_argument("--answer", action="append", default=[])
@@ -430,6 +436,32 @@ def _prompt(label: str, *, required: bool = True) -> str:
         print("Une réponse est nécessaire.", file=sys.stderr)
 
 
+def _brainstorm_followup_answers(questions: list[str]) -> list[str]:
+    answers: list[str] = []
+    for question in questions:
+        answer = _prompt(f"{question} (Entrée = encore ouvert)", required=False)
+        if answer:
+            answers.append(f"{question} {answer}")
+    extra = _prompt("Autre élément à ajouter (facultatif)", required=False)
+    if extra:
+        answers.append(extra)
+    return answers
+
+
+def _require_new_brainstorm_feature(database: Database, project_id: str, feature_id: str) -> None:
+    try:
+        feature = database.get_feature(feature_id)
+    except KeyError:
+        return
+    if feature["project_id"] != project_id:
+        raise ValueError(f"feature belongs to another project: {feature_id}")
+    try:
+        database.latest_artifact(f"brief:{feature_id}")
+    except KeyError:
+        return
+    raise ValueError(f"brainstorm already exists; run cohorte brainstorm --continue {feature_id}")
+
+
 def _profile_context(profile: dict[str, Any]) -> str:
     surfaces = profile.get("surfaces", [])
     summary = {
@@ -704,13 +736,22 @@ def run(argv: list[str] | None = None) -> int:
                 elif intake_report["triage"] == "patch":
                     print("Suite suggérée : cadrer le correctif avant patch-spec")
         elif args.command == "brainstorm":
-            from cohorte.application.preparation import BrainstormRunner, canonical_model_bytes
-            from cohorte.domain.models import ProjectProfile
+            from cohorte.application.preparation import (
+                BrainstormBrief,
+                BrainstormRunner,
+                canonical_model_bytes,
+            )
+            from cohorte.domain.models import ArtifactRef, ProjectProfile
 
             guided = (
                 not args.json
                 and sys.stdin.isatty()
-                and (args.project_id is None or args.idea is None or not args.answer)
+                and (
+                    args.continue_feature_id is not None
+                    or args.project_id is None
+                    or args.idea is None
+                    or not args.answer
+                )
             )
             project = (
                 database.get_project(args.project_id)
@@ -722,32 +763,81 @@ def run(argv: list[str] | None = None) -> int:
             requested_repo = args.repo.resolve(strict=True)
             if not (requested_repo == repository or requested_repo.is_relative_to(repository)):
                 raise ValueError("brainstorm repository does not match the registered project")
+            previous_brief: BrainstormBrief | None = None
+            previous_ref: ArtifactRef | None = None
+            if args.continue_feature_id is not None:
+                selected = args.continue_feature_id
+                if args.feature_id is not None and args.feature_id != selected:
+                    raise ValueError("--feature-id must match --continue")
+                try:
+                    feature = database.get_feature(selected)
+                except KeyError as error:
+                    raise ValueError(f"unknown feature in this project: {selected}") from error
+                if feature["project_id"] != project["id"]:
+                    raise ValueError(f"unknown feature in this project: {selected}")
+                if feature["status"] == "frozen":
+                    raise ValueError("feature is already frozen; start a new brainstorm")
+                try:
+                    stored = database.latest_artifact(f"brief:{selected}")
+                except KeyError as error:
+                    raise ValueError(f"no brainstorm brief for feature: {selected}") from error
+                previous_brief = BrainstormBrief.model_validate_json(stored["content"])
+                previous_ref = ArtifactRef.model_validate(
+                    {key: stored[key] for key in ("id", "revision", "sha256")}
+                )
+                if previous_brief.feature_id != selected:
+                    raise ValueError("stored brief belongs to another feature")
+                if args.idea is not None and args.idea != previous_brief.idea:
+                    raise ValueError("--idea must match the stored brainstorm idea")
+                args.feature_id = selected
+                args.idea = previous_brief.idea
             if guided:
                 print(f"Brainstorm · {project['id']}", file=sys.stderr)
-                args.idea = args.idea or _prompt("Quelle idée veux-tu explorer ?")
-                if not args.feature_id:
-                    suggested = re.sub(r"[^a-z0-9]+", "-", args.idea.lower()).strip("-")[:80]
-                    args.feature_id = (
-                        _prompt(f"Identifiant [{suggested}]", required=False) or suggested
+                if previous_brief is not None:
+                    assert previous_ref is not None
+                    print(
+                        f"Reprise de {args.feature_id} · révision {previous_ref.revision}",
+                        file=sys.stderr,
                     )
-                if not args.answer:
-                    for question in (
-                        "Qui est concerné et à quel moment ?",
-                        "Quel problème concret observes-tu ?",
-                        "Quel résultat veux-tu obtenir ?",
-                        "Quelles contraintes ou décisions faut-il respecter ? (facultatif)",
-                    ):
-                        answer = _prompt(question, required="facultatif" not in question)
-                        if answer:
-                            args.answer.append(f"{question} {answer}")
+                    print(f"Problème actuel : {previous_brief.synthesis.problem}")
+                    print(f"Piste actuelle : {previous_brief.synthesis.recommendation}")
+                    if not args.answer:
+                        args.answer = _brainstorm_followup_answers(
+                            previous_brief.synthesis.blocking_questions
+                        )
+                        if not args.answer:
+                            print("Aucune nouvelle réponse ; brief inchangé.")
+                            return 0
+                else:
+                    args.idea = args.idea or _prompt("Quelle idée veux-tu explorer ?")
+                    if not args.feature_id:
+                        suggested = re.sub(r"[^a-z0-9]+", "-", args.idea.lower()).strip("-")[:80]
+                        args.feature_id = (
+                            _prompt(f"Identifiant [{suggested}]", required=False) or suggested
+                        )
+                    _require_new_brainstorm_feature(database, project["id"], args.feature_id)
+                    if not args.answer:
+                        for question in (
+                            "Qui est concerné et à quel moment ?",
+                            "Quel problème concret observes-tu ?",
+                            "Quel résultat veux-tu obtenir ?",
+                            "Quelles contraintes ou décisions faut-il respecter ? (facultatif)",
+                        ):
+                            answer = _prompt(question, required="facultatif" not in question)
+                            if answer:
+                                args.answer.append(f"{question} {answer}")
                 print("Le panel produit, architecture et QA travaille…", file=sys.stderr)
             if not args.live and not guided:
                 raise ValueError("brainstorm requires --live")
+            if previous_brief is not None and not args.answer and not guided:
+                raise ValueError("brainstorm --continue requires at least one --answer")
             if not args.idea or not args.feature_id or not args.answer:
                 raise ValueError(
                     "brainstorm requires --feature-id, --idea and at least one --answer; "
                     "run in a terminal for guided mode"
                 )
+            if previous_brief is None and not guided:
+                _require_new_brainstorm_feature(database, project["id"], args.feature_id)
             project_profile = (
                 ProjectProfile.model_validate_json(json.dumps(project["profile"]))
                 if project.get("profile") is not None
@@ -770,29 +860,35 @@ def run(argv: list[str] | None = None) -> int:
                 )
             else:
                 brainstorm_runtime = CodexAdapter(repository, event_sink=agent_events)
-            brief = BrainstormRunner(brainstorm_runtime).run(
-                repository,
-                args.feature_id,
-                args.idea,
-                "\n".join(filter(None, [_profile_context(project["profile"]), args.context])),
-                args.answer,
-                args.prior_decision,
-                args.perspective,
-            )
-            brief_ref = database.put_artifact(
-                "brainstorm-brief",
-                canonical_model_bytes(brief),
-                artifact_id=f"brief:{args.feature_id}",
-            )
-            database.ensure_feature(args.feature_id, args.project_id, args.idea[:200])
-            payload = {"brief": brief.model_dump(mode="json"), "brief_ref": brief_ref}
-            if args.output is not None:
-                args.output.parent.mkdir(parents=True, exist_ok=True)
-                temporary = args.output.with_name(f".{args.output.name}.cohorte.tmp")
-                temporary.write_bytes(canonical_model_bytes(brief))
-                temporary.replace(args.output)
-                payload["output"] = str(args.output)
-            if guided:
+            runner = BrainstormRunner(brainstorm_runtime)
+            while True:
+                brief = runner.run(
+                    repository,
+                    args.feature_id,
+                    args.idea,
+                    "\n".join(filter(None, [_profile_context(project["profile"]), args.context])),
+                    args.answer,
+                    args.prior_decision,
+                    args.perspective,
+                    previous_brief=previous_brief,
+                    previous_brief_ref=previous_ref,
+                )
+                brief_ref = database.put_artifact(
+                    "brainstorm-brief",
+                    canonical_model_bytes(brief),
+                    artifact_id=f"brief:{args.feature_id}",
+                )
+                database.ensure_feature(args.feature_id, args.project_id, args.idea[:200])
+                payload = {"brief": brief.model_dump(mode="json"), "brief_ref": brief_ref}
+                if args.output is not None:
+                    args.output.parent.mkdir(parents=True, exist_ok=True)
+                    temporary = args.output.with_name(f".{args.output.name}.cohorte.tmp")
+                    temporary.write_bytes(canonical_model_bytes(brief))
+                    temporary.replace(args.output)
+                    payload["output"] = str(args.output)
+                if not guided:
+                    _emit(payload, args.json)
+                    break
                 synthesis = brief.synthesis
                 print(f"\n{brief.idea}\n")
                 print(f"Problème : {synthesis.problem}\n")
@@ -802,8 +898,20 @@ def run(argv: list[str] | None = None) -> int:
                     for question in synthesis.blocking_questions:
                         print(f"  • {question}")
                 print(f"\nBrief enregistré : {brief_ref['id']} (révision {brief_ref['revision']})")
-            else:
-                _emit(payload, args.json)
+                if not synthesis.blocking_questions:
+                    print(f"Prochaine étape : cohorte spec {args.feature_id}")
+                    break
+                answer = _prompt("Répondre à ces questions maintenant ? [o/N]", required=False)
+                if answer.lower() not in {"o", "oui", "y", "yes"}:
+                    print(f"Reprendre plus tard : cohorte brainstorm --continue {args.feature_id}")
+                    break
+                answers = _brainstorm_followup_answers(synthesis.blocking_questions)
+                if not answers:
+                    print(f"Reprendre plus tard : cohorte brainstorm --continue {args.feature_id}")
+                    break
+                previous_brief = brief
+                previous_ref = ArtifactRef.model_validate(brief_ref)
+                args.answer = answers
         elif args.command == "brief":
             from cohorte.application.preparation import BrainstormBrief
             from cohorte.cli.brief import print_brief

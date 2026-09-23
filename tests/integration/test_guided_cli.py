@@ -62,6 +62,23 @@ class PanelRuntime:
         )
 
 
+class FollowupPanelRuntime(PanelRuntime):
+    def __init__(self) -> None:
+        super().__init__()
+        self.round = 0
+
+    def brainstorm_synthesis(self, workspace: Path, prompt: str) -> BrainstormSynthesisTurn:
+        turn = super().brainstorm_synthesis(workspace, prompt)
+        questions = ["Who is the user?"] if self.round == 0 else []
+        self.round += 1
+        self.perspectives = []
+        return turn.model_copy(
+            update={
+                "synthesis": turn.synthesis.model_copy(update={"blocking_questions": questions})
+            }
+        )
+
+
 def test_guided_brainstorm_from_project_directory(tmp_path: Path, monkeypatch, capsys) -> None:
     project = tmp_path / "project"
     project.mkdir()
@@ -99,6 +116,104 @@ def test_guided_brainstorm_from_project_directory(tmp_path: Path, monkeypatch, c
     assert document["ok"] is True
     assert document["data"]["brief"]["feature_id"] == "add-safe-export"
     assert document["data"]["brief_ref"]["id"] == "brief:add-safe-export"
+
+    with pytest.raises(SystemExit) as error:
+        cli.run(
+            [
+                "--json",
+                "--data-dir",
+                str(data),
+                "brainstorm",
+                "--feature-id",
+                "add-safe-export",
+                "--idea",
+                "Add safe export",
+                "--answer",
+                "Another observation",
+                "--live",
+            ]
+        )
+    assert error.value.code == 3
+    assert "brainstorm --continue add-safe-export" in capsys.readouterr().out
+
+
+def test_guided_brainstorm_can_answer_panel_questions_and_continue_later(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    data = tmp_path / "data"
+    data.mkdir()
+    database = Database(data / "cohorte.sqlite3")
+    CohorteService(database).init_project(project)
+    database.close()
+    monkeypatch.chdir(project)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    runtime = FollowupPanelRuntime()
+    monkeypatch.setattr(cli, "CodexAdapter", lambda *_args, **_kwargs: runtime)
+    answers = iter(
+        [
+            "Add safe export",
+            "",
+            "Operators",
+            "Export is unsafe",
+            "Atomic output",
+            "",
+            "o",
+            "Operators",
+            "",
+        ]
+    )
+    monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
+
+    assert cli.run(["--data-dir", str(data), "brainstorm"]) == 0
+    output = capsys.readouterr().out
+    assert "révision 1" in output
+    assert "révision 2" in output
+    stored = Database(data / "cohorte.sqlite3")
+    latest = stored.latest_artifact("brief:add-safe-export")
+    assert latest["revision"] == 2
+    document = json.loads(latest["content"])
+    assert document["previous_brief_ref"]["revision"] == 1
+    assert "Who is the user? Operators" in document["user_answers"]
+    stored.close()
+
+    answers = iter(["A second observation", ""])
+    monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
+    assert cli.run(["--data-dir", str(data), "brainstorm", "--continue", "add-safe-export"]) == 0
+    latest = Database(data / "cohorte.sqlite3")
+    third = latest.latest_artifact("brief:add-safe-export")
+    assert third["revision"] == 3
+    assert json.loads(third["content"])["previous_brief_ref"]["revision"] == 2
+    latest.close()
+    capsys.readouterr()
+
+    monkeypatch.setattr(builtins, "input", lambda _prompt: "")
+    assert cli.run(["--data-dir", str(data), "brainstorm", "--continue", "add-safe-export"]) == 0
+    assert "brief inchangé" in capsys.readouterr().out
+    unchanged = Database(data / "cohorte.sqlite3")
+    assert unchanged.latest_artifact("brief:add-safe-export")["revision"] == 3
+    unchanged.close()
+
+    assert (
+        cli.run(
+            [
+                "--json",
+                "--data-dir",
+                str(data),
+                "brainstorm",
+                "--continue",
+                "add-safe-export",
+                "--answer",
+                "Keep a copy for audit",
+                "--live",
+            ]
+        )
+        == 0
+    )
+    result = json.loads(capsys.readouterr().out)
+    assert result["data"]["brief_ref"]["revision"] == 4
+    assert result["data"]["brief"]["previous_brief_ref"]["revision"] == 3
 
 
 def test_brief_show_is_scoped_to_current_project(tmp_path: Path, monkeypatch, capsys) -> None:
