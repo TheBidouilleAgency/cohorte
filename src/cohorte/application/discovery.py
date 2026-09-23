@@ -41,14 +41,14 @@ def _workspace_patterns(root: Path, package: dict[str, Any]) -> list[str]:
             raise ValueError("pnpm-workspace.yaml needs a packages list")
         if not all(isinstance(item, str) for item in document["packages"]):
             raise ValueError("pnpm-workspace.yaml packages must be strings")
-        return document["packages"]
+        return [str(item) for item in document["packages"]]
     workspaces = package.get("workspaces", [])
     if isinstance(workspaces, dict):
         workspaces = workspaces.get("packages", [])
     if isinstance(workspaces, list):
         if not all(isinstance(item, str) for item in workspaces):
             raise ValueError("package.json workspaces must be strings")
-        return workspaces
+        return [str(item) for item in workspaces]
     return []
 
 
