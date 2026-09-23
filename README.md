@@ -3,7 +3,7 @@
 Install the Python CLI from PyPI (not the legacy npm package):
 
 ```bash
-uv tool install 'cohorte-engine==1.0.0a2'
+uv tool install 'cohorte-engine==1.0.0a3'
 cohorte --version
 ```
 
@@ -74,8 +74,8 @@ exact candidate hash before an explicit freeze decision. `start` verifies the fr
 approved profile snapshot before asking to launch a live worktree run. These two commands require
 an interactive terminal; the explicit file-based commands remain available for automation and
 multi-surface specs. See the [CLI experience audit](docs/CLI-UX-AUDIT.md) for the remaining UX gaps.
-Until the next PyPI release, use `uv run cohorte` from this checkout to try `spec` and `start`;
-the published `1.0.0a2` command does not include them.
+The guided commands were introduced in `1.0.0a3`. Verify the installed version with
+`cohorte --version` before using them in another project.
 
 For external context, set `integrations.retrieval.provider` to `serena` or `graphify` in the
 project profile. Serena needs the installed `serena` MCP executable. Graphify-Labs needs the
