@@ -73,6 +73,7 @@ def discord_payload(version: str, notes: str, release_url: str) -> bytes:
         description += "…"
     return json.dumps(
         {
+            "allowed_mentions": {"parse": []},
             "embeds": [
                 {
                     "title": f"Cohorte {version}",
@@ -80,7 +81,7 @@ def discord_payload(version: str, notes: str, release_url: str) -> bytes:
                     "url": release_url,
                     "color": 3066993,
                 }
-            ]
+            ],
         },
         ensure_ascii=False,
     ).encode("utf-8")
@@ -100,7 +101,10 @@ def notify_discord(version: str, notes: str, release_url: str) -> None:
     request = urllib.request.Request(
         url,
         data=discord_payload(version, notes, release_url),
-        headers={"Content-Type": "application/json"},
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "CohorteRelease/1.0 (+https://github.com/TheBidouilleAgency/cohorte)",
+        },
         method="POST",
     )
     try:
@@ -108,7 +112,15 @@ def notify_discord(version: str, notes: str, release_url: str) -> None:
             if response.status not in {200, 204}:
                 raise RuntimeError(f"Discord returned HTTP {response.status}")
     except urllib.error.HTTPError as error:
-        raise RuntimeError(f"Discord returned HTTP {error.code}") from None
+        # Discord's numeric API code is diagnostic, while the body can contain
+        # untrusted text. Never print the webhook URL or raw response in CI.
+        try:
+            details = json.loads(error.read(4096))
+        except (ValueError, OSError):
+            details = None
+        api_code = details.get("code") if isinstance(details, dict) else None
+        suffix = f" (API code {api_code})" if type(api_code) is int else ""
+        raise RuntimeError(f"Discord returned HTTP {error.code}{suffix}") from None
     except urllib.error.URLError:
         raise RuntimeError("Discord notification could not connect") from None
 
