@@ -18,6 +18,7 @@ from cohorte.adapters.claude import ClaudeAdapter
 from cohorte.adapters.codex import CodexAdapter
 from cohorte.adapters.git import GitRepository
 from cohorte.adapters.hosting import GitHubProvider, GitLabProvider
+from cohorte.adapters.native_login import native_login
 from cohorte.adapters.providers import inspect_runtime, workflow_runtime
 from cohorte.application.delivery import ShipRunner
 from cohorte.application.durable import (
@@ -63,7 +64,7 @@ def _parser() -> argparse.ArgumentParser:
     auth_status.add_argument("provider", choices=["claude", "codex"], nargs="?")
     for name in ["login", "verify", "logout", "disconnect"]:
         child = auth_sub.add_parser(name)
-        child.add_argument("target")
+        child.add_argument("target", choices=["claude", "codex"])
         if name == "verify":
             child.add_argument("--live", action="store_true")
             child.add_argument("--full", action="store_true")
@@ -414,7 +415,11 @@ def run(argv: list[str] | None = None) -> int:
                 temporary.replace(args.output)
                 _emit({"path": str(args.output), "bytes": args.output.stat().st_size}, args.json)
         elif args.command == "auth":
-            if args.auth_command == "status":
+            if args.auth_command == "login":
+                if args.json:
+                    raise ValueError("auth login requires an interactive terminal without --json")
+                _emit(asdict(native_login(cast(Literal["claude", "codex"], args.target))), False)
+            elif args.auth_command == "status":
                 providers = [args.provider] if args.provider else ["claude", "codex"]
                 _emit(
                     {

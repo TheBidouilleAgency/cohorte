@@ -11,9 +11,9 @@
   },
   "summary": {
     "passed": 25,
-    "partial": 4,
+    "partial": 5,
     "blocked": 0,
-    "deferred": 1,
+    "deferred": 0,
     "not_started": 0
   },
   "criteria": [
@@ -30,8 +30,8 @@
       "title": "Both provider logins",
       "status": "partial",
       "evidence_class": "live",
-      "evidence": ["docs/evidence/g0-codex-darwin-arm64.json", "docs/evidence/g0-claude-subscription-blocked-darwin-arm64.json", "docs/evidence/g0-claude-sdk-darwin-arm64.json"],
-      "remaining": ["Observe the complete native Claude login interaction without copying credentials"]
+      "evidence": ["docs/evidence/g0-codex-darwin-arm64.json", "docs/evidence/g0-claude-subscription-blocked-darwin-arm64.json", "docs/evidence/g0-claude-sdk-darwin-arm64.json", "docs/evidence/g5-ac02-isolated-native-login-darwin-arm64.json", "tests/unit/test_native_login.py"],
+      "remaining": ["Exercise cohorte auth login end-to-end on both providers", "Exercise concurrent native login locking through real provider CLI processes"]
     },
     {
       "id": "AC03",
@@ -164,10 +164,10 @@
     {
       "id": "AC19",
       "title": "Francois client",
-      "status": "deferred",
+      "status": "partial",
       "evidence_class": "engine",
-      "evidence": ["docs/evidence/g4-local-francois-protocol.json", "tests/integration/test_service_host.py"],
-      "remaining": ["Validate the external Francois client and UI; explicitly deferred by the user"]
+      "evidence": ["docs/evidence/g4-local-francois-protocol.json", "tests/integration/test_service_host.py", "tests/integration/test_francois_conformance.py"],
+      "remaining": ["Validate the real Francois client against the persistent service for start, stream, question, response, approval, disconnect and gap-free replay", "Integrate and validate the real Francois UI against Cohorte"]
     },
     {
       "id": "AC20",

@@ -9,16 +9,18 @@ Current baseline:
 | Status | Count |
 | --- | ---: |
 | Passed | 25 |
-| Partial | 4 |
+| Partial | 5 |
 | Blocked | 0 |
-| Deferred | 1 |
+| Deferred | 0 |
 | Not started | 0 |
 
-François is explicitly deferred. A newly connected Claude account passed a live SDK subscription
-smoke, a structured read, a workspace edit and an observed denial of an outside write. AC03 now
-passes at the runtime-reported subscription boundary. AC02 remains partial because the complete
-native Claude login interaction was performed by the user and not observed by Cohorte. The earlier
-organization-policy refusal remains as historical evidence for the previous account.
+François is back in scope; its external client and UI remain unqualified. Isolated native Claude
+and Codex profiles passed passive subscription status and live SDK probes. A newly connected Claude
+account also passed a structured read, a workspace edit and an observed denial of an outside write.
+AC03 passes at the runtime-reported subscription boundary. AC02 remains partial because login was
+user-assisted through the official CLIs, the new Cohorte CLI handoff lacks end-to-end evidence, and
+its native login lock lacks a simultaneous real-provider-CLI probe. The earlier organization-policy refusal remains
+historical evidence for the previous account.
 AC27 is qualified with bounded, redacted check logs and atomic CLI/RPC run exports. AC28 now
 classifies missing dependencies, unavailable container runtimes, network outages, and full disks as
 retryable environment failures while preserving durable state. AC29 now covers protocol versions,
@@ -26,8 +28,9 @@ invalid and oversized frames, concurrent mutation deduplication, bounded replay,
 reconnection without cursor gaps. AC04, AC11, AC16, and AC17 now cover provider suspension,
 bounded overload retry, reviewer death, hard controller crashes, active-wave pause, descendant
 interruption, and uncertain termination. AC30 remains partial: two direct app-server commands
-were denied by the read-only sandbox, but the agent-driven probe emitted no mutation command
-event. Model text is not proof of a denied agent retry or of absent automatic escalation.
+were denied by the read-only sandbox and two agent-driven file edits outside the workspace emitted
+failed events. The read-only reviewer emitted no mutation event, so model text and marker absence
+cannot certify that role.
 AC23 now handles missing connections at the CLI and runtime failures in design/retrieval ports:
 design capture blocks, retrieval blocks or uses only an explicitly enabled file fallback, and
 provider error text is redacted. Real Figma, Serena and Graphify snapshots and outages remain

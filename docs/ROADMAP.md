@@ -10,7 +10,7 @@ mandatory acceptance scenarios have current evidence for the exact candidate.
 | G2 | Init through reviewed PR on a disposable repository | GitHub PR and Actions CI validated live; GitLab deferred at user request |
 | G3 | Parallel surfaces and workflow variants/integrations | Workflow variants and local-source align-ds validated live; Claude/Codex turn, tool and usage events persisted in disposable workflows; file retrieval, Kanban projection and grouped metrics pass locally; external providers remain open |
 | G4 | François, migration, upgrades, multi-platform packaging | V2 import, installed a1→a2 wheel upgrade and SQLite migration pass hosted CI on Ubuntu, macOS and Windows with Python 3.12/3.13; François-facing stdio and Darwin Unix service with replay/live follow pass; Windows named-pipe lifecycle passes hosted CI; external UI and release qualification remain open |
-| G5 | AC01–AC30 and model qualification corpus | In progress: 25 passed, 4 partial, 0 blocked and 1 deferred; the model corpus remains open |
+| G5 | AC01–AC30 and model qualification corpus | In progress: 25 passed, 5 partial, 0 blocked and 0 deferred; François is back in scope and the model corpus remains open |
 
 Current automated evidence: strict model validation, DAG validation, subscription gating,
 write-conflict scheduling, reducer transitions, SQLite integrity and optimistic concurrency,
