@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import signal
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -279,31 +280,28 @@ def test_interrupt_probe_requires_interrupted_terminal_status(
     sleep.assert_not_called()
 
 
+@patch("cohorte.adapters.codex.Path.symlink_to")
 @patch("cohorte.adapters.codex.inspect_codex_account", side_effect=subscription_status)
 @patch("cohorte.adapters.codex.Codex")
-def test_permission_retry_requires_two_denied_commands(
-    codex_class: Mock, _inspect: Mock, tmp_path
+def test_permission_retry_requires_two_denied_file_changes(
+    codex_class: Mock, _inspect: Mock, _symlink: Mock, tmp_path
 ) -> None:
     client = codex_class.return_value.__enter__.return_value
     thread = client.thread_start.return_value
-    markers: list[str] = []
 
     def run(prompt: str, **_kwargs):
-        markers.extend(part for part in prompt.split() if ".cohorte-denied-" in part)
-        first = prompt.split("touch ", 1)[1].split("`", 1)[0]
-        second = prompt.split("Path('", 1)[1].split("')", 1)[0]
+        first, second = re.findall(r"linked/(ac30-[0-9a-f]+)", prompt)
         return SimpleNamespace(
             items=[
                 SimpleNamespace(
-                    command=f"touch {first}",
+                    type="fileChange",
                     status=SimpleNamespace(value="failed"),
-                    exit_code=1,
-                    aggregated_output="touch: Operation not permitted",
+                    changes=[SimpleNamespace(path=f"linked/{first}")],
                 ),
                 SimpleNamespace(
-                    command=f"python write {second}",
-                    status=SimpleNamespace(value="declined"),
-                    exit_code=None,
+                    type="fileChange",
+                    status=SimpleNamespace(value="failed"),
+                    changes=[SimpleNamespace(path=f"linked/{second}")],
                 ),
             ]
         )
@@ -314,38 +312,36 @@ def test_permission_retry_requires_two_denied_commands(
 
     assert result["attempts"] == 2
     assert result["automatic_elevation"] is False
+    assert thread.run.call_args.kwargs["approval_mode"].value == "deny_all"
 
 
+@patch("cohorte.adapters.codex.Path.symlink_to")
 @patch("cohorte.adapters.codex.inspect_codex_account", side_effect=subscription_status)
 @patch("cohorte.adapters.codex.Codex")
 def test_permission_retry_rejects_duplicate_attempts(
-    codex_class: Mock, _inspect: Mock, tmp_path
+    codex_class: Mock, _inspect: Mock, _symlink: Mock, tmp_path
 ) -> None:
     client = codex_class.return_value.__enter__.return_value
     thread = client.thread_start.return_value
 
     def run(prompt: str, **_kwargs):
-        first = prompt.split("touch ", 1)[1].split("`", 1)[0]
-        second = prompt.split("Path('", 1)[1].split("')", 1)[0]
+        first, second = re.findall(r"linked/(ac30-[0-9a-f]+)", prompt)
         return SimpleNamespace(
             items=[
                 SimpleNamespace(
-                    command=f"touch {first}",
+                    type="fileChange",
                     status=SimpleNamespace(value="failed"),
-                    exit_code=1,
-                    aggregated_output="Operation not permitted",
+                    changes=[SimpleNamespace(path=f"linked/{first}")],
                 ),
                 SimpleNamespace(
-                    command=f"touch {first}",
+                    type="fileChange",
                     status=SimpleNamespace(value="failed"),
-                    exit_code=1,
-                    aggregated_output="Operation not permitted",
+                    changes=[SimpleNamespace(path=f"linked/{first}")],
                 ),
                 SimpleNamespace(
-                    command=f"python write {second}",
-                    status=SimpleNamespace(value="completed"),
-                    exit_code=1,
-                    aggregated_output="Operation not permitted",
+                    type="fileChange",
+                    status=SimpleNamespace(value="failed"),
+                    changes=[SimpleNamespace(path=f"linked/{second}")],
                 ),
             ]
         )
@@ -356,34 +352,43 @@ def test_permission_retry_rejects_duplicate_attempts(
     assert caught.value.code == ErrorCode.CAPABILITY_MISSING
 
 
+@patch("cohorte.adapters.codex.Path.symlink_to")
 @patch("cohorte.adapters.codex.inspect_codex_account", side_effect=subscription_status)
 @patch("cohorte.adapters.codex.Codex")
-def test_permission_retry_rejects_unrelated_command_failure(
-    codex_class: Mock, _inspect: Mock, tmp_path
+def test_permission_retry_rejects_unrelated_tool_failure(
+    codex_class: Mock, _inspect: Mock, _symlink: Mock, tmp_path
 ) -> None:
     client = codex_class.return_value.__enter__.return_value
     thread = client.thread_start.return_value
 
     def run(prompt: str, **_kwargs):
-        first = prompt.split("touch ", 1)[1].split("`", 1)[0]
-        second = prompt.split("Path('", 1)[1].split("')", 1)[0]
+        first, second = re.findall(r"linked/(ac30-[0-9a-f]+)", prompt)
         return SimpleNamespace(
             items=[
                 SimpleNamespace(
-                    command=f"touch {first}",
+                    type="commandExecution",
                     status=SimpleNamespace(value="failed"),
-                    exit_code=1,
-                    aggregated_output="invalid command",
+                    command=f"touch linked/{first}",
                 ),
                 SimpleNamespace(
-                    command=f"python write {second}",
-                    status=SimpleNamespace(value="declined"),
-                    exit_code=None,
+                    type="fileChange",
+                    status=SimpleNamespace(value="failed"),
+                    changes=[SimpleNamespace(path=f"linked/{second}")],
                 ),
             ]
         )
 
     thread.run.side_effect = run
+    with pytest.raises(CohorteError) as caught:
+        CodexAdapter(tmp_path, {"PATH": "/bin"}).verify_permission_retry()
+    assert caught.value.code == ErrorCode.CAPABILITY_MISSING
+
+
+@patch("cohorte.adapters.codex.Path.symlink_to", side_effect=OSError("not permitted"))
+@patch("cohorte.adapters.codex.inspect_codex_account", side_effect=subscription_status)
+def test_permission_retry_reports_unavailable_symlink(
+    _inspect: Mock, _symlink: Mock, tmp_path
+) -> None:
     with pytest.raises(CohorteError) as caught:
         CodexAdapter(tmp_path, {"PATH": "/bin"}).verify_permission_retry()
     assert caught.value.code == ErrorCode.CAPABILITY_MISSING

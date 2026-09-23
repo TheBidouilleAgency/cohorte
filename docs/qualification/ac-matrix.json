@@ -254,8 +254,8 @@
       "title": "Permissions",
       "status": "partial",
       "evidence_class": "live",
-      "evidence": ["docs/evidence/g0-codex-darwin-arm64.json", "docs/evidence/g5-codex-control-darwin-arm64.json", "docs/evidence/g5-ac30-runtime-sandbox-darwin-arm64.json", "tests/live/verify_codex_command_sandbox.py", "tests/unit/test_codex_adapter.py::test_permission_retry_requires_two_denied_commands", "tests/unit/test_codex_adapter.py::test_permission_retry_rejects_duplicate_attempts", "tests/unit/test_codex_adapter.py::test_permission_retry_rejects_unrelated_command_failure"],
-      "remaining": ["Obtain two denied mutation command events from an agent turn", "Prove agent-driven retries never elevate permissions automatically from runtime events rather than model text"]
+      "evidence": ["docs/evidence/g0-codex-darwin-arm64.json", "docs/evidence/g5-codex-control-darwin-arm64.json", "docs/evidence/g5-ac30-runtime-sandbox-darwin-arm64.json", "docs/evidence/g5-ac30-agent-file-denial-darwin-arm64.json", "tests/live/verify_codex_command_sandbox.py", "tests/live/verify_codex_permission_retry.py", "tests/unit/test_codex_adapter.py::test_permission_retry_requires_two_denied_file_changes", "tests/unit/test_codex_adapter.py::test_permission_retry_rejects_duplicate_attempts", "tests/unit/test_codex_adapter.py::test_permission_retry_rejects_unrelated_tool_failure"],
+      "remaining": ["Obtain agent-turn denial events for the read-only reviewer role", "Qualify denied mutations beyond the preexisting-symlink file-edit scenario and on other supported platforms"]
     }
   ]
 }
