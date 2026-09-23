@@ -7,6 +7,13 @@ with the newest version first. Describe the verified scope and known limitations
 
 _No changes recorded yet._
 
+## 1.0.0a4 — 2026-09-24
+
+- Add `cohorte brief show FEATURE_ID` to read a stored brainstorm brief without rerunning the provider panel. Human-readable output includes the synthesis, open questions, user answers and independent contributions; `cohorte --json brief show FEATURE_ID` returns the structured brief and artifact reference.
+- Scope the lookup to the current registered project and document the command in the CLI guide and README.
+- Validation: the feature PR passed the hosted documentation job and Python CI matrix on Ubuntu, macOS and Windows with Python 3.12 and 3.13. The release candidate will be rebuilt and checked by the release workflow after merge.
+- Scope limits remain unchanged from `1.0.0a3`: the guided spec handles one surface and one initial scenario/criterion; François's external UI integration, the cross-provider model corpus and real-host qualification across target platforms remain open.
+
 ## 1.0.0a3 — 2026-09-23
 
 - Guide project setup and profile review from the current directory. `init` now inventories nested pnpm/npm workspaces, and `profile show`, `edit`, and `apply` support explicit corrections.
