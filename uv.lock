@@ -172,10 +172,14 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "ruff" },
 ]
+serena = [
+    { name = "mcp" },
+]
 
 [package.metadata]
 requires-dist = [
     { name = "claude-agent-sdk", marker = "extra == 'claude'", specifier = "==0.2.157" },
+    { name = "mcp", marker = "extra == 'serena'", specifier = "==2.2.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.15,<2" },
     { name = "openai-codex", specifier = "==0.155.1" },
     { name = "platformdirs", specifier = ">=4.3,<5" },
@@ -186,7 +190,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0,<7" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.11,<1" },
 ]
-provides-extras = ["dev", "claude"]
+provides-extras = ["dev", "claude", "serena"]
 
 [[package]]
 name = "colorama"

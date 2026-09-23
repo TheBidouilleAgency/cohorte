@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "gate": "G5",
+  "criterion": "AC23",
+  "scenario": "serena-mcp-search-disposable-project",
+  "status": "passed",
+  "checked_at": "2026-09-23T11:51:46Z",
+  "platform": {
+    "os": "Darwin",
+    "architecture": "arm64"
+  },
+  "probe": {
+    "provider": "installed Serena MCP server",
+    "transport": "stdio",
+    "project": "disposable temporary directory",
+    "search_hit_path": "sample.py",
+    "search_hit_line": 1,
+    "source_project_unchanged": true,
+    "snapshot_bounded": true,
+    "configured_provider_reported": "serena",
+    "effective_provider_reported": "serena",
+    "cli_effective_provider_reported": "serena"
+  },
+  "reproduction": "PYTHONPATH=src .venv/bin/python tests/live/verify_serena_retrieval.py",
+  "contains_credentials": false,
+  "limitations": [
+    "This proves one real installed Serena MCP search on Darwin arm64, not Graphify or Figma support.",
+    "The external Serena outage path is covered by deterministic tests; a real Serena process failure has not been captured."
+  ]
+}

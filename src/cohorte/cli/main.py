@@ -977,10 +977,19 @@ def run(argv: list[str] | None = None) -> int:
             from cohorte.domain.models import ProjectProfile
 
             profile = ProjectProfile.model_validate_json(args.profile.read_text())
+            if profile.integrations.retrieval.provider == "serena":
+                from cohorte.adapters.serena import SerenaRetrievalPort
+
+                retrieval_port = SerenaRetrievalPort(
+                    args.repo, profile.integrations.retrieval.roots
+                )
+            else:
+                retrieval_port = None
             result = retrieve_context(
                 args.repo,
                 profile.integrations.retrieval,
                 args.query,
+                port=retrieval_port,
                 limit=args.limit,
             )
             result_ref = database.put_artifact(

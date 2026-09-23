@@ -161,11 +161,11 @@ pre-release foundation, not a V2-parity or provider-support claim.
   adapter maps a concurrent persisted pause/cancel to `RunStopped` after calling `interrupt()`.
   CLI pause/resume has been validated from the build stage on a disposable single-surface run;
   native mid-turn session reuse and exactly-once effects are not established.
-  Permission retry remains
-  unqualified because the Codex runtime emitted no command-level
-  denial events during the live negative probe.
+  AC30 has bounded Darwin reviewer-style read-only retry evidence, but other hosts and the full
+  review workflow remain unqualified.
 - GitLab live delivery evidence and a persistent background controller remain open.
-- External Figma/Serena/Graphify validation remains open. Manual Patch reproduction remains blocked
+- External Figma/Graphify validation remains open; Serena has one bounded live MCP search on Darwin.
+  Manual Patch reproduction remains blocked
   until candidate-bound human evidence is implemented.
 - Windows real-host and load-level slow-client qualification, and the François UI client.
 - Multi-platform packaging and the AC01–AC30 qualification matrix.

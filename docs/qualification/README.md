@@ -38,8 +38,9 @@ that emitted no mutation event remains inconclusive; model text and marker absen
 accepted as proof. Live provider behavior on other operating systems is still unqualified.
 AC23 now handles missing connections at the CLI and runtime failures in design/retrieval ports:
 design capture blocks, retrieval blocks or uses only an explicitly enabled file fallback, and
-provider error text is redacted. Real Figma, Serena and Graphify snapshots and outages remain
-unqualified.
+provider error text is redacted. An installed Serena MCP server returned a real hit from a
+disposable source project without modifying it, and Cohorte CLI retrieval reported Serena as its
+effective provider. Figma and Graphify snapshots and real connector outages remain open.
 AC06 now has live evidence from three independent Codex perspective sessions plus a separate
 synthesis session in a synthetic read-only repository; contributions, disagreements and the user
 answer are content-addressed in SQLite. AC07 validates completeness and references, derives the
