@@ -39,6 +39,8 @@ From a project directory, the guided CLI needs no project ID or JSON flags:
 cohorte init .
 cohorte profile show
 cohorte profile edit
+cohorte status
+cohorte intake
 cohorte brainstorm
 ```
 
@@ -51,6 +53,11 @@ audience, observed problem, desired outcome and constraints, then prints a short
 full brief remains stored in Cohorte. For scripts, keep using `--json`, explicit flags and `--live`.
 The generated commands are candidates: confirm service setup and migrations before running
 project-wide checks in a monorepo.
+
+`status` shows the current project's features, runs and pending run decisions. `intake` can capture
+a short text, file or URL through terminal prompts and shows its triage result. The remaining
+workflow commands still expose engine-level inputs; see the [CLI experience audit](docs/CLI-UX-AUDIT.md)
+before using them as a guided end-to-end product flow.
 
 For external context, set `integrations.retrieval.provider` to `serena` or `graphify` in the
 project profile. Serena needs the installed `serena` MCP executable. Graphify-Labs needs the

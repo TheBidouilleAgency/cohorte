@@ -109,8 +109,8 @@ def _parser() -> argparse.ArgumentParser:
     fleet.add_argument("--fleet-id", required=True)
     fleet.add_argument("--live", action="store_true", required=True)
     intake = sub.add_parser("intake")
-    intake.add_argument("project_id")
-    intake_source = intake.add_mutually_exclusive_group(required=True)
+    intake.add_argument("project_id", nargs="?")
+    intake_source = intake.add_mutually_exclusive_group()
     intake_source.add_argument("--text")
     intake_source.add_argument("--file", type=Path)
     intake_source.add_argument("--url")
@@ -472,6 +472,32 @@ def _emit_profile_result(result: dict[str, Any], json_mode: bool) -> None:
     print("Corriger le profil : cohorte profile edit")
 
 
+def _emit_project_status(database: Database, project: dict[str, Any]) -> None:
+    project_id = project["id"]
+    features = database.list_features(project_id)
+    runs = database.list_runs(project_id)
+    requests = [
+        item
+        for item in database.list_requests(status="pending")
+        if item["run_id"] is not None and any(run.id == item["run_id"] for run in runs)
+    ]
+    print(f"Projet {project_id} · {len(features)} fonctionnalités · {len(runs)} exécutions")
+    if features:
+        print("Fonctionnalités :")
+        for item in features[-10:]:
+            print(f"  {item['id']} · {item['status']} · {item['title']}")
+    if runs:
+        print("Exécutions récentes :")
+        for state in runs[-10:]:
+            print(f"  {state.id} · {state.stage.value} · {state.status.value}")
+    if requests:
+        print("Décisions en attente :")
+        for item in requests:
+            print(f"  {item['id']} · {item['kind']} · run {item['run_id']}")
+    if not features:
+        print("Pour commencer : cohorte brainstorm")
+
+
 def run(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     args.data_dir.mkdir(parents=True, exist_ok=True)
@@ -515,11 +541,25 @@ def run(argv: list[str] | None = None) -> int:
         elif args.command == "status":
             if args.run:
                 payload: Any = service.database.get_run(args.run).model_dump(mode="json")
+                _emit(payload, args.json)
+            elif not args.json:
+                try:
+                    project = _project_for_path(database, Path.cwd())
+                except ValueError:
+                    runs = database.list_runs()
+                    print(f"{len(runs)} exécutions enregistrées")
+                    for state in runs[-10:]:
+                        print(
+                            f"  {state.id} · {state.project_id} · "
+                            f"{state.stage.value} · {state.status.value}"
+                        )
+                else:
+                    _emit_project_status(database, project)
             else:
                 payload = {
                     "runs": [r.model_dump(mode="json") for r in service.database.list_runs()]
                 }
-            _emit(payload, args.json)
+                _emit(payload, args.json)
         elif args.command == "export":
             exported = service.export_run(args.run_id, args.max_bytes)
             if args.output is None:
@@ -595,6 +635,22 @@ def run(argv: list[str] | None = None) -> int:
         elif args.command == "intake":
             from cohorte.application.intake import IntakeSourceType, load_intake_source
 
+            if args.project_id is None:
+                args.project_id = _project_for_path(database, Path.cwd())["id"]
+            if args.text is None and args.file is None and args.url is None:
+                if args.json or not sys.stdin.isatty():
+                    raise ValueError(
+                        "intake requires --text, --file or --url; run in a terminal for guided mode"
+                    )
+                source_kind = _prompt("Source [texte/fichier/url]").lower()
+                if source_kind in {"texte", "text"}:
+                    args.text = _prompt("Décris la demande")
+                elif source_kind in {"fichier", "file"}:
+                    args.file = Path(_prompt("Chemin du fichier")).expanduser()
+                elif source_kind == "url":
+                    args.url = _prompt("URL de la demande")
+                else:
+                    raise ValueError("source must be texte, fichier or url")
             if args.text is not None:
                 source_type, value = IntakeSourceType.TEXT, args.text
             elif args.file is not None:
@@ -602,16 +658,26 @@ def run(argv: list[str] | None = None) -> int:
             else:
                 source_type, value = IntakeSourceType.URL, args.url
             source, locator = load_intake_source(source_type, value)
-            _emit(
-                service.intake(
-                    args.project_id,
-                    source,
-                    args.title,
-                    source_type=source_type,
-                    locator=locator,
-                ),
-                args.json,
+            intake_result = service.intake(
+                args.project_id,
+                source,
+                args.title,
+                source_type=source_type,
+                locator=locator,
             )
+            if args.json:
+                _emit(intake_result, True)
+            else:
+                intake_report = cast(dict[str, Any], intake_result["report"])
+                print(
+                    f"Demande {intake_result['feature_id']} · {intake_report['triage']} · {intake_report['title']}"
+                )
+                for question in intake_report["questions"]:
+                    print(f"À préciser : {question}")
+                if intake_report["triage"] == "feature":
+                    print("Suite suggérée : cohorte brainstorm")
+                elif intake_report["triage"] == "patch":
+                    print("Suite suggérée : cadrer le correctif avant patch-spec")
         elif args.command == "brainstorm":
             from cohorte.application.preparation import BrainstormRunner, canonical_model_bytes
             from cohorte.domain.models import ProjectProfile
