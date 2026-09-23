@@ -7,6 +7,15 @@ with the newest version first. Describe the verified scope and known limitations
 
 _No changes recorded yet._
 
+## 1.0.0a3 — 2026-09-23
+
+- Guide project setup and profile review from the current directory. `init` now inventories nested pnpm/npm workspaces, and `profile show`, `edit`, and `apply` support explicit corrections.
+- Add concise interactive `intake`, `status`, and `brainstorm` flows while retaining explicit JSON commands for automation.
+- Add `cohorte spec` and `cohorte start` for a single-surface path from a stored brainstorm brief to an exactly approved frozen spec and isolated run. Open questions block freezing; the approved spec and profile are verified before execution. Shipping still requires a separate decision.
+- Publish a French VitePress guide with installation, workflow, CLI, profile, integration, and troubleshooting references. The site is built in CI and deployed through GitHub Pages.
+- Validation: the documentation build and Python CI matrix passed on hosted Ubuntu, macOS, and Windows with Python 3.12 and 3.13. The guided run was exercised on a disposable repository with a test runtime; live provider behavior for this new interface has not yet been qualified.
+- Scope limits: the guided spec handles one surface and one initial scenario/criterion; multi-surface specs still use the explicit file-based flow. François's external UI integration, the cross-provider model corpus, and real-host qualification across target platforms remain open.
+
 ## 1.0.0a2 — 2026-09-23
 
 - Fix `cohorte brainstorm` after `cohorte init`: stored project profiles now reload through the strict JSON validation path. A live Codex run on a disposable project produced three independent perspectives and a synthesis.
