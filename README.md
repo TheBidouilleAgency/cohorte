@@ -33,6 +33,25 @@ uv run cohorte --json status
 uv run pytest
 ```
 
+From a project directory, the guided CLI needs no project ID or JSON flags:
+
+```bash
+cohorte init .
+cohorte profile show
+cohorte profile edit
+cohorte brainstorm
+```
+
+`init` inventories pnpm/npm workspaces, including nested package patterns, internal dependencies,
+root checks and shared files. It returns the stored profile on repeat runs. Review its questions
+and edit the stored JSON profile before relying on it for a workflow; `cohorte init . --refresh`
+explicitly replaces edits with a fresh discovery. `cohorte profile apply reviewed.json` applies a
+validated profile from a file, with a revision check. The guided brainstorm asks for the idea,
+audience, observed problem, desired outcome and constraints, then prints a short synthesis. Its
+full brief remains stored in Cohorte. For scripts, keep using `--json`, explicit flags and `--live`.
+The generated commands are candidates: confirm service setup and migrations before running
+project-wide checks in a monorepo.
+
 For external context, set `integrations.retrieval.provider` to `serena` or `graphify` in the
 project profile. Serena needs the installed `serena` MCP executable. Graphify-Labs needs the
 `graphify` optional extra and a prebuilt `<repo>/graphify-out/graph.json`; for a code-only graph,

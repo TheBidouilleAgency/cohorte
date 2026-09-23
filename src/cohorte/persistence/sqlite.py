@@ -383,6 +383,44 @@ class Database:
             }
         return project
 
+    def update_project_profile(
+        self, project_id: str, content: bytes, expected_revision: int
+    ) -> dict[str, Any]:
+        if len(content) > 2 * 1024 * 1024:
+            raise ValueError("artifact exceeds 2 MiB")
+        digest = hashlib.sha256(content).hexdigest()
+        with self.transaction() as tx:
+            project = tx.execute(
+                "SELECT profile_artifact_id FROM projects WHERE id=?", (project_id,)
+            ).fetchone()
+            if project is None:
+                raise KeyError(project_id)
+            artifact_id = project["profile_artifact_id"]
+            latest = tx.execute(
+                "SELECT revision, sha256 FROM artifacts WHERE id=? ORDER BY revision DESC LIMIT 1",
+                (artifact_id,),
+            ).fetchone()
+            if latest is None or latest["revision"] != expected_revision:
+                raise ValueError("profile revision changed; reload the profile before editing")
+            if latest["sha256"] == digest:
+                return {"id": artifact_id, "revision": expected_revision, "sha256": digest}
+            revision = expected_revision + 1
+            tx.execute(
+                "INSERT INTO artifacts VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    artifact_id,
+                    revision,
+                    "project-profile",
+                    digest,
+                    "application/json",
+                    content,
+                    len(content),
+                    utc_now(),
+                ),
+            )
+            tx.execute("UPDATE projects SET updated_at=? WHERE id=?", (utc_now(), project_id))
+        return {"id": artifact_id, "revision": revision, "sha256": digest}
+
     def list_features(self, project_id: str) -> list[dict[str, Any]]:
         rows = self.connection.execute(
             "SELECT * FROM features WHERE project_id=? ORDER BY created_at,id", (project_id,)

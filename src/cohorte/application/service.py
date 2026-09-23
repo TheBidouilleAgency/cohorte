@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
@@ -9,7 +10,15 @@ from uuid import uuid4
 from cohorte import __version__
 from cohorte.application.discovery import discover_project, profile_provenance
 from cohorte.application.intake import IntakeSourceType, classify_intake
-from cohorte.domain.models import EventType, RunState, RunStatus, Stage, WorkflowEvent, reduce_run
+from cohorte.domain.models import (
+    EventType,
+    ProjectProfile,
+    RunState,
+    RunStatus,
+    Stage,
+    WorkflowEvent,
+    reduce_run,
+)
 from cohorte.persistence.sqlite import Database
 
 
@@ -26,8 +35,42 @@ class CohorteService:
             "compatibility": {"protocol_major": 1, "protocol_minor": 0},
         }
 
-    def init_project(self, path: Path, language: str = "fr") -> dict[str, object]:
+    def init_project(
+        self, path: Path, language: str = "fr", *, refresh: bool = False
+    ) -> dict[str, object]:
+        path = path.resolve(strict=True)
         profile, questions = discover_project(path, language)
+        try:
+            existing = self.database.get_project(profile.project_id)
+        except KeyError:
+            existing = None
+        if existing is not None:
+            if Path(existing["root_path"]).resolve() != path:
+                raise ValueError(
+                    f"project {profile.project_id} is already registered at another path"
+                )
+            if not refresh:
+                return {
+                    "profile": existing["profile"],
+                    "profile_ref": existing["profile_ref"],
+                    "questions": questions,
+                    "provenance": profile_provenance(path),
+                    "existing": True,
+                }
+            current = ProjectProfile.model_validate_json(json.dumps(existing["profile"]))
+            profile = profile.model_copy(update={"revision": current.revision + 1})
+            artifact = self.database.update_project_profile(
+                profile.project_id,
+                profile.model_dump_json(indent=2).encode(),
+                existing["profile_ref"]["revision"],
+            )
+            return {
+                "profile": profile.model_dump(mode="json"),
+                "profile_ref": artifact,
+                "questions": questions,
+                "provenance": profile_provenance(path),
+                "refreshed": True,
+            }
         document = profile.model_dump_json(indent=2).encode()
         artifact = self.database.put_artifact("project-profile", document)
         self.database.register_project(profile.project_id, str(path.resolve()), artifact["id"])
@@ -37,6 +80,24 @@ class CohorteService:
             "questions": questions,
             "provenance": profile_provenance(path),
         }
+
+    def save_project_profile(
+        self, project_id: str, document: dict[str, object], expected_revision: int
+    ) -> dict[str, object]:
+        project = self.database.get_project(project_id)
+        if project["profile_ref"]["revision"] != expected_revision:
+            raise ValueError("profile revision changed; reload the profile before editing")
+        profile = ProjectProfile.model_validate_json(json.dumps(document))
+        if profile.project_id != project_id:
+            raise ValueError("profile project_id cannot be changed")
+        if profile.revision != expected_revision:
+            raise ValueError("profile revision must match the version being edited")
+        updated = profile.model_copy(update={"revision": expected_revision + 1})
+        content = (
+            json.dumps(updated.model_dump(mode="json"), ensure_ascii=False, indent=2) + "\n"
+        ).encode()
+        artifact = self.database.update_project_profile(project_id, content, expected_revision)
+        return {"profile": updated.model_dump(mode="json"), "profile_ref": artifact}
 
     def intake(
         self,

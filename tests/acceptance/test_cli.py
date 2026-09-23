@@ -28,6 +28,43 @@ def run_cli(data_dir: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def test_profile_can_be_reviewed_edited_and_refreshed(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "package.json").write_text('{"scripts":{"test":"node --test"}}')
+    (project / "src").mkdir()
+    data_dir = tmp_path / "data"
+
+    first = run_cli(data_dir, "init", str(project))
+    assert first.returncode == 0, first.stderr
+    original = json.loads(first.stdout)["data"]
+    project_id = original["profile"]["project_id"]
+
+    repeated = run_cli(data_dir, "init", str(project))
+    assert json.loads(repeated.stdout)["data"]["existing"] is True
+    assert json.loads(repeated.stdout)["data"]["profile_ref"] == original["profile_ref"]
+
+    edited = original["profile"]
+    edited["name"] = "Reviewed project"
+    source = tmp_path / "reviewed.json"
+    source.write_text(json.dumps(edited))
+    applied = run_cli(data_dir, "profile", "apply", str(source), "--project-id", project_id)
+    assert applied.returncode == 0, applied.stderr
+    assert json.loads(applied.stdout)["data"]["profile_ref"]["revision"] == 2
+
+    shown = run_cli(data_dir, "profile", "show", project_id)
+    assert json.loads(shown.stdout)["data"]["profile"]["name"] == "Reviewed project"
+    stale = run_cli(data_dir, "profile", "apply", str(source), "--project-id", project_id)
+    assert stale.returncode != 0
+
+    (project / "package.json").write_text('{"scripts":{"test":"node --test","lint":"eslint ."}}')
+    refreshed = run_cli(data_dir, "init", str(project), "--refresh")
+    assert refreshed.returncode == 0, refreshed.stderr
+    result = json.loads(refreshed.stdout)["data"]
+    assert result["profile_ref"]["revision"] == 3
+    assert [check["id"] for check in result["profile"]["checks"]] == ["tests", "lint"]
+
+
 def test_doctor_is_honest_about_provider_support(tmp_path: Path) -> None:
     result = run_cli(tmp_path, "doctor")
     assert result.returncode == 0, result.stderr

@@ -109,6 +109,7 @@ class BrainstormRunner:
             "idea": idea,
             "project_context": project_context,
             "prior_decisions": prior_decisions or [],
+            "user_answers": user_answers,
         }
         contributions: list[BrainstormContribution] = []
         sessions: list[str] = []
@@ -131,6 +132,7 @@ class BrainstormRunner:
             "strong objections and divergences, and do not turn agent agreement into a user decision. "
             "Produce problem, beneficiaries, scope, options, recommendation, blocking and non-blocking "
             "questions, and candidate acceptance criteria.\n"
+            f"Facts: {json.dumps(facts, ensure_ascii=False)}\n"
             f"Contributions: {json.dumps([item.model_dump(mode='json') for item in contributions], ensure_ascii=False)}"
         )
         expected_refs = {item.contribution_id for item in contributions}
@@ -145,6 +147,7 @@ class BrainstormRunner:
                 "Return the complete synthesis again and reference every id exactly once.\n"
                 f"Required ids: {json.dumps(sorted(expected_refs))}\n"
                 f"Invalid refs: {json.dumps(synthesis_turn.synthesis.contribution_refs)}\n"
+                f"Facts: {json.dumps(facts, ensure_ascii=False)}\n"
                 f"Contributions: {json.dumps([item.model_dump(mode='json') for item in contributions], ensure_ascii=False)}"
             )
         assert synthesis_turn is not None

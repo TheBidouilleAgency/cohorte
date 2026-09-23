@@ -3,7 +3,12 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
+import re
+import shlex
+import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
@@ -52,6 +57,18 @@ def _parser() -> argparse.ArgumentParser:
     init = sub.add_parser("init")
     init.add_argument("path", type=Path, nargs="?", default=Path.cwd())
     init.add_argument("--language", default="fr")
+    init.add_argument(
+        "--refresh", action="store_true", help="replace the stored profile with a new discovery"
+    )
+    profile = sub.add_parser("profile")
+    profile_sub = profile.add_subparsers(dest="profile_command", required=True)
+    for action in ("show", "edit", "apply"):
+        child = profile_sub.add_parser(action)
+        if action == "apply":
+            child.add_argument("file", type=Path)
+            child.add_argument("--project-id")
+        else:
+            child.add_argument("project_id", nargs="?")
     status = sub.add_parser("status")
     status.add_argument("run", nargs="?")
     export = sub.add_parser("export")
@@ -99,17 +116,17 @@ def _parser() -> argparse.ArgumentParser:
     intake_source.add_argument("--url")
     intake.add_argument("--title")
     brainstorm = sub.add_parser("brainstorm")
-    brainstorm.add_argument("project_id")
-    brainstorm.add_argument("--feature-id", required=True)
-    brainstorm.add_argument("--idea", required=True)
+    brainstorm.add_argument("project_id", nargs="?")
+    brainstorm.add_argument("--feature-id")
+    brainstorm.add_argument("--idea")
     brainstorm.add_argument("--context", default="")
-    brainstorm.add_argument("--answer", action="append", required=True)
+    brainstorm.add_argument("--answer", action="append", default=[])
     brainstorm.add_argument("--prior-decision", action="append", default=[])
     brainstorm.add_argument("--perspective", action="append")
     brainstorm.add_argument("--repo", type=Path, default=Path.cwd())
     brainstorm.add_argument("--provider", choices=["claude", "codex"])
     brainstorm.add_argument("--output", type=Path)
-    brainstorm.add_argument("--live", action="store_true", required=True)
+    brainstorm.add_argument("--live", action="store_true")
     freeze_request = sub.add_parser("spec-freeze-request")
     freeze_request.add_argument("draft", type=Path)
     freeze_request.add_argument("--profile", type=Path, required=True)
@@ -383,6 +400,78 @@ def _create_ship_request(database: Database, run_id: str, result: Any) -> str:
     return cast(str, stored["id"])
 
 
+def _project_for_path(database: Database, path: Path) -> dict[str, Any]:
+    resolved = path.resolve(strict=True)
+    matches = [
+        item
+        for item in database.list_projects()
+        if resolved == Path(item["root_path"]).resolve()
+        or resolved.is_relative_to(Path(item["root_path"]).resolve())
+    ]
+    if not matches:
+        raise ValueError("no registered Cohorte project for this directory; run cohorte init .")
+    return database.get_project(max(matches, key=lambda item: len(item["root_path"]))["id"])
+
+
+def _prompt(label: str, *, required: bool = True) -> str:
+    while True:
+        answer = input(f"{label}: ").strip()
+        if answer or not required:
+            return answer
+        print("Une réponse est nécessaire.", file=sys.stderr)
+
+
+def _profile_context(profile: dict[str, Any]) -> str:
+    surfaces = profile.get("surfaces", [])
+    summary = {
+        "project": profile.get("name"),
+        "surfaces": [
+            {
+                "id": item.get("id"),
+                "paths": item.get("paths"),
+                "depends_on": item.get("depends_on", []),
+            }
+            for item in surfaces
+        ],
+        "checks": [item.get("id") for item in profile.get("checks", [])],
+        "conventions": profile.get("conventions", []),
+        "note": "This stored Cohorte profile defines the project boundaries. PIPELINE.md is not required for brainstorming.",
+    }
+    return json.dumps(summary, ensure_ascii=False)
+
+
+def _edit_profile(document: dict[str, Any]) -> dict[str, Any]:
+    editor = os.environ.get("VISUAL") or os.environ.get("EDITOR")
+    if not editor:
+        raise ValueError("set VISUAL or EDITOR to edit the profile")
+    with tempfile.TemporaryDirectory(prefix="cohorte-profile-") as directory:
+        path = Path(directory) / "profile.json"
+        path.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        command = [*shlex.split(editor), str(path)]
+        if subprocess.run(command, check=False).returncode != 0:
+            raise ValueError("profile editor exited with an error")
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(loaded, dict):
+            raise ValueError("profile must be a JSON object")
+        return loaded
+
+
+def _emit_profile_result(result: dict[str, Any], json_mode: bool) -> None:
+    if json_mode:
+        _emit(result, True)
+        return
+    profile = result["profile"]
+    reference = result["profile_ref"]
+    print(
+        f"Profil {profile['project_id']} · révision {reference['revision']} · "
+        f"{len(profile['surfaces'])} surfaces · {len(profile['checks'])} checks"
+    )
+    for question in result.get("questions", []):
+        print(f"À confirmer : {question}")
+    print("Voir le détail : cohorte profile show")
+    print("Corriger le profil : cohorte profile edit")
+
+
 def run(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     args.data_dir.mkdir(parents=True, exist_ok=True)
@@ -392,7 +481,37 @@ def run(argv: list[str] | None = None) -> int:
         if args.command == "doctor":
             _emit(_doctor(service, args), args.json)
         elif args.command == "init":
-            _emit(service.init_project(args.path, args.language), args.json)
+            _emit_profile_result(
+                service.init_project(args.path, args.language, refresh=args.refresh), args.json
+            )
+        elif args.command == "profile":
+            project = (
+                database.get_project(args.project_id)
+                if args.project_id
+                else _project_for_path(database, Path.cwd())
+            )
+            if args.profile_command == "show":
+                _emit(
+                    {"profile": project["profile"], "profile_ref": project["profile_ref"]},
+                    args.json,
+                )
+            else:
+                if args.profile_command == "edit":
+                    if args.json or not sys.stdin.isatty():
+                        raise ValueError(
+                            "profile edit requires an interactive terminal without --json"
+                        )
+                    document = _edit_profile(project["profile"])
+                else:
+                    document = json.loads(args.file.read_text(encoding="utf-8"))
+                    if not isinstance(document, dict):
+                        raise ValueError("profile must be a JSON object")
+                _emit_profile_result(
+                    service.save_project_profile(
+                        project["id"], document, project["profile_ref"]["revision"]
+                    ),
+                    args.json,
+                )
         elif args.command == "status":
             if args.run:
                 payload: Any = service.database.get_run(args.run).model_dump(mode="json")
@@ -497,10 +616,47 @@ def run(argv: list[str] | None = None) -> int:
             from cohorte.application.preparation import BrainstormRunner, canonical_model_bytes
             from cohorte.domain.models import ProjectProfile
 
-            project = database.get_project(args.project_id)
-            repository = args.repo.resolve(strict=True)
-            if Path(project["root_path"]).resolve() != repository:
+            guided = (
+                not args.json
+                and sys.stdin.isatty()
+                and (args.project_id is None or args.idea is None or not args.answer)
+            )
+            project = (
+                database.get_project(args.project_id)
+                if args.project_id
+                else _project_for_path(database, args.repo)
+            )
+            args.project_id = project["id"]
+            repository = Path(project["root_path"]).resolve(strict=True)
+            requested_repo = args.repo.resolve(strict=True)
+            if not (requested_repo == repository or requested_repo.is_relative_to(repository)):
                 raise ValueError("brainstorm repository does not match the registered project")
+            if guided:
+                print(f"Brainstorm · {project['id']}", file=sys.stderr)
+                args.idea = args.idea or _prompt("Quelle idée veux-tu explorer ?")
+                if not args.feature_id:
+                    suggested = re.sub(r"[^a-z0-9]+", "-", args.idea.lower()).strip("-")[:80]
+                    args.feature_id = (
+                        _prompt(f"Identifiant [{suggested}]", required=False) or suggested
+                    )
+                if not args.answer:
+                    for question in (
+                        "Qui est concerné et à quel moment ?",
+                        "Quel problème concret observes-tu ?",
+                        "Quel résultat veux-tu obtenir ?",
+                        "Quelles contraintes ou décisions faut-il respecter ? (facultatif)",
+                    ):
+                        answer = _prompt(question, required="facultatif" not in question)
+                        if answer:
+                            args.answer.append(f"{question} {answer}")
+                print("Le panel produit, architecture et QA travaille…", file=sys.stderr)
+            if not args.live and not guided:
+                raise ValueError("brainstorm requires --live")
+            if not args.idea or not args.feature_id or not args.answer:
+                raise ValueError(
+                    "brainstorm requires --feature-id, --idea and at least one --answer; "
+                    "run in a terminal for guided mode"
+                )
             project_profile = (
                 ProjectProfile.model_validate_json(json.dumps(project["profile"]))
                 if project.get("profile") is not None
@@ -527,7 +683,7 @@ def run(argv: list[str] | None = None) -> int:
                 repository,
                 args.feature_id,
                 args.idea,
-                args.context,
+                "\n".join(filter(None, [_profile_context(project["profile"]), args.context])),
                 args.answer,
                 args.prior_decision,
                 args.perspective,
@@ -545,7 +701,18 @@ def run(argv: list[str] | None = None) -> int:
                 temporary.write_bytes(canonical_model_bytes(brief))
                 temporary.replace(args.output)
                 payload["output"] = str(args.output)
-            _emit(payload, args.json)
+            if guided:
+                synthesis = brief.synthesis
+                print(f"\n{brief.idea}\n")
+                print(f"Problème : {synthesis.problem}\n")
+                print(f"Piste : {synthesis.recommendation}\n")
+                if synthesis.blocking_questions:
+                    print("Questions à trancher :")
+                    for question in synthesis.blocking_questions:
+                        print(f"  • {question}")
+                print(f"\nBrief enregistré : {brief_ref['id']} (révision {brief_ref['revision']})")
+            else:
+                _emit(payload, args.json)
         elif args.command == "spec-freeze-request":
             from cohorte.application.preparation import SpecFreezer
             from cohorte.domain.models import FeatureSpec, ProjectProfile
