@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import builtins
+import json
 import sys
 from pathlib import Path
+
+import pytest
 
 from cohorte.application.preparation import (
     BrainstormContribution,
@@ -83,3 +86,37 @@ def test_guided_brainstorm_from_project_directory(tmp_path: Path, monkeypatch, c
     assert len(feature) == 1
     assert feature[0]["id"] == "add-safe-export"
     stored.close()
+
+    assert cli.run(["--data-dir", str(data), "brief", "show", "add-safe-export"]) == 0
+    readable = capsys.readouterr().out
+    assert "Brief add-safe-export · révision 1" in readable
+    assert "Réponses fournies :" in readable
+    assert "Piste du panel (pas une décision) : Use an atomic bounded export." in readable
+    assert "Perspective product" in readable
+
+    assert cli.run(["--json", "--data-dir", str(data), "brief", "show", "add-safe-export"]) == 0
+    document = json.loads(capsys.readouterr().out)
+    assert document["ok"] is True
+    assert document["data"]["brief"]["feature_id"] == "add-safe-export"
+    assert document["data"]["brief_ref"]["id"] == "brief:add-safe-export"
+
+
+def test_brief_show_is_scoped_to_current_project(tmp_path: Path, monkeypatch, capsys) -> None:
+    project = tmp_path / "project"
+    other = tmp_path / "other"
+    project.mkdir()
+    other.mkdir()
+    data = tmp_path / "data"
+    data.mkdir()
+    database = Database(data / "cohorte.sqlite3")
+    CohorteService(database).init_project(project)
+    CohorteService(database).init_project(other)
+    database.ensure_feature("other-feature", "other", "Other feature")
+    database.close()
+    monkeypatch.chdir(project)
+
+    with pytest.raises(SystemExit) as error:
+        cli.run(["--json", "--data-dir", str(data), "brief", "show", "other-feature"])
+    assert error.value.code == 3
+    result = json.loads(capsys.readouterr().out)
+    assert result["error"]["message"] == "unknown feature in this project: other-feature"

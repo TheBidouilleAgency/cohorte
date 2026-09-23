@@ -24,12 +24,13 @@ Capturez ensuite une demande et explorez une idée :
 ```bash
 cohorte intake
 cohorte brainstorm
+cohorte brief show IDENTIFIANT
 cohorte spec
 cohorte start
 cohorte status
 ```
 
-Le terminal demande les informations manquantes. Le brainstorm lance un panel produit, architecture et QA lorsque l’accès fournisseur est disponible. Il affiche une synthèse courte et conserve le brief complet. Il ne modifie pas le code du projet. `spec` prépare ensuite un brouillon pour une seule surface, laisse les questions sans réponse ouvertes et demande une approbation liée au contenu exact. `start` affiche le périmètre et demande un accord avant de lancer les agents dans un worktree. Ces deux commandes sont incluses à partir de `1.0.0a3` ; contrôlez la version installée avec `cohorte --version`.
+Le terminal demande les informations manquantes. Le brainstorm lance un panel produit, architecture et QA lorsque l’accès fournisseur est disponible. Il affiche une synthèse courte et conserve le brief complet. Il ne modifie pas le code du projet. `brief show` relit le dernier brief sans lancer le panel. `spec` prépare ensuite un brouillon pour une seule surface, laisse les questions sans réponse ouvertes et demande une approbation liée au contenu exact. `start` affiche le périmètre et demande un accord avant de lancer les agents dans un worktree. Ces deux commandes sont incluses à partir de `1.0.0a3` ; contrôlez la version installée avec `cohorte --version`.
 
 Pour un script, placez `--json` **avant** la sous-commande et fournissez les arguments explicites :
 
