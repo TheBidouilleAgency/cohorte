@@ -8,8 +8,8 @@ Current baseline:
 
 | Status | Count |
 | --- | ---: |
-| Passed | 28 |
-| Partial | 2 |
+| Passed | 29 |
+| Partial | 1 |
 | Blocked | 0 |
 | Deferred | 0 |
 | Not started | 0 |
@@ -17,7 +17,11 @@ Current baseline:
 François is back in scope. Its existing Cohorte integration was merged in François PR #154, but
 targets the earlier TypeScript 3.0.0-dev.8 CLI and is incompatible with this Python runtime's
 `cohorte/1` protocol. The external client and UI remain unqualified against the Python service;
-see `docs/evidence/g5-ac19-francois-current-integration.json`. Isolated native Claude
+see `docs/evidence/g5-ac19-francois-current-integration.json`. AC14 now passes on a
+disposable GitLab repository: Cohorte committed and pushed a candidate, opened an MR with
+configured release notes, and refreshed its successful CI pipeline. The first diagnostic MR
+failed because GitLab required account identity verification; it was closed without merge.
+See `docs/evidence/g5-ac14-gitlab-darwin-arm64.json`. Isolated native Claude
 and Codex profiles passed passive subscription status and live SDK probes. A newly connected Claude
 account also passed a structured read, a workspace edit and an observed denial of an outside write.
 AC03 passes at the runtime-reported subscription boundary. AC02 now passes: both

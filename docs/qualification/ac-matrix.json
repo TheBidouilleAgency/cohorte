@@ -10,8 +10,8 @@
     "not_started": "No sufficient executable qualification exists yet."
   },
   "summary": {
-    "passed": 28,
-    "partial": 2,
+    "passed": 29,
+    "partial": 1,
     "blocked": 0,
     "deferred": 0,
     "not_started": 0
@@ -124,10 +124,10 @@
     {
       "id": "AC14",
       "title": "GitHub and GitLab delivery",
-      "status": "partial",
+      "status": "passed",
       "evidence_class": "mixed",
-      "evidence": ["docs/evidence/g2-github-darwin-arm64.json", "tests/unit/test_hosting.py"],
-      "remaining": ["Run live GitLab delivery", "Qualify configured release notes"]
+      "evidence": ["docs/evidence/g2-github-darwin-arm64.json", "docs/evidence/g5-ac14-gitlab-darwin-arm64.json", "tests/unit/test_hosting.py"],
+      "remaining": []
     },
     {
       "id": "AC15",

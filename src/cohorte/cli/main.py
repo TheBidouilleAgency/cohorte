@@ -20,7 +20,7 @@ from cohorte.adapters.git import GitRepository
 from cohorte.adapters.hosting import GitHubProvider, GitLabProvider
 from cohorte.adapters.native_login import native_login
 from cohorte.adapters.providers import inspect_runtime, workflow_runtime
-from cohorte.application.delivery import ShipRunner
+from cohorte.application.delivery import ShipRunner, render_release_notes
 from cohorte.application.durable import (
     RunStopped,
     SqliteAgentEventSink,
@@ -1500,6 +1500,14 @@ def run(argv: list[str] | None = None) -> int:
                 f"Acceptance criteria:\n"
                 + "\n".join(f"- {item.statement}" for item in spec.acceptance)
             )
+            notes = render_release_notes(
+                profile.integrations.release_notes,
+                title=spec.title,
+                problem=spec.problem,
+                acceptance=[item.statement for item in spec.acceptance],
+            )
+            if notes is not None:
+                body += f"\n\n{notes}"
             delivery_result = ShipRunner(database, provider).run(
                 state, profile, worktree, branch, spec.title, body
             )

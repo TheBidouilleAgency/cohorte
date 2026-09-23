@@ -3,7 +3,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from enum import StrEnum
 from pathlib import Path
-from typing import Protocol
+from string import Formatter
+from typing import Any, Protocol
 
 from cohorte.adapters.git import GitRepository
 from cohorte.domain.errors import CohorteError, ErrorCode
@@ -19,6 +20,35 @@ class DeliveryStatus(StrEnum):
     CI_PASSED = "ci_passed"
     CI_FAILED = "ci_failed"
     CI_UNKNOWN = "ci_unknown"
+
+
+def render_release_notes(
+    config: dict[str, Any], *, title: str, problem: str, acceptance: list[str]
+) -> str | None:
+    """Render configured, user-visible notes for the PR/MR description."""
+    enabled = config.get("enabled", False)
+    if not isinstance(enabled, bool):
+        raise ValueError("release notes enabled must be a boolean")
+    if not enabled:
+        return None
+    heading = config.get("heading", "Release notes")
+    template = config.get("template", "{title}\n\n{problem}")
+    if not isinstance(heading, str) or not heading.strip() or "\n" in heading or len(heading) > 100:
+        raise ValueError("release notes heading must be one line of at most 100 characters")
+    if not isinstance(template, str) or not template.strip() or len(template) > 16_384:
+        raise ValueError("release notes template must be nonempty and at most 16384 characters")
+    fields = {
+        "title": title,
+        "problem": problem,
+        "acceptance": "\n".join(f"- {item}" for item in acceptance),
+    }
+    for _, field, spec, conversion in Formatter().parse(template):
+        if field is not None and (field not in fields or spec or conversion):
+            raise ValueError("release notes template has an unsupported placeholder")
+    rendered = template.format_map(fields).strip()
+    if not rendered or len(rendered) > 32_768:
+        raise ValueError("rendered release notes must be nonempty and at most 32768 characters")
+    return f"## {heading.strip()}\n\n{rendered}"
 
 
 class PullRequest(StrictModel):

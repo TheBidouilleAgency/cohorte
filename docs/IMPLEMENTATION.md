@@ -154,7 +154,9 @@ pre-release foundation, not a V2-parity or provider-support claim.
 
 ## Deliberately unverified or incomplete
 
-- AC14 remains partial: GitLab live delivery and configured release notes need proof.
+- AC14 passed on a disposable GitLab repository with a bounded SHIP fixture, configured release
+  notes in the MR description, and a successful CI pipeline; see
+  `docs/evidence/g5-ac14-gitlab-darwin-arm64.json`.
 - AC19 remains partial: the merged François client still targets the older TypeScript CLI and
   needs adaptation and live validation against the Python `cohorte/1` service.
 - Native mid-turn session reuse and exactly-once effects after a provider crash are not established.

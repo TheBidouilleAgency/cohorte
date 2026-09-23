@@ -132,6 +132,12 @@ cohorte --json --data-dir /path/to/data delivery-status RUN_ID --live --watch
 force, then confirms the GitHub PR or GitLab MR through the provider CLI. Every effect is journaled
 before execution and reconciled on retry. It never merges or deploys.
 
+When `integrations.release_notes.enabled` is `true` in the project profile, `ship` appends a
+release-notes section to the PR/MR description. Its optional `heading` defaults to `Release notes`;
+its optional `template` defaults to `{title}\n\n{problem}`. Templates may use only `{title}`,
+`{problem}`, and `{acceptance}` (a bulleted list). Notes are omitted when the integration is
+disabled, and do not modify the reviewed candidate.
+
 Inspect and apply a bounded V2 metadata migration with an explicit rollback point:
 
 ```bash

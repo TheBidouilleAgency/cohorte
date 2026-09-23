@@ -113,8 +113,6 @@ class GitLabProvider(_CliProvider):
                 "list",
                 "--source-branch",
                 branch,
-                "--state",
-                "opened",
                 "--output",
                 "json",
             )

@@ -7,10 +7,10 @@ mandatory acceptance scenarios have current evidence for the exact candidate.
 | --- | --- | --- |
 | G0 | Real provider auth, subscription route, capabilities, stop/resume | Codex 0.155.1 passed smoke/interrupt/resume on Darwin arm64; the earlier read-only label is superseded because agent-tool denial events were absent. Claude 2.1.280 passed SDK smoke, structured read, workspace edit, outside-write denial, guarded read-only denial, native session-resume, CLI cancel and CLI pause/resume probes. Full login interaction and safe native mid-turn recovery remain open |
 | G1 | Contracts, state machine, SQLite, recovery primitives, CLI/protocol, fake-free unit tests | In progress; Codex and Claude single-surface verticals and controller-crash recovery validated live |
-| G2 | Init through reviewed PR on a disposable repository | GitHub PR and Actions CI validated live; GitLab deferred at user request |
+| G2 | Init through reviewed PR on a disposable repository | GitHub PR and Actions CI validated live; GitLab delivery and CI validated on a disposable repository with a bounded SHIP fixture |
 | G3 | Parallel surfaces and workflow variants/integrations | Workflow variants and local-source align-ds validated live; Claude/Codex turn, tool and usage events persisted in disposable workflows; file retrieval, Kanban projection and grouped metrics pass locally; external providers remain open |
 | G4 | François, migration, upgrades, multi-platform packaging | V2 import, installed a1→a2 wheel upgrade and SQLite migration pass hosted CI on Ubuntu, macOS and Windows with Python 3.12/3.13; François-facing stdio and Darwin Unix service with replay/live follow pass; Windows named-pipe lifecycle passes hosted CI; external UI and release qualification remain open |
-| G5 | AC01–AC30 and model qualification corpus | In progress: 28 passed, 2 partial, 0 blocked and 0 deferred; AC23 now passes on bounded Serena, Graphify-Labs and Figma evidence, while AC14 GitLab/release notes, AC19 François and the model corpus remain open |
+| G5 | AC01–AC30 and model qualification corpus | In progress: 29 passed, 1 partial, 0 blocked and 0 deferred; AC14 GitLab delivery, CI and configured release notes passed, while AC19 François and the model corpus remain open |
 
 Current automated evidence: strict model validation, DAG validation, subscription gating,
 write-conflict scheduling, reducer transitions, SQLite integrity and optimistic concurrency,
