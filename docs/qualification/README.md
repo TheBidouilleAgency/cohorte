@@ -40,7 +40,10 @@ AC23 now handles missing connections at the CLI and runtime failures in design/r
 design capture blocks, retrieval blocks or uses only an explicitly enabled file fallback, and
 provider error text is redacted. An installed Serena MCP server returned a real hit from a
 disposable source project without modifying it, and Cohorte CLI retrieval reported Serena as its
-effective provider. Figma and Graphify snapshots and real connector outages remain open.
+effective provider. Graphify-Labs 0.9.66 also returned a real file/line hit through Cohorte CLI
+from a prebuilt local code-only graph. The Figma REST adapter is wired but has only deterministic
+tests because no `FIGMA_ACCESS_TOKEN` is available in the Cohorte runtime. A real Figma snapshot,
+real connector outages, and larger Graphify/Serena project probes remain open.
 AC06 now has live evidence from three independent Codex perspective sessions plus a separate
 synthesis session in a synthetic read-only repository; contributions, disagreements and the user
 answer are content-addressed in SQLite. AC07 validates completeness and references, derives the

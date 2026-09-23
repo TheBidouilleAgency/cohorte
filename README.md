@@ -31,6 +31,17 @@ uv run cohorte --json status
 uv run pytest
 ```
 
+For external context, set `integrations.retrieval.provider` to `serena` or `graphify` in the
+project profile. Serena needs the installed `serena` MCP executable. Graphify-Labs needs the
+`graphify` optional extra and a prebuilt `<repo>/graphify-out/graph.json`; for a code-only graph,
+run `graphify extract <repo> --code-only --no-cluster --out <repo>` explicitly before retrieval.
+Both providers fail visibly when unavailable; file fallback requires
+`integrations.retrieval.fallback_to_files: true`. Figma design snapshots use a file or node URL in
+`integrations.design.source` and a locally supplied `FIGMA_ACCESS_TOKEN` with
+`file_content:read` scope. The token is never part of the profile. To verify a real Figma snapshot
+without printing its contents, run `python tests/live/verify_figma_snapshot.py --source <file-or-node-url>`
+in a shell where the token is already set.
+
 Prepare a feature with independent product, architecture and QA sessions, then approve the exact
 completed spec before freezing it:
 

@@ -164,7 +164,8 @@ pre-release foundation, not a V2-parity or provider-support claim.
   AC30 has bounded Darwin reviewer-style read-only retry evidence, but other hosts and the full
   review workflow remain unqualified.
 - GitLab live delivery evidence and a persistent background controller remain open.
-- External Figma/Graphify validation remains open; Serena has one bounded live MCP search on Darwin.
+- External Figma validation remains open; Serena and Graphify-Labs have bounded live MCP retrieval
+  evidence on Darwin.
   Manual Patch reproduction remains blocked
   until candidate-bound human evidence is implemented.
 - Windows real-host and load-level slow-client qualification, and the François UI client.

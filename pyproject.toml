@@ -27,6 +27,7 @@ dev = [
 ]
 claude = ["claude-agent-sdk==0.2.157"]
 serena = ["mcp==2.2.0"]
+graphify = ["graphifyy[mcp]==0.9.66"]
 
 [project.scripts]
 cohorte = "cohorte.cli.main:main"

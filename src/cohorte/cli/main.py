@@ -943,15 +943,19 @@ def run(argv: list[str] | None = None) -> int:
                 args.json,
             )
         elif args.command == "design-snapshot":
-            from cohorte.application.context import FileDesignPort, capture_design
+            from cohorte.application.context import DesignPort, FileDesignPort, capture_design
             from cohorte.domain.models import ProjectProfile
 
             profile = ProjectProfile.model_validate_json(args.profile.read_text())
-            port = (
-                FileDesignPort(args.repo)
-                if profile.integrations.design.provider == "file"
-                else None
-            )
+            port: DesignPort | None
+            if profile.integrations.design.provider == "file":
+                port = FileDesignPort(args.repo)
+            elif profile.integrations.design.provider == "figma":
+                from cohorte.adapters.figma import FigmaDesignPort
+
+                port = FigmaDesignPort()
+            else:
+                port = None
             capture = capture_design(profile.integrations.design, port)
             if capture.status == "blocked":
                 raise CohorteError(
@@ -973,14 +977,21 @@ def run(argv: list[str] | None = None) -> int:
                 args.json,
             )
         elif args.command == "retrieve":
-            from cohorte.application.context import retrieve_context
+            from cohorte.application.context import RetrievalPort, retrieve_context
             from cohorte.domain.models import ProjectProfile
 
             profile = ProjectProfile.model_validate_json(args.profile.read_text())
+            retrieval_port: RetrievalPort | None
             if profile.integrations.retrieval.provider == "serena":
                 from cohorte.adapters.serena import SerenaRetrievalPort
 
                 retrieval_port = SerenaRetrievalPort(
+                    args.repo, profile.integrations.retrieval.roots
+                )
+            elif profile.integrations.retrieval.provider == "graphify":
+                from cohorte.adapters.graphify import GraphifyRetrievalPort
+
+                retrieval_port = GraphifyRetrievalPort(
                     args.repo, profile.integrations.retrieval.roots
                 )
             else:

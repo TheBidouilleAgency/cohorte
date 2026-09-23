@@ -198,8 +198,8 @@
       "title": "Design and retrieval",
       "status": "partial",
       "evidence_class": "mixed",
-      "evidence": ["docs/evidence/g3-local-design-retrieval.json", "docs/evidence/g3-codex-align-ds-darwin-arm64.json", "docs/evidence/g5-ac23-serena-mcp-darwin-arm64.json", "tests/live/verify_serena_retrieval.py", "tests/integration/test_serena_retrieval.py", "tests/integration/test_context.py::test_external_design_failure_is_blocked_and_redacted", "tests/integration/test_context.py::test_configured_retrieval_failure_is_visible_without_fallback", "tests/integration/test_context.py::test_explicit_retrieval_fallback_is_labeled_and_bounded", "tests/acceptance/test_cli.py::test_unavailable_external_context_is_explicit_at_cli_boundary"],
-      "remaining": ["Capture real Figma and Graphify snapshots after adapters and connections are available", "Qualify real connector outages"]
+      "evidence": ["docs/evidence/g3-local-design-retrieval.json", "docs/evidence/g3-codex-align-ds-darwin-arm64.json", "docs/evidence/g5-ac23-serena-mcp-darwin-arm64.json", "docs/evidence/g5-ac23-graphify-mcp-darwin-arm64.json", "tests/live/verify_serena_retrieval.py", "tests/live/verify_graphify_retrieval.py", "tests/live/verify_figma_snapshot.py", "tests/integration/test_serena_retrieval.py", "tests/integration/test_graphify_retrieval.py", "tests/integration/test_figma_design.py", "tests/integration/test_context.py::test_external_design_failure_is_blocked_and_redacted", "tests/integration/test_context.py::test_configured_retrieval_failure_is_visible_without_fallback", "tests/integration/test_context.py::test_explicit_retrieval_fallback_is_labeled_and_bounded", "tests/acceptance/test_cli.py::test_unavailable_external_context_is_explicit_at_cli_boundary"],
+      "remaining": ["Capture a real Figma file through Cohorte with file_content:read access", "Qualify real connector outages and larger Graphify/Serena projects"]
     },
     {
       "id": "AC24",
