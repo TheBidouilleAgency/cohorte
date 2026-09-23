@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 import os
 import shutil
 import subprocess
@@ -27,30 +28,30 @@ def _login_lock(provider: Literal["claude", "codex"], env: dict[str, str]) -> It
     descriptor = os.open(path, flags, 0o600)
     try:
         if os.name == "nt":
-            import msvcrt
+            windows_lock = importlib.import_module("msvcrt")
 
             os.write(descriptor, b"0")
             os.lseek(descriptor, 0, os.SEEK_SET)
             try:
-                msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)  # type: ignore[attr-defined]
+                windows_lock.locking(descriptor, windows_lock.LK_NBLCK, 1)
             except OSError as error:
                 raise _busy(provider) from error
             try:
                 yield
             finally:
                 os.lseek(descriptor, 0, os.SEEK_SET)
-                msvcrt.locking(descriptor, msvcrt.LK_UNLCK, 1)  # type: ignore[attr-defined]
+                windows_lock.locking(descriptor, windows_lock.LK_UNLCK, 1)
         else:
-            import fcntl
+            unix_lock = importlib.import_module("fcntl")
 
             try:
-                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                unix_lock.flock(descriptor, unix_lock.LOCK_EX | unix_lock.LOCK_NB)
             except BlockingIOError as error:
                 raise _busy(provider) from error
             try:
                 yield
             finally:
-                fcntl.flock(descriptor, fcntl.LOCK_UN)
+                unix_lock.flock(descriptor, unix_lock.LOCK_UN)
     finally:
         os.close(descriptor)
 
