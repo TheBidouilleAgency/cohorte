@@ -1,0 +1,57 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cohorte-engine"
+version = "1.0.0a1"
+description = "Local, evidence-driven orchestration for coding agents"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "AGPL-3.0-only" }
+authors = [{ name = "Cohorte contributors" }]
+dependencies = [
+  "openai-codex==0.155.1",
+  "platformdirs>=4.3,<5",
+  "pydantic>=2.10,<3",
+  "PyYAML>=6.0,<7",
+  "pywin32>=312; sys_platform == 'win32'",
+]
+
+[project.optional-dependencies]
+dev = [
+  "mypy>=1.15,<2",
+  "pytest>=8.3,<9",
+  "pytest-asyncio>=0.25,<1",
+  "ruff>=0.11,<1",
+]
+claude = ["claude-agent-sdk==0.2.157"]
+serena = ["mcp==2.2.0"]
+graphify = ["graphifyy[mcp]==0.9.66"]
+
+[project.scripts]
+cohorte = "cohorte.cli.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cohorte"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["cohorte"]
+
+[[tool.mypy.overrides]]
+module = "cohorte.service.windows_pipe"
+disable_error_code = ["import-untyped"]

@@ -1,5 +1,0 @@
-# schema: ownership
-surfaces:
-  frontend: { paths: ["apps/web/**"], owners: [implementer, fixer], reviewers: [reviewer] }
-  backend: { paths: ["apps/api/**", "packages/db/**"], owners: [implementer, fixer], reviewers: [reviewer, security-reviewer] }
-  shared: { paths: ["package.json", "pnpm-lock.yaml", "apps/**/*.config.ts"], owners: [implementer], reviewers: [reviewer], approval: human }

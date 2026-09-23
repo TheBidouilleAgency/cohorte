@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "feature_id": "api-followup",
+  "revision": 1,
+  "status": "frozen",
+  "title": "Add a prefixed API identifier",
+  "brief_ref": null,
+  "problem": "The normalized identifier cannot yet be namespaced.",
+  "in_scope": ["Preserve normalize_identifier", "Add prefixed_identifier(prefix, value)", "Normalize both arguments", "Return prefix:value", "Add standard-library tests"],
+  "out_of_scope": ["Change normalize_identifier behavior", "Third-party dependencies"],
+  "surfaces": ["api"],
+  "scenarios": [{"id": "prefix-id", "given": "padded prefix and identifier", "when": "prefixed_identifier is called", "then": "both values are normalized and joined with a colon"}],
+  "acceptance": [{"id": "api-prefixes", "statement": "prefixed_identifier(' user ', ' 42 ') returns 'user:42' while existing API tests remain green", "verification": "automatic", "check_ids": ["api-base-check", "api-followup-check"], "surface_ids": ["api"], "evidence_required": ["unit output"]}],
+  "dod": {"required_checks": ["api-base-check", "api-followup-check"], "review_required": true, "manual_validations": []},
+  "contract_refs": [],
+  "dependencies": [],
+  "migrations": {"required": false, "plan": "No migration."},
+  "rollback": {"required": false, "plan": "Remove prefixed_identifier and test_api_followup.py."},
+  "design_refs": [],
+  "rbac_requirements": [],
+  "open_questions": []
+}

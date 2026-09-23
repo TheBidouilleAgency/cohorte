@@ -1,4 +1,0 @@
-version: 1
-agents:
-  - match: {}
-    steps: [{ do: await-message, timeoutMs: 1000 }]

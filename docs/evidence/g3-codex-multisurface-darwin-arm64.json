@@ -1,0 +1,67 @@
+{
+  "gate": "G3",
+  "scenario": "codex-live-multisurface",
+  "status": "passed",
+  "checked_at": "2026-09-22T14:56:23.101156+00:00",
+  "platform": "Darwin 25.5.0 arm64",
+  "python": "3.13.15",
+  "codex_cli": "0.155.1",
+  "openai_codex_sdk": "0.155.1",
+  "authentication": {
+    "mode": "subscription_only",
+    "api_environment_removed": true
+  },
+  "run": {
+    "id": "g3-live-2",
+    "feature_id": "message-contract",
+    "base_commit": "ef40056c8bba772c98bdcf43b95d3acd198d785e",
+    "candidate_tree_hash": "e4e8b10f0f6831d20568501854791b2496e8fee9e6388396907c3f07d198a5fc",
+    "final_stage": "ship",
+    "final_status": "waiting_user",
+    "fix_cycles": 0,
+    "ship_request_id": "48a47941-3db2-4c80-abf3-1a58e97bea93",
+    "ship_subject_hash_matches_candidate": true
+  },
+  "task_graph": {
+    "tasks_completed": 3,
+    "max_scheduled_parallelism": 2,
+    "contract_commit": "93a120b1e3c6e7ec67403e95e01b63ea97fccfcd",
+    "backend_task_commit": "37662b7f6e61c032ecf20a5f63974770747e05ab",
+    "client_task_commit": "3096e59a17c6e7b7310ebf9d2b4ebc1694c4f7ec",
+    "integration_order": ["contract", "backend", "client"],
+    "isolated_task_worktrees": true,
+    "agents_pushed_or_committed": false,
+    "orchestrator_created_task_commits": true
+  },
+  "candidate": {
+    "changed_files": [
+      "backend.py",
+      "client.py",
+      "shared_contract.py",
+      "test_backend.py",
+      "test_client.py"
+    ],
+    "unit_check": {
+      "status": "passed",
+      "tests_run": 4
+    },
+    "review": {
+      "verdict": "ready",
+      "covered_surfaces": ["backend", "client", "contract"],
+      "blocking_findings": 0
+    }
+  },
+  "durability": {
+    "phase_events": [
+      "phase.build.completed",
+      "phase.checks.completed",
+      "phase.review.completed"
+    ],
+    "all_evidence_bound_to_candidate_tree_hash": true
+  },
+  "limitations": [
+    "No remote push or pull request was performed for this local G3 scenario.",
+    "This scenario did not test recovery inside the parallel build wave; that case was validated later in g3-codex-mid-wave-recovery-darwin-arm64.json.",
+    "Fleet and the other G3 workflow variants remain open."
+  ]
+}

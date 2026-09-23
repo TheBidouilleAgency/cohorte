@@ -1,6 +1,0 @@
-version: 1
-agents:
-  - match: {}
-    steps:
-      - do: fail
-        error: { class: provider-terminal, code: provider/rate-limit, retryable: true, retryAfterMs: 1000 }

@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "gate": "G2-partial",
+  "scope": "local-bare-remote-and-fake-provider",
+  "checks": {
+    "explicit_candidate_bound_approval": "passed",
+    "stale_candidate_rejected_before_effects": "passed",
+    "remote_base_preflight": "implemented",
+    "commit_marker": "passed",
+    "non_force_push": "passed",
+    "remote_head_confirmation": "passed",
+    "pull_request_confirmation": "passed_with_fake_provider",
+    "pr_created_before_ack_recovery": "passed",
+    "duplicate_pr_count": 0,
+    "ci_status_refresh": "implemented"
+  },
+  "pre_delivery_candidate_snapshot": {
+    "run_id": "github-g2-1",
+    "base_commit": "661926cdef59398344f20dda6e268801ddeaf394",
+    "candidate_tree_hash": "371b49d02b91c44171b265719299afe9bc48f817618f13b36df5044c6a95b03e",
+    "branch": "cohorte/friendly-greeting-github-g2-1",
+    "checks_passed": 2,
+    "review_verdict": "ready",
+    "external_effects_executed_at_snapshot_time": false,
+    "subsequent_live_evidence": "g2-github-darwin-arm64.json"
+  },
+  "limitations": [
+    "No remote repository, branch, pull request or merge request has been created by this evidence.",
+    "GitHub and GitLab provider behavior still requires live disposable-repository validation.",
+    "No merge or deployment behavior is implemented."
+  ]
+}

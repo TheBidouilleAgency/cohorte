@@ -1,0 +1,42 @@
+{
+  "gate": "G4",
+  "scenario": "francois-facing-stdio-read-control-contract",
+  "status": "passed-locally",
+  "checked_at": "2026-09-22T17:42:00Z",
+  "handshake": {
+    "protocol_major": 1,
+    "protocol_minor": 0,
+    "initialize_required": true,
+    "incompatible_major_rejected": true,
+    "frame_limit_bytes": 1048576
+  },
+  "validated_views": [
+    "projects.list",
+    "projects.get",
+    "features.list",
+    "features.get",
+    "requests.list",
+    "metrics.get"
+  ],
+  "validated_control": [
+    "runs.pause",
+    "runs.resume",
+    "runs.cancel",
+    "requests.respond"
+  ],
+  "event_replay": {
+    "subscribe": true,
+    "watermark": true,
+    "unsubscribe": true,
+    "live_follow_on_unix_service": true
+  },
+  "account_boundary": {
+    "passive_native_status_only": true,
+    "credentials_returned": false
+  },
+  "limitations": [
+    "This validates Cohorte's stdio protocol surface with an in-process client harness, not the external Francois UI.",
+    "Windows named pipe and its peer ACLs remain open; the Unix service uses kernel peer credentials.",
+    "Provider login and model-catalog methods are not advertised as implemented."
+  ]
+}

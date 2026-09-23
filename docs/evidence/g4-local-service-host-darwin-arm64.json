@@ -1,0 +1,41 @@
+{
+  "gate": "G4",
+  "scenario": "persistent-local-unix-service",
+  "status": "passed",
+  "platform": "darwin-arm64",
+  "checked_at": "2026-09-22T18:02:00Z",
+  "transport": {
+    "kind": "unix-socket",
+    "network_port_opened": false,
+    "data_directory_mode": "0700",
+    "socket_mode": "0600",
+    "peer_identity": "LOCAL_PEERCRED uid",
+    "same_user_required": true,
+    "frame_limit_bytes": 1048576,
+    "write_drain_timeout_seconds": 5
+  },
+  "lifecycle": {
+    "background_start": "passed",
+    "health_status": "passed",
+    "rpc_shutdown": "passed",
+    "socket_cleanup": "passed",
+    "failed_start_process_cleanup": "implemented"
+  },
+  "client_disconnect": {
+    "run_before": "running/version-1",
+    "run_after_reconnect": "running/version-1",
+    "workflow_mutated": false
+  },
+  "event_delivery": {
+    "replay_then_follow_without_gap": true,
+    "json_rpc_notification": "events.notification",
+    "project_filter": true,
+    "unsubscribe": true,
+    "durable_resume_cursor": true
+  },
+  "limitations": [
+    "Windows named-pipe transport and user ACLs require validation on Windows.",
+    "A slow writer is disconnected after a bounded drain timeout and can replay from its durable cursor; load-level backpressure still requires qualification.",
+    "This validates Cohorte's local host and protocol client harness, not the external Francois UI."
+  ]
+}

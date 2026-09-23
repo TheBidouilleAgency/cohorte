@@ -1,0 +1,42 @@
+{
+  "gate": "G4",
+  "scenario": "windows-named-pipe-runtime-ci",
+  "status": "passed-hosted-ci",
+  "checked_at": "2026-09-22T18:54:00Z",
+  "candidate_commit": "ad93ee1",
+  "ci": {
+    "provider": "github-actions",
+    "run_id": 35770347616,
+    "url": "https://github.com/TheBidouilleAgency/cohorte/actions/runs/35770347616",
+    "windows_python_3_12": "passed",
+    "windows_python_3_13": "passed"
+  },
+  "implementation": {
+    "transport": "windows-named-pipe",
+    "network_port_opened": false,
+    "remote_clients_rejected": true,
+    "acl": "current user SID only",
+    "single_service_guard": "Local user-session mutex",
+    "frame_limit_bytes": 1048576,
+    "protocol": "cohorte/1 JSON-RPC",
+    "lifecycle_commands": ["service start", "service status", "service stop"],
+    "direct_dependency": "pywin32>=312; sys_platform == 'win32'"
+  },
+  "automated_test": {
+    "file": "tests/integration/test_windows_pipe.py",
+    "matrix": ["windows-latest/python-3.12", "windows-latest/python-3.13"],
+    "result": "passed on both hosted Windows jobs",
+    "required_runtime_assertions": [
+      "current SID is available",
+      "background service starts",
+      "reported transport is windows-named-pipe",
+      "protocol health succeeds",
+      "RPC shutdown removes the service"
+    ]
+  },
+  "limitations": [
+    "Hosted CI validates the lifecycle but does not establish release support on user-managed Windows hosts.",
+    "Live event follow remains disabled on the Windows pipe until bounded asynchronous writes are validated there.",
+    "The external Francois client remains unvalidated."
+  ]
+}

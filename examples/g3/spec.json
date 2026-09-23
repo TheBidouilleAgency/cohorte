@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "feature_id": "message-contract",
+  "revision": 1,
+  "status": "frozen",
+  "title": "Add a shared message contract and two consumers",
+  "brief_ref": null,
+  "problem": "The disposable project needs a shared normalizer used independently by backend and client surfaces.",
+  "in_scope": [
+    "Define normalize_message(value) in shared_contract.py",
+    "Trim surrounding whitespace and reject blank values with ValueError",
+    "Expose backend_message(value) returning BACKEND: <normalized>",
+    "Expose client_message(value) returning CLIENT: <normalized>",
+    "Add standard-library unit tests for both consumers"
+  ],
+  "out_of_scope": ["CLI", "third-party dependencies", "network access"],
+  "surfaces": ["contract", "backend", "client"],
+  "scenarios": [
+    {"id": "backend-normalizes", "given": "a padded message", "when": "backend_message is called", "then": "the normalized message has a BACKEND prefix"},
+    {"id": "client-normalizes", "given": "a padded message", "when": "client_message is called", "then": "the normalized message has a CLIENT prefix"}
+  ],
+  "acceptance": [
+    {
+      "id": "shared-normalizer",
+      "statement": "normalize_message trims values and rejects blank input",
+      "verification": "automatic",
+      "check_ids": ["unit"],
+      "surface_ids": ["contract"],
+      "evidence_required": ["unit output"]
+    },
+    {
+      "id": "backend-consumer",
+      "statement": "backend_message('  hello  ') returns 'BACKEND: hello' and has unit coverage",
+      "verification": "automatic",
+      "check_ids": ["unit"],
+      "surface_ids": ["backend"],
+      "evidence_required": ["unit output"]
+    },
+    {
+      "id": "client-consumer",
+      "statement": "client_message('  hello  ') returns 'CLIENT: hello' and has unit coverage",
+      "verification": "automatic",
+      "check_ids": ["unit"],
+      "surface_ids": ["client"],
+      "evidence_required": ["unit output"]
+    }
+  ],
+  "dod": {"required_checks": ["unit"], "review_required": true, "manual_validations": []},
+  "contract_refs": [],
+  "dependencies": [],
+  "migrations": {"required": false, "plan": "No migration."},
+  "rollback": {"required": false, "plan": "Remove the five feature files."},
+  "design_refs": [],
+  "rbac_requirements": [],
+  "open_questions": []
+}

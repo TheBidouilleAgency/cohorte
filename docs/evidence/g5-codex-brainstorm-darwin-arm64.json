@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "criterion": "AC06",
+  "captured_at": "2026-09-22",
+  "platform": "darwin-arm64",
+  "runtime": "codex-cli 0.155.1",
+  "auth_boundary": {
+    "required_mode": "subscription",
+    "api_environment_removed": true
+  },
+  "workspace": {
+    "kind": "synthetic-empty-git-repository",
+    "private_repository_exposed": false,
+    "sandbox": "read-only",
+    "approval_mode": "deny_all",
+    "ephemeral_sessions": true
+  },
+  "panel": [
+    "product",
+    "architecture",
+    "qa"
+  ],
+  "session_count": 4,
+  "distinct_session_count": 4,
+  "contribution_count": 3,
+  "synthesis_contribution_refs": [
+    "product",
+    "architecture",
+    "qa"
+  ],
+  "divergence_count": 3,
+  "strong_objection_count": 3,
+  "user_answer_persisted_as_decision": true,
+  "artifact": {
+    "kind": "brainstorm-brief",
+    "sha256": "14197b015b34a86031eb319a0ccf0dcbd82990f0b182d5cec9b5883c6da3de56",
+    "sqlite_content_matches_export": true
+  },
+  "status": "passed"
+}

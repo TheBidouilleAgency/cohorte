@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "gate": "G5",
+  "criterion": "AC30",
+  "scenario": "codex-agent-two-denied-file-edits-outside-workspace",
+  "status": "passed_for_scenario",
+  "checked_at": "2026-09-23T08:24:30Z",
+  "platform": {
+    "os": "Darwin",
+    "architecture": "arm64"
+  },
+  "runtime": {
+    "codex_cli": "0.155.1",
+    "openai_codex_sdk": "0.155.1",
+    "api_routing_environment_removed": true,
+    "sandbox": "workspace-write",
+    "approval_mode": "deny_all"
+  },
+  "agent_turn_probe": {
+    "workspace": "disposable temporary directory",
+    "target": "disposable directory inside repository, outside turn workspace",
+    "path": "preexisting symlink in turn workspace to target",
+    "distinct_file_change_events": 2,
+    "file_change_statuses": ["failed", "failed"],
+    "target_markers_absent": true,
+    "turn_status": "completed",
+    "integrated_adapter_probe": "passed"
+  },
+  "reproduction": "env -u OPENAI_API_KEY -u OPENAI_BASE_URL .venv/bin/python tests/live/verify_codex_permission_retry.py",
+  "contains_credentials": false,
+  "limitations": [
+    "Proves denial of two agent-driven file edits through a preexisting symlink on this macOS runtime; it does not prove every mutation tool or platform.",
+    "A read-only reviewer agent turn has not emitted two denied mutation events, so AC30 remains partial overall.",
+    "An initial probe with both workspace and target under /private/tmp was not valid isolation evidence because temporary paths may be writable by workspace-write policy."
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "gate": "G5",
+  "criterion": "AC26",
+  "scenario": "installed-wheel-upgrade",
+  "status": "passed",
+  "checked_at": "2026-09-22T21:37:41Z",
+  "candidate": "5d2b127b9efa2d46213023d3a9d98974711a48f9",
+  "ci": {
+    "provider": "github-actions",
+    "run_id": 35787434021,
+    "url": "https://github.com/TheBidouilleAgency/cohorte/actions/runs/35787434021",
+    "matrix": {
+      "ubuntu-python-3.12": "passed",
+      "ubuntu-python-3.13": "passed",
+      "macos-python-3.12": "passed",
+      "macos-python-3.13": "passed",
+      "windows-python-3.12": "passed",
+      "windows-python-3.13": "passed"
+    },
+    "build_clean_install_and_upgrade_verifiers_ran": true
+  },
+  "package": {
+    "distribution": "cohorte-local",
+    "from_version": "0.1.0a1",
+    "from_commit": "ccb23fb6726287bb60056566c8c14ab28cb9727e",
+    "to_version": "0.1.0a2",
+    "environment": "same temporary virtual environment, installed wheels"
+  },
+  "checks": {
+    "old_binary_refuses_future_schema_without_mutation": "passed",
+    "installed_upgrade": "passed",
+    "external_user_configuration_preserved": "passed",
+    "project_data_and_artifact_bytes_preserved": "passed",
+    "schema_1_to_2_migration_and_backup": "passed"
+  },
+  "contains_credentials": false,
+  "limitations": [
+    "The previous version is built from a pinned repository commit, not a published release artifact.",
+    "Hosted CI qualifies the package upgrade on these runners, not real-host release or provider support."
+  ]
+}

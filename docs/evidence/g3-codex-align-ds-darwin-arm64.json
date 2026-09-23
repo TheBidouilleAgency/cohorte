@@ -1,0 +1,53 @@
+{
+  "gate": "G3",
+  "scenario": "codex-live-file-design-alignment",
+  "status": "passed",
+  "checked_at": "2026-09-22T17:03:34Z",
+  "platform": "Darwin 25.5.0 arm64",
+  "python": "3.13.15",
+  "codex_cli": "0.155.1",
+  "openai_codex_sdk": "0.155.1",
+  "authentication": {
+    "mode": "subscription_only",
+    "api_environment_removed": true,
+    "disposable_design_export_authorized": true
+  },
+  "source": {
+    "provider": "file",
+    "version": "tokens-v1",
+    "source_sha256": "f385c857845d993509a559227a37d415a702edd19e0d5e9385f13777bcee051e",
+    "snapshot_before_sha256": "d17e03bb6ca38a3ff16f581330985cd94ae459510ee671f22d0af51705278f1a"
+  },
+  "plan": {
+    "artifact_id": "1604aa54-ca16-4801-aa14-d60e276eb96b",
+    "artifact_sha256": "74ac07cd5f0502a2829bb81b01c4085c6406dffc18617ba3c6b6ca4a4f2701c3",
+    "delta_count": 4,
+    "changes": [
+      "add components[0]",
+      "update tokens.color-primary",
+      "add tokens.space-md",
+      "update version"
+    ],
+    "approval_request_id": "96997b5d-76a7-4899-81e0-f4f74f8e71ce",
+    "decision_id": "75754a1b-1243-4eeb-a196-ec51c71cfece",
+    "selection_subject_hash": "f93e3a8ac39004cce7234bae7a4db0ad720e9bbb69b6cf0bffc100e1e1588207"
+  },
+  "run": {
+    "id": "g3-align-live-20260922",
+    "base_commit": "5d69ed548009b615e4077aa523675c3c1eca51e1",
+    "candidate_tree_hash": "b5b33e91fbdbd9de0b94bf3890a154cd880eddaf5af8da473d72ebdf716bb8ec",
+    "changed_files": ["design-snapshot.json"],
+    "check": "passed",
+    "review_verdict": "ready",
+    "covered_surfaces": ["python"],
+    "fix_cycles": 0,
+    "final_stage": "ship",
+    "final_status": "waiting_user",
+    "ship_request_id": "53b9e9f1-c679-4071-914c-95e324177d67"
+  },
+  "limitations": [
+    "The validated source provider is a local versioned JSON file.",
+    "Figma is not connected or claimed as supported.",
+    "No remote push or pull request was performed."
+  ]
+}

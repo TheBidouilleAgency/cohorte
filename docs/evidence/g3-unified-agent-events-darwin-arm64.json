@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "gate": "G3-partial",
+  "platform": {"os": "Darwin", "architecture": "arm64"},
+  "providers": {
+    "claude": {
+      "sdk": "claude-agent-sdk 0.2.157",
+      "runtime": "Claude Code 2.1.280",
+      "direct_review": "ready",
+      "disposable_workflow": {
+        "exit_code": 0,
+        "run_status": "waiting_user",
+        "usage_events": 2,
+        "usage_phases": ["build", "review"],
+        "finished_turns": 2,
+        "tool_events": 5,
+        "source_checkout_unchanged": true
+      }
+    },
+    "codex": {
+      "sdk": "openai-codex 0.155.1",
+      "direct_review": "ready",
+      "disposable_workflow": {
+        "exit_code": 0,
+        "run_status": "waiting_user",
+        "usage_events": 2,
+        "usage_phases": ["build", "review"],
+        "finished_turns": 2,
+        "tool_events": 18,
+        "source_checkout_unchanged": true
+      }
+    }
+  },
+  "common_events": [
+    "agent.turn.started",
+    "agent.turn.finished",
+    "agent.tool",
+    "agent.usage",
+    "agent.permission.denials"
+  ],
+  "contract": {
+    "common_identity": ["provider", "phase", "access"],
+    "tool_payload": ["tool", "decision", "outcome", "source", "count"],
+    "usage_payload": [
+      "input_tokens", "output_tokens", "cache_tokens", "estimated_cost", "source"
+    ],
+    "content_excluded": ["prompt", "response", "command", "file_path"],
+    "sqlite_rpc_replay_test": "passed",
+    "project_scoped_rpc_replay_test": "passed",
+    "provider_grouped_metrics_test": "passed"
+  },
+  "recorded_at": "2026-09-23T08:02:10Z",
+  "contains_credentials": false,
+  "limitations": [
+    "Tool observation points differ: Claude pre-tool hook versus Codex terminal turn items. Unknown decisions are not inferred as approvals.",
+    "The SDKs do not guarantee identical token accounting. Cache tokens represent cache reads; missing fields remain unavailable.",
+    "Claude estimated_cost is SDK-reported and does not establish provider-side subscription billing or an exact charge.",
+    "Permission-denial summary events may describe the same operation as a tool decision and must not be added to tool counts.",
+    "Brainstorm, Audit and Fleet events are project-scoped because those CLI paths do not create a durable run row.",
+    "Live event persistence covers disposable single-surface build and review workflows, not every workflow variant or every failure mode."
+  ]
+}

@@ -1,8 +1,0 @@
-# schema: skill
-id: vitest-conventions
-version: 1.2.0
-appliesWhen: { languages: [typescript], packageManagers: [pnpm], roles: [implementer, fixer] }
-prompt: SKILL.md
-checks:
-  - { argv: [pnpm, test] }
-  - { name: types, argv: [pnpm, typecheck] }

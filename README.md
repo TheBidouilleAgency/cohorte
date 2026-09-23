@@ -1,104 +1,174 @@
-# Cohorte
+# Cohorte V3
 
-Cohorte V3 est un orchestrateur durable de pipelines multi-agents, construit autour de Pi et d'un état SQLite. Il transforme une spécification validée en run observable, reprend les runs interrompus et protège chaque effet par des contrats typés, une politique de sécurité et un journal idempotent.
+For Python dev releases, see [the release runbook](docs/RELEASING.md).
 
-[Documentation complète](https://thebidouilleagency.github.io/cohorte/) · [Spécification V3](docs/v3/SPEC.md) · [Design](docs/v3/DESIGN.md) · [Référence CLI](docs/v3/CLI.md)
+Cohorte is a local, evidence-driven workflow engine for official coding-agent clients. This
+repository is a Python 3.12 rewrite built at the repository root. It does not depend on the former
+TypeScript/Pi implementations.
 
-## Installation
+The current pre-release provides the deterministic core, bounded feature and Patch
+workflows, and overlap-aware Fleet execution:
+strict contracts, a pure workflow reducer, SQLite persistence, immutable artifacts, project
+discovery, DAG validation, isolated Git worktrees, controlled checks, independent read-only review,
+a review/fix loop, a JSON-RPC stdio bridge, and a CLI. Codex authentication and live execution are
+capability-gated. A Claude Agent SDK adapter is available through the optional `claude` dependency
+and `agent_defaults.provider: claude`; a bounded single-surface Claude workflow has passed live
+build, checks and review on Darwin arm64.
+Passive `auth status claude` checks the native CLI without exposing credentials. An explicit
+`auth verify claude --live` probe is available after confirming the account to use.
+The connected native account passed the Claude SDK smoke, structured read, workspace edit,
+outside-write denial, a guarded read-only write denial, and CLI cancellation/pause/resume probes.
+G0 remains partial: the full login interaction and safe native session recovery inside a workflow
+are not yet qualified.
+Both adapters now persist common turn, tool and usage events for workflow runs. The event payloads
+contain provider, phase, access and bounded metadata, without prompts, responses, commands or file
+paths. SDK token accounting can differ, and Claude's reported cost is an estimate rather than a
+provider billing statement.
 
-Prérequis : Node `24.16.0` minimum supporté et pnpm `12.4.2` pour contribuer au dépôt. Pour utiliser la CLI publiée :
-
-```sh
-npm install -g cohorte
-cohorte --version
+```bash
+uv sync --all-extras
+uv run cohorte doctor
+uv run cohorte --json init /path/to/project
+uv run cohorte --json status
+uv run pytest
 ```
 
-Dans un projet :
+For external context, set `integrations.retrieval.provider` to `serena` or `graphify` in the
+project profile. Serena needs the installed `serena` MCP executable. Graphify-Labs needs the
+`graphify` optional extra and a prebuilt `<repo>/graphify-out/graph.json`; for a code-only graph,
+run `graphify extract <repo> --code-only --no-cluster --out <repo>` explicitly before retrieval.
+Both providers fail visibly when unavailable; file fallback requires
+`integrations.retrieval.fallback_to_files: true`. Figma design snapshots use a file or node URL in
+`integrations.design.source` and a locally supplied `FIGMA_ACCESS_TOKEN` with
+`file_content:read` scope. The token is never part of the profile. To verify a real Figma snapshot
+without printing its contents, run `python tests/live/verify_figma_snapshot.py --source <file-or-node-url>`
+in a shell where the token is already set, or enter it at the hidden prompt.
 
-```sh
-cohorte init
-cohorte doctor
-cohorte discover --json
-cohorte config validate
+Prepare a feature with independent product, architecture and QA sessions, then approve the exact
+completed spec before freezing it:
+
+```bash
+cohorte --json --data-dir /path/to/data brainstorm PROJECT_ID \
+  --feature-id safe-export --idea "Add a safe run export" \
+  --answer "Keep data local and require atomic output" \
+  --repo /path/to/project --output brief.json --live
+cohorte --json --data-dir /path/to/data spec-freeze-request draft.json \
+  --profile project.json --repo /path/to/project
+cohorte --json --data-dir /path/to/data approve REQUEST_ID
+cohorte --json --data-dir /path/to/data spec-freeze draft.json \
+  --profile project.json --repo /path/to/project \
+  --decision-id DECISION_ID --output frozen.json
 ```
 
-`cohorte init` crée `.cohorte/`. Les fichiers de configuration générés peuvent être réconciliés avec `cohorte reconcile --plan`, puis `cohorte reconcile --apply`. L'état d'exécution reste local et n'a pas vocation à être versionné.
+The brainstorm keeps each native session reference, contribution and disagreement. Freeze rejects
+incomplete drafts and approvals for a different spec hash, profile, reference set or generated plan.
 
-## Workflow V3
+Run the disposable Codex vertical with the included frozen example:
 
-Le workflow est piloté par la CLI ; il n'exige pas un runtime V2 ni des slash commands :
-
-```sh
-cohorte brainstorm "Ajouter une fonctionnalité"
-cohorte spec validate <feature-id>
-cohorte spec freeze <feature-id>
-cohorte run <feature-id> --detach --json
-cohorte status <run-id> --json
-cohorte tail <run-id>
-cohorte review <run-id>
-cohorte fix <run-id>
-cohorte ship <run-id>
+```bash
+cohorte --json loop examples/g1/spec.json \
+  --profile examples/g1/profile.json \
+  --repo /path/to/disposable/repository \
+  --worktrees /tmp/cohorte-worktrees \
+  --run-id demo-1 \
+  --live
 ```
 
-Pour un workflow complet borné :
+Run several frozen feature specs as an overlap-aware fleet:
 
-```sh
-cohorte loop <feature-id>
+```bash
+cohorte --json fleet specs/feature-a.json specs/feature-b.json \
+  --profile project.json \
+  --repo /path/to/disposable/repository \
+  --worktrees /tmp/cohorte-fleet-worktrees \
+  --fleet-id release-train-1 \
+  --live
 ```
 
-Les commandes `build`, `audit`, `refactor`, `fleet`, `retro`, `align-ds`, `intake` et `patch` couvrent les variantes de développement. Les commandes `pause`, `resume`, `cancel`, `retry`, `approve`, `deny`, `inspect`, `diff`, `logs`, `shutdown` et `gc` administrent les runs et leur état durable.
+Fleet computes the cross-feature dependency graph, parallelizes disjoint features, serializes
+overlapping write sets, integrates each candidate in order and reruns its declared checks after the
+base changes.
 
-## Obsidian
+Capture a ticket, freeze a bounded patch, and run it with a pre-existing regression:
 
-Le tableau Kanban Obsidian est optionnel et se connecte explicitement au projet :
-
-```sh
-cohorte obsidian create <vault-root> <board-path>
-cohorte obsidian connect <vault-root> <board-path>
-cohorte obsidian status
-cohorte obsidian move <feature-id> <column>
+```bash
+cohorte --json --data-dir /path/to/data intake PROJECT_ID --file ticket.txt
+cohorte --json --data-dir /path/to/data patch-spec \
+  --source-artifact-id SOURCE_ID --source-revision 1 \
+  --profile project.json --patch-id fix-total --title "Fix total" \
+  --reproduction "Run the regression test" --observed "It returns 6" \
+  --expected "It returns 5" --surface python --write-path calc.py \
+  --check regression --in-scope "Correct total" --rollback "Revert calc.py" \
+  --output patch.json
+cohorte --json --data-dir /path/to/data patch patch.json \
+  --profile project.json --repo /path/to/repository \
+  --worktrees /tmp/cohorte-patch-worktrees --run-id patch-1 --live
 ```
 
-La connexion déplace les cartes lors des transitions prévues du workflow ; elle ne copie pas le vault dans le dépôt et ne lit que le fichier de tableau configuré.
+Patch refuses to build unless every declared automatic regression is red on the original commit.
+The agent can edit only the frozen patch paths; the same checks and an independent review then gate
+the candidate-bound ship request.
 
-## Providers, modèles et sécurité
+The command creates a branch and isolated worktree, but does not commit, push, open a pull request,
+or modify the source checkout.
 
-```sh
-cohorte auth login
-cohorte auth status
-cohorte providers list
-cohorte providers test
-cohorte models list
-cohorte policy explain -- <argv>
-cohorte doctor --json
+Runs checkpoint every completed phase in SQLite. After an interrupted controller process, resume the
+same worktree with:
+
+```bash
+cohorte --json --data-dir /path/to/data resume RUN_ID --live
 ```
 
-Pi est le runtime de référence de V3. Le runtime fake reste disponible pour les tests hors ligne et les smoke tests. Aucun fallback automatique ne change de provider pendant un run : le snapshot épingle le bundle, les prompts, la configuration et le runtime utilisés.
+`pause RUN_ID` and `cancel RUN_ID` are cooperative: an active provider turn finishes, then Cohorte
+records the completed phase boundary and stops before starting another phase.
 
-Chaque erreur affiche un code stable, son impact et l'action corrective. Les codes de contrôle sont `0` (terminé), `2` (usage), `3` (rejeté), `4` (accepté mais encore en attente) et `16` (annulé) ; les erreurs de run utilisent les classes documentées dans [`docs/v3/reference/exit-codes.md`](docs/v3/reference/exit-codes.md).
+Delivery remains separately authorized:
 
-## Migration depuis V2
-
-Le runtime et les fichiers V2 ne sont plus présents dans le dépôt. La compatibilité fonctionnelle est couverte par les tests V3 ; l'importeur reste disponible pour convertir un ancien projet :
-
-```sh
-cohorte init --export-v2 <bundle-dir>
-cohorte init --from-v2 <bundle-dir> --yes
-cohorte migrate --rollback <report-id>
+```bash
+cohorte --json --data-dir /path/to/data approve REQUEST_ID
+cohorte --json --data-dir /path/to/data ship RUN_ID --live
+cohorte --json --data-dir /path/to/data delivery-status RUN_ID --live --watch
 ```
 
-Voir [`docs/v3/MIGRATION.md`](docs/v3/MIGRATION.md) pour les garanties, les sauvegardes et le rollback. Cette procédure ne transforme jamais un ancien run en run V3 : un run V3 démarre avec son propre snapshot et son propre état SQLite.
+`ship` rechecks the candidate hash and remote base, creates a commit with a run marker, pushes without
+force, then confirms the GitHub PR or GitLab MR through the provider CLI. Every effect is journaled
+before execution and reconciled on retry. It never merges or deploys.
 
-## Contribuer
+When `integrations.release_notes.enabled` is `true` in the project profile, `ship` appends a
+release-notes section to the PR/MR description. Its optional `heading` defaults to `Release notes`;
+its optional `template` defaults to `{title}\n\n{problem}`. Templates may use only `{title}`,
+`{problem}`, and `{acceptance}` (a bulleted list). Notes are omitted when the integration is
+disabled, and do not modify the reviewed candidate.
 
-```sh
-pnpm install --frozen-lockfile
-pnpm ci:typecheck
-pnpm ci:unit
-pnpm ci:integration
-pnpm ci:acceptance
+Inspect and apply a bounded V2 metadata migration with an explicit rollback point:
+
+```bash
+cohorte --json --data-dir /path/to/data migrate \
+  --from-v2 /path/to/v2-copy --plan migration-plan.json
+cohorte --json --data-dir /path/to/data migrate --apply migration-plan.json
+cohorte --json --data-dir /path/to/data migrate --rollback /path/from/apply/backup.bak
 ```
 
-La suite complète locale est `pnpm ci:local`. La CI vérifie lint, types, unités, intégration, schémas, migrations, packaging, sécurité, crash recovery, dogfood, acceptance et compatibilité Pi. Consultez [`docs/guide/maintainers.md`](docs/guide/maintainers.md) et [`docs/v3/workspace.md`](docs/v3/workspace.md) pour l'architecture et les procédures de release.
+The plan contains exact hashes, mappings, exclusions, losses and ambiguities. Apply fails if a
+source changed, imports no credentials or active run, and stores specs as historical artifacts that
+require V3 validation before build.
 
-Licence AGPL-3.0.
+Run the persistent local service used by protocol clients:
+
+```bash
+cohorte --json --data-dir /path/to/data service start
+cohorte --json --data-dir /path/to/data service status
+cohorte --json --data-dir /path/to/data service stop
+```
+
+On POSIX this uses a private Unix socket and verifies the connecting process belongs to the same
+user. On Windows it uses a local named pipe with a DACL restricted to the current user SID. No
+network port is opened. The lifecycle passes on GitHub-hosted Windows 3.12 and 3.13; release support
+still requires real-host and slow-client qualification.
+
+By default, Cohorte stores configuration and state outside target repositories using platform
+standard directories. Pass `--config-dir` and `--data-dir` for isolated automation. Cohorte never
+stores provider tokens.
+
+See [the implementation status](docs/IMPLEMENTATION.md), [qualification matrix](docs/qualification/README.md)
+and [protocol reference](docs/PROTOCOL.md).

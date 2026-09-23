@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "gate": "G5",
+  "criterion": "AC30",
+  "scenario": "codex-read-only-reviewer-agent-denial",
+  "status": "inconclusive",
+  "checked_at": "2026-09-23T08:54:12Z",
+  "platform": {
+    "os": "Darwin",
+    "architecture": "arm64"
+  },
+  "runtime": {
+    "codex_cli": "0.155.1",
+    "openai_codex_sdk": "0.155.1",
+    "sandbox": "read-only",
+    "approval_mode": "deny_all",
+    "api_routing_environment_removed": true
+  },
+  "agent_turn_probe": {
+    "turn_status": "completed",
+    "requested_file_edits": 2,
+    "file_change_events": 0,
+    "command_execution_events": 0,
+    "target_markers_absent": true,
+    "model_reported_denials": true,
+    "model_report_accepted_as_runtime_evidence": false
+  },
+  "notification_stream_probe": {
+    "requested_file_edits": 1,
+    "file_change_or_command_execution_notifications": 0,
+    "target_marker_absent": true
+  },
+  "additional_workspace_write_command_probe": {
+    "command": "touch through a symlink to a disposable out-of-workspace target",
+    "command_execution_events": 0,
+    "target_marker_absent": true,
+    "model_reported_permission_denial": true,
+    "model_report_accepted_as_runtime_evidence": false
+  },
+  "integrated_adapter_probe": {
+    "result": "CAPABILITY_MISSING",
+    "observed_file_change_statuses": []
+  },
+  "supersedes": "The read_only_role passed label in docs/evidence/g0-codex-darwin-arm64.json was based on marker absence without a denied agent-tool event; it is not a negative-tool certification.",
+  "contains_credentials": false,
+  "limitations": [
+    "The SDK may suppress forbidden tool attempts before emitting agent-turn items; this probe cannot certify an agent-driven denial.",
+    "Direct command/exec read-only denials remain separately documented in docs/evidence/g5-ac30-runtime-sandbox-darwin-arm64.json."
+  ]
+}

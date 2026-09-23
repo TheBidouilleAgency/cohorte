@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "project_id": "example-service",
+  "name": "example-service",
+  "language": "fr",
+  "metadata_mode": "local",
+  "vcs": {"host": "github", "remote": "origin", "default_branch": "main", "feature_branch_prefix": "feature/", "patch_branch_prefix": "fix/"},
+  "surfaces": [{"id": "backend", "label": "Service Python", "paths": ["src", "tests"], "depends_on": [], "role_profile": "implementer", "check_ids": ["unit"], "uses_design": false}],
+  "checks": [{"id": "unit", "argv": ["uv", "run", "pytest", "-q"], "cwd": ".", "timeout_seconds": 300, "required": true, "scope": "project", "environment_ref": null, "produces": []}],
+  "contract": {"enabled": false, "mechanism": "none", "paths": []},
+  "execution": {"mode": "local", "dependency_setup": null},
+  "agent_defaults": {"provider": "codex", "account_ref": null, "model": null, "role_profile": "implementer"},
+  "policy": {"auth_mode": "subscription_only", "max_fix_cycles": 3, "max_parallel_per_account": 2, "max_parallel_global": 4, "require_frozen_spec": true, "review_blocking_severities": ["critical", "high"], "ship_authorization": "explicit_or_pregranted"},
+  "integrations": {"retrieval": {"provider": "none"}, "design": {"enabled": false}, "rbac": {"enabled": false}, "kanban": {"enabled": false}, "release_notes": {"enabled": false}}
+}

@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "project_id": "patch-demo",
+  "name": "Disposable patch demo",
+  "language": "en",
+  "metadata_mode": "local",
+  "vcs": {
+    "host": "other",
+    "remote": "origin",
+    "default_branch": "main",
+    "feature_branch_prefix": "feature/",
+    "patch_branch_prefix": "fix/"
+  },
+  "surfaces": [
+    {
+      "id": "python",
+      "label": "Python",
+      "paths": ["calc.py", "test_calc.py"],
+      "depends_on": [],
+      "role_profile": "implementer",
+      "check_ids": ["regression"],
+      "uses_design": false
+    }
+  ],
+  "checks": [
+    {
+      "id": "regression",
+      "argv": ["python3", "-m", "unittest", "-v", "test_calc.py"],
+      "cwd": ".",
+      "timeout_seconds": 30,
+      "required": true,
+      "scope": "criterion",
+      "environment_ref": null,
+      "produces": []
+    }
+  ],
+  "contract": {"enabled": false, "mechanism": "none", "paths": []},
+  "execution": {"mode": "local", "dependency_setup": null},
+  "agent_defaults": {
+    "provider": "codex",
+    "account_ref": "codex-native",
+    "model": null,
+    "role_profile": "implementer"
+  },
+  "policy": {
+    "auth_mode": "subscription_only",
+    "max_fix_cycles": 2,
+    "max_parallel_per_account": 2,
+    "max_parallel_global": 3,
+    "require_frozen_spec": true,
+    "review_blocking_severities": ["critical", "high"],
+    "ship_authorization": "explicit_or_pregranted"
+  },
+  "integrations": {
+    "retrieval": {"provider": "none"},
+    "design": {"enabled": false},
+    "rbac": {"enabled": false},
+    "kanban": {"enabled": false},
+    "release_notes": {"enabled": false}
+  }
+}

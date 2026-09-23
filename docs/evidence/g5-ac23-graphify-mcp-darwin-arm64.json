@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "gate": "G5",
+  "criterion": "AC23",
+  "scenario": "graphify-labs-code-only-local-mcp-cli-retrieval",
+  "status": "passed",
+  "checked_at": "2026-09-23T12:09:06Z",
+  "platform": {
+    "os": "Darwin",
+    "architecture": "arm64"
+  },
+  "runtime": {
+    "graphifyy": "0.9.66",
+    "transport": "MCP stdio",
+    "mode": "local code-only extraction",
+    "model_credentials_removed": true
+  },
+  "probe": {
+    "source_project": "disposable one-file Python project",
+    "graph": "prebuilt graphify-out/graph.json",
+    "cohorte_cli_effective_provider": "graphify",
+    "expected_file_and_line_returned": true,
+    "source_file_unchanged": true
+  },
+  "reproduction": "PYTHONPATH=src .venv/bin/python tests/live/verify_graphify_retrieval.py",
+  "contains_credentials": false,
+  "limitations": [
+    "This proves Graphify-Labs 0.9.66 against a small code-only graph on Darwin arm64.",
+    "A graph must be built before Cohorte retrieval; Graphify extraction is a separate explicit operation.",
+    "Real process outages and larger multi-language graphs are not yet qualified."
+  ]
+}

@@ -1,5 +1,0 @@
-# schema: skill
-id: house-style
-version: "1"
-appliesWhen: {}
-prompt: SKILL.md

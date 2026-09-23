@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "gate": "G5",
+  "criterion": "AC23",
+  "scenario": "figma-file-snapshot-and-invalid-auth",
+  "status": "passed",
+  "checked_at": "2026-09-23T12:23:23Z",
+  "platform": {
+    "os": "Darwin",
+    "architecture": "arm64"
+  },
+  "positive_probe": {
+    "source": "disposable Figma design file in TBA",
+    "fixture": "one frame and one rectangle, verified through the connected Figma app",
+    "execution": "user ran the Cohorte CLI live probe in Warp and reported its JSON output",
+    "reported_output": {
+      "status": "passed",
+      "provider": "figma",
+      "cli_snapshot": true
+    },
+    "script_assertions": "captured status, Figma provider, non-empty version, non-empty content hash",
+    "token_material_recorded": false
+  },
+  "negative_probe": {
+    "execution": "agent made one real Figma API request through FigmaDesignPort with an intentionally invalid token",
+    "status": "blocked",
+    "error": "Figma file request failed with HTTP 403",
+    "content_absent": true
+  },
+  "reproduction": "PYTHONPATH=src .venv/bin/python tests/live/verify_figma_snapshot.py --source '<private-test-file-or-node-url>'",
+  "contains_credentials": false,
+  "limitations": [
+    "The positive CLI result is user-reported; the agent did not have the real token or independently inspect the API response.",
+    "The user reported creating an all-scopes token for the probe and was advised to revoke it and replace it with a file_content:read-scoped token if retaining the integration.",
+    "This does not qualify Figma API behavior on other hosts, large files, rate limits, or live revocation during a request."
+  ]
+}

@@ -1,0 +1,65 @@
+{
+  "gate": "G3",
+  "scenario": "codex-live-mid-wave-recovery",
+  "status": "passed",
+  "checked_at": "2026-09-22T15:24:54.059307+00:00",
+  "platform": "Darwin 25.5.0 arm64",
+  "python": "3.13.15",
+  "codex_cli": "0.155.1",
+  "openai_codex_sdk": "0.155.1",
+  "authentication": {
+    "mode": "subscription_only",
+    "api_environment_removed": true
+  },
+  "run": {
+    "id": "g3-recovery-live-1",
+    "base_commit": "11f75a78a130d13981a0769893707124064590a8",
+    "final_candidate_tree_hash": "b47d08fab07285fa397a02c42a943dad68c7d6a53fd2383798eeacd077d3e7d0",
+    "final_stage": "ship",
+    "final_status": "waiting_user",
+    "fix_cycles": 1
+  },
+  "crash_boundary": {
+    "trigger": "after backend integration inside the backend/client wave",
+    "contract_status": "integrated",
+    "backend_status": "integrated",
+    "client_status": "running",
+    "client_commit_already_present": "477aa2cb1e4d64de23dbed0acc149e12ab0621d0"
+  },
+  "recovery": {
+    "client_attempt_id": "g3-recovery-live-1:build-client:1",
+    "client_attempt_reused": true,
+    "new_build_attempts_after_restart": 0,
+    "total_attempts": 3,
+    "completed_attempt_events": 3,
+    "remaining_leases": 0,
+    "task_statuses": {
+      "build-contract": "integrated",
+      "build-backend": "integrated",
+      "build-client": "integrated"
+    },
+    "duplicate_task_commits": 0
+  },
+  "final_validation": {
+    "changed_files": [
+      "backend.py",
+      "client.py",
+      "shared_contract.py",
+      "test_backend.py",
+      "test_client.py"
+    ],
+    "unit_check": {
+      "status": "passed",
+      "tests_run": 3
+    },
+    "first_review": "fix",
+    "final_review": "ready",
+    "covered_surfaces": ["backend", "client", "contract"],
+    "blocking_findings": 0,
+    "final_checks_and_review_bound_to_final_candidate": true
+  },
+  "limitations": [
+    "The controller failure was injected at a deterministic task integration boundary, not an operating-system hard kill.",
+    "Fleet and the other G3 workflow variants remain open."
+  ]
+}
