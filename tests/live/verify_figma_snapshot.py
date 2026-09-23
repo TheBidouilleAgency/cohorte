@@ -11,6 +11,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from cohorte.domain.redaction import redact_text
+
 
 def _cli(base: Path, *args: str) -> dict[str, object]:
     process = subprocess.run(
@@ -29,7 +31,12 @@ def _cli(base: Path, *args: str) -> dict[str, object]:
         check=False,
     )
     if process.returncode != 0:
-        raise RuntimeError("Cohorte Figma snapshot CLI probe failed")
+        try:
+            error = json.loads(process.stdout)["error"]
+            detail = f"{error['code']}: {redact_text(str(error['message']))}"
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            detail = "Cohorte Figma snapshot CLI probe failed"
+        raise RuntimeError(detail)
     return json.loads(process.stdout)["data"]
 
 

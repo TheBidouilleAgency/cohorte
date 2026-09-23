@@ -8,8 +8,8 @@ Current baseline:
 
 | Status | Count |
 | --- | ---: |
-| Passed | 27 |
-| Partial | 3 |
+| Passed | 28 |
+| Partial | 2 |
 | Blocked | 0 |
 | Deferred | 0 |
 | Not started | 0 |
@@ -41,9 +41,10 @@ design capture blocks, retrieval blocks or uses only an explicitly enabled file 
 provider error text is redacted. An installed Serena MCP server returned a real hit from a
 disposable source project without modifying it, and Cohorte CLI retrieval reported Serena as its
 effective provider. Graphify-Labs 0.9.66 also returned a real file/line hit through Cohorte CLI
-from a prebuilt local code-only graph. The Figma REST adapter is wired but has only deterministic
-tests because no `FIGMA_ACCESS_TOKEN` is available in the Cohorte runtime. A real Figma snapshot,
-real connector outages, and larger Graphify/Serena project probes remain open.
+from a prebuilt local code-only graph. A user-run Cohorte CLI probe captured a real Figma test
+file, while an agent-run request with an invalid token returned an explicit HTTP 403 block and no
+content. Live Graphify/Serena process outages, larger projects, and a Figma probe with a
+least-privilege token remain outside the AC23 passed boundary and remain open for hardening.
 AC06 now has live evidence from three independent Codex perspective sessions plus a separate
 synthesis session in a synthetic read-only repository; contributions, disagreements and the user
 answer are content-addressed in SQLite. AC07 validates completeness and references, derives the

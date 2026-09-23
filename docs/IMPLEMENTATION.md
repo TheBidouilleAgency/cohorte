@@ -154,22 +154,13 @@ pre-release foundation, not a V2-parity or provider-support claim.
 
 ## Deliberately unverified or incomplete
 
-- G0 Codex user questions, model catalogue and usage reporting; Claude full login interaction and
-  safe native session recovery inside a workflow remain unqualified. A native Claude session-resume
-  probe recalled its nonce, but no in-flight session is reused after a crash. The interrupt probe
-  stopped its marked child but returned a generic `error_during_execution` status; the workflow
-  adapter maps a concurrent persisted pause/cancel to `RunStopped` after calling `interrupt()`.
-  CLI pause/resume has been validated from the build stage on a disposable single-surface run;
-  native mid-turn session reuse and exactly-once effects are not established.
-  AC30 has bounded Darwin reviewer-style read-only retry evidence, but other hosts and the full
-  review workflow remain unqualified.
-- GitLab live delivery evidence and a persistent background controller remain open.
-- External Figma validation remains open; Serena and Graphify-Labs have bounded live MCP retrieval
-  evidence on Darwin.
-  Manual Patch reproduction remains blocked
-  until candidate-bound human evidence is implemented.
-- Windows real-host and load-level slow-client qualification, and the François UI client.
-- Multi-platform packaging and the AC01–AC30 qualification matrix.
-
-These items remain blocked on implementation or live evidence. Mocks must not be reported as
-provider support.
+- AC14 remains partial: GitLab live delivery and configured release notes need proof.
+- AC19 remains partial: the merged François client still targets the older TypeScript CLI and
+  needs adaptation and live validation against the Python `cohorte/1` service.
+- Native mid-turn session reuse and exactly-once effects after a provider crash are not established.
+  AC30's read-only retry proof is bounded to the Darwin reviewer-style probe; other hosts and the
+  full review workflow have not received the same live negative-tool test.
+- AC23 passed on bounded local evidence: Serena and Graphify-Labs MCP searches, a user-run Figma
+  CLI snapshot, and an agent-run Figma invalid-token rejection. Larger projects, other hosts,
+  connector process outages, and a least-privilege Figma token remain hardening work.
+- Windows real-host and load-level slow-client behavior remain outside the hosted CI proof.
