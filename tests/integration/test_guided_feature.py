@@ -8,15 +8,18 @@ from pathlib import Path
 
 import pytest
 
+from cohorte.application.patch import PatchSpec
 from cohorte.application.preparation import (
     BrainstormBrief,
     BrainstormContribution,
     BrainstormSynthesis,
+    SpecFreezer,
     canonical_model_bytes,
 )
+from cohorte.application.service import CohorteService
 from cohorte.application.vertical import AgentReport, AgentReview
 from cohorte.cli import main as cli
-from cohorte.cli.guided_feature import guided_start
+from cohorte.cli.guided_feature import _new_draft, guided_start, repository_head
 from cohorte.domain.evidence import ReviewVerdict
 from cohorte.domain.models import (
     AgentDefaults,
@@ -131,8 +134,10 @@ def _answers(*, blocking_answer: str | None = None, approve: str = "oui") -> lis
         "a completed run",
         "the export starts",
         "one complete file exists",
+        "",
         "Export is atomic",
         "test",
+        "",
         "Test interrupted writes",
         "Disk full",
         "",
@@ -161,6 +166,149 @@ def test_guided_spec_requires_answer_before_freeze_and_preserves_draft(
     assert database.get_feature("safe-export")["status"] == "draft"
     assert "Questions encore ouvertes" in capsys.readouterr().out
     database.close()
+
+    answers = iter(["CSV", "oui"])
+    monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
+    assert cli.run(["--data-dir", str(data_dir), "spec", "safe-export"]) == 0
+    frozen = FeatureSpec.model_validate_json((draft_path.parent / "frozen.json").read_text())
+    assert "Which format? CSV" in frozen.problem
+    assert frozen.open_questions == []
+
+
+def test_guided_spec_can_scope_multiple_surfaces_scenarios_and_criteria(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repository, data_dir = _setup(tmp_path)
+    (repository / "web").mkdir()
+    (repository / "contract.txt").write_text("API response shared with web\n")
+    database = Database(data_dir / "cohorte.sqlite3")
+    project = database.get_project("project")
+    profile = ProjectProfile.model_validate_json(json.dumps(project["profile"]))
+    profile.surfaces.append(
+        Surface(
+            id="web", label="Web", paths=["web"], role_profile="implementer", check_ids=["test"]
+        )
+    )
+    database.update_project_profile(
+        "project", canonical_model_bytes(profile), project["profile_ref"]["revision"]
+    )
+    stored = database.latest_artifact("brief:safe-export")
+    brief = BrainstormBrief.model_validate_json(stored["content"])
+    from cohorte.domain.models import ArtifactRef
+
+    brief_ref = ArtifactRef.model_validate(
+        {key: stored[key] for key in ("id", "revision", "sha256")}
+    )
+    answers = iter(
+        [
+            "api,web",
+            "contract.txt",
+            "",
+            "",
+            "",
+            "",
+            "an operator",
+            "starts an export",
+            "gets a complete file",
+            "oui",
+            "a visitor",
+            "opens exports",
+            "sees status",
+            "",
+            "The API creates an atomic file",
+            "test",
+            "The web displays export status",
+            "test",
+            "",
+            "Run both checks",
+            "Interrupted write",
+            "",
+            "Revert export",
+        ]
+    )
+    monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
+    draft = _new_draft(brief, brief_ref, profile, database, repository)
+
+    assert draft.surfaces == ["api", "web"]
+    assert len(draft.scenarios) == 2
+    assert {item.surface_ids[0] for item in draft.acceptance} == {"api", "web"}
+    assert len(draft.contract_refs) == 1
+    SpecFreezer(database).prepare(draft, profile, repository_head(repository))
+    database.close()
+
+
+def test_guided_spec_reconciles_new_brief_without_erasing_draft(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repository, data_dir = _setup(tmp_path)
+    monkeypatch.chdir(repository)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.delenv("VISUAL", raising=False)
+    monkeypatch.delenv("EDITOR", raising=False)
+    answers = iter(_answers(approve="non"))
+    monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
+    assert cli.run(["--data-dir", str(data_dir), "spec", "safe-export"]) == 0
+    draft_path = data_dir / "guided" / "project" / "safe-export" / "draft.json"
+    first = FeatureSpec.model_validate_json(draft_path.read_text())
+
+    database = Database(data_dir / "cohorte.sqlite3")
+    original = BrainstormBrief.model_validate_json(
+        database.latest_artifact("brief:safe-export")["content"]
+    )
+    revised = original.model_copy(
+        update={
+            "synthesis": original.synthesis.model_copy(
+                update={"blocking_questions": ["Which error state must be shown?"]}
+            )
+        }
+    )
+    database.put_artifact(
+        "brainstorm-brief", canonical_model_bytes(revised), artifact_id="brief:safe-export"
+    )
+    database.close()
+
+    answers = iter(["oui", "Show disk full", "non"])
+    monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
+    assert cli.run(["--data-dir", str(data_dir), "spec", "safe-export"]) == 0
+    second = FeatureSpec.model_validate_json(draft_path.read_text())
+    assert second.brief_ref is not None and second.brief_ref.revision == 2
+    assert second.scenarios == first.scenarios
+    assert second.acceptance == first.acceptance
+    assert "Which error state must be shown? Show disk full" in second.problem
+
+
+def test_patch_spec_guided_from_intake_keeps_provenance_and_regression_scope(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repository, data_dir = _setup(tmp_path)
+    database = Database(data_dir / "cohorte.sqlite3")
+    result = CohorteService(database).intake(
+        "project", "Bug: export fails. Steps to reproduce: start export then interrupt."
+    )
+    feature_id = result["feature_id"]
+    database.close()
+    monkeypatch.chdir(repository)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    answers = iter(
+        [
+            "",
+            "",
+            "A complete file is saved",
+            "api",
+            "src/export.txt",
+            "",
+            "",
+            "Revert export",
+        ]
+    )
+    monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
+
+    assert cli.run(["--data-dir", str(data_dir), "patch-spec", "--from-intake", feature_id]) == 0
+    path = data_dir / "guided" / "project" / feature_id / "patch.json"
+    patch = PatchSpec.model_validate_json(path.read_text())
+    assert patch.source_ref.id == f"intake:{feature_id}"
+    assert patch.regression_check_ids == ["test"]
+    assert patch.write_paths == ["src/export.txt"]
 
 
 def test_guided_freeze_binds_profile_and_start_refuses_tampered_snapshot(

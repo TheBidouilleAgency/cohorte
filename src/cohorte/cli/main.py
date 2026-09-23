@@ -119,9 +119,13 @@ def _parser() -> argparse.ArgumentParser:
     intake_source.add_argument("--file", type=Path)
     intake_source.add_argument("--url")
     intake.add_argument("--title")
+    intake.add_argument("--continue", dest="continue_feature_id", metavar="FEATURE_ID")
+    intake.add_argument("--answer", action="append", default=[], metavar="N=RÉPONSE")
+    intake.add_argument("--route", choices=["feature", "patch"])
     brainstorm = sub.add_parser("brainstorm")
     brainstorm.add_argument("project_id", nargs="?")
     brainstorm.add_argument("--feature-id")
+    brainstorm.add_argument("--from-intake", metavar="FEATURE_ID")
     brainstorm.add_argument(
         "--continue",
         dest="continue_feature_id",
@@ -153,22 +157,23 @@ def _parser() -> argparse.ArgumentParser:
     freeze.add_argument("--decision-id", required=True)
     freeze.add_argument("--output", type=Path, required=True)
     patch_spec = sub.add_parser("patch-spec")
-    patch_spec.add_argument("--source-artifact-id", required=True)
-    patch_spec.add_argument("--source-revision", type=int, required=True)
-    patch_spec.add_argument("--profile", type=Path, required=True)
-    patch_spec.add_argument("--patch-id", required=True)
-    patch_spec.add_argument("--title", required=True)
-    patch_spec.add_argument("--reproduction", required=True)
-    patch_spec.add_argument("--observed", required=True)
-    patch_spec.add_argument("--expected", required=True)
-    patch_spec.add_argument("--surface", action="append", required=True)
-    patch_spec.add_argument("--write-path", action="append", required=True)
+    patch_spec.add_argument("--from-intake", metavar="FEATURE_ID")
+    patch_spec.add_argument("--source-artifact-id")
+    patch_spec.add_argument("--source-revision", type=int)
+    patch_spec.add_argument("--profile", type=Path)
+    patch_spec.add_argument("--patch-id")
+    patch_spec.add_argument("--title")
+    patch_spec.add_argument("--reproduction")
+    patch_spec.add_argument("--observed")
+    patch_spec.add_argument("--expected")
+    patch_spec.add_argument("--surface", action="append")
+    patch_spec.add_argument("--write-path", action="append")
     patch_spec.add_argument("--check", action="append", default=[])
     patch_spec.add_argument("--manual-regression", action="store_true")
-    patch_spec.add_argument("--in-scope", action="append", required=True)
+    patch_spec.add_argument("--in-scope", action="append")
     patch_spec.add_argument("--out-of-scope", action="append", default=[])
-    patch_spec.add_argument("--rollback", required=True)
-    patch_spec.add_argument("--output", type=Path, required=True)
+    patch_spec.add_argument("--rollback")
+    patch_spec.add_argument("--output", type=Path)
     patch = sub.add_parser("patch")
     patch.add_argument("spec", type=Path)
     patch.add_argument("--profile", type=Path, required=True)
@@ -690,51 +695,113 @@ def run(argv: list[str] | None = None) -> int:
         elif args.command == "schemas":
             _emit(_schemas(args.output), args.json)
         elif args.command == "intake":
-            from cohorte.application.intake import IntakeSourceType, load_intake_source
-
-            if args.project_id is None:
-                args.project_id = _project_for_path(database, Path.cwd())["id"]
-            if args.text is None and args.file is None and args.url is None:
-                if args.json or not sys.stdin.isatty():
-                    raise ValueError(
-                        "intake requires --text, --file or --url; run in a terminal for guided mode"
-                    )
-                source_kind = _prompt("Source [texte/fichier/url]").lower()
-                if source_kind in {"texte", "text"}:
-                    args.text = _prompt("Décris la demande")
-                elif source_kind in {"fichier", "file"}:
-                    args.file = Path(_prompt("Chemin du fichier")).expanduser()
-                elif source_kind == "url":
-                    args.url = _prompt("URL de la demande")
-                else:
-                    raise ValueError("source must be texte, fichier or url")
-            if args.text is not None:
-                source_type, value = IntakeSourceType.TEXT, args.text
-            elif args.file is not None:
-                source_type, value = IntakeSourceType.FILE, str(args.file)
-            else:
-                source_type, value = IntakeSourceType.URL, args.url
-            source, locator = load_intake_source(source_type, value)
-            intake_result = service.intake(
-                args.project_id,
-                source,
-                args.title,
-                source_type=source_type,
-                locator=locator,
+            from cohorte.application.intake import (
+                IntakeReport,
+                IntakeSourceType,
+                IntakeTriage,
+                answer_intake,
+                load_intake_source,
             )
+            from cohorte.cli.guided_intake import (
+                ask_answers,
+                ask_route,
+                parse_answers,
+                print_report,
+            )
+            from cohorte.domain.models import ArtifactRef
+
+            project = (
+                database.get_project(args.project_id)
+                if args.project_id
+                else _project_for_path(database, Path.cwd())
+            )
+            continuing = args.continue_feature_id is not None
+            if continuing:
+                if args.text is not None or args.file is not None or args.url is not None:
+                    raise ValueError("intake --continue cannot read a new source")
+                feature_id = args.continue_feature_id
+                try:
+                    feature = database.get_feature(feature_id)
+                    if feature["project_id"] != project["id"]:
+                        raise KeyError(feature_id)
+                    if feature["status"] == "frozen":
+                        raise ValueError("frozen intake cannot be changed")
+                    stored_report = database.latest_intake_report(feature_id)
+                except KeyError as error:
+                    raise ValueError(f"unknown intake in this project: {feature_id}") from error
+                intake_report_doc = IntakeReport.model_validate_json(stored_report["content"])
+                intake_report_ref = ArtifactRef.model_validate(
+                    {key: stored_report[key] for key in ("id", "revision", "sha256")}
+                )
+                intake_result: dict[str, Any] = {
+                    "feature_id": feature_id,
+                    "report": intake_report_doc.model_dump(mode="json"),
+                    "report_ref": intake_report_ref.model_dump(mode="json"),
+                }
+            else:
+                if args.text is None and args.file is None and args.url is None:
+                    if args.json or not sys.stdin.isatty():
+                        raise ValueError(
+                            "intake requires --text, --file or --url; run in a terminal for guided mode"
+                        )
+                    source_kind = _prompt("Source [texte/fichier/url]").lower()
+                    if source_kind in {"texte", "text"}:
+                        args.text = _prompt("Décris la demande")
+                    elif source_kind in {"fichier", "file"}:
+                        args.file = Path(_prompt("Chemin du fichier")).expanduser()
+                    elif source_kind == "url":
+                        args.url = _prompt("URL de la demande")
+                    else:
+                        raise ValueError("source must be texte, fichier or url")
+                if args.text is not None:
+                    source_type, value = IntakeSourceType.TEXT, args.text
+                elif args.file is not None:
+                    source_type, value = IntakeSourceType.FILE, str(args.file)
+                else:
+                    source_type, value = IntakeSourceType.URL, args.url
+                source, locator = load_intake_source(source_type, value)
+                intake_result = service.intake(
+                    project["id"],
+                    source,
+                    args.title,
+                    source_type=source_type,
+                    locator=locator,
+                )
+                feature_id = cast(str, intake_result["feature_id"])
+                intake_report_doc = IntakeReport.model_validate_json(
+                    json.dumps(intake_result["report"])
+                )
+                intake_report_ref = ArtifactRef.model_validate(intake_result["report_ref"])
+            if args.json:
+                intake_answers = parse_answers(args.answer, intake_report_doc.questions)
+                route = IntakeTriage(args.route) if args.route else None
+            elif sys.stdin.isatty() and (
+                intake_report_doc.questions or intake_report_doc.triage == IntakeTriage.QUESTIONS
+            ):
+                print_report(feature_id, intake_report_doc, intake_report_ref.revision)
+                intake_answers = ask_answers(intake_report_doc)
+                route = ask_route(intake_report_doc)
+            else:
+                intake_answers = parse_answers(args.answer, intake_report_doc.questions)
+                route = IntakeTriage(args.route) if args.route else None
+            if intake_answers or route is not None:
+                intake_report_doc = answer_intake(
+                    intake_report_doc, intake_answers, route, previous_ref=intake_report_ref
+                )
+                stored = database.put_artifact(
+                    "intake-report",
+                    intake_report_doc.model_dump_json(indent=2).encode(),
+                    artifact_id=f"intake:{feature_id}",
+                )
+                intake_report_ref = ArtifactRef.model_validate(stored)
+                if route is not None:
+                    database.set_feature_kind(feature_id, route.value)
+                intake_result["report"] = intake_report_doc.model_dump(mode="json")
+                intake_result["report_ref"] = intake_report_ref.model_dump(mode="json")
             if args.json:
                 _emit(intake_result, True)
             else:
-                intake_report = cast(dict[str, Any], intake_result["report"])
-                print(
-                    f"Demande {intake_result['feature_id']} · {intake_report['triage']} · {intake_report['title']}"
-                )
-                for question in intake_report["questions"]:
-                    print(f"À préciser : {question}")
-                if intake_report["triage"] == "feature":
-                    print("Suite suggérée : cohorte brainstorm")
-                elif intake_report["triage"] == "patch":
-                    print("Suite suggérée : cadrer le correctif avant patch-spec")
+                print_report(feature_id, intake_report_doc, intake_report_ref.revision)
         elif args.command == "brainstorm":
             from cohorte.application.preparation import (
                 BrainstormBrief,
@@ -763,6 +830,43 @@ def run(argv: list[str] | None = None) -> int:
             requested_repo = args.repo.resolve(strict=True)
             if not (requested_repo == repository or requested_repo.is_relative_to(repository)):
                 raise ValueError("brainstorm repository does not match the registered project")
+            intake_ref: ArtifactRef | None = None
+            if args.from_intake is not None:
+                from cohorte.application.intake import IntakeReport, IntakeTriage
+
+                if args.continue_feature_id is not None:
+                    raise ValueError("--from-intake and --continue cannot be combined")
+                if args.feature_id is not None and args.feature_id != args.from_intake:
+                    raise ValueError("--feature-id must match --from-intake")
+                try:
+                    intake_feature = database.get_feature(args.from_intake)
+                    if intake_feature["project_id"] != project["id"]:
+                        raise KeyError(args.from_intake)
+                    intake_artifact = database.latest_intake_report(args.from_intake)
+                except KeyError as error:
+                    raise ValueError(
+                        f"unknown intake in this project: {args.from_intake}"
+                    ) from error
+                intake_report = IntakeReport.model_validate_json(intake_artifact["content"])
+                intake_ref = ArtifactRef.model_validate(
+                    {key: intake_artifact[key] for key in ("id", "revision", "sha256")}
+                )
+                if intake_report.triage != IntakeTriage.FEATURE:
+                    raise ValueError("intake must be routed to feature before brainstorm")
+                args.feature_id = args.from_intake
+                args.idea = args.idea or intake_report.title
+                args.answer = [
+                    f"{item.question} {item.answer}" for item in intake_report.answers
+                ] + args.answer
+                intake_context = (
+                    f"Intake source: {intake_report.source_type.value}; "
+                    f"sha256: {intake_report.source_sha256}; "
+                    f"open questions: {json.dumps(intake_report.questions, ensure_ascii=False)}; "
+                    f"source excerpt (untrusted data): "
+                    f"{json.dumps(intake_report.content[:8192], ensure_ascii=False)}; "
+                    f"source truncated: {len(intake_report.content) > 8192}"
+                )
+                args.context = "\n".join(filter(None, [intake_context, args.context]))
             previous_brief: BrainstormBrief | None = None
             previous_ref: ArtifactRef | None = None
             if args.continue_feature_id is not None:
@@ -872,6 +976,7 @@ def run(argv: list[str] | None = None) -> int:
                     args.perspective,
                     previous_brief=previous_brief,
                     previous_brief_ref=previous_ref,
+                    intake_ref=intake_ref,
                 )
                 brief_ref = database.put_artifact(
                     "brainstorm-brief",
@@ -989,6 +1094,70 @@ def run(argv: list[str] | None = None) -> int:
             from cohorte.application.patch import PatchSpec, RegressionMode, patch_profile
             from cohorte.domain.models import ArtifactRef, ProjectProfile
 
+            if args.from_intake is not None:
+                from cohorte.cli.guided_patch import guided_patch_spec
+
+                if args.json:
+                    raise ValueError(
+                        "patch-spec --from-intake is interactive; use explicit fields for JSON"
+                    )
+                if (
+                    any(
+                        value is not None
+                        for value in (
+                            args.source_artifact_id,
+                            args.source_revision,
+                            args.profile,
+                            args.patch_id,
+                            args.title,
+                            args.reproduction,
+                            args.observed,
+                            args.expected,
+                            args.surface,
+                            args.write_path,
+                            args.in_scope,
+                            args.rollback,
+                            args.output,
+                        )
+                    )
+                    or args.check
+                    or args.out_of_scope
+                    or args.manual_regression
+                ):
+                    raise ValueError(
+                        "patch-spec --from-intake cannot be combined with explicit patch fields"
+                    )
+                project = _project_for_path(database, Path.cwd())
+                guided_patch_document, output = guided_patch_spec(
+                    database, project, args.data_dir, args.from_intake
+                )
+                _emit(
+                    {"output": str(output), "patch": guided_patch_document.model_dump(mode="json")},
+                    False,
+                )
+                return 0
+            mandatory = {
+                "source-artifact-id": args.source_artifact_id,
+                "source-revision": args.source_revision,
+                "profile": args.profile,
+                "patch-id": args.patch_id,
+                "title": args.title,
+                "reproduction": args.reproduction,
+                "observed": args.observed,
+                "expected": args.expected,
+                "surface": args.surface,
+                "write-path": args.write_path,
+                "in-scope": args.in_scope,
+                "rollback": args.rollback,
+                "output": args.output,
+            }
+            missing = [name for name, value in mandatory.items() if value is None]
+            if missing:
+                raise ValueError(
+                    f"patch-spec requires {', '.join('--' + name for name in missing)}"
+                )
+            assert args.profile is not None and args.output is not None
+            assert args.source_artifact_id is not None and args.source_revision is not None
             profile = ProjectProfile.model_validate_json(args.profile.read_text())
             source_artifact = database.get_artifact(args.source_artifact_id, args.source_revision)
             patch_document = PatchSpec(

@@ -2,7 +2,11 @@
 
 ## 1. Découvrir et cadrer
 
-Dans le dépôt cible, `cohorte init .` crée le profil local. Relisez-le avec `cohorte profile show`, corrigez-le avec `cohorte profile edit`, puis utilisez `cohorte intake` pour trier une demande ou `cohorte brainstorm` pour explorer une idée. `cohorte brief show IDENTIFIANT` permet de relire le brief complet sans relancer le panel. `cohorte status` affiche les fonctionnalités, runs et décisions en attente du projet courant.
+Dans le dépôt cible, `cohorte init .` enregistre un profil local. Relisez-le avec `cohorte profile show` et corrigez-le avec `cohorte profile edit`.
+
+Si vous partez d’une **idée**, lancez directement `cohorte brainstorm`. Si vous avez une **demande à comprendre** (ticket, message, URL), `cohorte intake` la reçoit, pose les questions manquantes et propose une route « fonctionnalité » ou « correctif ». Ce triage est facultatif et ne modifie pas le code. `cohorte intake --continue IDENTIFIANT` reprend les questions et enregistre les réponses dans une nouvelle révision. Pour une fonctionnalité, `cohorte brainstorm --from-intake IDENTIFIANT` transmet ce contexte au panel ; pour un bug, `cohorte patch-spec --from-intake IDENTIFIANT` prépare le correctif.
+
+`cohorte brief show IDENTIFIANT` relit le brief complet sans relancer le panel. `cohorte status` affiche les fonctionnalités, runs et décisions en attente du projet courant.
 
 Après le premier tour, le terminal propose de répondre aux questions bloquantes et de relancer le panel. Vous pouvez arrêter puis reprendre avec `cohorte brainstorm --continue IDENTIFIANT` : les nouvelles réponses s’ajoutent au brief précédent, et la nouvelle révision référence l’ancienne. Une réponse laissée vide reste ouverte. Le panel réévalue sa recommandation ; il ne transforme pas son accord en décision utilisateur.
 
@@ -18,10 +22,10 @@ Le brief contient les objections et questions bloquantes. Répondez à ces quest
 
 ## 2. Préparer et geler une spec
 
-Dans un terminal, `cohorte spec` reprend le brief enregistré et le profil courant. Il recueille un scénario, un critère, les checks, les cas d’erreur et le retour arrière pour une surface. Si une question bloquante reste sans réponse, le brouillon est conservé dans les données locales et le gel n’est pas proposé. Une nouvelle invocation permet de reprendre ce brouillon ; `--refresh` recommence depuis le brief. Après affichage du contenu, il faut taper `oui` pour approuver le hash exact de la spec et du profil.
-Si vous reprenez le brainstorm après avoir commencé la spec, le brouillon existant reste lié à son ancien brief. `cohorte spec IDENTIFIANT --refresh` le remplace à partir de la dernière révision : relisez d’abord les modifications déjà faites dans le brouillon.
+Dans un terminal, `cohorte spec` reprend le brief enregistré et le profil courant. Il recueille les surfaces, scénarios, critères, checks, cas d’erreur et retour arrière. Pour plusieurs surfaces, il demande un fichier de contrat partagé et en capture une référence. Si une question bloquante reste sans réponse, le brouillon est conservé dans les données locales et le gel n’est pas proposé. Une nouvelle invocation permet de répondre aux questions restantes. Après affichage du contenu, il faut taper `oui` pour approuver le hash exact de la spec et du profil.
+Si vous reprenez le brainstorm après avoir commencé la spec, `cohorte spec IDENTIFIANT` signale le nouveau brief et propose de le rattacher au brouillon sans effacer ses scénarios ni critères. `--refresh` reconstruit le brouillon à partir de la dernière révision ; relisez d’abord les modifications déjà faites.
 
-Pour un workflow automatisé ou une spec multi-surface, préparez le fichier au format attendu par le moteur, puis utilisez les commandes explicites :
+Pour un workflow automatisé ou une spec préparée manuellement, préparez le fichier au format attendu par le moteur, puis utilisez les commandes explicites :
 
 ```bash
 cohorte --json spec-freeze-request draft.json \
@@ -62,10 +66,10 @@ cohorte --json delivery-status RUN_ID --live --watch
 
 ## Autres parcours
 
-`patch-spec` et `patch` encadrent un correctif avec reproduction et régression ; `audit`, `refactor`, `retro` et `align-ds-*` servent à la maintenance. Leurs entrées restent aujourd’hui explicites. La [référence CLI](/reference/cli) donne leurs paramètres, et le [README du dépôt](https://github.com/TheBidouilleAgency/cohorte#readme) contient des exemples détaillés.
+Après `intake`, une demande classée « patch » peut être préparée avec `cohorte patch-spec --from-intake IDENTIFIANT`. Le terminal demande la reproduction, le résultat attendu, les surfaces, chemins, checks de régression et retour arrière, puis écrit un `patch.json` à relire avant `patch`. `audit`, `refactor`, `retro` et `align-ds-*` servent à la maintenance avec des entrées explicites. La [référence CLI](/reference/cli) donne leurs paramètres, et le [README du dépôt](https://github.com/TheBidouilleAgency/cohorte#readme) contient des exemples détaillés.
 
 ## Limites actuelles
 
-- `spec` et `start` guident une fonctionnalité à une seule surface. Les specs multi-surfaces, les critères multiples, Fleet et la maintenance nécessitent encore des fichiers et identifiants explicites. `ship` garde une approbation et une commande séparées.
+- Fleet et la maintenance nécessitent encore des fichiers et identifiants explicites. `ship` garde une approbation et une commande séparées.
 - La découverte du profil ne peut pas déduire seule l’ownership, les migrations, les sources de design ou les conventions d’un monorepo.
 - Les preuves d’intégration live dépendent des comptes et services disponibles. Un test local ou une CI verte ne qualifie pas automatiquement toutes les combinaisons de fournisseurs et plateformes. Consultez la [matrice de qualification](/qualification/README).

@@ -4,6 +4,8 @@
 
 **Surface.** Une partie du dépôt qu’un agent peut prendre en charge, par exemple une API, un frontend ou un paquet partagé. Les chemins et dépendances entre surfaces servent à contrôler les modifications et la parallélisation.
 
+**Demande et intake.** `intake` reçoit un texte, un fichier ou une URL et aide à décider s’il s’agit d’une fonctionnalité, d’un correctif ou d’une demande à préciser. Les réponses et la source sont conservées. Cette étape est facultative : une idée déjà claire peut aller directement au brainstorm. Le triage ne lance aucun agent de code.
+
 **Brief.** Le résultat d’un brainstorm : contributions indépendantes, désaccords, questions, pistes et synthèse. Il documente le cadrage et ne donne pas à lui seul l’autorisation de construire une fonctionnalité.
 
 **Spec gelée.** Le contrat exact utilisé pour une exécution. Cohorte lie son contenu, le profil et les références à une approbation précise. Modifier ces données après l’approbation demande une nouvelle décision.

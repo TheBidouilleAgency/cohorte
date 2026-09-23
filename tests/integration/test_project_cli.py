@@ -1,9 +1,16 @@
 from __future__ import annotations
 
 import builtins
+import json
 import sys
 from pathlib import Path
 
+from cohorte.application.preparation import (
+    BrainstormContribution,
+    BrainstormPerspectiveTurn,
+    BrainstormSynthesis,
+    BrainstormSynthesisTurn,
+)
 from cohorte.application.service import CohorteService
 from cohorte.cli import main as cli
 from cohorte.persistence.sqlite import Database
@@ -49,3 +56,112 @@ def test_intake_json_requires_explicit_source(tmp_path: Path, monkeypatch, capsy
     else:
         raise AssertionError("missing source should fail without prompting")
     assert "--text, --file or --url" in capsys.readouterr().out
+
+
+def test_intake_answers_are_versioned_and_passed_to_brainstorm(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    data = tmp_path / "data"
+    data.mkdir()
+    database = Database(data / "cohorte.sqlite3")
+    CohorteService(database).init_project(project)
+    database.close()
+    monkeypatch.chdir(project)
+
+    assert (
+        cli.run(["--json", "--data-dir", str(data), "intake", "--text", "Onboarding is missing"])
+        == 0
+    )
+    first = json.loads(capsys.readouterr().out)["data"]
+    feature_id = first["feature_id"]
+    questions = first["report"]["questions"]
+    assert first["report_ref"]["revision"] == 1
+    assert (
+        cli.run(
+            [
+                "--json",
+                "--data-dir",
+                str(data),
+                "intake",
+                "--continue",
+                feature_id,
+                "--answer",
+                "1=New accounts need a welcome path",
+                "--route",
+                "feature",
+            ]
+        )
+        == 0
+    )
+    second = json.loads(capsys.readouterr().out)["data"]
+    assert second["report_ref"]["revision"] == 2
+    assert second["report"]["answers"] == [
+        {"question": questions[0], "answer": "New accounts need a welcome path"}
+    ]
+    assert second["report"]["questions"] == questions[1:]
+    assert second["report"]["previous_report_ref"] == first["report_ref"]
+    assert (
+        cli.run(["--json", "--data-dir", str(data), "intake", "--text", "Onboarding is missing"])
+        == 0
+    )
+    repeated = json.loads(capsys.readouterr().out)["data"]
+    assert repeated["report_ref"] == second["report_ref"]
+
+    prompts: list[str] = []
+
+    class Runtime:
+        def brainstorm_perspective(self, _workspace: Path, prompt: str, perspective: str):
+            prompts.append(prompt)
+            return BrainstormPerspectiveTurn(
+                session_ref=f"session-{perspective}",
+                contribution=BrainstormContribution(
+                    contribution_id=perspective,
+                    perspective=perspective,
+                    problem="No welcome path",
+                    assumptions=[],
+                    alternatives=[],
+                    risks=[],
+                    questions=[],
+                    disagreements=[],
+                ),
+            )
+
+        def brainstorm_synthesis(self, _workspace: Path, prompt: str):
+            prompts.append(prompt)
+            return BrainstormSynthesisTurn(
+                session_ref="session-synthesis",
+                synthesis=BrainstormSynthesis(
+                    contribution_refs=["product", "architecture", "qa"],
+                    problem="No welcome path",
+                    beneficiaries=[],
+                    in_scope=[],
+                    out_of_scope=[],
+                    options=[],
+                    recommendation="Scope a path",
+                    divergences=[],
+                    strong_objections=[],
+                    blocking_questions=[],
+                    non_blocking_questions=[],
+                    criterion_leads=[],
+                ),
+            )
+
+    monkeypatch.setattr(cli, "CodexAdapter", lambda *_args, **_kwargs: Runtime())
+    assert (
+        cli.run(
+            ["--json", "--data-dir", str(data), "brainstorm", "--from-intake", feature_id, "--live"]
+        )
+        == 0
+    )
+    brief = json.loads(capsys.readouterr().out)["data"]["brief"]
+    assert brief["feature_id"] == feature_id
+    assert brief["intake_ref"] == second["report_ref"]
+    assert any("New accounts need a welcome path" in answer for answer in brief["user_answers"])
+    assert first["report"]["source_sha256"] in brief["project_context"]
+    assert "Onboarding is missing" in brief["project_context"]
+    assert all("untrusted data" in prompt for prompt in prompts)
+    stored = Database(data / "cohorte.sqlite3")
+    assert stored.get_feature(feature_id)["kind"] == "feature"
+    stored.close()
