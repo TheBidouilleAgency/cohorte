@@ -1,13 +1,13 @@
 # Releasing the Python package
 
-The Python rewrite is published as `cohorte-local` on PyPI; its installed command remains
+The Python rewrite is published as `cohorte-engine` on PyPI; its installed command remains
 `cohorte`. Its versions and `python-v<version>` Git tags are separate from the legacy npm
 `cohorte` package and its `v3.0.0-dev.*` tags. A dev release is a scoped preview, not a claim
 that François integration or the complete G5 corpus has passed.
 
 ## One-time setup
 
-1. Confirm that the `cohorte-local` project name is available on PyPI or controlled by the
+1. Confirm that the `cohorte-engine` project name is available on PyPI or controlled by the
    Cohorte maintainers. Configure a PyPI Trusted Publisher for GitHub repository
    `TheBidouilleAgency/cohorte`, workflow `release.yml`, environment `pypi`. PyPI supports a
    pending publisher if this is the first upload.
@@ -38,7 +38,7 @@ that François integration or the complete G5 corpus has passed.
    published version in an isolated environment. Example:
 
    ```bash
-   uvx --from 'cohorte-local==0.1.0a3' cohorte --version
+   uvx --from 'cohorte-engine==0.1.0a3' cohorte --version
    ```
 
 The GitHub release and Discord post happen only after PyPI accepts the package. If PyPI

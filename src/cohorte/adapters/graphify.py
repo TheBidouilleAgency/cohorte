@@ -102,7 +102,7 @@ class GraphifyRetrievalPort:
         graph_path = self.repository / "graphify-out" / "graph.json"
         _validate_graph(self.repository, self.roots, graph_path)
         if self.python_executable is None and importlib.util.find_spec("graphify") is None:
-            raise RuntimeError("Graphify retrieval requires the cohorte-local[graphify] extra")
+            raise RuntimeError("Graphify retrieval requires the cohorte-engine[graphify] extra")
         try:
             return asyncio.run(self._search_mcp(graph_path, query, limit))
         except Exception as error:

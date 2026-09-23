@@ -3,7 +3,7 @@ requires = ["hatchling>=1.26"]
 build-backend = "hatchling.build"
 
 [project]
-name = "cohorte-local"
+name = "cohorte-engine"
 version = "0.1.0a2"
 description = "Local, evidence-driven orchestration for coding agents"
 readme = "README.md"

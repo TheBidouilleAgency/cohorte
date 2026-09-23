@@ -122,7 +122,7 @@ class SerenaRetrievalPort:
             from mcp.client.stdio import stdio_client
         except ImportError as error:
             raise RuntimeError(
-                "Serena retrieval requires the cohorte-local[serena] extra"
+                "Serena retrieval requires the cohorte-engine[serena] extra"
             ) from error
 
         env = dict(os.environ)

@@ -64,7 +64,7 @@ def snapshot(path: Path) -> dict[str, object]:
 def main() -> None:
     repository = Path(__file__).resolve().parents[2]
     new_version = tomllib.loads((repository / "pyproject.toml").read_text())["project"]["version"]
-    current_wheels = list((repository / "dist").glob(f"cohorte_local-{new_version}-*.whl"))
+    current_wheels = list((repository / "dist").glob(f"cohorte_engine-{new_version}-*.whl"))
     if len(current_wheels) != 1:
         raise RuntimeError(f"expected one {new_version} wheel, found {len(current_wheels)}")
     uv = shutil.which("uv")
@@ -140,6 +140,7 @@ def main() -> None:
         if hashlib.sha256(future_db.read_bytes()).hexdigest() != future_hash:
             raise RuntimeError("old binary mutated an unsupported future database")
 
+        run(uv, "pip", "uninstall", "--python", str(python), "cohorte-local")
         run(uv, "pip", "install", "--python", str(python), str(current_wheels[0]))
         if run(str(command), "--version").stdout.strip() != f"cohorte {new_version}":
             raise RuntimeError("new wheel did not replace the installed command")

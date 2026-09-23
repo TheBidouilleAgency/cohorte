@@ -151,7 +151,7 @@ wheels = [
 ]
 
 [[package]]
-name = "cohorte-local"
+name = "cohorte-engine"
 version = "0.1.0a2"
 source = { editable = "." }
 dependencies = [

@@ -17,7 +17,7 @@ def main() -> None:
     repository = Path(__file__).resolve().parents[2]
     project = tomllib.loads((repository / "pyproject.toml").read_text())
     expected_version = project["project"]["version"]
-    wheels = sorted((repository / "dist").glob(f"cohorte_local-{expected_version}-*.whl"))
+    wheels = sorted((repository / "dist").glob(f"cohorte_engine-{expected_version}-*.whl"))
     if len(wheels) != 1:
         raise RuntimeError(f"expected exactly one Cohorte wheel, found {len(wheels)}")
     uv = shutil.which("uv")

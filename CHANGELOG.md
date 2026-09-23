@@ -5,6 +5,7 @@ with the newest version first. Describe the verified scope and known limitations
 
 ## Unreleased
 
+- Name the upcoming Python distribution `cohorte-engine`; the CLI remains `cohorte`.
 - The first Python release has not been published yet.
 
 ## 0.1.0a1 — unreleased
