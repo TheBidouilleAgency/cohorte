@@ -7,6 +7,12 @@ with the newest version first. Describe the verified scope and known limitations
 
 _No changes recorded yet._
 
+## 1.0.0a2 — 2026-09-23
+
+- Fix `cohorte brainstorm` after `cohorte init`: stored project profiles now reload through the strict JSON validation path. A live Codex run on a disposable project produced three independent perspectives and a synthesis.
+- Restore Discord release announcements with a descriptive User-Agent, safe numeric error diagnostics, and a workflow to retry an existing announcement without republishing. The `1.0.0a1` announcement was delivered by the retry workflow.
+- Scope limits remain unchanged from `1.0.0a1`: François UI integration and the full cross-provider, cross-platform model corpus are not yet certified.
+
 ## 1.0.0a1 — 2026-09-23
 
 - First scoped preview of the Python Cohorte engine, published as `cohorte-engine` with the `cohorte` CLI. It is separate from the earlier npm package and its version series.
