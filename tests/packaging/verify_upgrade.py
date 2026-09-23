@@ -1,4 +1,4 @@
-"""Exercise an installed a1 -> a2 wheel upgrade without touching user directories."""
+"""Exercise an installed a1 -> current wheel upgrade without touching user directories."""
 
 from __future__ import annotations
 
@@ -11,12 +11,12 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import tomllib
 from contextlib import closing
 from pathlib import Path
 
 OLD_COMMIT = "ccb23fb6726287bb60056566c8c14ab28cb9727e"
 OLD_VERSION = "0.1.0a1"
-NEW_VERSION = "0.1.0a2"
 
 
 def run(*argv: str, cwd: Path | None = None, ok: bool = True) -> subprocess.CompletedProcess[str]:
@@ -63,9 +63,10 @@ def snapshot(path: Path) -> dict[str, object]:
 
 def main() -> None:
     repository = Path(__file__).resolve().parents[2]
-    current_wheels = list((repository / "dist").glob(f"cohorte_local-{NEW_VERSION}-*.whl"))
+    new_version = tomllib.loads((repository / "pyproject.toml").read_text())["project"]["version"]
+    current_wheels = list((repository / "dist").glob(f"cohorte_local-{new_version}-*.whl"))
     if len(current_wheels) != 1:
-        raise RuntimeError(f"expected one {NEW_VERSION} wheel, found {len(current_wheels)}")
+        raise RuntimeError(f"expected one {new_version} wheel, found {len(current_wheels)}")
     uv = shutil.which("uv")
     if uv is None:
         raise RuntimeError("uv is required for installed-wheel upgrade qualification")
@@ -140,7 +141,7 @@ def main() -> None:
             raise RuntimeError("old binary mutated an unsupported future database")
 
         run(uv, "pip", "install", "--python", str(python), str(current_wheels[0]))
-        if run(str(command), "--version").stdout.strip() != f"cohorte {NEW_VERSION}":
+        if run(str(command), "--version").stdout.strip() != f"cohorte {new_version}":
             raise RuntimeError("new wheel did not replace the installed command")
         upgraded = cli(command, config, data, "doctor")
         if upgraded["database"]["ok"] is not True:
@@ -182,7 +183,7 @@ def main() -> None:
                 {
                     "ok": True,
                     "from": OLD_VERSION,
-                    "to": NEW_VERSION,
+                    "to": new_version,
                     "old_commit": OLD_COMMIT,
                     "installed_wheels": True,
                     "user_config_preserved": True,

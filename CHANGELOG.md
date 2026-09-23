@@ -1,5 +1,12 @@
 # Changelog
 
+Release notes for the Python Cohorte package. Add a dated section for each published version,
+with the newest version first. Describe the verified scope and known limitations of a dev release.
+
+## Unreleased
+
+- The first Python release has not been published yet.
+
 ## 0.1.0a1 — unreleased
 
 - Start the Python 3.12 root rewrite with no dependency on former Cohorte implementations.

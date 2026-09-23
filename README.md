@@ -1,5 +1,7 @@
 # Cohorte V3
 
+For Python dev releases, see [the release runbook](docs/RELEASING.md).
+
 Cohorte is a local, evidence-driven workflow engine for official coding-agent clients. This
 repository is a Python 3.12 rewrite built at the repository root. It does not depend on the former
 TypeScript/Pi implementations.
