@@ -22,7 +22,7 @@ features:
     details: Les workflows utilisent des worktrees Git et contrôlent les chemins, checks et étapes de livraison.
 ---
 
-La version Python s’installe depuis PyPI sous le nom `cohorte-engine` et fournit la commande `cohorte`.
+La version Python s’installe depuis PyPI avec `uv tool install 'cohorte-engine==1.0.0a2'` et fournit la commande `cohorte`. `npm install -g cohorte` vise l’ancien paquet npm.
 Cette documentation décrit l’interface disponible dans le dépôt. La version installée peut différer : vérifiez-la avec `cohorte --version`.
 
 Le parcours humain est actuellement guidé jusqu’au brainstorm. La création d’une spec à partir du brief et le lancement d’un workflow restent des étapes explicites ; consultez les [limites actuelles](/guide/parcours#limites-actuelles) avant un premier lancement.

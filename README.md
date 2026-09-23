@@ -1,8 +1,15 @@
 # Cohorte V3
 
-Documentation utilisateur : [site VitePress](https://thebidouilleagency.github.io/cohorte/)
-([sources](docs/index.md)). Pour le lancer localement :
-`npm ci --prefix docs && npm run dev --prefix docs`.
+Install the Python CLI from PyPI (not the legacy npm package):
+
+```bash
+uv tool install 'cohorte-engine==1.0.0a2'
+cohorte --version
+```
+
+User documentation: [VitePress site](https://thebidouilleagency.github.io/cohorte/)
+([sources](docs/index.md)). Only to preview the documentation site locally, run
+`npm ci --prefix docs && npm run dev --prefix docs`. npm does not install the Python CLI.
 
 For Python dev releases, see [the release runbook](docs/RELEASING.md).
 
