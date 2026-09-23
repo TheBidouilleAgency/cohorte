@@ -502,7 +502,7 @@ def run(argv: list[str] | None = None) -> int:
             if Path(project["root_path"]).resolve() != repository:
                 raise ValueError("brainstorm repository does not match the registered project")
             project_profile = (
-                ProjectProfile.model_validate(project["profile"])
+                ProjectProfile.model_validate_json(json.dumps(project["profile"]))
                 if project.get("profile") is not None
                 else None
             )
