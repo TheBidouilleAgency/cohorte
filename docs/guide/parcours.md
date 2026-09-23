@@ -4,6 +4,8 @@
 
 Dans le dépôt cible, `cohorte init .` crée le profil local. Relisez-le avec `cohorte profile show`, corrigez-le avec `cohorte profile edit`, puis utilisez `cohorte intake` pour trier une demande ou `cohorte brainstorm` pour explorer une idée. `cohorte brief show IDENTIFIANT` permet de relire le brief complet sans relancer le panel. `cohorte status` affiche les fonctionnalités, runs et décisions en attente du projet courant.
 
+Après le premier tour, le terminal propose de répondre aux questions bloquantes et de relancer le panel. Vous pouvez arrêter puis reprendre avec `cohorte brainstorm --continue IDENTIFIANT` : les nouvelles réponses s’ajoutent au brief précédent, et la nouvelle révision référence l’ancienne. Une réponse laissée vide reste ouverte. Le panel réévalue sa recommandation ; il ne transforme pas son accord en décision utilisateur.
+
 Une commande de brainstorm peut aussi être entièrement explicite :
 
 ```bash
@@ -17,6 +19,7 @@ Le brief contient les objections et questions bloquantes. Répondez à ces quest
 ## 2. Préparer et geler une spec
 
 Dans un terminal, `cohorte spec` reprend le brief enregistré et le profil courant. Il recueille un scénario, un critère, les checks, les cas d’erreur et le retour arrière pour une surface. Si une question bloquante reste sans réponse, le brouillon est conservé dans les données locales et le gel n’est pas proposé. Une nouvelle invocation permet de reprendre ce brouillon ; `--refresh` recommence depuis le brief. Après affichage du contenu, il faut taper `oui` pour approuver le hash exact de la spec et du profil.
+Si vous reprenez le brainstorm après avoir commencé la spec, le brouillon existant reste lié à son ancien brief. `cohorte spec IDENTIFIANT --refresh` le remplace à partir de la dernière révision : relisez d’abord les modifications déjà faites dans le brouillon.
 
 Pour un workflow automatisé ou une spec multi-surface, préparez le fichier au format attendu par le moteur, puis utilisez les commandes explicites :
 

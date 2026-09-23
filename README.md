@@ -53,6 +53,7 @@ cohorte profile edit
 cohorte status
 cohorte intake
 cohorte brainstorm
+cohorte brainstorm --continue FEATURE_ID
 cohorte brief show FEATURE_ID
 cohorte spec
 cohorte start
@@ -65,8 +66,11 @@ explicitly replaces edits with a fresh discovery. `cohorte profile apply reviewe
 validated profile from a file, with a revision check. The guided brainstorm asks for the idea,
 audience, observed problem, desired outcome and constraints, then prints a short synthesis. Its
 full brief remains stored in Cohorte and can be read with `cohorte brief show FEATURE_ID` without
-rerunning the panel. For scripts, use `cohorte --json brief show FEATURE_ID` to read the complete
-stored document; new brainstorm runs still require explicit flags and `--live`.
+rerunning the panel. If the panel raises blocking questions, the terminal can collect answers and
+run another round immediately. `cohorte brainstorm --continue FEATURE_ID` resumes later from the
+latest brief, preserving the earlier answers and linking revisions. For scripts, use
+`cohorte --json brief show FEATURE_ID` to read the complete stored document, or
+`cohorte --json brainstorm --continue FEATURE_ID --answer '...' --live` for one follow-up round.
 The generated commands are candidates: confirm service setup and migrations before running
 project-wide checks in a monorepo.
 
@@ -77,6 +81,8 @@ exact candidate hash before an explicit freeze decision. `start` verifies the fr
 approved profile snapshot before asking to launch a live worktree run. These two commands require
 an interactive terminal; the explicit file-based commands remain available for automation and
 multi-surface specs. See the [CLI experience audit](docs/CLI-UX-AUDIT.md) for the remaining UX gaps.
+After another brainstorm round, an existing spec draft still uses its original brief until
+`cohorte spec FEATURE_ID --refresh` replaces that draft; review any existing edits first.
 The guided commands were introduced in `1.0.0a3`. Verify the installed version with
 `cohorte --version` before using them in another project.
 

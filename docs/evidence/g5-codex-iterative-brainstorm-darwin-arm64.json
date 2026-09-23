@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "criterion": "AC06",
+  "captured_at": "2026-09-24",
+  "platform": "darwin-arm64",
+  "runtime": "openai-codex 0.155.1",
+  "workspace": {
+    "kind": "disposable-minimal-python-project",
+    "private_repository_exposed": false,
+    "api_key_environment_removed": true
+  },
+  "invocations": [
+    "brainstorm repo --feature-id welcome --idea ... --answer ... --live",
+    "brainstorm repo --continue welcome --answer ... --live"
+  ],
+  "rounds": [
+    {
+      "revision": 1,
+      "sha256": "02d00314a25460769242094680d042f4f13983dab4437033b80fd8b287cba014",
+      "session_count": 4,
+      "distinct_session_count": 4,
+      "blocking_question_count": 3
+    },
+    {
+      "revision": 2,
+      "sha256": "c8eb5cb5f81cdfc3a009a7e02beafe191b556679abbca8fd4f8dfb4e30cce9fa",
+      "previous_brief_ref_matches_revision_1": true,
+      "previous_user_answer_retained": true,
+      "session_count": 4,
+      "distinct_session_count": 4,
+      "problem_changed": true,
+      "blocking_question_count": 3
+    }
+  ],
+  "limits": [
+    "One disposable Codex project and two rounds only",
+    "No Claude or cross-platform live continuation qualification",
+    "The panel still uses new ephemeral sessions for each round"
+  ],
+  "status": "passed"
+}
