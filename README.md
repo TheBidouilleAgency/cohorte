@@ -1,5 +1,9 @@
 # Cohorte V3
 
+Documentation utilisateur : [site VitePress](https://thebidouilleagency.github.io/cohorte/)
+([sources](docs/index.md)). Pour le lancer localement :
+`npm ci --prefix docs && npm run dev --prefix docs`.
+
 For Python dev releases, see [the release runbook](docs/RELEASING.md).
 
 Cohorte is a local, evidence-driven workflow engine for official coding-agent clients. This
