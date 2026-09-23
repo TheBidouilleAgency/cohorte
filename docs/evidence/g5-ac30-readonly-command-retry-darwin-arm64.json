@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "gate": "G5",
+  "criterion": "AC30",
+  "scenario": "codex-reviewer-read-only-two-denied-commands",
+  "status": "passed",
+  "checked_at": "2026-09-23T11:25:21Z",
+  "platform": {
+    "os": "Darwin",
+    "architecture": "arm64"
+  },
+  "runtime": {
+    "codex_cli": "0.156.1",
+    "codex_app_server": "0.155.1",
+    "openai_codex_sdk": "0.155.1",
+    "sandbox": "read-only",
+    "approval_mode": "deny_all",
+    "api_routing_environment_removed": true
+  },
+  "probe": {
+    "workspace": "disposable temporary directory",
+    "checks": "two locally compiled disposable programs, each attempting to create a different marker",
+    "agent_turns": 2,
+    "denied_command_execution_events": 2,
+    "command_exit_codes": [2, 2],
+    "permission_denial_output_observed": true,
+    "same_read_only_and_deny_all_policy_for_both_turns": true,
+    "marker_files_absent": true,
+    "provider_or_runtime_approval_escalation": false
+  },
+  "reproduction": "env -u OPENAI_API_KEY -u OPENAI_BASE_URL .venv/bin/python tests/live/verify_codex_readonly_retry.py",
+  "contains_credentials": false,
+  "limitations": [
+    "This exercises reviewer-configured SDK turns, not the full Cohorte review workflow or every mutation tool.",
+    "The live negative-tool proof is on Darwin arm64 with pinned SDK/app-server 0.155.1; other hosts retain deterministic policy tests rather than live account evidence.",
+    "The earlier single-turn read-only reviewer probe emitted no denied tool event and remains inconclusive."
+  ]
+}

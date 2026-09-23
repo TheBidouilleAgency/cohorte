@@ -8,8 +8,8 @@ Current baseline:
 
 | Status | Count |
 | --- | ---: |
-| Passed | 25 |
-| Partial | 5 |
+| Passed | 27 |
+| Partial | 3 |
 | Blocked | 0 |
 | Deferred | 0 |
 | Not started | 0 |
@@ -20,20 +20,22 @@ targets the earlier TypeScript 3.0.0-dev.8 CLI and is incompatible with this Pyt
 see `docs/evidence/g5-ac19-francois-current-integration.json`. Isolated native Claude
 and Codex profiles passed passive subscription status and live SDK probes. A newly connected Claude
 account also passed a structured read, a workspace edit and an observed denial of an outside write.
-AC03 passes at the runtime-reported subscription boundary. AC02 remains partial because login was
-user-assisted through the official CLIs, the new Cohorte CLI handoff lacks end-to-end evidence, and
-its native login lock lacks a simultaneous real-provider-CLI probe. The earlier organization-policy refusal remains
-historical evidence for the previous account.
+AC03 passes at the runtime-reported subscription boundary. AC02 now passes: both
+`cohorte auth login` handoffs completed through the official provider CLIs, and concurrent
+handoffs on each native context rejected the second process with `AUTH_BUSY` while the first
+provider CLI was active. No credentials were copied into Cohorte; the earlier organization-policy
+refusal remains historical evidence for the previous Claude account.
 AC27 is qualified with bounded, redacted check logs and atomic CLI/RPC run exports. AC28 now
 classifies missing dependencies, unavailable container runtimes, network outages, and full disks as
 retryable environment failures while preserving durable state. AC29 now covers protocol versions,
 invalid and oversized frames, concurrent mutation deduplication, bounded replay, and slow-client
 reconnection without cursor gaps. AC04, AC11, AC16, and AC17 now cover provider suspension,
 bounded overload retry, reviewer death, hard controller crashes, active-wave pause, descendant
-interruption, and uncertain termination. AC30 remains partial: two direct app-server commands
-were denied by the read-only sandbox and two agent-driven file edits outside the workspace emitted
-failed events. The read-only reviewer emitted no mutation event, so model text and marker absence
-cannot certify that role.
+interruption, and uncertain termination. AC30 now passes on the pinned Darwin runtime: two
+agent-driven file edits outside a workspace failed, and two separate reviewer-style read-only
+turns emitted denied command events without permission escalation. The earlier reviewer probe
+that emitted no mutation event remains inconclusive; model text and marker absence alone are not
+accepted as proof. Live provider behavior on other operating systems is still unqualified.
 AC23 now handles missing connections at the CLI and runtime failures in design/retrieval ports:
 design capture blocks, retrieval blocks or uses only an explicitly enabled file fallback, and
 provider error text is redacted. Real Figma, Serena and Graphify snapshots and outages remain

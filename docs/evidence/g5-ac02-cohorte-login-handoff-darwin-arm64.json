@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "gate": "G5",
+  "criterion": "AC02",
+  "scenario": "cohorte-native-login-handoff-and-concurrent-lock",
+  "status": "passed",
+  "checked_at": "2026-09-23T11:14:37Z",
+  "platform": {
+    "os": "Darwin",
+    "architecture": "arm64"
+  },
+  "method": {
+    "entrypoint": "installed cohorte CLI, auth login <provider>",
+    "data_dir": "disposable temporary directory",
+    "provider_output": "captured and redacted before reporting; no OAuth URL, code, email or token retained in this evidence",
+    "api_routing_environment_removed": true
+  },
+  "claude": {
+    "official_cli_version": "2.1.280 (Claude Code)",
+    "handoff_exit_code": 0,
+    "final_connection_state": "connected",
+    "effective_auth_mode": "subscription",
+    "concurrent_first_exit_code": 0,
+    "provider_child_observed_while_lock_held": true,
+    "concurrent_second_exit_code": 3,
+    "concurrent_second_error": "AUTH_BUSY"
+  },
+  "codex": {
+    "official_cli_version": "codex-cli 0.156.1",
+    "handoff_exit_code": 0,
+    "final_connection_state": "connected",
+    "effective_auth_mode": "subscription",
+    "concurrent_first_exit_code": 0,
+    "provider_child_observed_while_lock_held": true,
+    "concurrent_second_exit_code": 3,
+    "concurrent_second_error": "AUTH_BUSY"
+  },
+  "contains_credentials": false,
+  "limitations": [
+    "The browser used existing signed-in sessions; it was not a fresh-account registration proof.",
+    "This qualifies the handoff and lock on Darwin arm64; hosted CI separately covers deterministic cross-platform lock behavior.",
+    "Subscription mode is the official runtime's passive report; account billing is not independently certified."
+  ]
+}
