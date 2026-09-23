@@ -166,8 +166,8 @@
       "title": "Francois client",
       "status": "partial",
       "evidence_class": "engine",
-      "evidence": ["docs/evidence/g4-local-francois-protocol.json", "tests/integration/test_service_host.py", "tests/integration/test_francois_conformance.py"],
-      "remaining": ["Validate the real Francois client against the persistent service for start, stream, question, response, approval, disconnect and gap-free replay", "Integrate and validate the real Francois UI against Cohorte"]
+      "evidence": ["docs/evidence/g4-local-francois-protocol.json", "docs/evidence/g5-ac19-francois-current-integration.json", "tests/integration/test_service_host.py", "tests/integration/test_francois_conformance.py"],
+      "remaining": ["Adapt Antoine's merged Francois Cohorte client and existing UI from the TypeScript 3.0.0-dev.8 CLI contract to the Python cohorte/1 protocol", "Validate the real Francois client against the persistent service for start, stream, question, response, approval, disconnect and gap-free replay on supported hosts"]
     },
     {
       "id": "AC20",

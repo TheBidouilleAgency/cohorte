@@ -1,0 +1,33 @@
+{
+  "gate": "G5",
+  "criterion": "AC19",
+  "scenario": "current-francois-integration-versus-python-runtime",
+  "status": "partial",
+  "checked_at": "2026-09-23",
+  "francois": {
+    "repository": "antoine-gmnz/francois",
+    "inspected_main_commit": "06b4b74b04127c77bdd9d2ee9b89041a50b1d9f8",
+    "merged_pr": "https://github.com/antoine-gmnz/francois/pull/154",
+    "implementation": "Existing Tauri Cohorte client, event projection, run view, gate controls, and settings UI",
+    "target_contract": "TypeScript Cohorte 3.0.0-dev.8 CLI",
+    "required_cli_version": ">=3.0.0-dev.1 <4.0.0",
+    "required_cli_calls": ["cohorte status --json", "cohorte tail <run> --json --since-seq <seq>"],
+    "project_detection": "Walks for a per-project .cohorte directory"
+  },
+  "python_cohorte": {
+    "version": "0.1.0a2",
+    "transport": "cohorte/1 JSON-RPC over local Unix socket or Windows named pipe",
+    "observed_cli": [
+      "cohorte --version returned cohorte 0.1.0a2",
+      "cohorte status --json exited 2 because --json is a global flag before the subcommand",
+      "cohorte tail demo --json exited 2 because tail is not a subcommand"
+    ],
+    "project_state": "SQLite under the Cohorte user data directory, not a per-project .cohorte/state directory",
+    "protocol_methods": ["projects.list", "features.list", "runs.start", "runs.list", "runs.get", "events.subscribe", "requests.list", "requests.respond", "runs.pause", "runs.resume", "runs.cancel"]
+  },
+  "conclusion": "The merged Francois implementation is substantial but cannot yet operate against the Python runtime. AC19 remains partial; the existing UI should be adapted in place rather than duplicated.",
+  "limitations": [
+    "The inspected Francois revision and merged PR may advance after this observation.",
+    "No real Francois-to-Python service run, gate, or replay was qualified by this audit."
+  ]
+}

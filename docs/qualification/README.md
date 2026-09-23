@@ -14,7 +14,10 @@ Current baseline:
 | Deferred | 0 |
 | Not started | 0 |
 
-François is back in scope; its external client and UI remain unqualified. Isolated native Claude
+François is back in scope. Its existing Cohorte integration was merged in François PR #154, but
+targets the earlier TypeScript 3.0.0-dev.8 CLI and is incompatible with this Python runtime's
+`cohorte/1` protocol. The external client and UI remain unqualified against the Python service;
+see `docs/evidence/g5-ac19-francois-current-integration.json`. Isolated native Claude
 and Codex profiles passed passive subscription status and live SDK probes. A newly connected Claude
 account also passed a structured read, a workspace edit and an observed denial of an outside write.
 AC03 passes at the runtime-reported subscription boundary. AC02 remains partial because login was
