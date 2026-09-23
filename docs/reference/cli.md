@@ -36,14 +36,16 @@ Forme générale : `cohorte [--json] [--config-dir DIR] [--data-dir DIR] COMMAND
 | `brainstorm [PROJECT_ID] [--feature-id ID] [--idea TEXTE] [--answer TEXTE] [--context TEXTE] [--provider codex|claude] [--output FILE] [--live]` | Exécuter le panel ou recueillir les réponses guidées ; `--answer` et `--perspective` sont répétables. |
 | `spec-freeze-request DRAFT --profile PROFILE [--repo DIR]` | Demander l’approbation d’une spec précise. |
 | `spec-freeze DRAFT --profile PROFILE --decision-id ID --output FILE [--repo DIR]` | Produire la spec gelée après décision correspondante. |
+| `spec [FEATURE_ID] [--refresh]` | Préparer et geler une spec à une surface depuis un brief enregistré, dans un terminal. `--refresh` remplace le brouillon local. |
 
-`brainstorm` accepte aussi `--prior-decision` répétable. Il n’existe pas encore de commande guidée pour produire `DRAFT` depuis un brief.
+`brainstorm` accepte aussi `--prior-decision` répétable. Pour les specs multi-surfaces et les critères multiples, utilisez le brouillon JSON et les commandes explicites.
 
 ## Exécution et livraison
 
 | Commande | Usage |
 | --- | --- |
 | `loop SPEC --profile PROFILE --worktrees DIR --run-id ID --live [--repo DIR]` | Exécuter une spec gelée dans un worktree. |
+| `start [FEATURE_ID]` | Vérifier une spec gelée par `spec`, demander confirmation et lancer un run réel sans chemins à fournir. Terminal interactif uniquement. |
 | `fleet SPEC... --profile PROFILE --worktrees DIR --fleet-id ID --live [--repo DIR]` | Orchestrer plusieurs fonctionnalités. |
 | `resume RUN_ID --live` | Reprendre un run journalisé. |
 | `pause RUN_ID [--reason TEXTE]` | Demander l’arrêt à la prochaine frontière de phase. |

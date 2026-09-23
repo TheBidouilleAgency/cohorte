@@ -53,6 +53,8 @@ cohorte profile edit
 cohorte status
 cohorte intake
 cohorte brainstorm
+cohorte spec
+cohorte start
 ```
 
 `init` inventories pnpm/npm workspaces, including nested package patterns, internal dependencies,
@@ -66,9 +68,14 @@ The generated commands are candidates: confirm service setup and migrations befo
 project-wide checks in a monorepo.
 
 `status` shows the current project's features, runs and pending run decisions. `intake` can capture
-a short text, file or URL through terminal prompts and shows its triage result. The remaining
-workflow commands still expose engine-level inputs; see the [CLI experience audit](docs/CLI-UX-AUDIT.md)
-before using them as a guided end-to-end product flow.
+a short text, file or URL through terminal prompts and shows its triage result. `spec` uses a stored
+brainstorm brief to collect a single-surface draft, keeps unanswered questions open, then shows the
+exact candidate hash before an explicit freeze decision. `start` verifies the frozen spec and the
+approved profile snapshot before asking to launch a live worktree run. These two commands require
+an interactive terminal; the explicit file-based commands remain available for automation and
+multi-surface specs. See the [CLI experience audit](docs/CLI-UX-AUDIT.md) for the remaining UX gaps.
+Until the next PyPI release, use `uv run cohorte` from this checkout to try `spec` and `start`;
+the published `1.0.0a2` command does not include them.
 
 For external context, set `integrations.retrieval.provider` to `serena` or `graphify` in the
 project profile. Serena needs the installed `serena` MCP executable. Graphify-Labs needs the

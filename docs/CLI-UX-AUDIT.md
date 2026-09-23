@@ -10,13 +10,11 @@ project, show short results, and ask for decisions only when the necessary evide
 | `init`, `profile` | Concise discovery, stored profile review/edit/refresh | Discovery is evidence based but does not resolve ownership, contracts, design sources or service setup automatically. |
 | `intake`, `status` | Project inferred from the directory; intake prompts and status summary | Intake triage is deterministic and cannot replace a product decision. |
 | `brainstorm` | Guided questions and concise synthesis; full brief persisted | The panel runs live, so actual provider access and project context still determine answer quality. |
-| Spec preparation and freeze | `spec-freeze-request`, `approve`, `spec-freeze` accept exact files and IDs | There is no guided command to turn a brief into a draft spec, inspect it, answer blocking questions and freeze it. This is the next critical UX gap. |
-| Build and delivery | `loop`, `fleet`, `resume`, `pause`, `cancel`, `ship`, `delivery-status` are explicit | Running a feature still needs a frozen spec path, profile path, worktree root, run ID and `--live`. A guided launcher must show the candidate and approval gate before shipping. |
+| Spec preparation and freeze | `spec` builds a single-surface draft from a stored brief, preserves open questions, and offers exact-hash approval; explicit freeze commands remain available | Multi-surface specs and richer criteria still need the file-based path. |
+| Build and delivery | `start` verifies a guided frozen spec and current profile, then asks before launching a live worktree run | Ship remains a separate explicit approval and command; Fleet and expert runs still need explicit paths and IDs. |
 | Patch and maintenance | `patch-spec`, `patch`, `audit`, `refactor`, `retro`, `align-ds-*` are explicit | These expert flows need separate wizards with scope and evidence review; silently inferring write paths or approvals would be unsafe. |
 | Integrations and operations | `retrieve`, `design-snapshot`, `kanban-project`, `migrate`, `rpc`, `service`, `schemas`, `check`, `metrics`, `export` remain explicit | These are primarily diagnostic, integration or automation commands. Give them concise human summaries where useful, but keep all protocol and migration inputs explicit. |
 
-The next implementation should focus on `brainstorm → draft spec → freeze → run` using the
-stored profile and brief. It must preserve the current approval and frozen-spec checks; the
-wizard should collect and display their inputs, not bypass them. Patch and maintenance can follow
-as dedicated guided flows. A GUI can use the same persisted profile, artifacts and decisions once
-the terminal path works end to end.
+The next UX step is richer single- and multi-surface spec editing, including multiple scenarios
+and acceptance criteria, followed by a guided delivery review. Patch and maintenance can follow
+as dedicated guided flows. A GUI can use the same persisted profile, artifacts and decisions.

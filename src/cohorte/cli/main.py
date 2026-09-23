@@ -127,6 +127,11 @@ def _parser() -> argparse.ArgumentParser:
     brainstorm.add_argument("--provider", choices=["claude", "codex"])
     brainstorm.add_argument("--output", type=Path)
     brainstorm.add_argument("--live", action="store_true")
+    guided_spec = sub.add_parser("spec", help="guide a stored brief through exact spec approval")
+    guided_spec.add_argument("feature_id", nargs="?")
+    guided_spec.add_argument("--refresh", action="store_true", help="replace a saved draft")
+    guided_start = sub.add_parser("start", help="run a guided, frozen feature")
+    guided_start.add_argument("feature_id", nargs="?")
     freeze_request = sub.add_parser("spec-freeze-request")
     freeze_request.add_argument("draft", type=Path)
     freeze_request.add_argument("--profile", type=Path, required=True)
@@ -504,6 +509,22 @@ def run(argv: list[str] | None = None) -> int:
     database = Database(args.data_dir / "cohorte.sqlite3")
     service = CohorteService(database)
     try:
+        if args.command == "start":
+            from cohorte.cli.guided_feature import guided_start
+
+            if args.json:
+                raise ValueError("start is interactive; use loop with explicit paths for JSON")
+            project = _project_for_path(database, Path.cwd())
+            spec_path, profile_path, worktrees, run_id = guided_start(
+                database, args.data_dir, project, args.feature_id
+            )
+            args.command = "loop"
+            args.spec = spec_path
+            args.profile = profile_path
+            args.repo = Path(project["root_path"])
+            args.worktrees = worktrees
+            args.run_id = run_id
+            args.live = True
         if args.command == "doctor":
             _emit(_doctor(service, args), args.json)
         elif args.command == "init":
@@ -779,6 +800,13 @@ def run(argv: list[str] | None = None) -> int:
                 print(f"\nBrief enregistré : {brief_ref['id']} (révision {brief_ref['revision']})")
             else:
                 _emit(payload, args.json)
+        elif args.command == "spec":
+            from cohorte.cli.guided_feature import guided_spec
+
+            if args.json:
+                raise ValueError("spec is interactive; use spec-freeze-request for JSON")
+            project = _project_for_path(database, Path.cwd())
+            guided_spec(database, args.data_dir, project, args.feature_id, args.refresh)
         elif args.command == "spec-freeze-request":
             from cohorte.application.preparation import SpecFreezer
             from cohorte.domain.models import FeatureSpec, ProjectProfile

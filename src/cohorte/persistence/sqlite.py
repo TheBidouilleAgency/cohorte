@@ -304,6 +304,15 @@ class Database:
             "next_offset": min(offset + limit, len(content)),
         }
 
+    def latest_artifact(self, artifact_id: str) -> dict[str, Any]:
+        row = self.connection.execute(
+            "SELECT revision FROM artifacts WHERE id=? ORDER BY revision DESC LIMIT 1",
+            (artifact_id,),
+        ).fetchone()
+        if row is None:
+            raise KeyError(artifact_id)
+        return self.get_artifact(artifact_id, int(row["revision"]), limit=2 * 1024 * 1024)
+
     def register_project(self, project_id: str, root_path: str, profile_artifact_id: str) -> None:
         now = utc_now()
         with self.transaction() as tx:
