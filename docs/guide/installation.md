@@ -1,6 +1,6 @@
 # Installer Cohorte
 
-Cohorte requiert Python 3.12 ou plus récent. Le paquet PyPI s’appelle `cohorte-engine` ; la commande installée s’appelle `cohorte`. La version du dépôt au moment de cette documentation est `1.0.0a2`, une préversion.
+Cohorte requiert Python 3.12 ou plus récent. Le paquet **Python sur PyPI** s’appelle `cohorte-engine` ; la commande installée s’appelle `cohorte`. La version du dépôt au moment de cette documentation est `1.0.0a2`, une préversion. **N’utilisez pas `npm install -g cohorte` : ce nom correspond à l’ancien paquet npm, pas à ce moteur Python.**
 
 Avec `uv` :
 
@@ -19,6 +19,8 @@ uv run cohorte doctor
 ```
 
 La commande globale et `uv run cohorte` peuvent correspondre à des versions différentes. Pour essayer les derniers changements du dépôt, utilisez `uv run cohorte` depuis celui-ci. Pour essayer une préversion publiée, utilisez la commande globale et contrôlez `--version`.
+
+`npm ci --prefix docs` n’installe que les dépendances du site VitePress pour sa prévisualisation locale ; cette commande ne sert pas à installer Cohorte.
 
 Les adaptateurs optionnels s’installent séparément selon le besoin :
 
