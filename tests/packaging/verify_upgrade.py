@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import io
 import json
 import shutil
 import sqlite3
@@ -17,6 +16,7 @@ from pathlib import Path
 
 OLD_COMMIT = "ccb23fb6726287bb60056566c8c14ab28cb9727e"
 OLD_VERSION = "0.1.0a1"
+OLD_FIXTURE_SHA256 = "3ec72f47c1ba10e9dfabe5264cdaee2ac1394cd69aefcf308a6a3975959ff615"
 
 
 def run(*argv: str, cwd: Path | None = None, ok: bool = True) -> subprocess.CompletedProcess[str]:
@@ -75,14 +75,10 @@ def main() -> None:
         root = Path(raw)
         old_source = root / "old-source"
         old_source.mkdir()
-        archive = subprocess.run(
-            ["git", "archive", "--format=tar", OLD_COMMIT],
-            cwd=repository,
-            capture_output=True,
-            check=True,
-            timeout=30,
-        ).stdout
-        with tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as files:
+        fixture = repository / "tests/packaging/fixtures/cohorte-local-0.1.0a1-source.tar.gz"
+        if hashlib.sha256(fixture.read_bytes()).hexdigest() != OLD_FIXTURE_SHA256:
+            raise RuntimeError("pinned a1 source fixture changed")
+        with tarfile.open(fixture, mode="r:gz") as files:
             files.extractall(old_source, filter="data")
         old_wheels = root / "old-wheels"
         run(uv, "build", "--wheel", "--out-dir", str(old_wheels), str(old_source))
