@@ -81,7 +81,8 @@ def test_metrics_keep_missing_provider_usage_unavailable(tmp_path: Path) -> None
     profile = database.put_artifact("project-profile", b"{}")
     database.register_project("project", str(tmp_path), profile["id"])
     database.create_feature("feature", "project", "Feature")
-    start = datetime(2026, 9, 22, 10, tzinfo=UTC)
+    # Events use the database clock; keep the fixture run in the same reporting window.
+    start = datetime.now(UTC) - timedelta(minutes=1)
     state = RunState(
         id="run-one",
         project_id="project",
