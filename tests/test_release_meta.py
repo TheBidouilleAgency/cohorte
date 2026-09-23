@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import sys
+from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
+from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -63,6 +65,7 @@ def test_discord_payload_uses_release_notes_and_link_without_webhook() -> None:
         "url": "https://github.com/example/release",
         "color": 3066993,
     }
+    assert payload["allowed_mentions"] == {"parse": []}
     assert "secret" not in json.dumps(payload)
 
 
@@ -82,4 +85,34 @@ def test_discord_notification_targets_configured_thread_without_network() -> Non
     request = open_url.call_args.args[0]
     assert parse_qs(urlsplit(request.full_url).query) == {"thread_id": ["456"], "wait": ["true"]}
     assert request.get_method() == "POST"
+    assert request.get_header("User-agent").startswith("CohorteRelease/")
     assert json.loads(request.data)["embeds"][0]["description"] == "- Preview"
+
+
+@pytest.mark.parametrize(
+    "body,expected",
+    [
+        (b'{"code":40333,"message":"blocked"}', "HTTP 403 (API code 40333)"),
+        (b'{"message":"secret webhook token"}', "HTTP 403"),
+        (b"<html>secret webhook token</html>", "HTTP 403"),
+    ],
+)
+def test_discord_error_reports_only_safe_numeric_code(body: bytes, expected: str) -> None:
+    with (
+        patch.dict(
+            "os.environ",
+            {
+                "DISCORD_FORUM_WEBHOOK": "https://discord.com/api/webhooks/123/private",
+                "DISCORD_THREAD_ID": "456",
+            },
+        ),
+        patch("scripts.release_meta.urllib.request.urlopen") as open_url,
+    ):
+        open_url.side_effect = HTTPError(
+            "https://discord.com/api/webhooks/123/private", 403, "Forbidden", {}, BytesIO(body)
+        )
+        with pytest.raises(RuntimeError) as error:
+            notify_discord("0.1.0a3", "- Preview\n", "https://github.com/example/release")
+    assert str(error.value) == f"Discord returned {expected}"
+    assert "private" not in str(error.value)
+    assert "secret" not in str(error.value)

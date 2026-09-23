@@ -42,6 +42,9 @@ that François integration or the complete G5 corpus has passed.
    ```
 
 The GitHub release and Discord post happen only after PyPI accepts the package. If PyPI
-succeeds but a later step fails, rerun the workflow: `uv publish --check-url` skips identical
-published files, and the GitHub release step reuses an existing release. Check the Discord
-thread before rerunning a failed notification to avoid a duplicate post.
+succeeds but the Discord step fails, inspect its HTTP status and numeric Discord API code.
+After correcting the webhook or thread access, check that the post is absent, then use
+**Retry Discord release announcement** on `main` with the existing `python-v<version>` tag.
+This sends only the announcement and does not republish the package. Rerunning the full release
+also works: `uv publish --check-url` skips identical published files, and the GitHub release
+step reuses an existing release. Check the Discord thread first to avoid a duplicate post.

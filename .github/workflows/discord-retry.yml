@@ -1,0 +1,37 @@
+name: Retry Discord release announcement
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing Python release tag to announce
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  announce:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require main branch
+        env:
+          RELEASE_REF: ${{ github.ref }}
+        run: test "$RELEASE_REF" = refs/heads/main
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: '3.12'
+          enable-cache: false
+      - name: Announce the existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          DISCORD_FORUM_WEBHOOK: ${{ secrets.DISCORD_FORUM_WEBHOOK }}
+          DISCORD_THREAD_ID: ${{ secrets.DISCORD_THREAD_ID }}
+        run: |
+          VERSION="$(python scripts/release_meta.py version)"
+          test "$RELEASE_TAG" = "python-v${VERSION}"
+          RELEASE_URL="$(gh release view "$RELEASE_TAG" --json url --jq .url)"
+          python scripts/release_meta.py discord --release-url "$RELEASE_URL"
