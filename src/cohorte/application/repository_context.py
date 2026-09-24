@@ -206,7 +206,8 @@ def collect_repository_context(repository: Path, query: str) -> str:
     source = [
         item
         for item in matches
-        if item[1].startswith(("src/", "apps/", "packages/"))
+        if not item[1].endswith(".md")
+        and not item[1].startswith("tests/")
         and ".test." not in item[1]
         and ".spec." not in item[1]
         and "/tests/" not in item[1]

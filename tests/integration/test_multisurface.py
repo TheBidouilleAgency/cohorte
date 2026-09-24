@@ -86,6 +86,16 @@ class ParallelRuntime:
         raise AssertionError("fix should not run")
 
 
+class GroundedParallelRuntime(ParallelRuntime):
+    def build(self, workspace: Path, prompt: str) -> AgentReport:
+        assert "contract/overview.md:1" in prompt
+        return super().build(workspace, prompt)
+
+    def review(self, workspace: Path, prompt: str) -> AgentReview:
+        assert "contract/overview.md:1" in prompt
+        return super().review(workspace, prompt)
+
+
 def profile() -> ProjectProfile:
     return ProjectProfile(
         schema_version=1,
@@ -185,9 +195,12 @@ def test_multisurface_runs_dependency_wave_then_parallel_consumers(tmp_path: Pat
     for directory in ("contract", "backend", "client"):
         (repository / directory).mkdir()
         (repository / directory / ".gitkeep").write_text("")
+    (repository / "contract" / "overview.md").write_text(
+        "Contract v1 coordinates both consumers.\n"
+    )
     git(repository, "add", ".")
     git(repository, "commit", "-m", "initial")
-    runtime = ParallelRuntime()
+    runtime = GroundedParallelRuntime()
 
     result = MultiSurfaceRunner(runtime).run(
         repository, tmp_path / "worktrees", profile(), spec(), "multi-run"

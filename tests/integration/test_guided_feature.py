@@ -38,6 +38,7 @@ def _setup(tmp_path: Path, *, blocking: bool = False) -> tuple[Path, Path]:
     repository.mkdir()
     (repository / "src").mkdir()
     (repository / "src" / "export.txt").write_text("original\n")
+    (repository / "src" / "export.py").write_text("def export_atomic():\n    return 'local'\n")
     subprocess.run(["git", "init", "-b", "main"], cwd=repository, check=True, capture_output=True)
     subprocess.run(["git", "add", "."], cwd=repository, check=True, capture_output=True)
     subprocess.run(
@@ -164,7 +165,10 @@ def test_guided_spec_requires_answer_before_freeze_and_preserves_draft(
     assert not (draft_path.parent / "frozen.json").exists()
     database = Database(data_dir / "cohorte.sqlite3")
     assert database.get_feature("safe-export")["status"] == "draft"
-    assert "Questions encore ouvertes" in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert "Questions encore ouvertes" in output
+    assert "Pistes du dépôt à vérifier" in output
+    assert "src/export.py:" in output
     database.close()
 
     answers = iter(["CSV", "oui"])
