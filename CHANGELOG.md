@@ -7,6 +7,12 @@ with the newest version first. Describe the verified scope and known limitations
 
 _No changes recorded yet._
 
+## 1.0.0a8 — 2026-09-24
+
+- Carry project-aware source references through the guided feature workflow. `spec` shows current and brief-linked file leads before decisions are frozen; `build`, `review`, and `fix` each receive bounded, cited excerpts from their current worktree alongside the frozen spec and profile. Multi-surface implementers and integration reviewers receive the same context.
+- Recognize code in nonstandard surface roots such as `backend/`, and refresh excerpts between phases so review can inspect source changed by build. Excerpts remain untrusted reading leads; agents must inspect full files, and product facts outside the repository still need explicit decisions.
+- Validation: PR #60 passed documentation and Python 3.12/3.13 CI on Ubuntu, macOS and Windows. Local tests cover spec references, all feature-agent phases, multi-surface prompts and changed-source refresh. Live Codex/Claude end-to-end response quality and other maintenance workflows remain to be qualified.
+
 ## 1.0.0a7 — 2026-09-24
 
 - Give every `brainstorm` panel contribution and its synthesis bounded excerpts of relevant local source and project notes, with path and line references. Recompute this context on each follow-up round so agents can see intervening file changes.
