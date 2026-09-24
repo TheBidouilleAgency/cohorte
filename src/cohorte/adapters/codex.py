@@ -24,6 +24,7 @@ from cohorte.application.preparation import (
     BrainstormPerspectiveTurn,
     BrainstormSynthesis,
     BrainstormSynthesisTurn,
+    SpecProposal,
 )
 from cohorte.application.vertical import AgentReport, AgentReview
 from cohorte.domain.auth import (
@@ -290,6 +291,11 @@ class CodexAdapter:
             workspace, prompt, BrainstormSynthesis, Sandbox.read_only, "brainstorm_synthesis"
         )
         return BrainstormSynthesisTurn(session_ref=session_ref, synthesis=synthesis)
+
+    def spec_proposal(self, workspace: Path, prompt: str) -> SpecProposal:
+        return self._structured_turn(
+            workspace, prompt, SpecProposal, Sandbox.read_only, "spec_proposal"
+        )
 
     def build(self, workspace: Path, prompt: str) -> AgentReport:
         return self._structured_turn(

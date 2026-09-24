@@ -144,6 +144,9 @@ def _parser() -> argparse.ArgumentParser:
     guided_spec = sub.add_parser("spec", help="guide a stored brief through exact spec approval")
     guided_spec.add_argument("feature_id", nargs="?")
     guided_spec.add_argument("--refresh", action="store_true", help="replace a saved draft")
+    guided_spec.add_argument(
+        "--manual", action="store_true", help="skip the agent's draft proposal"
+    )
     guided_start = sub.add_parser("start", help="run a guided, frozen feature")
     guided_start.add_argument("feature_id", nargs="?")
     freeze_request = sub.add_parser("spec-freeze-request")
@@ -1068,7 +1071,9 @@ def run(argv: list[str] | None = None) -> int:
             if args.json:
                 raise ValueError("spec is interactive; use spec-freeze-request for JSON")
             project = _project_for_path(database, Path.cwd())
-            guided_spec(database, args.data_dir, project, args.feature_id, args.refresh)
+            guided_spec(
+                database, args.data_dir, project, args.feature_id, args.refresh, not args.manual
+            )
         elif args.command == "spec-freeze-request":
             from cohorte.application.preparation import SpecFreezer
             from cohorte.domain.models import FeatureSpec, ProjectProfile

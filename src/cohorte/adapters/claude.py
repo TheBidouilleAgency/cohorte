@@ -18,6 +18,7 @@ from cohorte.application.preparation import (
     BrainstormPerspectiveTurn,
     BrainstormSynthesis,
     BrainstormSynthesisTurn,
+    SpecProposal,
 )
 from cohorte.application.vertical import AgentReport, AgentReview
 from cohorte.domain.auth import (
@@ -385,6 +386,9 @@ class ClaudeAdapter:
             workspace, prompt, BrainstormSynthesis, True, "brainstorm_synthesis"
         )
         return BrainstormSynthesisTurn(session_ref=session_ref, synthesis=synthesis)
+
+    def spec_proposal(self, workspace: Path, prompt: str) -> SpecProposal:
+        return self._structured_turn(workspace, prompt, SpecProposal, True, "spec_proposal")
 
     def build(self, workspace: Path, prompt: str) -> AgentReport:
         return self._structured_turn(workspace, prompt, AgentReport, False, "build")
