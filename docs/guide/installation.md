@@ -20,6 +20,8 @@ uv run cohorte doctor
 
 La commande globale et `uv run cohorte` peuvent correspondre à des versions différentes. Pour essayer les derniers changements du dépôt, utilisez `uv run cohorte` depuis celui-ci. Pour essayer une préversion publiée, utilisez la commande globale et contrôlez `--version`.
 
+Si vous utilisez le service local, sa version peut aussi différer de celle de la CLI : `cohorte service start` réutilise un service déjà lancé et ne le met pas à jour. Après une mise à jour du paquet, exécutez `cohorte service status` et comparez `health.version` avec `cohorte --version`. Pour redémarrer le daemon avec la nouvelle version, utilisez `cohorte service stop`, puis `cohorte service start`, et vérifiez à nouveau son état. Un redémarrage coupe temporairement les clients connectés ; terminez d’abord les runs en cours.
+
 `npm ci --prefix docs` n’installe que les dépendances du site VitePress pour sa prévisualisation locale ; cette commande ne sert pas à installer Cohorte.
 
 Les adaptateurs optionnels s’installent séparément selon le besoin :
