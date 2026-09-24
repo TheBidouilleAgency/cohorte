@@ -7,6 +7,15 @@ with the newest version first. Describe the verified scope and known limitations
 
 _No changes recorded yet._
 
+## 1.0.0a5 — 2026-09-24
+
+- Continue a guided brainstorm from a stored brief: the panel can ask another round of questions, retain previous answers, link revisions and show the resulting synthesis with `brief show`.
+- Continue an `intake` with stored answers and an explicit feature or patch route. `brainstorm --from-intake` carries the source provenance and answers into the feature panel; `patch-spec --from-intake` guides a bounded fix with reproduction, regression check, write paths and rollback.
+- Prepare guided specs with multiple surfaces, scenarios and acceptance criteria. Open questions can be answered on a later invocation, and a newer brief can be attached without erasing the existing draft. Multi-surface specs capture a shared contract before exact-hash approval.
+- Restore the Cohorte logo, add an illustrated V3 workflow animation, and rewrite the README and VitePress first steps around concrete user situations. Clarify that `intake` is optional and does not change code.
+- Validation: PRs #54 and #55 passed hosted documentation and Python CI jobs on Ubuntu, macOS and Windows with Python 3.12 and 3.13. A bounded two-round Codex brainstorm probe passed on Darwin arm64; the new intake, spec and patch CLI paths have deterministic integration tests but have not received new live-provider qualification.
+- Remaining scope: François UI integration is still partial in the qualification matrix. The full cross-provider model corpus and real-host qualification across target platforms remain open; this preview is not a claim of complete V2 parity.
+
 ## 1.0.0a4 — 2026-09-24
 
 - Add `cohorte brief show FEATURE_ID` to read a stored brainstorm brief without rerunning the provider panel. Human-readable output includes the synthesis, open questions, user answers and independent contributions; `cohorte --json brief show FEATURE_ID` returns the structured brief and artifact reference.

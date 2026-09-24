@@ -29,4 +29,4 @@ features:
 
 `intake` veut simplement dire **recevoir et trier une demande**. Vous pouvez le sauter si vous partez d’une idée et lancer directement `brainstorm`. Le [guide de premiers pas](/guide/demarrage) explique quoi lancer selon votre situation et à quel moment le code est modifié.
 
-La version Python publiée sur PyPI s’installe avec `uv tool install 'cohorte-engine==1.0.0a4'` et fournit `cohorte`. L’ancien paquet npm correspond à V2. Les nouveaux parcours de triage et de spec décrits ici sont présents dans le dépôt et attendent une prochaine publication ; vérifiez la version utilisée avec `cohorte --version`.
+Après la publication de `1.0.0a5`, le moteur Python s’installe avec `uv tool install 'cohorte-engine==1.0.0a5'` et fournit `cohorte`. L’ancien paquet npm correspond à V2. Vérifiez toujours la version utilisée avec `cohorte --version`.
