@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 
 from cohorte.application.fleet import FleetRunner, plan_fleet
-from cohorte.application.vertical import AgentReport, AgentReview
+from cohorte.application.vertical import AgentReport, AgentReview, ReviewFinding
 from cohorte.domain.evidence import ReviewVerdict
 from cohorte.domain.models import (
     AgentDefaults,
@@ -79,6 +79,39 @@ class FleetRuntime:
 
     def fix(self, workspace: Path, prompt: str) -> AgentReport:
         raise AssertionError("fix should not run")
+
+
+class GroundedFleetRuntime(FleetRuntime):
+    def __init__(self) -> None:
+        super().__init__()
+        self.integration_reviews = 0
+        self.integration_fixes = 0
+
+    def review(self, workspace: Path, prompt: str) -> AgentReview:
+        if "complete fleet candidate" in prompt:
+            self.integration_reviews += 1
+            assert "api.py:1" in prompt
+            assert "untrusted leads" in prompt
+            if self.integration_reviews == 1:
+                return AgentReview(
+                    verdict=ReviewVerdict.FIX,
+                    covered_surfaces=["api", "web"],
+                    findings=[
+                        ReviewFinding(
+                            severity="high", path="api.py", message="integration marker missing"
+                        )
+                    ],
+                )
+        return super().review(workspace, prompt)
+
+    def fix(self, workspace: Path, prompt: str) -> AgentReport:
+        self.integration_fixes += 1
+        assert "api.py:1" in prompt
+        assert "Specs:" in prompt
+        assert "integration marker missing" in prompt
+        target = workspace / "api.py"
+        target.write_text(target.read_text() + "integration-marker\n")
+        return AgentReport(summary="fixed fleet integration", changed_files=["api.py"])
 
 
 def profile() -> ProjectProfile:
@@ -186,6 +219,22 @@ def test_fleet_parallelizes_disjoint_features_and_revalidates_each(tmp_path: Pat
     ]
     assert (Path(result.worktree) / "api.py").read_text() == "api-feature\n"
     assert (Path(result.worktree) / "web.py").read_text() == "web-feature\n"
+
+
+def test_fleet_integration_review_and_fix_receive_current_repository_context(
+    tmp_path: Path,
+) -> None:
+    root = repository(tmp_path)
+    runtime = GroundedFleetRuntime()
+    specs = [feature("api-feature", "api", "api-check"), feature("web-feature", "web", "web-check")]
+
+    result = FleetRunner(runtime).run(
+        root, tmp_path / "worktrees", profile(), specs, "fleet-context"
+    )
+
+    assert result.ready_to_ship is True
+    assert runtime.integration_reviews == 2
+    assert runtime.integration_fixes == 1
 
 
 def test_fleet_serializes_overlapping_features_on_updated_base(tmp_path: Path) -> None:
