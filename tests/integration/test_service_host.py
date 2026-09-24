@@ -140,6 +140,58 @@ async def test_unix_host_checks_peer_permissions_and_survives_client_disconnect(
 
 @pytest.mark.asyncio
 @pytest.mark.skipif(os.name == "nt", reason="POSIX Unix socket test")
+async def test_shutdown_closes_idle_client_connections() -> None:
+    with tempfile.TemporaryDirectory(prefix="cohorte-idle-client-", dir="/tmp") as raw:
+        data_dir = Path(raw)
+        task = asyncio.create_task(serve(data_dir))
+        for _ in range(100):
+            if task.done():
+                error = task.exception()
+                if isinstance(error, PermissionError) and not os.environ.get(
+                    "COHORTE_SOCKET_REQUIRED"
+                ):
+                    pytest.skip("sandbox does not permit Unix socket creation")
+                if error is not None:
+                    raise error
+            if socket_path(data_dir).exists():
+                break
+            await asyncio.sleep(0.01)
+        assert socket_path(data_dir).exists()
+
+        reader, writer = await asyncio.open_unix_connection(socket_path(data_dir))
+        try:
+            writer.write(
+                (
+                    json.dumps(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": "initialize",
+                            "method": "initialize",
+                            "params": {
+                                "protocol_major": 1,
+                                "protocol_minor": 0,
+                                "client": {"name": "idle-test", "version": "1"},
+                                "capabilities": [],
+                            },
+                        }
+                    )
+                    + "\n"
+                ).encode()
+            )
+            await writer.drain()
+            assert "result" in json.loads(await asyncio.wait_for(reader.readline(), timeout=2))
+
+            stopped = await asyncio.to_thread(stop_service, data_dir, 0.5)
+            assert stopped == {"running": False, "stopped": True}
+            assert await asyncio.wait_for(reader.read(), timeout=2) == b""
+        finally:
+            writer.close()
+            await writer.wait_closed()
+            await asyncio.wait_for(task, timeout=2)
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(os.name == "nt", reason="POSIX Unix socket test")
 async def test_slow_client_is_disconnected_and_replays_from_last_sequence() -> None:
     with tempfile.TemporaryDirectory(prefix="cohorte-slow-client-", dir="/tmp") as raw:
         data_dir = Path(raw)
