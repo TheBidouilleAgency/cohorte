@@ -25,7 +25,7 @@ Forme générale : `cohorte [--json] [--config-dir DIR] [--data-dir DIR] COMMAND
 | `auth login codex|claude` | Démarrer la connexion dans le client natif. |
 | `auth verify codex|claude --live [--full]` | Vérifier activement un compte. |
 | `auth logout` / `auth disconnect` | Présentes dans le parseur, mais non implémentées ; utilisez le client natif pour gérer sa session. |
-| `service start|status|stop` | Gérer le service local. |
+| `service start|status|stop` | Gérer le service local. `start` réutilise un daemon existant ; après une mise à jour, comparez `service status` (`health.version`) avec `cohorte --version` et redémarrez avec `stop`, puis `start`. |
 | `rpc --stdio` | Servir le protocole JSON-RPC sur l’entrée/sortie standard. |
 
 ## Cadrage et spec

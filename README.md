@@ -33,10 +33,10 @@ Cohorte aide à **cadrer une demande, conserver les décisions et faire exécute
 
 ## Démarrer
 
-Le paquet Python s'appelle **`cohorte-engine`** ; la commande est **`cohorte`**. Il faut Python 3.12 ou plus récent. La préversion publiée est `1.0.0a4` :
+Le paquet Python s'appelle **`cohorte-engine`** ; la commande est **`cohorte`**. Il faut Python 3.12 ou plus récent. Pour installer cette préversion après sa publication :
 
 ```bash
-uv tool install 'cohorte-engine==1.0.0a4'
+uv tool install 'cohorte-engine==1.0.0a5'
 cohorte --version
 cohorte doctor
 ```
@@ -61,7 +61,7 @@ La suite dépend de votre point de départ :
 
 **`intake` signifie « recevoir et trier la demande ».** Cohorte peut demander des précisions avant de choisir la suite. Pour une fonctionnalité, reprenez les réponses avec `cohorte brainstorm --from-intake IDENTIFIANT`. Pour un bug, préparez un correctif avec `cohorte patch-spec --from-intake IDENTIFIANT`. Vous pouvez aussi sauter `intake` et lancer `brainstorm` directement si vous avez déjà une idée claire. [Voir le parcours détaillé](https://thebidouilleagency.github.io/cohorte/guide/parcours).
 
-Les commandes `intake --continue`, `brainstorm --from-intake`, la spec enrichie et `patch-spec --from-intake` sont présentes dans ce dépôt **mais pas encore dans la version PyPI `1.0.0a4`**. Pour les essayer avant la prochaine publication, lancez la CLI depuis ce checkout avec `uv run cohorte` ; vérifiez toujours `cohorte --version` quand vous utilisez la commande globale.
+Ces parcours guidés arrivent avec `1.0.0a5` ; la version `1.0.0a4` ne les contient pas. Vérifiez la commande globale avec `cohorte --version`. Depuis le dépôt, `uv run cohorte` exécute la version de développement.
 
 ## Les étapes du parcours
 
