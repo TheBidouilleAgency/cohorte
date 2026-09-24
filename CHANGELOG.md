@@ -7,6 +7,12 @@ with the newest version first. Describe the verified scope and known limitations
 
 _No changes recorded yet._
 
+## 1.0.0a9 — 2026-09-24
+
+- Complete the project-context handoff for Fleet integration: its independent review and correction agents now receive bounded, cited excerpts from the current candidate worktree. Fleet correction also receives every participating frozen spec and the project profile, alongside failed checks and findings.
+- `patch`, `refactor`, and design alignment already use the common build/review/fix runner; `audit` supplies its own bounded source snapshot. This release closes the remaining independent agent prompt found in the workflow audit.
+- Validation: PR #62 passed documentation and Python 3.12/3.13 CI on Ubuntu, macOS and Windows. A local integration test forces an integration finding and confirms that both Fleet review and fix receive current source evidence. Live Codex/Claude end-to-end quality remains to be verified by a project run.
+
 ## 1.0.0a8 — 2026-09-24
 
 - Carry project-aware source references through the guided feature workflow. `spec` shows current and brief-linked file leads before decisions are frozen; `build`, `review`, and `fix` each receive bounded, cited excerpts from their current worktree alongside the frozen spec and profile. Multi-surface implementers and integration reviewers receive the same context.
