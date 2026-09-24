@@ -18,12 +18,17 @@ def test_brainstorm_accepts_profile_saved_by_init(
     repository = tmp_path / "repo"
     repository.mkdir()
     (repository / "pyproject.toml").write_text('[project]\nname = "sample"\nversion = "0.1.0"\n')
+    source = repository / "src"
+    source.mkdir()
+    (source / "welcome.py").write_text("def welcome_user():\n    return 'Sample idea'\n")
     data_dir = tmp_path / "data"
     database = Database(data_dir / "cohorte.sqlite3")
     project_id = CohorteService(database).init_project(repository)["profile"]["project_id"]
     database.close()
 
-    def reached_runner(*_args: object, **_kwargs: object) -> None:
+    def reached_runner(*args: object, **_kwargs: object) -> None:
+        assert "src/welcome.py:1" in str(args[4])
+        assert "def welcome_user" in str(args[4])
         raise RuntimeError("brainstorm-runner-reached")
 
     monkeypatch.setattr(BrainstormRunner, "run", reached_runner)

@@ -46,6 +46,8 @@ Forme générale : `cohorte [--json] [--config-dir DIR] [--data-dir DIR] COMMAND
 
 `brainstorm` accepte aussi `--prior-decision` répétable. Chaque tour conserve son propre brief et une référence vers le tour précédent. `brief show` lit le dernier tour. Si un nouveau brief arrive après le brouillon de spec, `spec` propose de l'y rattacher sans effacer les scénarios ni critères existants et pose les nouvelles questions bloquantes. `--refresh` reconstruit le brouillon depuis le dernier brief. Une spec gelée ne se réouvre pas par un nouveau brainstorm.
 
+Le panel reçoit automatiquement un extrait borné des fichiers locaux pertinents, avec chemins et lignes, en plus du profil enregistré. Cet extrait est recalculé à chaque tour, puis conservé dans le brief ; il sert de piste de lecture, pas de preuve que le reste du dépôt ne contient rien. Les agents doivent vérifier les fichiers complets avant de conclure sur un comportement. `--context` reste disponible pour des faits produit ou des contraintes absents du dépôt.
+
 ## Exécution et livraison
 
 | Commande | Usage |

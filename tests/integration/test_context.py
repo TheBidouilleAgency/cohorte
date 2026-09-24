@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,7 @@ from cohorte.application.context import (
     capture_design,
     retrieve_context,
 )
+from cohorte.application.repository_context import collect_repository_context
 from cohorte.domain.errors import CohorteError, ErrorCode
 from cohorte.domain.models import DesignConfig, RetrievalConfig
 
@@ -105,3 +107,43 @@ def test_disabled_retrieval_uses_file_search_without_claiming_fallback(
     assert result.status == "ok"
     assert result.configured_provider == "none"
     assert result.effective_provider == "files"
+
+
+def test_brainstorm_context_finds_cited_code_and_excludes_private_files(tmp_path: Path) -> None:
+    source = tmp_path / "src" / "service"
+    source.mkdir(parents=True)
+    (source / "host.py").write_text(
+        "def start_service():\n"
+        "    current = service_status()\n"
+        "    if current['running']:\n"
+        "        return current\n"
+        "    process = subprocess.Popen(['python', '-m', 'service'])\n"
+    )
+    (tmp_path / ".env").write_text("API_KEY=private-value\n")
+    (source / "private_token.py").write_text("service_token=private-value\n")
+    if os.name != "nt":
+        outside = tmp_path.parent / f"{tmp_path.name}-outside.py"
+        outside.write_text("def start_service(): return 'outside-private-value'\n")
+        (source / "outside.py").symlink_to(outside)
+
+    context = collect_repository_context(tmp_path, "service start should compare versions")
+
+    assert "src/service/host.py:1: def start_service():" in context
+    assert "subprocess.Popen" in context
+    assert "private-value" not in context
+    assert "outside-private-value" not in context
+    assert len(context) <= 9000
+
+
+def test_brainstorm_context_rechecks_changed_source_each_round(tmp_path: Path) -> None:
+    source = tmp_path / "src"
+    source.mkdir()
+    module = source / "onboarding.py"
+    module.write_text("def onboarding_step(): return 'first'\n")
+    first = collect_repository_context(tmp_path, "onboarding step")
+    module.write_text("def onboarding_step(): return 'second'\n")
+    second = collect_repository_context(tmp_path, "onboarding step")
+
+    assert "first" in first
+    assert "second" in second
+    assert "first" not in second

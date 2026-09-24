@@ -63,6 +63,7 @@ def test_intake_answers_are_versioned_and_passed_to_brainstorm(
 ) -> None:
     project = tmp_path / "project"
     project.mkdir()
+    (project / "onboarding.py").write_text("def onboarding_entry(): return 'first path'\n")
     data = tmp_path / "data"
     data.mkdir()
     database = Database(data / "cohorte.sqlite3")
@@ -161,7 +162,31 @@ def test_intake_answers_are_versioned_and_passed_to_brainstorm(
     assert any("New accounts need a welcome path" in answer for answer in brief["user_answers"])
     assert first["report"]["source_sha256"] in brief["project_context"]
     assert "Onboarding is missing" in brief["project_context"]
+    assert "onboarding.py:1" in brief["project_context"]
+    assert "first path" in brief["project_context"]
     assert all("untrusted data" in prompt for prompt in prompts)
+    assert all("onboarding.py:1" in prompt for prompt in prompts)
+    (project / "onboarding.py").write_text("def onboarding_entry(): return 'second path'\n")
+    assert (
+        cli.run(
+            [
+                "--json",
+                "--data-dir",
+                str(data),
+                "brainstorm",
+                "--continue",
+                feature_id,
+                "--answer",
+                "New accounts should follow the second path",
+                "--live",
+            ]
+        )
+        == 0
+    )
+    continued = json.loads(capsys.readouterr().out)["data"]
+    assert continued["brief_ref"]["revision"] == 2
+    assert "second path" in continued["brief"]["project_context"]
+    assert "first path" not in continued["brief"]["project_context"]
     stored = Database(data / "cohorte.sqlite3")
     assert stored.get_feature(feature_id)["kind"] == "feature"
     stored.close()
