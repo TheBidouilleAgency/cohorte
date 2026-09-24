@@ -7,6 +7,12 @@ with the newest version first. Describe the verified scope and known limitations
 
 _No changes recorded yet._
 
+## 1.0.0a6 — 2026-09-24
+
+- Fix `cohorte service stop` hanging when an idle client remains connected to the Unix socket. The host now closes its client connections during shutdown, allowing the process to finish and remove its PID file.
+- Add an integration test that reproduces the timeout with an initialized idle client and checks both the stop response and client disconnect.
+- Validation: the regression test failed before the fix and passes afterward; the local Python suite, Ruff and mypy pass on Darwin arm64. The release workflow will repeat the Python 3.12/3.13 matrix on Ubuntu, macOS and Windows. Provider-live qualification and François UI coverage are unchanged from `1.0.0a5`.
+
 ## 1.0.0a5 — 2026-09-24
 
 - Continue a guided brainstorm from a stored brief: the panel can ask another round of questions, retain previous answers, link revisions and show the resulting synthesis with `brief show`.

@@ -73,8 +73,10 @@ async def serve(
     database = Database(data_dir / "cohorte.sqlite3")
     service = CohorteService(database)
     stopping = asyncio.Event()
+    active_writers: set[asyncio.StreamWriter] = set()
 
     async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        active_writers.add(writer)
         connection = writer.get_extra_info("socket")
         if connection is not None and socket_send_buffer_bytes is not None:
             connection.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, socket_send_buffer_bytes)
@@ -144,6 +146,7 @@ async def serve(
         except (asyncio.LimitOverrunError, ConnectionError, RuntimeError, TimeoutError, ValueError):
             pass
         finally:
+            active_writers.discard(writer)
             if follower is not None:
                 follower.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
@@ -164,10 +167,11 @@ async def serve(
     pid_path(data_dir).write_text(json.dumps(identity, sort_keys=True) + "\n")
     os.chmod(pid_path(data_dir), 0o600)
     try:
-        async with server:
-            await stopping.wait()
+        await stopping.wait()
     finally:
         server.close()
+        for writer in tuple(active_writers):
+            writer.close()
         await server.wait_closed()
         database.close()
         endpoint.unlink(missing_ok=True)

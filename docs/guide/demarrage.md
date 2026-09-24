@@ -54,7 +54,7 @@ cohorte start IDENTIFIANT
 `start` montre le périmètre et attend votre accord avant de lancer le travail dans un worktree Git isolé. Le run passe ensuite par les checks et la revue. La création du commit et de la PR ou MR est une autre décision, décrite dans le [parcours complet](/guide/parcours).
 
 ::: tip Version installée
-Les commandes `intake --continue`, `brainstorm --from-intake`, la spec enrichie et `patch-spec --from-intake` arrivent avec `1.0.0a5` ; elles ne sont pas dans `1.0.0a4`. Vérifiez avec `cohorte --version`. Avant la publication, vous pouvez les essayer depuis le dépôt avec `uv run cohorte`.
+Les commandes `intake --continue`, `brainstorm --from-intake`, la spec enrichie et `patch-spec --from-intake` sont disponibles depuis `1.0.0a5`. La version `1.0.0a6` corrige également l’arrêt du service quand un client reste connecté. Vérifiez avec `cohorte --version` ; depuis le dépôt, `uv run cohorte` exécute la version de développement.
 :::
 
 Pour l’automatisation, placez `--json` **avant** la sous-commande et fournissez les paramètres explicitement. `--live` autorise les appels effectifs au fournisseur pour les commandes qui le demandent. La [référence CLI](/reference/cli) détaille cette forme, et `cohorte status` montre les fonctionnalités, runs et décisions en attente du projet courant.
