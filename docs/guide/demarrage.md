@@ -45,6 +45,8 @@ cohorte spec IDENTIFIANT
 
 `spec` recueille les surfaces, scénarios, critères, checks, cas d’erreur et retour arrière. Une question laissée sans réponse garde la spec en brouillon ; relancez la même commande pour y répondre. Avant de la geler, Cohorte affiche le contenu et demande votre approbation exacte. **La préparation et le gel ne lancent pas les agents de code.**
 
+Le cadrage rappelle des fichiers pertinents du dépôt à vérifier avant le gel. Les agents de construction, revue et correction reçoivent ensuite la spec approuvée et un relevé récent des fichiers utiles dans leur worktree ; la revue inspecte également le diff. Relisez les décisions de la spec : le relevé de fichiers sert d'indice et peut manquer du contexte métier extérieur au dépôt.
+
 Une fois la spec gelée :
 
 ```bash

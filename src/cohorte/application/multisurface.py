@@ -356,7 +356,10 @@ class MultiSurfaceRunner:
                 )
             fix_cycles += 1
             before_fix = candidate.snapshot_digest()
-            self.runtime.fix(candidate.root, VerticalRunner._fix_prompt(spec, failed, blocking))
+            self.runtime.fix(
+                candidate.root,
+                VerticalRunner._fix_prompt(candidate.root, profile, spec, failed, blocking),
+            )
             owned = [path for task in plan.tasks for path in task.write_paths]
             VerticalRunner._require_owned(candidate.changed_files(plan.base_commit), owned)
             VerticalRunner._require_fix_progress(before_fix, candidate.snapshot_digest())
@@ -407,7 +410,7 @@ class MultiSurfaceRunner:
     ) -> tuple[str, list[str]]:
         self.runtime.build(
             task_repo.root,
-            VerticalRunner._build_prompt(profile, spec, task)
+            VerticalRunner._build_prompt(task_repo.root, profile, spec, task)
             + f"\nExecute only task {task.id}. Criteria: {task.criterion_ids}. "
             + f"Dependency paths are read-only: {task.read_paths}.",
         )
@@ -528,7 +531,9 @@ class MultiSurfaceRunner:
     ) -> AgentReview:
         changed = candidate.changed_files(base_commit)
         diff = candidate.diff(base_commit)
-        base_prompt = VerticalRunner._review_prompt(profile, spec, base_commit, changed, diff)
+        base_prompt = VerticalRunner._review_prompt(
+            candidate.root, profile, spec, base_commit, changed, diff
+        )
         workers = min(
             len(spec.surfaces),
             profile.policy.max_parallel_global,

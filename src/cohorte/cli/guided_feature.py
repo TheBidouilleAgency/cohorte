@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -17,6 +18,7 @@ from cohorte.application.preparation import (
     canonical_model_bytes,
     model_hash,
 )
+from cohorte.application.repository_context import collect_repository_context
 from cohorte.domain.models import (
     ArtifactRef,
     Criterion,
@@ -82,6 +84,21 @@ def _new_draft(
         print("Objections :")
         for objection in synthesis.strong_objections:
             print(f"  • {objection}")
+    current_context = collect_repository_context(repository, f"{brief.idea} {synthesis.problem}")
+    references: list[str] = []
+    seen_paths: set[str] = set()
+    for context in (current_context, brief.project_context):
+        for line in context.splitlines():
+            match = re.match(r"^(.{1,240}):([1-9][0-9]{0,6}): ", line)
+            if match is not None and match.group(1) not in seen_paths:
+                seen_paths.add(match.group(1))
+                references.append(f"{match.group(1)}:{match.group(2)}")
+            if len(references) >= 6:
+                break
+    if references:
+        print("Pistes du dépôt à vérifier avant de geler la spec :")
+        for reference in references[:6]:
+            print(f"  • {reference}")
     decisions: list[str] = []
     open_questions: list[str] = []
     for question in synthesis.blocking_questions:

@@ -147,3 +147,13 @@ def test_brainstorm_context_rechecks_changed_source_each_round(tmp_path: Path) -
     assert "first" in first
     assert "second" in second
     assert "first" not in second
+
+
+def test_repository_context_includes_nonstandard_surface_roots(tmp_path: Path) -> None:
+    surface = tmp_path / "backend"
+    surface.mkdir()
+    (surface / "service.ts").write_text("export function restartService() { return 'ready'; }\n")
+
+    context = collect_repository_context(tmp_path, "restart service")
+
+    assert "backend/service.ts:1" in context

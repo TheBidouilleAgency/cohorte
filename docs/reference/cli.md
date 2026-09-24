@@ -48,6 +48,8 @@ Forme générale : `cohorte [--json] [--config-dir DIR] [--data-dir DIR] COMMAND
 
 Le panel reçoit automatiquement un extrait borné des fichiers locaux pertinents, avec chemins et lignes, en plus du profil enregistré. Cet extrait est recalculé à chaque tour, puis conservé dans le brief ; il sert de piste de lecture, pas de preuve que le reste du dépôt ne contient rien. Les agents doivent vérifier les fichiers complets avant de conclure sur un comportement. `--context` reste disponible pour des faits produit ou des contraintes absents du dépôt.
 
+Lors de `spec`, le terminal rappelle des chemins sourcés du brief et du dépôt actuel avant de recueillir les décisions. La spec gelée conserve sa référence au brief, ses décisions et ses critères. Pendant `start` ou `loop`, les agents de construction, revue et correction reçoivent chacun la spec, le profil et un nouvel extrait borné de leur worktree, adapté à leur tâche ; la revue reçoit aussi le diff et les fichiers modifiés. En multi-surface, chaque agent de surface et la revue d'intégration reçoivent ce contexte. Ces extraits ne remplacent pas la lecture des fichiers complets et ne constituent pas une preuve d'absence.
+
 ## Exécution et livraison
 
 | Commande | Usage |

@@ -79,6 +79,33 @@ class ExhaustingRuntime(FixingRuntime):
         return AgentReport(summary="changed but still wrong", changed_files=["src/message.txt"])
 
 
+class GroundedRuntime(FixingRuntime):
+    def build(self, workspace: Path, prompt: str) -> AgentReport:
+        assert "src/message.py:1" in prompt
+        assert "def write_hello_message" in prompt
+        assert "before-build" in prompt
+        report = super().build(workspace, prompt)
+        (workspace / "src" / "message.py").write_text(
+            "def write_hello_message(): return 'after-build'\n"
+        )
+        return report
+
+    def review(self, workspace: Path, prompt: str) -> AgentReview:
+        assert "src/message.py:1" in prompt
+        evidence = prompt.split("Repository evidence", 1)[1]
+        assert "after-build" in evidence
+        assert "before-build" not in evidence
+        assert "Changed files to inspect" in prompt
+        return super().review(workspace, prompt)
+
+    def fix(self, workspace: Path, prompt: str) -> AgentReport:
+        assert "src/message.py:1" in prompt
+        assert "after-build" in prompt
+        assert "Frozen feature spec" in prompt
+        assert "Project profile" in prompt
+        return super().fix(workspace, prompt)
+
+
 def profile() -> ProjectProfile:
     return ProjectProfile(
         schema_version=1,
@@ -152,6 +179,30 @@ def test_vertical_runs_build_check_fix_and_independent_review(tmp_path: Path) ->
     assert result.fix_cycles == 1
     assert result.changed_files == ["src/message.txt"]
     assert result.review["verdict"] == "ready"
+    assert runtime.reviews == 2
+    assert runtime.fixes == 1
+
+
+def test_vertical_passes_cited_workspace_context_to_each_agent_phase(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    git(repository, "init", "-b", "main")
+    git(repository, "config", "user.email", "test@example.com")
+    git(repository, "config", "user.name", "Test")
+    (repository / "src").mkdir()
+    (repository / "src" / "message.py").write_text(
+        "def write_hello_message(): return 'before-build'\n"
+    )
+    git(repository, "add", ".")
+    git(repository, "commit", "-m", "initial")
+    runtime = GroundedRuntime()
+
+    result = VerticalRunner(runtime).run(
+        repository, tmp_path / "worktrees", profile(), spec(), "grounded-run"
+    )
+
+    assert result.ready_to_ship is True
+    assert runtime.builds == 1
     assert runtime.reviews == 2
     assert runtime.fixes == 1
 
