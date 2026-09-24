@@ -808,6 +808,7 @@ def run(argv: list[str] | None = None) -> int:
                 BrainstormRunner,
                 canonical_model_bytes,
             )
+            from cohorte.application.repository_context import collect_repository_context
             from cohorte.domain.models import ArtifactRef, ProjectProfile
 
             guided = (
@@ -966,11 +967,31 @@ def run(argv: list[str] | None = None) -> int:
                 brainstorm_runtime = CodexAdapter(repository, event_sink=agent_events)
             runner = BrainstormRunner(brainstorm_runtime)
             while True:
+                repository_context = collect_repository_context(
+                    repository,
+                    " ".join(
+                        [
+                            args.feature_id,
+                            args.idea,
+                            *(previous_brief.user_answers if previous_brief else []),
+                            *args.answer,
+                        ]
+                    ),
+                )
                 brief = runner.run(
                     repository,
                     args.feature_id,
                     args.idea,
-                    "\n".join(filter(None, [_profile_context(project["profile"]), args.context])),
+                    "\n".join(
+                        filter(
+                            None,
+                            [
+                                _profile_context(project["profile"]),
+                                repository_context,
+                                args.context,
+                            ],
+                        )
+                    ),
                     args.answer,
                     args.prior_decision,
                     args.perspective,
