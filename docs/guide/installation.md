@@ -1,11 +1,11 @@
 # Installer Cohorte
 
-Cohorte requiert Python 3.12 ou plus récent. Le paquet **Python sur PyPI** s’appelle `cohorte-engine` ; la commande installée s’appelle `cohorte`. Ce guide vise la préversion `1.0.0a7`. **N’utilisez pas `npm install -g cohorte` : ce nom correspond à l’ancien paquet npm, pas à ce moteur Python.**
+Cohorte requiert Python 3.12 ou plus récent. Le paquet **Python sur PyPI** s’appelle `cohorte-engine` ; la commande installée s’appelle `cohorte`. Ce guide vise la préversion `1.0.0a8`. **N’utilisez pas `npm install -g cohorte` : ce nom correspond à l’ancien paquet npm, pas à ce moteur Python.**
 
 Avec `uv` :
 
 ```bash
-uv tool install 'cohorte-engine==1.0.0a7'
+uv tool install 'cohorte-engine==1.0.0a8'
 cohorte --version
 cohorte doctor
 ```
@@ -27,7 +27,7 @@ Si vous utilisez le service local, sa version peut aussi différer de celle de l
 Les adaptateurs optionnels s’installent séparément selon le besoin :
 
 ```bash
-uv tool install 'cohorte-engine[claude]==1.0.0a7'
+uv tool install 'cohorte-engine[claude]==1.0.0a8'
 ```
 
 Les extras `serena` et `graphify` concernent la [recherche de contexte](/reference/integrations). L’installation d’un extra ne configure pas automatiquement son service externe.
