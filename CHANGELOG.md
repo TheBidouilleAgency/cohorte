@@ -7,6 +7,12 @@ with the newest version first. Describe the verified scope and known limitations
 
 _No changes recorded yet._
 
+## 1.0.0a7 — 2026-09-24
+
+- Give every `brainstorm` panel contribution and its synthesis bounded excerpts of relevant local source and project notes, with path and line references. Recompute this context on each follow-up round so agents can see intervening file changes.
+- Ask agents to inspect complete files before making code claims and to keep unsupported claims as assumptions. The local search is lexical and cannot establish that a behavior or file is absent; `--context` remains available for product facts outside the repository.
+- Validation: PR #58 passed the documentation build and Python 3.12/3.13 CI matrix on Ubuntu, macOS and Windows. Local integration tests cover panel delivery, follow-up refresh, citations and private-file exclusion. Live Codex/Claude response quality on an existing project brief has not yet been retested.
+
 ## 1.0.0a6 — 2026-09-24
 
 - Fix `cohorte service stop` hanging when an idle client remains connected to the Unix socket. The host now closes its client connections during shutdown, allowing the process to finish and remove its PID file.
