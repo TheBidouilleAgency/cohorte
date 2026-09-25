@@ -7,6 +7,12 @@ with the newest version first. Describe the verified scope and known limitations
 
 _No changes recorded yet._
 
+## 1.0.0a14 — 2026-09-25
+
+- On `init --refresh`, update previously generated Python `uv run` checks to load the development extras detected in the repository. Preserve customized check commands and metadata.
+- Display the profile's own revision after refresh, and allow `profile edit` when the profile revision differs from the storage artifact revision.
+- Validation: PR #72 passed documentation and Python 3.12/3.13 CI on Ubuntu, macOS and Windows. Local pytest, Ruff lint/format and mypy passed. The corrected path has not yet been exercised by a new provider-live run from the published package.
+
 ## 1.0.0a13 — 2026-09-25
 
 - In guided `brainstorm`, reject an invalid explicit `--feature-id` before starting the panel, and let users correct an invalid identifier entered at the prompt without losing their idea. Keep the existing runner validation and report the new CLI error in French.
