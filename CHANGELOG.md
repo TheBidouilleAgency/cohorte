@@ -7,6 +7,12 @@ with the newest version first. Describe the verified scope and known limitations
 
 _No changes recorded yet._
 
+## 1.0.0a13 — 2026-09-25
+
+- In guided `brainstorm`, reject an invalid explicit `--feature-id` before starting the panel, and let users correct an invalid identifier entered at the prompt without losing their idea. Keep the existing runner validation and report the new CLI error in French.
+- Discover Python checks with the development extras needed in a fresh uv worktree: follow `uv sync --all-extras` when declared in GitHub CI, otherwise use the project's `dev` extra when present. Include configured Ruff formatting and mypy checks. Classify a missing uv tool as an environment failure instead of attempting a code fix.
+- Validation: PRs #69 and #70 passed documentation and Python 3.12/3.13 CI on Ubuntu, macOS and Windows. The `brainstorm-id-validation` live Codex run reached READY after its initially missing test dependencies were installed in the retained worktree; the new discovery and failure classification passed deterministic tests and a fresh-worktree uv smoke test. The combined published path still needs a new live run.
+
 ## 1.0.0a12 — 2026-09-25
 
 - Restore project-aware preparation: richer `init` discovery and explicit profile choices, repository-grounded multi-round brainstorm, editable agent spec proposals, and guided intake, patch and audit paths. Add a supervised Fleet board, local incoming PR/MR review, retro proposals, project doctor and optional client wrappers.
