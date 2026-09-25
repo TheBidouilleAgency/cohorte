@@ -25,6 +25,7 @@ from cohorte.domain.evidence import (
     require_shippable,
 )
 from cohorte.domain.models import FeatureSpec, ProjectProfile, SpecStatus, Stage, Task, TaskPlan
+from cohorte.execution.checks import CheckExecution
 from cohorte.execution.scheduler import schedule_ready
 
 
@@ -337,9 +338,15 @@ class MultiSurfaceRunner:
                 {"passed": all(item.status == "passed" for item in checks)},
             )
             failed = [item for item in checks if item.status != "passed"]
-            review = self._review_candidate(candidate, profile, spec, plan.base_commit)
+            review = self._review_candidate(candidate, profile, spec, plan.base_commit, checks)
             blocking = VerticalRunner._blocking_findings(profile, review)
-            ready = not failed and review.verdict == ReviewVerdict.READY and not blocking
+            uncovered = sorted(set(spec.surfaces) - set(review.covered_surfaces))
+            ready = (
+                not failed
+                and review.verdict == ReviewVerdict.READY
+                and not blocking
+                and not uncovered
+            )
             self._observe(
                 observe,
                 "review",
@@ -349,6 +356,7 @@ class MultiSurfaceRunner:
                     "ready": ready,
                     "verdict": review.verdict.value,
                     "covered_surfaces": review.covered_surfaces,
+                    "uncovered_surfaces": uncovered,
                     "findings": [
                         {**finding.model_dump(mode="json"), "message": finding.message[:2000]}
                         for finding in review.findings[:100]
@@ -356,6 +364,13 @@ class MultiSurfaceRunner:
                     "findings_truncated": len(review.findings) > 100,
                 },
             )
+            if uncovered:
+                raise CohorteError(
+                    ErrorCode.REVIEW_INCOMPLETE,
+                    f"integrated review did not cover surfaces: {', '.join(uncovered)}",
+                    "delivery is blocked",
+                    remediation="rerun independent review for every required surface",
+                )
             if ready:
                 break
             if fix_cycles >= profile.policy.max_fix_cycles:
@@ -539,11 +554,12 @@ class MultiSurfaceRunner:
         profile: ProjectProfile,
         spec: FeatureSpec,
         base_commit: str,
+        checks: list[CheckExecution],
     ) -> AgentReview:
         changed = candidate.changed_files(base_commit)
         diff = candidate.diff(base_commit)
         base_prompt = VerticalRunner._review_prompt(
-            candidate.root, profile, spec, base_commit, changed, diff
+            candidate.root, profile, spec, base_commit, changed, diff, checks
         )
         workers = min(
             len(spec.surfaces),

@@ -401,7 +401,7 @@ class SpecFreezer:
             "profile_hash": profile_hash,
         }
         stored = self.database.deduplicated(
-            f"spec-freeze-request:{draft.feature_id}:{spec_hash}",
+            f"spec-freeze-request:{draft.feature_id}:{spec_hash}:{profile_hash}:{plan_ref.sha256}",
             payload,
             lambda: {
                 "request_id": self.database.create_request(None, "spec.freeze", payload, spec_hash)

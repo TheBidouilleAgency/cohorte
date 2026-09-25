@@ -188,18 +188,17 @@ class VerticalRunner:
                     plan.base_commit,
                     candidate.changed_files(plan.base_commit),
                     candidate.diff(plan.base_commit),
+                    checks,
                 ),
             )
             blocking = self._blocking_findings(profile, review)
             uncovered = sorted(set(spec.surfaces) - set(review.covered_surfaces))
-            if uncovered:
-                raise CohorteError(
-                    ErrorCode.REVIEW_INCOMPLETE,
-                    f"review did not cover surfaces: {', '.join(uncovered)}",
-                    "delivery is blocked",
-                    remediation="rerun independent review for every required surface",
-                )
-            ready = not failed and review.verdict == ReviewVerdict.READY and not blocking
+            ready = (
+                not failed
+                and review.verdict == ReviewVerdict.READY
+                and not blocking
+                and not uncovered
+            )
             self._observe(
                 observe,
                 "review",
@@ -209,6 +208,7 @@ class VerticalRunner:
                     "ready": ready,
                     "verdict": review.verdict.value,
                     "covered_surfaces": review.covered_surfaces,
+                    "uncovered_surfaces": uncovered,
                     "findings": [
                         {**finding.model_dump(mode="json"), "message": finding.message[:2000]}
                         for finding in review.findings[:100]
@@ -216,6 +216,13 @@ class VerticalRunner:
                     "findings_truncated": len(review.findings) > 100,
                 },
             )
+            if uncovered:
+                raise CohorteError(
+                    ErrorCode.REVIEW_INCOMPLETE,
+                    f"review did not cover surfaces: {', '.join(uncovered)}",
+                    "delivery is blocked",
+                    remediation="rerun independent review for every required surface",
+                )
             if ready:
                 break
             if fix_cycles >= profile.policy.max_fix_cycles:
@@ -386,10 +393,24 @@ class VerticalRunner:
         base_commit: str,
         changed_files: list[str],
         diff: str,
+        checks: list[CheckExecution] | None = None,
     ) -> str:
         required = sorted(active_constraints(profile, spec.surfaces))
+        check_results = [
+            {
+                "check_id": item.check_id,
+                "status": item.status,
+                "exit_code": item.exit_code,
+                "environment_issue": item.environment_issue,
+            }
+            for item in checks or []
+        ]
         return (
             "Independently review the candidate against the frozen spec. Do not modify files. "
+            "Cohorte already ran the declared checks in the writable candidate worktree immediately "
+            "before this review; their results below are the check evidence. Do not rerun them in "
+            "your read-only sandbox. A sandbox-only failure to create temporary files or run a "
+            "check is not a code finding and must not override a passed check result. "
             f"Check user-facing product copy against target language {profile.language}, "
             "independently of the CLI conversation language. "
             "Use critical/high/medium/low severities and return READY only with no blocking finding.\n"
@@ -397,6 +418,9 @@ class VerticalRunner:
             "Check design references, role permissions and mobile behavior when listed; "
             "report missing evidence as a finding.\n"
             f"Base commit: {base_commit}\nSurfaces: {spec.surfaces}\n"
+            "In covered_surfaces return only exact surface IDs from Surfaces after inspecting "
+            "them; do not use labels, file paths, prose or check IDs. Missing coverage blocks delivery.\n"
+            f"Cohorte check results: {json.dumps(check_results)}\n"
             f"Changed files to inspect in the worktree: {changed_files}\n"
             f"Spec:\n{spec.model_dump_json(indent=2)}\nProfile:\n"
             f"{profile.model_dump_json(indent=2)}\nDiff:\n{diff}\n"
