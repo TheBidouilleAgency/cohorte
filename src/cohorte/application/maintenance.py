@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import hashlib
 import json
+import os
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -11,6 +12,7 @@ from typing import Any, Literal, cast
 from pydantic import Field, model_validator
 
 from cohorte.adapters.git import GitRepository, path_is_owned
+from cohorte.application.repository_context import collect_project_overview
 from cohorte.application.vertical import (
     AgentReview,
     VerticalResult,
@@ -124,6 +126,7 @@ class AuditRunner:
                 "Return concrete findings only; READY means no finding was identified.\n"
                 f"Surfaces: {spec.surface_ids}\nPaths: {spec.paths}\n"
                 f"Concerns: {spec.concerns}\nProfile:\n{profile.model_dump_json(indent=2)}\n"
+                f"Project overview:\n{collect_project_overview(repo.root)}\n"
                 f"Bounded source snapshot:\n{sources}"
             ),
         )
@@ -157,20 +160,66 @@ class AuditRunner:
         )
 
     @staticmethod
-    def _bounded_sources(root: Path, paths: list[str]) -> str:
-        blocks: list[str] = []
-        total = 0
+    def _audit_files(root: Path, paths: list[str]) -> list[str]:
         resolved_root = root.resolve()
+        selected: list[str] = []
+        skipped = {
+            ".git",
+            ".venv",
+            "node_modules",
+            "dist",
+            "build",
+            "target",
+            "coverage",
+            "__pycache__",
+        }
         for relative in paths:
             path = (resolved_root / relative).resolve(strict=True)
             if resolved_root not in path.parents and path != resolved_root:
                 raise ValueError(f"audit path escapes repository: {relative}")
-            if not path.is_file():
-                raise ValueError(f"audit path is not a file: {relative}")
+            if path.is_file():
+                selected.append(path.relative_to(resolved_root).as_posix())
+                continue
+            if not path.is_dir():
+                raise ValueError(f"audit path is not a file or directory: {relative}")
+            for directory, subdirs, files in os.walk(path, followlinks=False):
+                subdirs[:] = sorted(
+                    name for name in subdirs if name not in skipped and not name.startswith(".")
+                )
+                for name in sorted(files):
+                    candidate = Path(directory) / name
+                    if candidate.is_symlink() or candidate.suffix.lower() not in {
+                        ".py",
+                        ".ts",
+                        ".tsx",
+                        ".js",
+                        ".jsx",
+                        ".rs",
+                        ".go",
+                    }:
+                        continue
+                    selected.append(candidate.relative_to(resolved_root).as_posix())
+                    if len(selected) >= 500:
+                        return sorted(set(selected))
+        return sorted(set(selected))
+
+    @staticmethod
+    def _bounded_sources(root: Path, paths: list[str]) -> str:
+        blocks: list[str] = []
+        total = 0
+        resolved_root = root.resolve()
+        files = AuditRunner._audit_files(root, paths)
+        blocks.append(
+            f"Files in scope ({len(files)} shown, capped at 500): {', '.join(files[:200])}"
+        )
+        for relative in files[:12]:
+            path = (resolved_root / relative).resolve(strict=True)
+            if path.stat().st_size > 32 * 1024:
+                continue
             content = path.read_text(errors="replace")
             total += len(content.encode())
             if total > 256 * 1024:
-                raise ValueError("bounded audit source exceeds 256 KiB")
+                break
             numbered = "\n".join(
                 f"{number}: {line}" for number, line in enumerate(content.splitlines(), 1)
             )
@@ -203,7 +252,7 @@ class AuditRunner:
     @staticmethod
     def _static_findings(root: Path, paths: list[str]) -> list[AuditFinding]:
         findings: list[AuditFinding] = []
-        for relative in paths:
+        for relative in AuditRunner._audit_files(root, paths):
             if Path(relative).suffix != ".py":
                 continue
             source = (root / relative).read_text(errors="replace")

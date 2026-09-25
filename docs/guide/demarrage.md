@@ -7,7 +7,7 @@ cohorte init .
 cohorte profile show
 ```
 
-`init` propose des surfaces de code et des checks à partir du dépôt. Relisez le profil avant un run, particulièrement les chemins partagés, les dépendances entre surfaces et les commandes de test. Pour corriger une proposition, utilisez `cohorte profile edit`. `cohorte init .` réutilise le profil existant ; `--refresh` relance la découverte et remplace vos corrections.
+`init` analyse les manifests, workspaces, scripts de validation, contrats, chemins de code et indices de design ou de release. En mode interactif, il montre les surfaces, les rôles, les checks et les questions restantes avant l'enregistrement. Relisez surtout les chemins partagés, les dépendances et les commandes de test. Utilisez `cohorte profile edit` pour corriger une proposition. `cohorte init .` réutilise le profil existant ; `--refresh` ajoute les éléments nouvellement détectés tout en conservant les choix personnalisés. `--preview` montre l'analyse sans enregistrer le projet, y compris en JSON.
 
 ## Choisir votre point de départ
 
@@ -17,7 +17,7 @@ cohorte profile show
 cohorte brainstorm
 ```
 
-Le terminal vous demande l’idée, les personnes concernées, le problème observé et le résultat souhaité. Le panel produit, architecture et QA propose un brief avec pistes, objections et questions. Il ne modifie pas le code et ne transforme pas son avis en décision de votre part. Relisez le brief avec `cohorte brief show IDENTIFIANT`. Si des questions restent ouvertes, répondez dans le terminal ou revenez plus tard avec `cohorte brainstorm --continue IDENTIFIANT`.
+Le terminal vous demande l’idée puis lance le panel défini dans le profil, avec des extraits pertinents du dépôt. Le panel propose un brief, des objections, des questions ciblées et, pour chaque question, une piste produit et une piste code. Vous pouvez répondre librement ou taper `p` ou `c` pour reprendre une piste. Le panel ne modifie pas le code et ne transforme pas son avis en décision de votre part. Relisez le brief avec `cohorte brief show IDENTIFIANT`. Si des questions restent ouvertes, répondez dans le terminal ou revenez plus tard avec `cohorte brainstorm --continue IDENTIFIANT`.
 
 **Vous avez plutôt un ticket, un message client ou une URL ?** Commencez par :
 
@@ -25,7 +25,7 @@ Le terminal vous demande l’idée, les personnes concernées, le problème obse
 cohorte intake
 ```
 
-`intake` signifie **recevoir et trier la demande**. Cohorte garde la source, pose les questions utiles et indique si le sujet ressemble à une nouvelle fonctionnalité ou à un bug. Si vous quittez le terminal avec des questions ouvertes, `cohorte intake --continue IDENTIFIANT` les reprend. Aucun code n’est modifié à cette étape.
+`intake` signifie **recevoir et trier la demande**. L'agent examine la source et le contexte du dépôt en lecture seule, puis propose une route et des questions ciblées. Vous pouvez accepter ou corriger la route avant de l'enregistrer ; `--manual` conserve le tri déterministe. Si vous quittez le terminal avec des questions ouvertes, `cohorte intake --continue IDENTIFIANT` les reprend. Aucun code n’est modifié à cette étape.
 
 Après le triage :
 

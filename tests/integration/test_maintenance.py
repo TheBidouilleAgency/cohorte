@@ -141,6 +141,15 @@ def test_audit_is_read_only_and_produces_prioritized_backlog(tmp_path: Path) -> 
     assert git(root, "status", "--short") == ""
 
 
+def test_audit_accepts_a_surface_directory_without_reading_generated_files(tmp_path: Path) -> None:
+    root = repository(tmp_path)
+    (root / "node_modules").mkdir()
+    (root / "node_modules/ignored.py").write_text("secret = 'do not inspect'\n")
+    bounded = AuditRunner._bounded_sources(root, ["."])
+    assert "calc.py" in bounded
+    assert "ignored.py" not in bounded
+
+
 def test_audit_rejects_any_source_mutation(tmp_path: Path) -> None:
     root = repository(tmp_path)
     runtime = MaintenanceRuntime()

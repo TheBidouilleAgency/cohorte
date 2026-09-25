@@ -7,7 +7,7 @@ Forme générale : `cohorte [--json] [--config-dir DIR] [--data-dir DIR] COMMAND
 | Commande | Usage |
 | --- | --- |
 | `doctor` | Diagnostiquer l’installation et les capacités disponibles. |
-| `init [PATH] [--language fr] [--refresh]` | Découvrir et enregistrer un projet ; `--refresh` remplace le profil. |
+| `init [PATH] [--language fr] [--refresh] [--preview]` | Analyser puis enregistrer un projet ; `--preview` ne modifie rien et `--refresh` préserve les choix personnalisés. |
 | `profile show [PROJECT_ID]` | Lire le profil local. |
 | `profile edit [PROJECT_ID]` | Éditer le JSON du profil. |
 | `profile apply FILE [--project-id ID]` | Valider et appliquer un profil révisé. |
@@ -34,7 +34,7 @@ Forme générale : `cohorte [--json] [--config-dir DIR] [--data-dir DIR] COMMAND
 
 | Commande | Usage |
 | --- | --- |
-| `intake [PROJECT_ID] [--text TEXTE | --file FILE | --url URL] [--title TITRE]` | Recevoir une demande et la classer : fonctionnalité, correctif ou questions à préciser. Sans source, ouvre le mode guidé. Les réponses sont conservées avec leur révision. |
+| `intake [PROJECT_ID] [--text TEXTE | --file FILE | --url URL] [--title TITRE] [--manual]` | Recevoir une demande, proposer un triage en lecture seule dans le terminal, puis confirmer la route ; `--manual` garde le tri déterministe. Les réponses sont conservées avec leur révision. |
 | `intake --continue FEATURE_ID [--answer N=RÉPONSE] [--route feature\|patch]` | Reprendre un triage du projet courant. Dans un terminal, les questions et le choix de parcours sont proposés. En JSON, fournissez les réponses ou le parcours explicitement. |
 | `brainstorm --from-intake FEATURE_ID [--live]` | Démarrer le panel depuis une demande classée « feature » en reprenant les réponses, questions ouvertes et la provenance de la source. |
 | `brainstorm [PROJECT_ID] [--feature-id ID] [--idea TEXTE] [--answer TEXTE] [--context TEXTE] [--provider codex|claude] [--output FILE] [--live]` | Exécuter le panel ou recueillir les réponses guidées ; `--answer` et `--perspective` sont répétables. Si le panel pose des questions bloquantes, le terminal propose d’y répondre et de relancer un tour. |
@@ -73,9 +73,9 @@ Lors de `spec`, le terminal rappelle des chemins sourcés du brief et du dépôt
 | Commande | Usage |
 | --- | --- |
 | `patch-spec` | Créer un patch borné à partir d’un artefact source, de la reproduction, des chemins, checks et rollback. Voir `--help` pour tous les champs obligatoires. |
-| `patch-spec --from-intake FEATURE_ID` | Préparer un `patch.json` guidé depuis une demande classée « patch » dans le projet courant. Vérifier ensuite le fichier avant `patch`. |
+| `patch-spec --from-intake FEATURE_ID [--manual]` | Proposer en lecture seule un correctif borné depuis un bug du projet courant, puis préparer un `patch.json` à vérifier. `--manual` ignore la proposition de l'agent. |
 | `patch SPEC --profile PROFILE --worktrees DIR --run-id ID --live [--repo DIR]` | Exécuter le patch et sa régression. |
-| `audit --profile PROFILE --audit-id ID --title TITRE --surface ID --path PATH --concern TEXTE --output FILE --live` | Auditer une surface ; `--surface`, `--path` et `--concern` sont répétables. |
+| `audit [--profile PROFILE] [--audit-id ID] [--title TITRE] [--surface ID] [--path PATH] [--concern TEXTE] [--output FILE] --live` | Auditer le projet courant ou une sélection explicite ; `--surface`, `--path` et `--concern` sont répétables. |
 | `refactor-request SELECTION` | Demander l’approbation d’une sélection de refactor. |
 | `refactor SELECTION --profile PROFILE --worktrees DIR --run-id ID --live` | Exécuter une sélection approuvée. |
 | `retro REPORT... --proposal-id ID --rule TEXTE --output FILE` | Proposer une convention à partir des revues. |

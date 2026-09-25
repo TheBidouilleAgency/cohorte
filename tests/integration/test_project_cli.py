@@ -5,6 +5,7 @@ import json
 import sys
 from pathlib import Path
 
+from cohorte.application.intake import IntakeProposal, IntakeTriage
 from cohorte.application.preparation import (
     BrainstormContribution,
     BrainstormPerspectiveTurn,
@@ -29,7 +30,7 @@ def test_guided_intake_and_project_status(tmp_path: Path, monkeypatch, capsys) -
     answers = iter(["texte", "Ajouter un export sécurisé"])
     monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
 
-    assert cli.run(["--data-dir", str(data), "intake"]) == 0
+    assert cli.run(["--data-dir", str(data), "intake", "--manual"]) == 0
     result = capsys.readouterr().out
     assert "Suite suggérée : cohorte brainstorm" in result
 
@@ -37,6 +38,39 @@ def test_guided_intake_and_project_status(tmp_path: Path, monkeypatch, capsys) -
     dashboard = capsys.readouterr().out
     assert "Projet project · 1 fonctionnalités" in dashboard
     assert "intake-" in dashboard
+
+
+def test_guided_intake_stores_project_aware_agent_proposal(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    data = tmp_path / "data"
+    data.mkdir()
+    database = Database(data / "cohorte.sqlite3")
+    CohorteService(database).init_project(project)
+    database.close()
+    monkeypatch.chdir(project)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(
+        "cohorte.cli.guided_intake.propose_intake",
+        lambda _project, _source: IntakeProposal(
+            route=IntakeTriage.FEATURE,
+            rationale="The requested export does not exist",
+            suspected_surfaces=["project"],
+            questions=[],
+            patch_seed="",
+            feature_seed="Add a safe export",
+            caveat="Confirm intended users",
+        ),
+    )
+    assert cli.run(["--data-dir", str(data), "intake", "--text", "Ajouter un export sécurisé"]) == 0
+    output = capsys.readouterr().out
+    assert "Piste de l'agent : feature" in output
+    stored = Database(data / "cohorte.sqlite3")
+    feature_id = stored.list_features("project")[0]["id"]
+    assert stored.latest_artifact(f"proposal:intake:{feature_id}")["revision"] == 1
+    stored.close()
 
 
 def test_intake_json_requires_explicit_source(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -134,7 +168,7 @@ def test_intake_answers_are_versioned_and_passed_to_brainstorm(
             return BrainstormSynthesisTurn(
                 session_ref="session-synthesis",
                 synthesis=BrainstormSynthesis(
-                    contribution_refs=["product", "architecture", "qa"],
+                    contribution_refs=["product", "architecture", "qa", "security"],
                     problem="No welcome path",
                     beneficiaries=[],
                     in_scope=[],

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import tomllib
 from pathlib import Path
 from typing import Any, Literal
 
@@ -10,6 +11,9 @@ import yaml  # type: ignore[import-untyped]
 from cohorte.domain.models import (
     AgentDefaults,
     CheckDefinition,
+    CheckScope,
+    ContractConfig,
+    Integrations,
     MetadataMode,
     ProjectProfile,
     Provider,
@@ -96,6 +100,96 @@ def _node_checks(package_manager: str, scripts: dict[str, Any]) -> list[CheckDef
     return definitions
 
 
+def _surface_checks(
+    package_manager: str, surface_id: str, path: str, manifest: dict[str, Any]
+) -> list[CheckDefinition]:
+    scripts = manifest.get("scripts", {})
+    if not isinstance(scripts, dict):
+        return []
+    checks: list[CheckDefinition] = []
+    for suffix, script in (
+        ("tests", "test"),
+        ("lint", "lint"),
+        ("types", "check-types" if "check-types" in scripts else "typecheck"),
+        ("format", "format:check"),
+        ("build", "build"),
+    ):
+        if not isinstance(scripts.get(script), str):
+            continue
+        argv = (
+            ["npm", "run", script, "--workspace", path]
+            if package_manager == "npm"
+            else [package_manager, "--filter", f"./{path}", script]
+        )
+        checks.append(
+            CheckDefinition(
+                id=f"{surface_id}-{suffix}",
+                argv=argv,
+                timeout_seconds=900,
+                scope=CheckScope.SURFACE,
+            )
+        )
+    return checks
+
+
+def _surface_role(manifest: dict[str, Any]) -> str:
+    packages = {
+        name for field in ("dependencies", "devDependencies") for name in manifest.get(field, {})
+    }
+    frontend = bool(packages & {"react", "vue", "svelte", "next", "@angular/core"})
+    backend = bool(packages & {"@adonisjs/core", "@nestjs/core", "fastify", "express"})
+    if frontend and backend:
+        return "fullstack"
+    if frontend:
+        return "frontend"
+    if backend:
+        return "backend"
+    if packages & {"zod", "@sinclair/typebox"} or "types" in str(manifest.get("name", "")):
+        return "contract"
+    return "implementer"
+
+
+def _detect_contract(root: Path, surfaces: list[Surface]) -> ContractConfig:
+    if (root / "contract").is_dir():
+        return ContractConfig(enabled=True, mechanism="shared-types", paths=["contract"])
+    explicit = [
+        path
+        for path in ("openapi.yaml", "openapi.yml", "openapi.json", "schema.graphql")
+        if (root / path).is_file()
+    ]
+    if explicit:
+        return ContractConfig(
+            enabled=True,
+            mechanism="openapi" if explicit[0].startswith("openapi") else "graphql",
+            paths=explicit,
+        )
+    for surface in surfaces:
+        if "shared-types" in surface.id:
+            return ContractConfig(enabled=True, mechanism="shared-types", paths=surface.paths)
+    for surface in surfaces:
+        if "api-kit" in surface.id:
+            return ContractConfig(enabled=True, mechanism="shared-types", paths=surface.paths)
+    return ContractConfig()
+
+
+def _detect_design(root: Path) -> bool:
+    return any(
+        (root / path).is_dir()
+        for path in ("design-reference", "src/components/ui", "components/ui")
+    )
+
+
+def _detect_release_notes(root: Path, package: dict[str, Any]) -> dict[str, Any]:
+    if (root / ".changeset/config.json").is_file():
+        return {"enabled": True, "provider": "changesets", "path": ".changeset"}
+    if (root / "CHANGELOG.md").is_file() and (
+        (root / ".github/workflows/release.yml").is_file()
+        or "release:version" in package.get("scripts", {})
+    ):
+        return {"enabled": True, "provider": "changelog", "path": "CHANGELOG.md"}
+    return {"enabled": False}
+
+
 def _workspace_paths(root: Path) -> list[str]:
     candidates = (
         "package.json",
@@ -115,6 +209,22 @@ def _workspace_paths(root: Path) -> list[str]:
     return [path for path in candidates if (root / path).exists()]
 
 
+def _project_description(root: Path) -> str:
+    readme = root / "README.md"
+    if not readme.is_file() or readme.stat().st_size > 160_000:
+        return ""
+    lines = readme.read_text(encoding="utf-8", errors="replace").splitlines()
+    for line in lines[:80]:
+        candidate = line.strip()
+        if (
+            candidate
+            and not candidate.startswith(("#", "[", "!", "<", "`", "-", "*", ">"))
+            and len(candidate) >= 25
+        ):
+            return candidate[:1000]
+    return ""
+
+
 def discover_project(root: Path, language: str = "fr") -> tuple[ProjectProfile, list[str]]:
     root = root.resolve(strict=True)
     if not root.is_dir():
@@ -122,18 +232,40 @@ def discover_project(root: Path, language: str = "fr") -> tuple[ProjectProfile, 
     checks: list[CheckDefinition] = []
     surfaces: list[Surface] = []
     questions: list[str] = []
+    integrations = Integrations()
 
     if (root / "pyproject.toml").is_file():
-        checks.extend(
-            [
-                CheckDefinition(
-                    id="tests", argv=["uv", "run", "pytest", "-q"], timeout_seconds=900
-                ),
-                CheckDefinition(
-                    id="lint", argv=["uv", "run", "ruff", "check", "."], timeout_seconds=120
-                ),
-            ]
+        pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+        tooling = pyproject.get("tool", {})
+        command_prefix = (
+            ["uv", "run"]
+            if (root / "uv.lock").is_file()
+            else ["poetry", "run"]
+            if (root / "poetry.lock").is_file()
+            else []
         )
+        test_available = (root / "tests").is_dir() or "pytest" in tooling
+        lint_available = "ruff" in tooling
+        detected_checks: list[CheckDefinition] = []
+        if test_available:
+            detected_checks.append(
+                CheckDefinition(
+                    id="tests",
+                    argv=[*command_prefix, "pytest", "-q"]
+                    if command_prefix
+                    else ["python", "-m", "pytest", "-q"],
+                    timeout_seconds=900,
+                )
+            )
+        if lint_available:
+            detected_checks.append(
+                CheckDefinition(
+                    id="lint", argv=[*command_prefix, "ruff", "check", "."], timeout_seconds=120
+                )
+            )
+        if not detected_checks:
+            questions.append("Aucun check Python confirmé : choisir les commandes de validation.")
+        checks.extend(detected_checks)
         paths = [path for path in ["src", "tests"] if (root / path).exists()] or ["."]
         surfaces.append(
             Surface(
@@ -141,7 +273,7 @@ def discover_project(root: Path, language: str = "fr") -> tuple[ProjectProfile, 
                 label="Python",
                 paths=paths,
                 role_profile="implementer",
-                check_ids=["tests", "lint"],
+                check_ids=[check.id for check in detected_checks],
             )
         )
     elif (root / "package.json").is_file():
@@ -155,6 +287,7 @@ def discover_project(root: Path, language: str = "fr") -> tuple[ProjectProfile, 
         )
         scripts = package.get("scripts", {})
         checks = _node_checks(package_manager, scripts if isinstance(scripts, dict) else {})
+        integrations = Integrations(release_notes=_detect_release_notes(root, package))
         if not checks:
             questions.append("Aucun check racine reconnu : définir les commandes de validation.")
         patterns = _workspace_patterns(root, package)
@@ -187,24 +320,28 @@ def discover_project(root: Path, language: str = "fr") -> tuple[ProjectProfile, 
                 questions.append(
                     "Corriger les noms de packages dupliqués avant de figer les dépendances."
                 )
-            check_ids = [check.id for check in checks]
+            root_check_ids = [check.id for check in checks]
             for path in paths:
                 manifest = packages[path]
+                surface_id = identifiers[path]
+                specific = _surface_checks(package_manager, surface_id, path, manifest)
+                checks.extend(specific)
                 dependencies = {
                     names[name]
                     for field in ("dependencies", "devDependencies", "optionalDependencies")
                     for name in manifest.get(field, {})
-                    if name in names and names[name] != identifiers[path]
+                    if name in names and names[name] != surface_id
                 }
                 surfaces.append(
                     Surface(
-                        id=identifiers[path],
+                        id=surface_id,
                         label=path,
                         paths=[path],
                         depends_on=sorted(dependencies),
-                        role_profile="implementer",
-                        check_ids=check_ids,
-                        uses_design=(root / path / "design-reference").is_dir(),
+                        role_profile=_surface_role(manifest),
+                        check_ids=[check.id for check in specific] or root_check_ids,
+                        uses_design=(root / path / "design-reference").is_dir()
+                        or (root / path / "src/components/ui").is_dir(),
                     )
                 )
             shared_paths = _workspace_paths(root)
@@ -218,7 +355,49 @@ def discover_project(root: Path, language: str = "fr") -> tuple[ProjectProfile, 
                         label="Shared workspace files",
                         paths=shared_paths,
                         role_profile="implementer",
-                        check_ids=check_ids,
+                        check_ids=root_check_ids,
+                    )
+                )
+            for name, role in (
+                ("src", "frontend" if _surface_role(package) == "frontend" else "implementer"),
+                ("src-tauri", "backend"),
+                ("contract", "contract"),
+            ):
+                if not (root / name).is_dir() or any(
+                    name == owned or name.startswith(owned + "/")
+                    for surface in surfaces
+                    for owned in surface.paths
+                ):
+                    continue
+                identifier = "rust" if name == "src-tauri" else name
+                extra_checks: list[str] = root_check_ids
+                if name == "src-tauri" and (root / name / "Cargo.toml").is_file():
+                    checks.extend(
+                        [
+                            CheckDefinition(
+                                id="rust-tests",
+                                argv=["cargo", "test"],
+                                cwd=name,
+                                timeout_seconds=900,
+                                scope=CheckScope.SURFACE,
+                            ),
+                            CheckDefinition(
+                                id="rust-lint",
+                                argv=["cargo", "clippy", "--all-targets"],
+                                cwd=name,
+                                timeout_seconds=900,
+                                scope=CheckScope.SURFACE,
+                            ),
+                        ]
+                    )
+                    extra_checks = ["rust-tests", "rust-lint"]
+                surfaces.append(
+                    Surface(
+                        id=identifier,
+                        label=name,
+                        paths=[name],
+                        role_profile=role,
+                        check_ids=extra_checks,
                     )
                 )
             questions.append("Confirmer l'ownership des fichiers partagés et du lockfile.")
@@ -237,15 +416,90 @@ def discover_project(root: Path, language: str = "fr") -> tuple[ProjectProfile, 
                     id=slugify(root.name),
                     label=path,
                     paths=[path],
-                    role_profile="implementer",
                     check_ids=[check.id for check in checks],
+                    role_profile=_surface_role(package),
+                    uses_design=_detect_design(root),
                 )
             )
+            for name, role in (("src-tauri", "backend"), ("contract", "contract")):
+                if not (root / name).is_dir():
+                    continue
+                if path == ".":
+                    questions.append(f"Définir une ownership distincte pour {name} et la racine.")
+                    continue
+                identifier = "rust" if name == "src-tauri" else name
+                extra_checks = [check.id for check in checks]
+                if name == "src-tauri" and (root / name / "Cargo.toml").is_file():
+                    checks.extend(
+                        [
+                            CheckDefinition(
+                                id="rust-tests",
+                                argv=["cargo", "test"],
+                                cwd=name,
+                                timeout_seconds=900,
+                                scope=CheckScope.SURFACE,
+                            ),
+                            CheckDefinition(
+                                id="rust-lint",
+                                argv=["cargo", "clippy", "--all-targets"],
+                                cwd=name,
+                                timeout_seconds=900,
+                                scope=CheckScope.SURFACE,
+                            ),
+                        ]
+                    )
+                    extra_checks = ["rust-tests", "rust-lint"]
+                surfaces.append(
+                    Surface(
+                        id=identifier,
+                        label=name,
+                        paths=[name],
+                        role_profile=role,
+                        check_ids=extra_checks,
+                    )
+                )
         ci = root / ".github/workflows/ci.yml"
         if ci.is_file() and "services:" in ci.read_text(encoding="utf-8"):
             questions.append(
                 "Confirmer les services et migrations à préparer pour les checks locaux."
             )
+    elif (root / "Cargo.toml").is_file():
+        cargo = tomllib.loads((root / "Cargo.toml").read_text(encoding="utf-8"))
+        members = cargo.get("workspace", {}).get("members", [])
+        check_argv = (
+            ("tests", ["cargo", "test", "--workspace"]),
+            ("lint", ["cargo", "clippy", "--workspace", "--all-targets", "--", "-D", "warnings"]),
+        )
+        checks = [
+            CheckDefinition(id=check_id, argv=argv, timeout_seconds=900)
+            for check_id, argv in check_argv
+        ]
+        if members:
+            questions.append("Confirmer les frontières des crates Cargo et les chemins partagés.")
+        paths = [path for path in ("src", "crates", "tests") if (root / path).exists()] or ["."]
+        surfaces.append(
+            Surface(
+                id="rust",
+                label="Rust",
+                paths=paths,
+                role_profile="backend",
+                check_ids=["tests", "lint"],
+            )
+        )
+    elif (root / "go.mod").is_file():
+        checks = [
+            CheckDefinition(id="tests", argv=["go", "test", "./..."], timeout_seconds=900),
+            CheckDefinition(id="lint", argv=["go", "vet", "./..."], timeout_seconds=900),
+        ]
+        surfaces.append(
+            Surface(
+                id="go",
+                label="Go",
+                paths=["."],
+                role_profile="backend",
+                check_ids=["tests", "lint"],
+            )
+        )
     else:
         surfaces.append(
             Surface(id="project", label="Project", paths=["."], role_profile="implementer")
@@ -261,12 +515,18 @@ def discover_project(root: Path, language: str = "fr") -> tuple[ProjectProfile, 
     profile = ProjectProfile(
         project_id=slugify(root.name),
         name=root.name,
+        description=_project_description(root),
         language=language,
         metadata_mode=MetadataMode.LOCAL,
         vcs=VcsConfig(host=host, default_branch=default_branch),
         surfaces=surfaces,
         checks=checks,
+        contract=_detect_contract(root, surfaces),
         agent_defaults=AgentDefaults(provider=Provider.CODEX),
+        brainstorm_panel=["product", "architecture", "ux", "qa", "security"]
+        if any(surface.role_profile == "frontend" for surface in surfaces)
+        else ["product", "architecture", "qa", "security"],
+        integrations=integrations,
     )
     return profile, questions
 
@@ -274,3 +534,89 @@ def discover_project(root: Path, language: str = "fr") -> tuple[ProjectProfile, 
 def profile_provenance(root: Path) -> dict[str, Any]:
     names = ["pyproject.toml", "package.json", "pnpm-workspace.yaml", ".github/workflows"]
     return {name: (root / name).exists() for name in names}
+
+
+def discovery_report(profile: ProjectProfile, questions: list[str]) -> dict[str, Any]:
+    """Explain what was detected and what still needs a human decision."""
+    checks = {check.id: check for check in profile.checks}
+    return {
+        "description": profile.description,
+        "surfaces": [
+            {
+                "id": surface.id,
+                "paths": surface.paths,
+                "role_profile": surface.role_profile,
+                "depends_on": surface.depends_on,
+                "checks": [
+                    {"id": check_id, "argv": checks[check_id].argv}
+                    for check_id in surface.check_ids
+                ],
+                "design_detected": surface.uses_design,
+                "confidence": "detected",
+            }
+            for surface in profile.surfaces
+        ],
+        "contract": profile.contract.model_dump(mode="json"),
+        "release_notes": profile.integrations.release_notes,
+        "brainstorm_panel": profile.brainstorm_panel,
+        "vcs": profile.vcs.model_dump(mode="json"),
+        "questions": questions,
+    }
+
+
+def reconcile_profile(current: ProjectProfile, detected: ProjectProfile) -> ProjectProfile:
+    """Add newly detected ownership without replacing user-configured project choices."""
+    checks = {check.id: check for check in current.checks}
+    for check in detected.checks:
+        checks.setdefault(check.id, check)
+    surfaces = {surface.id: surface for surface in current.surfaces}
+    owned = [path for surface in current.surfaces for path in surface.paths]
+    for surface in detected.surfaces:
+        if surface.id in surfaces:
+            previous = surfaces[surface.id]
+            if previous.check_ids and set(previous.check_ids) <= {
+                "tests",
+                "lint",
+                "types",
+                "format",
+            }:
+                surfaces[surface.id] = previous.model_copy(
+                    update={"check_ids": surface.check_ids or previous.check_ids}
+                )
+            continue
+        if any(
+            path == "."
+            or existing == "."
+            or path == existing
+            or path.startswith(existing + "/")
+            or existing.startswith(path + "/")
+            for path in surface.paths
+            for existing in owned
+        ):
+            continue
+        surfaces[surface.id] = surface
+        owned.extend(surface.paths)
+    contract = current.contract if current.contract.enabled else detected.contract
+    panel = (
+        detected.brainstorm_panel
+        if current.brainstorm_panel == ["product", "architecture", "qa"]
+        else current.brainstorm_panel
+    )
+    integrations = current.integrations
+    if not integrations.release_notes.get("enabled"):
+        integrations = integrations.model_copy(
+            update={"release_notes": detected.integrations.release_notes}
+        )
+    return ProjectProfile.model_validate_json(
+        current.model_copy(
+            update={
+                "revision": current.revision + 1,
+                "description": current.description or detected.description,
+                "surfaces": list(surfaces.values()),
+                "checks": list(checks.values()),
+                "contract": contract,
+                "brainstorm_panel": panel,
+                "integrations": integrations,
+            }
+        ).model_dump_json()
+    )

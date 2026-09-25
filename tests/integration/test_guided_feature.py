@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from cohorte.application.patch import PatchSpec
+from cohorte.application.patch import PatchProposal, PatchSpec
 from cohorte.application.preparation import (
     BrainstormBrief,
     BrainstormContribution,
@@ -223,7 +223,7 @@ def test_guided_spec_agent_proposes_complete_editable_draft(
         rollback="Restore the previous exporter",
     )
     monkeypatch.setattr(guided_feature, "_propose_spec", lambda *_args: proposal)
-    answers = iter(["CSV", "", "oui", "non"])
+    answers = iter(["p", "", "oui", "non"])
     monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
 
     assert cli.run(["--data-dir", str(data_dir), "spec", "safe-export"]) == 0
@@ -404,7 +404,7 @@ def test_patch_spec_guided_from_intake_keeps_provenance_and_regression_scope(
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
     answers = iter(
         [
-            "",
+            "start export then interrupt",
             "",
             "A complete file is saved",
             "api",
@@ -416,12 +416,58 @@ def test_patch_spec_guided_from_intake_keeps_provenance_and_regression_scope(
     )
     monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
 
-    assert cli.run(["--data-dir", str(data_dir), "patch-spec", "--from-intake", feature_id]) == 0
+    assert (
+        cli.run(
+            ["--data-dir", str(data_dir), "patch-spec", "--from-intake", feature_id, "--manual"]
+        )
+        == 0
+    )
     path = data_dir / "guided" / "project" / feature_id / "patch.json"
     patch = PatchSpec.model_validate_json(path.read_text())
     assert patch.source_ref.id == f"intake:{feature_id}"
     assert patch.regression_check_ids == ["test"]
     assert patch.write_paths == ["src/export.txt"]
+
+
+def test_patch_agent_prefills_reviewable_diagnosis(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repository, data_dir = _setup(tmp_path)
+    database = Database(data_dir / "cohorte.sqlite3")
+    intake = CohorteService(database).intake(
+        "project", "Bug: export fails. Steps to reproduce: start export then interrupt."
+    )
+    feature_id = intake["feature_id"]
+    database.close()
+    monkeypatch.chdir(repository)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(
+        "cohorte.adapters.codex.CodexAdapter.patch_proposal",
+        lambda self, _workspace, _prompt: PatchProposal(
+            reproduction="start export then interrupt",
+            observed_behavior="partial file remains",
+            expected_behavior="previous complete file remains",
+            suspected_surfaces=["api"],
+            write_paths=["src/export.txt"],
+            regression_check_ids=["test"],
+            in_scope=["atomic replacement"],
+            out_of_scope=["cloud export"],
+            rollback="revert exporter",
+            caveats=["Confirm existing export behavior"],
+        ),
+    )
+    monkeypatch.setattr(builtins, "input", lambda _prompt: "")
+
+    assert cli.run(["--data-dir", str(data_dir), "patch-spec", "--from-intake", feature_id]) == 0
+    stored = Database(data_dir / "cohorte.sqlite3")
+    patch = PatchSpec.model_validate_json(
+        (data_dir / "guided" / "project" / feature_id / "patch.json").read_text()
+    )
+    assert patch.reproduction == "start export then interrupt"
+    assert patch.surfaces == ["api"]
+    assert patch.out_of_scope == ["cloud export"]
+    assert stored.latest_artifact(f"proposal:patch:{feature_id}")["revision"] == 1
+    stored.close()
 
 
 def test_guided_freeze_binds_profile_and_start_refuses_tampered_snapshot(

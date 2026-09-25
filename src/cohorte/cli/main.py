@@ -58,6 +58,9 @@ def _parser() -> argparse.ArgumentParser:
     init.add_argument("path", type=Path, nargs="?", default=Path.cwd())
     init.add_argument("--language", default="fr")
     init.add_argument(
+        "--preview", action="store_true", help="inspect the detected profile without registering it"
+    )
+    init.add_argument(
         "--refresh", action="store_true", help="replace the stored profile with a new discovery"
     )
     profile = sub.add_parser("profile")
@@ -122,6 +125,7 @@ def _parser() -> argparse.ArgumentParser:
     intake.add_argument("--continue", dest="continue_feature_id", metavar="FEATURE_ID")
     intake.add_argument("--answer", action="append", default=[], metavar="N=RÉPONSE")
     intake.add_argument("--route", choices=["feature", "patch"])
+    intake.add_argument("--manual", action="store_true", help="skip read-only agent triage")
     brainstorm = sub.add_parser("brainstorm")
     brainstorm.add_argument("project_id", nargs="?")
     brainstorm.add_argument("--feature-id")
@@ -173,6 +177,7 @@ def _parser() -> argparse.ArgumentParser:
     patch_spec.add_argument("--write-path", action="append")
     patch_spec.add_argument("--check", action="append", default=[])
     patch_spec.add_argument("--manual-regression", action="store_true")
+    patch_spec.add_argument("--manual", action="store_true", help="skip read-only agent diagnosis")
     patch_spec.add_argument("--in-scope", action="append")
     patch_spec.add_argument("--out-of-scope", action="append", default=[])
     patch_spec.add_argument("--rollback")
@@ -185,15 +190,15 @@ def _parser() -> argparse.ArgumentParser:
     patch.add_argument("--run-id", required=True)
     patch.add_argument("--live", action="store_true", required=True)
     audit = sub.add_parser("audit")
-    audit.add_argument("--profile", type=Path, required=True)
+    audit.add_argument("--profile", type=Path)
     audit.add_argument("--repo", type=Path, default=Path.cwd())
-    audit.add_argument("--audit-id", required=True)
-    audit.add_argument("--title", required=True)
-    audit.add_argument("--surface", action="append", required=True)
-    audit.add_argument("--path", action="append", required=True)
-    audit.add_argument("--concern", action="append", required=True)
-    audit.add_argument("--output", type=Path, required=True)
-    audit.add_argument("--live", action="store_true", required=True)
+    audit.add_argument("--audit-id")
+    audit.add_argument("--title")
+    audit.add_argument("--surface", action="append")
+    audit.add_argument("--path", action="append")
+    audit.add_argument("--concern", action="append")
+    audit.add_argument("--output", type=Path)
+    audit.add_argument("--live", action="store_true")
     refactor = sub.add_parser("refactor")
     refactor.add_argument("selection", type=Path)
     refactor.add_argument("--profile", type=Path, required=True)
@@ -444,10 +449,43 @@ def _prompt(label: str, *, required: bool = True) -> str:
         print("Une réponse est nécessaire.", file=sys.stderr)
 
 
-def _brainstorm_followup_answers(questions: list[str]) -> list[str]:
+def _brainstorm_followup_answers(
+    questions: list[str], proposals: list[Any] | None = None
+) -> list[str]:
     answers: list[str] = []
-    for question in questions:
-        answer = _prompt(f"{question} (Entrée = encore ouvert)", required=False)
+    suggestions = {item.question: item for item in proposals or []}
+    for index, question in enumerate(questions):
+        suggestion = suggestions.get(question)
+        if suggestion is None and proposals is not None and len(proposals) == len(questions):
+            suggestion = proposals[index]
+        if suggestion is not None:
+            print(f"\n{question}")
+            print(f"  Produit : {suggestion.business_option}")
+            print(f"  Code : {suggestion.code_option}")
+            print(f"  À vérifier : {suggestion.caveat}")
+        while True:
+            answer = _prompt(
+                f"{question} (p = adopter la piste produit, c = piste code, Entrée = ouvert)",
+                required=False,
+            )
+            lowered = answer.casefold()
+            if lowered in {"p", "produit"} and suggestion is not None:
+                answer = suggestion.business_option
+            elif lowered in {"c", "code"} and suggestion is not None:
+                answer = suggestion.code_option
+            elif lowered in {"p", "c", "produit", "code"}:
+                print("Aucune proposition disponible pour cette question.")
+                continue
+            if answer.endswith("?") or lowered in {"tu proposes quoi", "tu en penses quoi"}:
+                if suggestion is None:
+                    print(
+                        "Le panel n'a pas proposé de réponse vérifiable ; la question reste ouverte."
+                    )
+                else:
+                    print(f"Piste produit : {suggestion.business_option}")
+                    print(f"Piste code : {suggestion.code_option}")
+                continue
+            break
         if answer:
             answers.append(f"{question} {answer}")
     extra = _prompt("Autre élément à ajouter (facultatif)", required=False)
@@ -474,6 +512,7 @@ def _profile_context(profile: dict[str, Any]) -> str:
     surfaces = profile.get("surfaces", [])
     summary = {
         "project": profile.get("name"),
+        "description": profile.get("description", ""),
         "surfaces": [
             {
                 "id": item.get("id"),
@@ -510,11 +549,24 @@ def _emit_profile_result(result: dict[str, Any], json_mode: bool) -> None:
         _emit(result, True)
         return
     profile = result["profile"]
-    reference = result["profile_ref"]
+    reference = result.get("profile_ref", {"revision": profile["revision"]})
     print(
-        f"Profil {profile['project_id']} · révision {reference['revision']} · "
+        f"{'Brouillon' if result.get('preview') else 'Profil'} {profile['project_id']} · révision {reference['revision']} · "
         f"{len(profile['surfaces'])} surfaces · {len(profile['checks'])} checks"
     )
+    analysis = result.get("analysis", {})
+    if analysis:
+        print("Analyse du dépôt :")
+        for surface in analysis.get("surfaces", []):
+            check_ids = ", ".join(item["id"] for item in surface["checks"]) or "aucun"
+            print(
+                f"  {surface['id']} · {', '.join(surface['paths'])} · "
+                f"{surface['role_profile']} · checks : {check_ids}"
+            )
+        contract = analysis.get("contract", {})
+        if contract.get("enabled"):
+            print(f"Contrat détecté : {contract['mechanism']} · {', '.join(contract['paths'])}")
+        print(f"Panel brainstorm : {', '.join(analysis.get('brainstorm_panel', []))}")
     for question in result.get("questions", []):
         print(f"À confirmer : {question}")
     print("Voir le détail : cohorte profile show")
@@ -572,6 +624,47 @@ def run(argv: list[str] | None = None) -> int:
         if args.command == "doctor":
             _emit(_doctor(service, args), args.json)
         elif args.command == "init":
+            if args.preview or (not args.json and sys.stdin.isatty()):
+                from cohorte.application.discovery import (
+                    discover_project,
+                    discovery_report,
+                    profile_provenance,
+                    reconcile_profile,
+                )
+
+                candidate, questions = discover_project(args.path, args.language)
+                try:
+                    existing_project = database.get_project(candidate.project_id)
+                except KeyError:
+                    existing_project = None
+                if existing_project is not None and not args.refresh and not args.preview:
+                    _emit_profile_result(service.init_project(args.path, args.language), args.json)
+                    return 0
+                if existing_project is not None and args.refresh:
+                    from cohorte.domain.models import ProjectProfile
+
+                    current_profile = ProjectProfile.model_validate_json(
+                        json.dumps(existing_project["profile"])
+                    )
+                    candidate = reconcile_profile(current_profile, candidate)
+                preview = {
+                    "profile": candidate.model_dump(mode="json"),
+                    "questions": questions,
+                    "provenance": profile_provenance(args.path),
+                    "analysis": discovery_report(candidate, questions),
+                    "preview": True,
+                }
+                _emit_profile_result(preview, args.json)
+                if args.preview:
+                    return 0
+                if _prompt("Enregistrer ce profil ? [o/N]", required=False).casefold() not in {
+                    "o",
+                    "oui",
+                    "y",
+                    "yes",
+                }:
+                    print("Profil non enregistré.")
+                    return 0
             _emit_profile_result(
                 service.init_project(args.path, args.language, refresh=args.refresh), args.json
             )
@@ -699,6 +792,7 @@ def run(argv: list[str] | None = None) -> int:
             _emit(_schemas(args.output), args.json)
         elif args.command == "intake":
             from cohorte.application.intake import (
+                IntakeProposal,
                 IntakeReport,
                 IntakeSourceType,
                 IntakeTriage,
@@ -710,6 +804,7 @@ def run(argv: list[str] | None = None) -> int:
                 ask_route,
                 parse_answers,
                 print_report,
+                propose_intake,
             )
             from cohorte.domain.models import ArtifactRef
 
@@ -719,6 +814,7 @@ def run(argv: list[str] | None = None) -> int:
                 else _project_for_path(database, Path.cwd())
             )
             continuing = args.continue_feature_id is not None
+            intake_proposal: IntakeProposal | None = None
             if continuing:
                 if args.text is not None or args.file is not None or args.url is not None:
                     raise ValueError("intake --continue cannot read a new source")
@@ -763,6 +859,17 @@ def run(argv: list[str] | None = None) -> int:
                 else:
                     source_type, value = IntakeSourceType.URL, args.url
                 source, locator = load_intake_source(source_type, value)
+                if not args.json and sys.stdin.isatty() and not args.manual:
+                    print(
+                        "L'agent analyse la demande et le dépôt en lecture seule…", file=sys.stderr
+                    )
+                    try:
+                        intake_proposal = propose_intake(project, source)
+                    except (CohorteError, ValueError, RuntimeError) as error:
+                        print(
+                            f"Triage agent indisponible : {error}; analyse déterministe conservée.",
+                            file=sys.stderr,
+                        )
                 intake_result = service.intake(
                     project["id"],
                     source,
@@ -775,6 +882,54 @@ def run(argv: list[str] | None = None) -> int:
                     json.dumps(intake_result["report"])
                 )
                 intake_report_ref = ArtifactRef.model_validate(intake_result["report_ref"])
+                if intake_proposal is not None:
+                    proposal_ref = database.put_artifact(
+                        "intake-proposal",
+                        intake_proposal.model_dump_json(indent=2).encode(),
+                        artifact_id=f"proposal:intake:{feature_id}",
+                    )
+                    print(
+                        f"Piste de l'agent : {intake_proposal.route.value} · {intake_proposal.rationale}"
+                    )
+                    if intake_proposal.suspected_surfaces:
+                        print(
+                            f"Surfaces probables : {', '.join(intake_proposal.suspected_surfaces)}"
+                        )
+                    print(f"À vérifier : {intake_proposal.caveat}")
+                    proposed_questions = intake_proposal.questions
+                    proposal_route = intake_report_doc.triage
+                    if intake_proposal.route != proposal_route:
+                        choice = _prompt(
+                            f"Adopter le parcours {intake_proposal.route.value} proposé ? [o/N]",
+                            required=False,
+                        )
+                        if choice.casefold() in {"o", "oui", "y", "yes"}:
+                            proposal_route = intake_proposal.route
+                    intake_report_doc = intake_report_doc.model_copy(
+                        update={
+                            "triage": proposal_route,
+                            "questions": proposed_questions or intake_report_doc.questions,
+                            "reasons": [
+                                *intake_report_doc.reasons,
+                                "read-only agent proposal reviewed",
+                            ],
+                            "previous_report_ref": intake_report_ref,
+                        }
+                    )
+                    stored = database.put_artifact(
+                        "intake-report",
+                        intake_report_doc.model_dump_json(indent=2).encode(),
+                        artifact_id=f"intake:{feature_id}",
+                    )
+                    intake_report_ref = ArtifactRef.model_validate(stored)
+                    database.set_feature_kind(feature_id, proposal_route.value)
+                    intake_result.update(
+                        {
+                            "report": intake_report_doc.model_dump(mode="json"),
+                            "report_ref": intake_report_ref.model_dump(mode="json"),
+                            "proposal_ref": proposal_ref,
+                        }
+                    )
             if args.json:
                 intake_answers = parse_answers(args.answer, intake_report_doc.questions)
                 route = IntakeTriage(args.route) if args.route else None
@@ -811,7 +966,10 @@ def run(argv: list[str] | None = None) -> int:
                 BrainstormRunner,
                 canonical_model_bytes,
             )
-            from cohorte.application.repository_context import collect_repository_context
+            from cohorte.application.repository_context import (
+                collect_project_overview,
+                collect_repository_context,
+            )
             from cohorte.domain.models import ArtifactRef, ProjectProfile
 
             guided = (
@@ -911,7 +1069,8 @@ def run(argv: list[str] | None = None) -> int:
                     print(f"Piste actuelle : {previous_brief.synthesis.recommendation}")
                     if not args.answer:
                         args.answer = _brainstorm_followup_answers(
-                            previous_brief.synthesis.blocking_questions
+                            previous_brief.synthesis.blocking_questions,
+                            previous_brief.synthesis.question_proposals,
                         )
                         if not args.answer:
                             print("Aucune nouvelle réponse ; brief inchangé.")
@@ -924,25 +1083,21 @@ def run(argv: list[str] | None = None) -> int:
                             _prompt(f"Identifiant [{suggested}]", required=False) or suggested
                         )
                     _require_new_brainstorm_feature(database, project["id"], args.feature_id)
-                    if not args.answer:
-                        for question in (
-                            "Qui est concerné et à quel moment ?",
-                            "Quel problème concret observes-tu ?",
-                            "Quel résultat veux-tu obtenir ?",
-                            "Quelles contraintes ou décisions faut-il respecter ? (facultatif)",
-                        ):
-                            answer = _prompt(question, required="facultatif" not in question)
-                            if answer:
-                                args.answer.append(f"{question} {answer}")
-                print("Le panel produit, architecture et QA travaille…", file=sys.stderr)
+                panel = (
+                    ProjectProfile.model_validate_json(
+                        json.dumps(project["profile"])
+                    ).brainstorm_panel
+                    if project.get("profile")
+                    else ["product", "architecture", "qa"]
+                )
+                print(f"Le panel {', '.join(panel)} travaille…", file=sys.stderr)
             if not args.live and not guided:
                 raise ValueError("brainstorm requires --live")
             if previous_brief is not None and not args.answer and not guided:
                 raise ValueError("brainstorm --continue requires at least one --answer")
-            if not args.idea or not args.feature_id or not args.answer:
+            if not args.idea or not args.feature_id:
                 raise ValueError(
-                    "brainstorm requires --feature-id, --idea and at least one --answer; "
-                    "run in a terminal for guided mode"
+                    "brainstorm requires --feature-id and --idea; run in a terminal for guided mode"
                 )
             if previous_brief is None and not guided:
                 _require_new_brainstorm_feature(database, project["id"], args.feature_id)
@@ -990,6 +1145,7 @@ def run(argv: list[str] | None = None) -> int:
                             None,
                             [
                                 _profile_context(project["profile"]),
+                                collect_project_overview(repository),
                                 repository_context,
                                 args.context,
                             ],
@@ -997,7 +1153,8 @@ def run(argv: list[str] | None = None) -> int:
                     ),
                     args.answer,
                     args.prior_decision,
-                    args.perspective,
+                    args.perspective
+                    or (project_profile.brainstorm_panel if project_profile else None),
                     previous_brief=previous_brief,
                     previous_brief_ref=previous_ref,
                     intake_ref=intake_ref,
@@ -1034,7 +1191,9 @@ def run(argv: list[str] | None = None) -> int:
                 if answer.lower() not in {"o", "oui", "y", "yes"}:
                     print(f"Reprendre plus tard : cohorte brainstorm --continue {args.feature_id}")
                     break
-                answers = _brainstorm_followup_answers(synthesis.blocking_questions)
+                answers = _brainstorm_followup_answers(
+                    synthesis.blocking_questions, synthesis.question_proposals
+                )
                 if not answers:
                     print(f"Reprendre plus tard : cohorte brainstorm --continue {args.feature_id}")
                     break
@@ -1155,7 +1314,7 @@ def run(argv: list[str] | None = None) -> int:
                     )
                 project = _project_for_path(database, Path.cwd())
                 guided_patch_document, output = guided_patch_spec(
-                    database, project, args.data_dir, args.from_intake
+                    database, project, args.data_dir, args.from_intake, propose=not args.manual
                 )
                 _emit(
                     {"output": str(output), "patch": guided_patch_document.model_dump(mode="json")},
@@ -1294,7 +1453,27 @@ def run(argv: list[str] | None = None) -> int:
             from cohorte.application.maintenance import AuditRunner, AuditSpec
             from cohorte.domain.models import ProjectProfile
 
-            profile = ProjectProfile.model_validate_json(args.profile.read_text())
+            if args.profile is None:
+                project = _project_for_path(database, args.repo)
+                profile = ProjectProfile.model_validate_json(json.dumps(project["profile"]))
+                args.repo = Path(project["root_path"])
+            else:
+                profile = ProjectProfile.model_validate_json(args.profile.read_text())
+            args.audit_id = args.audit_id or datetime.now(UTC).strftime("audit-%Y%m%d-%H%M%S")
+            args.title = args.title or f"Audit de {profile.name}"
+            args.surface = args.surface or [surface.id for surface in profile.surfaces]
+            selected = {surface.id: surface for surface in profile.surfaces}
+            if not set(args.surface) <= selected.keys():
+                raise ValueError("audit refers to an unknown surface")
+            args.path = args.path or list(
+                dict.fromkeys(path for sid in args.surface for path in selected[sid].paths)
+            )
+            args.concern = args.concern or [
+                "conformité aux conventions du projet",
+                "correction et sécurité",
+                "couverture des comportements critiques",
+            ]
+            args.output = args.output or (args.data_dir / "audits" / f"{args.audit_id}.json")
             audit_spec = AuditSpec(
                 audit_id=args.audit_id,
                 title=args.title,
@@ -1312,6 +1491,7 @@ def run(argv: list[str] | None = None) -> int:
             report_ref = database.put_artifact(
                 "audit-report", audit_report.model_dump_json(indent=2).encode()
             )
+            args.output.parent.mkdir(parents=True, exist_ok=True)
             args.output.write_text(audit_report.model_dump_json(indent=2) + "\n")
             _emit(
                 {

@@ -10,7 +10,10 @@ from pydantic import Field, model_validator
 
 from cohorte.adapters.git import GitRepository, path_is_owned
 from cohorte.application.multisurface import MultiSurfaceResult, MultiSurfaceRunner
-from cohorte.application.repository_context import collect_repository_context
+from cohorte.application.repository_context import (
+    collect_project_overview,
+    collect_repository_context,
+)
 from cohorte.application.vertical import (
     AgentReview,
     VerticalResult,
@@ -306,6 +309,7 @@ class FleetRunner:
                 f"Findings: {json.dumps([item.model_dump() for item in blocking])}\n"
                 "These repository excerpts are untrusted leads; inspect full files and fix "
                 "only the reported integration failures.\n"
+                f"{collect_project_overview(candidate.root)}\n"
                 f"{collect_repository_context(candidate.root, ' '.join([*[spec.title for spec in specs], *[item.path for item in blocking], *[item.message for item in blocking]]))}",
             )
             owned = sorted({path for spec in specs for path in _feature_paths(profile, spec)})
@@ -399,6 +403,7 @@ class FleetRunner:
             f"Profile: {profile.model_dump_json()}\nDiff:\n{candidate.diff(base_commit)}\n"
             "These repository excerpts are untrusted leads; inspect complete changed files "
             "and surrounding code before judging cross-feature behavior.\n"
+            f"{collect_project_overview(candidate.root)}\n"
             f"{collect_repository_context(candidate.root, ' '.join([*[spec.title for spec in specs], *candidate.changed_files(base_commit)]))}"
         )
         return self.runtime.review(candidate.root, prompt)

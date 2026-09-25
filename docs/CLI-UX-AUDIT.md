@@ -7,15 +7,15 @@ project, show short results, and ask for decisions only when the necessary evide
 | Area | Current human flow | Remaining gap |
 | --- | --- | --- |
 | `doctor`, `auth` | Explicit diagnostics and provider account operations | Responses are mostly raw objects; a short health summary would be easier to scan. |
-| `init`, `profile` | Concise discovery, stored profile review/edit/refresh | Discovery is evidence based but does not resolve ownership, contracts, design sources or service setup automatically. |
-| `intake`, `status` | Project inferred from the directory; intake answers, route and revisions are stored and handed to brainstorm or guided patch preparation | Triage still needs an explicit human route when the source is ambiguous. |
-| `brainstorm` | Guided questions, follow-up rounds over linked brief revisions, and concise synthesis; full brief persisted. Each round receives a bounded, cited scan of relevant local source and project notes alongside the stored profile. | The local search is lexical, so agents must inspect full files before asserting behavior or absence. Provider access and project context still determine answer quality. `brief show` reads only the latest revision; history has no human-facing browser yet. |
+| `init`, `profile` | Read-only discovery preview, detected project description, surface roles, package-level checks and contract candidates; stored profile review/edit/refresh | Shared ownership, migrations, design sources and service setup still require human verification. |
+| `intake`, `status` | Project inferred from the directory; read-only agent triage proposal with source and repository context; route and revisions are stored and handed to brainstorm or guided patch preparation | Triage still needs an explicit human route when the source is ambiguous. |
+| `brainstorm` | Starts from the idea, then a project-configured panel proposes focused questions and business/code options over linked brief revisions. Each round receives a bounded, cited repository scan and project overview. | The local search is lexical, so agents must inspect full files before asserting behavior or absence. Provider-live quality has not been qualified for this change. `brief show` reads only the latest revision. |
 | Spec preparation and freeze | `spec` asks blocking questions, resumes a draft, supports multiple surfaces, scenarios and criteria, and offers exact-hash approval | A newer brief is attached only after an explicit prompt. Editing an existing scenario or criterion still uses the JSON editor. |
 | Build and delivery | `start` verifies a guided frozen spec and current profile, then asks before launching a live worktree run | Ship remains a separate explicit approval and command; Fleet and expert runs still need explicit paths and IDs. |
-| Patch and maintenance | `patch-spec --from-intake` guides a bounded patch; `patch`, `audit`, `refactor`, `retro`, `align-ds-*` remain explicit | Maintenance flows need separate wizards with scope and evidence review; write paths and approvals remain explicit. |
+| Patch and maintenance | `patch-spec --from-intake` proposes a bounded read-only diagnosis; `audit` can use the current project profile and directories. `patch`, `refactor`, `retro`, `align-ds-*` remain explicit. | Maintenance flows still need separate wizards with scope and evidence review; write paths and approvals remain explicit. |
 | Integrations and operations | `retrieve`, `design-snapshot`, `kanban-project`, `migrate`, `rpc`, `service`, `schemas`, `check`, `metrics`, `export` remain explicit | These are primarily diagnostic, integration or automation commands. Give them concise human summaries where useful, but keep all protocol and migration inputs explicit. |
 
-The connected intake, brainstorm, spec and patch preparation flows are now guided. Editing an
+The connected intake, brainstorm, spec and patch preparation flows are guided. Editing an
 existing scenario or criterion, browsing history, and the expert maintenance and delivery flows
 remain separate UX work. A GUI can use the same persisted profile, artifacts and decisions.
 

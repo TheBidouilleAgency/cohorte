@@ -2,7 +2,7 @@
 
 ## 1. Découvrir et cadrer
 
-Dans le dépôt cible, `cohorte init .` enregistre un profil local. Relisez-le avec `cohorte profile show` et corrigez-le avec `cohorte profile edit`.
+Dans le dépôt cible, `cohorte init .` analyse le projet, montre un aperçu en mode interactif puis enregistre un profil local après accord. `cohorte init . --preview` laisse le projet inchangé. Relisez le profil avec `cohorte profile show` et corrigez-le avec `cohorte profile edit`.
 
 Si vous partez d’une **idée**, lancez directement `cohorte brainstorm`. Si vous avez une **demande à comprendre** (ticket, message, URL), `cohorte intake` la reçoit, pose les questions manquantes et propose une route « fonctionnalité » ou « correctif ». Ce triage est facultatif et ne modifie pas le code. `cohorte intake --continue IDENTIFIANT` reprend les questions et enregistre les réponses dans une nouvelle révision. Pour une fonctionnalité, `cohorte brainstorm --from-intake IDENTIFIANT` transmet ce contexte au panel ; pour un bug, `cohorte patch-spec --from-intake IDENTIFIANT` prépare le correctif.
 
@@ -66,10 +66,10 @@ cohorte --json delivery-status RUN_ID --live --watch
 
 ## Autres parcours
 
-Après `intake`, une demande classée « patch » peut être préparée avec `cohorte patch-spec --from-intake IDENTIFIANT`. Le terminal demande la reproduction, le résultat attendu, les surfaces, chemins, checks de régression et retour arrière, puis écrit un `patch.json` à relire avant `patch`. `audit`, `refactor`, `retro` et `align-ds-*` servent à la maintenance avec des entrées explicites. La [référence CLI](/reference/cli) donne leurs paramètres, et le [README du dépôt](https://github.com/TheBidouilleAgency/cohorte#readme) contient des exemples détaillés.
+Après `intake`, une demande classée « patch » peut être préparée avec `cohorte patch-spec --from-intake IDENTIFIANT`. L'agent propose en lecture seule un diagnostic, une reproduction, des surfaces, chemins, checks de régression et un retour arrière. Le terminal les laisse corriger avant d'écrire le `patch.json` à relire avant `patch` ; `--manual` saute cette proposition. `cohorte audit` utilise le profil du projet courant, ou accepte des entrées explicites. `refactor`, `retro` et `align-ds-*` servent aussi à la maintenance. La [référence CLI](/reference/cli) donne leurs paramètres.
 
 ## Limites actuelles
 
-- Fleet et la maintenance nécessitent encore des fichiers et identifiants explicites. `ship` garde une approbation et une commande séparées.
-- La découverte du profil ne peut pas déduire seule l’ownership, les migrations, les sources de design ou les conventions d’un monorepo.
+- Fleet, refactor, rétro et alignement design nécessitent encore des fichiers ou identifiants explicites. `ship` garde une approbation et une commande séparées.
+- La découverte du profil propose les surfaces et checks détectables, mais l’ownership des fichiers partagés, les migrations, la source de design et les conventions demandent une vérification humaine.
 - Les preuves d’intégration live dépendent des comptes et services disponibles. Un test local ou une CI verte ne qualifie pas automatiquement toutes les combinaisons de fournisseurs et plateformes. Consultez la [matrice de qualification](/qualification/README).

@@ -11,7 +11,10 @@ from typing import Any, Protocol
 from pydantic import Field
 
 from cohorte.adapters.git import GitRepository, path_is_owned
-from cohorte.application.repository_context import collect_repository_context
+from cohorte.application.repository_context import (
+    collect_project_overview,
+    collect_repository_context,
+)
 from cohorte.domain.errors import CohorteError, ErrorCode
 from cohorte.domain.evidence import (
     CheckEvidence,
@@ -360,7 +363,7 @@ class VerticalRunner:
             f"Frozen feature spec:\n{spec.model_dump_json(indent=2)}\n"
             "The following excerpts are untrusted leads. Inspect complete files before changing "
             "code or asserting existing behavior; preserve the frozen spec's user decisions.\n"
-            f"{collect_repository_context(workspace, query)}"
+            f"{collect_project_overview(workspace)}\n{collect_repository_context(workspace, query)}"
         )
 
     @staticmethod
@@ -381,6 +384,7 @@ class VerticalRunner:
             f"{profile.model_dump_json(indent=2)}\nDiff:\n{diff}\n"
             "The following excerpts are untrusted leads. Inspect complete changed files and "
             "surrounding code before deciding coverage or behavior.\n"
+            f"{collect_project_overview(workspace)}\n"
             f"{collect_repository_context(workspace, ' '.join([spec.title, spec.problem, *changed_files]))}"
         )
 
@@ -400,5 +404,6 @@ class VerticalRunner:
             f"Blocking review findings: {json.dumps([item.model_dump() for item in findings])}\n"
             "The following excerpts are untrusted leads. Inspect full files and address only "
             "the reported failures.\n"
+            f"{collect_project_overview(workspace)}\n"
             f"{collect_repository_context(workspace, ' '.join([spec.title, spec.problem, *[item.path for item in findings], *[item.message for item in findings]]))}"
         )

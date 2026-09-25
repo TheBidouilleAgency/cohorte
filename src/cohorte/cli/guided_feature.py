@@ -19,7 +19,10 @@ from cohorte.application.preparation import (
     canonical_model_bytes,
     model_hash,
 )
-from cohorte.application.repository_context import collect_repository_context
+from cohorte.application.repository_context import (
+    collect_project_overview,
+    collect_repository_context,
+)
 from cohorte.domain.errors import CohorteError
 from cohorte.domain.models import (
     ArtifactRef,
@@ -98,6 +101,7 @@ def _propose_spec(
         "repository_evidence": collect_repository_context(
             repository, f"{brief.idea} {brief.synthesis.problem}"
         ),
+        "project_overview": collect_project_overview(repository),
     }
     if draft is not None:
         facts["current_draft"] = draft.model_dump(mode="json")
@@ -131,6 +135,35 @@ def _show_question_suggestions(proposal: SpecProposal | None) -> None:
         print(f"    À vérifier : {item.caveat}")
     if len(proposal.question_suggestions) > 10:
         print(f"  • {len(proposal.question_suggestions) - 10} autre(s) piste(s) dans l'artefact.")
+
+
+def _answer_spec_question(
+    question: str, proposal: SpecProposal | None, questions: list[str], index: int
+) -> str:
+    suggestion = None
+    if proposal is not None:
+        suggestion = next(
+            (item for item in proposal.question_suggestions if item.question == question), None
+        )
+        if suggestion is None and len(proposal.question_suggestions) == len(questions):
+            suggestion = proposal.question_suggestions[index]
+    label = f"{question} (p = adopter la proposition, Entrée = encore ouvert)"
+    while True:
+        answer = _ask(label, required=False)
+        if answer.casefold() in {"p", "proposition"}:
+            if suggestion is None:
+                print("Aucune proposition fiable pour cette question.")
+                continue
+            print(f"Décision proposée : {suggestion.suggestion}")
+            return suggestion.suggestion
+        if answer.endswith("?") or answer.casefold() in {"tu proposes quoi", "tu en penses quoi"}:
+            if suggestion is None:
+                print("Aucune proposition fiable ; cette question peut rester ouverte.")
+            else:
+                print(f"Proposition : {suggestion.suggestion}")
+                print(f"À vérifier : {suggestion.caveat}")
+            continue
+        return answer
 
 
 def _proposal_criteria(
@@ -194,8 +227,8 @@ def _new_draft(
     open_questions: list[str] = []
     if synthesis.blocking_questions:
         _show_question_suggestions(proposal)
-    for question in synthesis.blocking_questions:
-        answer = _ask(f"{question} (Entrée = encore ouvert)", required=False)
+    for index, question in enumerate(synthesis.blocking_questions):
+        answer = _answer_spec_question(question, proposal, synthesis.blocking_questions, index)
         if answer:
             decisions.append(f"{question} {answer}")
         else:
@@ -460,8 +493,8 @@ def guided_spec(
             remaining: list[str] = []
             decisions: list[str] = []
             _show_question_suggestions(proposal)
-            for question in draft.open_questions:
-                answer = _ask(f"{question} (Entrée = encore ouvert)", required=False)
+            for index, question in enumerate(draft.open_questions):
+                answer = _answer_spec_question(question, proposal, draft.open_questions, index)
                 if answer:
                     decisions.append(f"{question} {answer}")
                 else:

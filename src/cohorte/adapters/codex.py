@@ -19,6 +19,8 @@ from uuid import uuid4
 from openai_codex import ApprovalMode, Codex, CodexConfig, Sandbox, is_retryable_error
 
 from cohorte.adapters.events import AgentEvents, AgentEventSink, codex_tools, codex_usage
+from cohorte.application.intake import IntakeProposal
+from cohorte.application.patch import PatchProposal
 from cohorte.application.preparation import (
     BrainstormContribution,
     BrainstormPerspectiveTurn,
@@ -295,6 +297,16 @@ class CodexAdapter:
     def spec_proposal(self, workspace: Path, prompt: str) -> SpecProposal:
         return self._structured_turn(
             workspace, prompt, SpecProposal, Sandbox.read_only, "spec_proposal"
+        )
+
+    def intake_proposal(self, workspace: Path, prompt: str) -> IntakeProposal:
+        return self._structured_turn(
+            workspace, prompt, IntakeProposal, Sandbox.read_only, "intake_proposal"
+        )
+
+    def patch_proposal(self, workspace: Path, prompt: str) -> PatchProposal:
+        return self._structured_turn(
+            workspace, prompt, PatchProposal, Sandbox.read_only, "patch_proposal"
         )
 
     def build(self, workspace: Path, prompt: str) -> AgentReport:

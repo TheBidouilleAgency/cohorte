@@ -8,7 +8,12 @@ from pathlib import Path
 from uuid import uuid4
 
 from cohorte import __version__
-from cohorte.application.discovery import discover_project, profile_provenance
+from cohorte.application.discovery import (
+    discover_project,
+    discovery_report,
+    profile_provenance,
+    reconcile_profile,
+)
 from cohorte.application.intake import IntakeSourceType, classify_intake
 from cohorte.domain.models import (
     EventType,
@@ -40,6 +45,7 @@ class CohorteService:
     ) -> dict[str, object]:
         path = path.resolve(strict=True)
         profile, questions = discover_project(path, language)
+        analysis = discovery_report(profile, questions)
         try:
             existing = self.database.get_project(profile.project_id)
         except KeyError:
@@ -55,10 +61,12 @@ class CohorteService:
                     "profile_ref": existing["profile_ref"],
                     "questions": questions,
                     "provenance": profile_provenance(path),
+                    "analysis": analysis,
                     "existing": True,
                 }
             current = ProjectProfile.model_validate_json(json.dumps(existing["profile"]))
-            profile = profile.model_copy(update={"revision": current.revision + 1})
+            profile = reconcile_profile(current, profile)
+            analysis = discovery_report(profile, questions)
             artifact = self.database.update_project_profile(
                 profile.project_id,
                 profile.model_dump_json(indent=2).encode(),
@@ -69,6 +77,7 @@ class CohorteService:
                 "profile_ref": artifact,
                 "questions": questions,
                 "provenance": profile_provenance(path),
+                "analysis": analysis,
                 "refreshed": True,
             }
         document = profile.model_dump_json(indent=2).encode()
@@ -79,6 +88,7 @@ class CohorteService:
             "profile_ref": artifact,
             "questions": questions,
             "provenance": profile_provenance(path),
+            "analysis": analysis,
         }
 
     def save_project_profile(

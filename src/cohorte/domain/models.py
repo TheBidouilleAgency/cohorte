@@ -201,6 +201,7 @@ class ProjectProfile(StrictModel):
     revision: int = Field(default=1, ge=1)
     project_id: Slug
     name: str = Field(min_length=1, max_length=200)
+    description: str = Field(default="", max_length=1000)
     language: str = Field(min_length=2, max_length=16)
     metadata_mode: MetadataMode = MetadataMode.LOCAL
     vcs: VcsConfig
@@ -209,12 +210,17 @@ class ProjectProfile(StrictModel):
     contract: ContractConfig = Field(default_factory=ContractConfig)
     execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
     agent_defaults: AgentDefaults
+    brainstorm_panel: list[Slug] = Field(
+        default_factory=lambda: ["product", "architecture", "qa"], min_length=3, max_length=8
+    )
     policy: Policy = Field(default_factory=Policy)
     integrations: Integrations = Field(default_factory=Integrations)
     conventions: list[str] = Field(default_factory=list, max_length=256)
 
     @model_validator(mode="after")
     def references_are_valid(self) -> ProjectProfile:
+        if len(self.brainstorm_panel) != len(set(self.brainstorm_panel)):
+            raise ValueError("brainstorm panel members must be distinct")
         surface_ids = [surface.id for surface in self.surfaces]
         if len(surface_ids) != len(set(surface_ids)):
             raise ValueError("surface ids must be unique")
@@ -233,7 +239,9 @@ class ProjectProfile(StrictModel):
                     left = path.rstrip("/")
                     right = owned_path.rstrip("/")
                     overlaps = (
-                        left == right
+                        left == "."
+                        or right == "."
+                        or left == right
                         or left.startswith(right + "/")
                         or right.startswith(left + "/")
                     )
