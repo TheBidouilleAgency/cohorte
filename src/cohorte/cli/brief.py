@@ -35,6 +35,13 @@ def print_brief(brief: BrainstormBrief, revision: int) -> None:
         ("Pistes de critères", synthesis.criterion_leads),
     ):
         _items(label, values)
+    if synthesis.question_proposals:
+        print("Propositions du panel (à valider) :")
+        for proposal in synthesis.question_proposals:
+            print(f"  • {proposal.question}")
+            print(f"    Produit : {proposal.business_option}")
+            print(f"    Code : {proposal.code_option}")
+            print(f"    À vérifier : {proposal.caveat}")
     for contribution in brief.contributions:
         print(f"\nPerspective {contribution.perspective}")
         print(f"Problème : {contribution.problem}")

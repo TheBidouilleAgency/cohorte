@@ -28,6 +28,7 @@ from cohorte.domain.models import (
     Surface,
     VcsConfig,
 )
+from cohorte.execution.checks import CheckExecution
 from cohorte.persistence.sqlite import Database
 
 
@@ -104,6 +105,12 @@ class GroundedRuntime(FixingRuntime):
         assert "Frozen feature spec" in prompt
         assert "Project profile" in prompt
         return super().fix(workspace, prompt)
+
+
+class MissingCoverageRuntime(FixingRuntime):
+    def review(self, workspace: Path, prompt: str) -> AgentReview:
+        assert "exact surface IDs" in prompt
+        return AgentReview(verdict=ReviewVerdict.READY, covered_surfaces=[])
 
 
 def profile() -> ProjectProfile:
@@ -205,6 +212,50 @@ def test_vertical_passes_cited_workspace_context_to_each_agent_phase(tmp_path: P
     assert runtime.builds == 1
     assert runtime.reviews == 2
     assert runtime.fixes == 1
+
+
+def test_review_receives_coordinator_check_result_without_sandbox_rerun(tmp_path: Path) -> None:
+    passed = CheckExecution(
+        check_id="test",
+        status="passed",
+        exit_code=0,
+        started_at="2026-09-25T00:00:00Z",
+        ended_at="2026-09-25T00:00:01Z",
+        environment_digest="env",
+        output="1 passed",
+        truncated=False,
+    )
+    prompt = VerticalRunner._review_prompt(
+        tmp_path, profile(), spec(), "a" * 40, ["src/message.py"], "", [passed]
+    )
+    assert '"check_id": "test", "status": "passed", "exit_code": 0' in prompt
+    assert "Do not rerun them in your read-only sandbox" in prompt
+    assert "sandbox-only failure" in prompt
+
+
+def test_incomplete_review_is_journaled_before_delivery_is_blocked(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    git(repository, "init", "-b", "main")
+    git(repository, "config", "user.email", "test@example.com")
+    git(repository, "config", "user.name", "Test")
+    (repository / "src").mkdir()
+    (repository / "src" / ".gitkeep").write_text("")
+    git(repository, "add", ".")
+    git(repository, "commit", "-m", "initial")
+    observed: list[tuple[str, dict[str, object]]] = []
+    with pytest.raises(CohorteError, match="did not cover surfaces"):
+        VerticalRunner(MissingCoverageRuntime()).run(
+            repository,
+            tmp_path / "worktrees",
+            profile(),
+            spec(),
+            "missing-coverage",
+            observe=lambda phase, data: observed.append((phase, data)),
+        )
+    review = next(data for phase, data in observed if phase == "review")
+    assert review["ready"] is False
+    assert review["uncovered_surfaces"] == ["core"]
 
 
 def test_vertical_rejects_run_id_path_traversal(tmp_path: Path) -> None:

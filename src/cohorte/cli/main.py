@@ -38,6 +38,7 @@ from cohorte.application.multisurface import MultiSurfaceRunner
 from cohorte.application.service import CohorteService
 from cohorte.application.vertical import VerticalRunner
 from cohorte.domain.errors import CohorteError, ErrorCode
+from cohorte.domain.models import RunState, RunStatus
 from cohorte.domain.redaction import redact
 from cohorte.execution.checks import CheckRunner
 from cohorte.persistence.sqlite import Database
@@ -53,12 +54,29 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--config-dir", type=Path, default=user_config_path("cohorte"))
     parser.add_argument("--data-dir", type=Path, default=user_data_path("cohorte"))
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("doctor")
+    doctor = sub.add_parser("doctor")
+    doctor.add_argument("--repo", type=Path, default=Path.cwd())
+    doctor.add_argument("--project-id")
+    update_pipeline = sub.add_parser(
+        "update-pipeline", help="preview or apply profile reconciliation"
+    )
+    update_pipeline.add_argument("--repo", type=Path, default=Path.cwd())
+    update_pipeline.add_argument("--apply", action="store_true")
+    wrappers = sub.add_parser("wrappers", help="preview or install optional host-client shortcuts")
+    wrappers.add_argument("--runtime", action="append", required=True)
+    wrappers.add_argument("--repo", type=Path, default=Path.cwd())
+    wrappers.add_argument("--apply", action="store_true")
     init = sub.add_parser("init")
     init.add_argument("path", type=Path, nargs="?", default=Path.cwd())
     init.add_argument("--language", default="fr")
     init.add_argument(
+        "--preview", action="store_true", help="inspect the detected profile without registering it"
+    )
+    init.add_argument(
         "--refresh", action="store_true", help="replace the stored profile with a new discovery"
+    )
+    init.add_argument(
+        "--profile-file", type=Path, help="register an explicitly reviewed profile JSON"
     )
     profile = sub.add_parser("profile")
     profile_sub = profile.add_subparsers(dest="profile_command", required=True)
@@ -71,6 +89,9 @@ def _parser() -> argparse.ArgumentParser:
             child.add_argument("project_id", nargs="?")
     status = sub.add_parser("status")
     status.add_argument("run", nargs="?")
+    specs_board = sub.add_parser("specs", help="list project feature specifications")
+    specs_board.add_argument("--project-id")
+    specs_board.add_argument("--status")
     brief = sub.add_parser("brief", help="read a stored brainstorm brief")
     brief_sub = brief.add_subparsers(dest="brief_command", required=True)
     brief_show = brief_sub.add_parser("show", help="show the latest brief for a feature")
@@ -103,6 +124,7 @@ def _parser() -> argparse.ArgumentParser:
     loop.add_argument("--profile", type=Path, required=True)
     loop.add_argument("--repo", type=Path, default=Path.cwd())
     loop.add_argument("--worktrees", type=Path, required=True)
+    loop.add_argument("--existing-worktree", type=Path)
     loop.add_argument("--run-id", required=True)
     loop.add_argument("--live", action="store_true", required=True)
     fleet = sub.add_parser("fleet")
@@ -112,6 +134,22 @@ def _parser() -> argparse.ArgumentParser:
     fleet.add_argument("--worktrees", type=Path, required=True)
     fleet.add_argument("--fleet-id", required=True)
     fleet.add_argument("--live", action="store_true", required=True)
+    fleet_plan = sub.add_parser("fleet-plan", help="provision supervised feature worktrees")
+    fleet_plan.add_argument("specs", type=Path, nargs="+")
+    fleet_plan.add_argument("--profile", type=Path, required=True)
+    fleet_plan.add_argument("--repo", type=Path, default=Path.cwd())
+    fleet_plan.add_argument("--worktrees", type=Path, required=True)
+    fleet_plan.add_argument("--fleet-id", required=True)
+    fleet_plan.add_argument("--apply", action="store_true", help="provision the reviewed plan")
+    fleet_status = sub.add_parser("fleet-status", help="inspect a supervised fleet")
+    fleet_status.add_argument("fleet_id")
+    fleet_status.add_argument("--project-id", required=True)
+    fleet_status.add_argument("--no-fetch", action="store_true")
+    fleet_sync = sub.add_parser("fleet-sync", help="synchronize after a feature merge")
+    fleet_sync.add_argument("fleet_id")
+    fleet_sync.add_argument("--project-id", required=True)
+    fleet_sync.add_argument("--merged", required=True)
+    fleet_sync.add_argument("--apply", action="store_true")
     intake = sub.add_parser("intake")
     intake.add_argument("project_id", nargs="?")
     intake_source = intake.add_mutually_exclusive_group()
@@ -122,6 +160,7 @@ def _parser() -> argparse.ArgumentParser:
     intake.add_argument("--continue", dest="continue_feature_id", metavar="FEATURE_ID")
     intake.add_argument("--answer", action="append", default=[], metavar="N=RÉPONSE")
     intake.add_argument("--route", choices=["feature", "patch"])
+    intake.add_argument("--manual", action="store_true", help="skip read-only agent triage")
     brainstorm = sub.add_parser("brainstorm")
     brainstorm.add_argument("project_id", nargs="?")
     brainstorm.add_argument("--feature-id")
@@ -147,6 +186,35 @@ def _parser() -> argparse.ArgumentParser:
     guided_spec.add_argument(
         "--manual", action="store_true", help="skip the agent's draft proposal"
     )
+    spec_edit = sub.add_parser(
+        "spec-edit", help="revise one scenario or criterion of a saved draft"
+    )
+    spec_edit.add_argument("feature_id")
+    spec_edit_target = spec_edit.add_mutually_exclusive_group()
+    spec_edit_target.add_argument("--scenario")
+    spec_edit_target.add_argument("--criterion")
+    spec_edit.add_argument("--given")
+    spec_edit.add_argument("--when")
+    spec_edit.add_argument("--then")
+    spec_edit.add_argument("--statement")
+    spec_edit.add_argument("--verification", choices=["automatic", "review", "manual"])
+    spec_edit.add_argument("--check-id", action="append")
+    spec_edit.add_argument("--clear-checks", action="store_true")
+    spec_edit.add_argument("--expect-revision", type=int)
+    spec_propose = sub.add_parser(
+        "spec-propose", help="produce a read-only spec proposal from a stored brief"
+    )
+    spec_propose.add_argument("feature_id")
+    spec_propose.add_argument("--repo", type=Path, default=Path.cwd())
+    spec_draft = sub.add_parser(
+        "spec-draft", help="accept a stored proposal as an editable structured draft"
+    )
+    spec_draft.add_argument("feature_id")
+    spec_draft.add_argument("--repo", type=Path, default=Path.cwd())
+    spec_draft.add_argument("--answer", action="append", default=[], metavar="N=ANSWER")
+    spec_draft.add_argument("--contract", type=Path)
+    spec_draft.add_argument("--accept-proposal", action="store_true")
+    spec_draft.add_argument("--output", type=Path, required=True)
     guided_start = sub.add_parser("start", help="run a guided, frozen feature")
     guided_start.add_argument("feature_id", nargs="?")
     freeze_request = sub.add_parser("spec-freeze-request")
@@ -173,6 +241,7 @@ def _parser() -> argparse.ArgumentParser:
     patch_spec.add_argument("--write-path", action="append")
     patch_spec.add_argument("--check", action="append", default=[])
     patch_spec.add_argument("--manual-regression", action="store_true")
+    patch_spec.add_argument("--manual", action="store_true", help="skip read-only agent diagnosis")
     patch_spec.add_argument("--in-scope", action="append")
     patch_spec.add_argument("--out-of-scope", action="append", default=[])
     patch_spec.add_argument("--rollback")
@@ -185,15 +254,23 @@ def _parser() -> argparse.ArgumentParser:
     patch.add_argument("--run-id", required=True)
     patch.add_argument("--live", action="store_true", required=True)
     audit = sub.add_parser("audit")
-    audit.add_argument("--profile", type=Path, required=True)
+    audit.add_argument("--profile", type=Path)
     audit.add_argument("--repo", type=Path, default=Path.cwd())
-    audit.add_argument("--audit-id", required=True)
-    audit.add_argument("--title", required=True)
-    audit.add_argument("--surface", action="append", required=True)
-    audit.add_argument("--path", action="append", required=True)
-    audit.add_argument("--concern", action="append", required=True)
-    audit.add_argument("--output", type=Path, required=True)
-    audit.add_argument("--live", action="store_true", required=True)
+    audit.add_argument("--audit-id")
+    audit.add_argument("--title")
+    audit.add_argument("--surface", action="append")
+    audit.add_argument("--path", action="append")
+    audit.add_argument("--concern", action="append")
+    audit.add_argument("--output", type=Path)
+    audit.add_argument("--live", action="store_true")
+    incoming_review = sub.add_parser("incoming-review")
+    incoming_review.add_argument("number", type=int)
+    incoming_review.add_argument("--profile", type=Path)
+    incoming_review.add_argument("--repo", type=Path, default=Path.cwd())
+    incoming_review.add_argument("--worktrees", type=Path)
+    incoming_review.add_argument("--title")
+    incoming_review.add_argument("--description")
+    incoming_review.add_argument("--live", action="store_true")
     refactor = sub.add_parser("refactor")
     refactor.add_argument("selection", type=Path)
     refactor.add_argument("--profile", type=Path, required=True)
@@ -201,13 +278,27 @@ def _parser() -> argparse.ArgumentParser:
     refactor.add_argument("--worktrees", type=Path, required=True)
     refactor.add_argument("--run-id", required=True)
     refactor.add_argument("--live", action="store_true", required=True)
+    refactor_plan = sub.add_parser(
+        "refactor-plan", help="select audit findings for a bounded refactor"
+    )
+    refactor_plan.add_argument("report", type=Path)
+    refactor_plan.add_argument("--profile", type=Path)
+    refactor_plan.add_argument("--repo", type=Path, default=Path.cwd())
+    refactor_plan.add_argument("--finding", action="append", required=True)
+    refactor_plan.add_argument("--invariant", action="append", required=True)
+    refactor_plan.add_argument("--rollback", required=True)
+    refactor_plan.add_argument("--output", type=Path)
+    refactor_plan.add_argument("--approve", action="store_true")
     refactor_request = sub.add_parser("refactor-request")
     refactor_request.add_argument("selection", type=Path)
     retro = sub.add_parser("retro")
-    retro.add_argument("reports", type=Path, nargs="+")
-    retro.add_argument("--proposal-id", required=True)
-    retro.add_argument("--rule", required=True)
-    retro.add_argument("--output", type=Path, required=True)
+    retro.add_argument("reports", type=Path, nargs="*")
+    retro.add_argument("--proposal-id")
+    retro.add_argument("--rule")
+    retro.add_argument("--output", type=Path)
+    retro.add_argument("--pattern")
+    retro.add_argument("--manual", action="store_true")
+    retro.add_argument("--live", action="store_true")
     retro_apply = sub.add_parser("retro-apply")
     retro_apply.add_argument("proposal", type=Path)
     retro_apply.add_argument("--profile", type=Path, required=True)
@@ -325,17 +416,60 @@ def _fail(error: Exception, json_mode: bool, debug: bool = False) -> NoReturn:
 
 
 def _doctor(service: CohorteService, args: argparse.Namespace) -> dict[str, Any]:
+    from cohorte.application.project_doctor import inspect_project
+    from cohorte.domain.models import ProjectProfile
+
     claude = inspect_runtime("claude")
     codex = inspect_runtime("codex")
+    try:
+        project = (
+            service.database.get_project(args.project_id)
+            if args.project_id
+            else _project_for_path(service.database, args.repo)
+        )
+    except (KeyError, ValueError):
+        project = None
+    project_health = (
+        inspect_project(
+            Path(project["root_path"]),
+            ProjectProfile.model_validate_json(json.dumps(project["profile"])),
+        )
+        if project is not None
+        else {"registered": False, "fix": "Run cohorte init . in this project."}
+    )
     return {
         **service.health(),
         "python_required": ">=3.12",
         "data_dir": str(args.data_dir),
         "config_dir": str(args.config_dir),
         "providers": [asdict(claude), asdict(codex)],
+        "project": project_health,
         "support_claim": "codex-bounded-live-align-local-integrations-migration-darwin-service-windows-ci-pipe",
         "next_validation": "Validate the external Francois client and Windows slow-client behavior, then complete the AC01-AC30 matrix.",
     }
+
+
+def _emit_doctor_result(result: dict[str, Any], json_mode: bool) -> None:
+    if json_mode:
+        _emit(result, True)
+        return
+    database = result["database"]
+    print(f"Cohorte {result['version']} · base {'OK' if database['ok'] else 'à corriger'}")
+    for provider in result["providers"]:
+        availability = provider["connection_state"]
+        version = provider["runtime_version"] or "version inconnue"
+        print(f"{provider['provider']} · {availability} · {version}")
+    project = result["project"]
+    if project.get("registered") is False:
+        print(f"Projet : non initialisé · {project['fix']}")
+        return
+    print(
+        f"Projet {project['project_id']} · {project['surfaces']} surfaces · "
+        f"{project['checks']} checks · {'OK' if project['ok'] else 'à corriger'}"
+    )
+    for finding in project["findings"]:
+        print(f"  {finding['code']} · {finding['message']}")
+        print(f"  Action : {finding['fix']}")
 
 
 def _schemas(output: Path) -> dict[str, Any]:
@@ -444,10 +578,43 @@ def _prompt(label: str, *, required: bool = True) -> str:
         print("Une réponse est nécessaire.", file=sys.stderr)
 
 
-def _brainstorm_followup_answers(questions: list[str]) -> list[str]:
+def _brainstorm_followup_answers(
+    questions: list[str], proposals: list[Any] | None = None
+) -> list[str]:
     answers: list[str] = []
-    for question in questions:
-        answer = _prompt(f"{question} (Entrée = encore ouvert)", required=False)
+    suggestions = {item.question: item for item in proposals or []}
+    for index, question in enumerate(questions):
+        suggestion = suggestions.get(question)
+        if suggestion is None and proposals is not None and len(proposals) == len(questions):
+            suggestion = proposals[index]
+        if suggestion is not None:
+            print(f"\n{question}")
+            print(f"  Produit : {suggestion.business_option}")
+            print(f"  Code : {suggestion.code_option}")
+            print(f"  À vérifier : {suggestion.caveat}")
+        while True:
+            answer = _prompt(
+                f"{question} (p = adopter la piste produit, c = piste code, Entrée = ouvert)",
+                required=False,
+            )
+            lowered = answer.casefold()
+            if lowered in {"p", "produit"} and suggestion is not None:
+                answer = suggestion.business_option
+            elif lowered in {"c", "code"} and suggestion is not None:
+                answer = suggestion.code_option
+            elif lowered in {"p", "c", "produit", "code"}:
+                print("Aucune proposition disponible pour cette question.")
+                continue
+            if answer.endswith("?") or lowered in {"tu proposes quoi", "tu en penses quoi"}:
+                if suggestion is None:
+                    print(
+                        "Le panel n'a pas proposé de réponse vérifiable ; la question reste ouverte."
+                    )
+                else:
+                    print(f"Piste produit : {suggestion.business_option}")
+                    print(f"Piste code : {suggestion.code_option}")
+                continue
+            break
         if answer:
             answers.append(f"{question} {answer}")
     extra = _prompt("Autre élément à ajouter (facultatif)", required=False)
@@ -474,6 +641,8 @@ def _profile_context(profile: dict[str, Any]) -> str:
     surfaces = profile.get("surfaces", [])
     summary = {
         "project": profile.get("name"),
+        "description": profile.get("description", ""),
+        "target_product_language": profile.get("language"),
         "surfaces": [
             {
                 "id": item.get("id"),
@@ -510,15 +679,223 @@ def _emit_profile_result(result: dict[str, Any], json_mode: bool) -> None:
         _emit(result, True)
         return
     profile = result["profile"]
-    reference = result["profile_ref"]
+    reference = result.get("profile_ref", {"revision": profile["revision"]})
     print(
-        f"Profil {profile['project_id']} · révision {reference['revision']} · "
+        f"{'Brouillon' if result.get('preview') else 'Profil'} {profile['project_id']} · révision {reference['revision']} · "
         f"{len(profile['surfaces'])} surfaces · {len(profile['checks'])} checks"
     )
+    analysis = result.get("analysis", {})
+    if analysis:
+        print("Analyse du dépôt :")
+        for surface in analysis.get("surfaces", []):
+            check_ids = ", ".join(item["id"] for item in surface["checks"]) or "aucun"
+            print(
+                f"  {surface['id']} · {', '.join(surface['paths'])} · "
+                f"{surface['role_profile']} · checks : {check_ids}"
+            )
+        contract = analysis.get("contract", {})
+        if contract.get("enabled"):
+            print(f"Contrat détecté : {contract['mechanism']} · {', '.join(contract['paths'])}")
+        for signal, label in (
+            ("conventions", "Règles présentes"),
+            ("design", "Design présent"),
+            ("retrieval", "Retrieval configuré"),
+            ("isolation", "Isolation possible"),
+        ):
+            sources = analysis.get("signals", {}).get(signal, [])
+            if sources:
+                print(f"{label} : {', '.join(sources)}")
+        print(f"Panel brainstorm : {', '.join(analysis.get('brainstorm_panel', []))}")
     for question in result.get("questions", []):
         print(f"À confirmer : {question}")
     print("Voir le détail : cohorte profile show")
     print("Corriger le profil : cohorte profile edit")
+
+
+def _configure_init_candidate(profile: Any, analysis: dict[str, Any], root: Path) -> Any:
+    """Offer only detected integrations; a skipped choice keeps the safe default."""
+    from cohorte.domain.models import ProjectProfile
+
+    document = profile.model_dump(mode="json")
+    signals = analysis.get("signals", {})
+    convention_candidates = analysis.get("convention_candidates", [])
+    if convention_candidates:
+        print("Règles candidates du dépôt (aucune importation automatique) :")
+        for index, item in enumerate(convention_candidates, 1):
+            print(f"  {index}. {item['source']}:{item['line']} · {item['rule']}")
+        chosen = _prompt(
+            "Numéros des règles à ajouter, séparés par des virgules (Entrée = aucune)",
+            required=False,
+        ).strip()
+        if chosen:
+            numbers = [part.strip() for part in chosen.split(",")]
+            if any(
+                not part.isdigit() or not 1 <= int(part) <= len(convention_candidates)
+                for part in numbers
+            ):
+                raise ValueError("select valid convention candidate numbers")
+            for number in dict.fromkeys(int(part) for part in numbers):
+                item = convention_candidates[number - 1]
+                rule = f"{item['rule']} ({item['source']}:{item['line']})"
+                if rule not in document["conventions"]:
+                    document["conventions"].append(rule)
+    retrieval_sources = signals.get("retrieval", [])
+    if retrieval_sources:
+        available = sorted(
+            {
+                provider
+                for provider in ("serena", "graphify")
+                if any(provider in item.casefold() for item in retrieval_sources)
+            }
+        )
+        print(f"Retrieval détecté : {', '.join(retrieval_sources)}")
+        selected = _prompt(
+            f"Utiliser quel provider ? [{'/'.join([*available, 'files', 'none'])}; Entrée = inchangé]",
+            required=False,
+        ).casefold()
+        if selected and selected not in {*available, "files", "none"}:
+            raise ValueError("retrieval provider must match a detected server, files or none")
+        if selected:
+            document["integrations"]["retrieval"] = {
+                "provider": selected,
+                "fallback_to_files": selected in {"serena", "graphify"},
+                "roots": ["."],
+            }
+    if signals.get("design"):
+        print(f"Design détecté : {', '.join(signals['design'])}")
+        source = _prompt(
+            "Source design JSON relative ou URL Figma (Entrée = désactivé)", required=False
+        ).strip()
+        if source:
+            if source.startswith(("https://www.figma.com/", "https://figma.com/")):
+                provider = "figma"
+            else:
+                candidate = (root / source).resolve(strict=True)
+                if (
+                    not candidate.is_relative_to(root.resolve(strict=True))
+                    or not candidate.is_file()
+                ):
+                    raise ValueError("design source must be a file inside the project")
+                if candidate.stat().st_size > 2 * 1024 * 1024:
+                    raise ValueError("design source exceeds 2 MiB")
+                payload = json.loads(candidate.read_text(encoding="utf-8"))
+                if not isinstance(payload, dict):
+                    raise ValueError("design source must contain a JSON object")
+                provider = "file"
+            snapshot_path = _prompt(
+                "Snapshot design JSON du dépôt (chemin relatif, obligatoire)", required=True
+            ).strip()
+            snapshot = (root / snapshot_path).resolve(strict=True)
+            if not snapshot.is_relative_to(root.resolve(strict=True)) or not snapshot.is_file():
+                raise ValueError("design snapshot must be a file inside the project")
+            if snapshot.stat().st_size > 2 * 1024 * 1024:
+                raise ValueError("design snapshot exceeds 2 MiB")
+            if not isinstance(json.loads(snapshot.read_text(encoding="utf-8")), dict):
+                raise ValueError("design snapshot must contain a JSON object")
+            document["integrations"]["design"] = {
+                "enabled": True,
+                "provider": provider,
+                "source": source,
+                "snapshot_path": snapshot_path,
+            }
+    return ProjectProfile.model_validate_json(json.dumps(document))
+
+
+def _emit_supervised_fleet(
+    command: str, result: dict[str, Any], json_mode: bool, data_dir: Path
+) -> None:
+    if json_mode:
+        _emit(result, True)
+        return
+    if command == "fleet-plan":
+        print(
+            f"{'Fleet préparée' if result['prepared'] else 'Proposition Fleet'} "
+            f"{result['fleet_id']} · {len(result['order'])} features · base {result['base_commit'][:12]}"
+        )
+        for overlap in result["overlaps"]:
+            print(
+                f"Chevauchement : {overlap['left_feature']} / {overlap['right_feature']} · "
+                f"{', '.join(overlap['paths'])}"
+            )
+        for feature_id in result["order"]:
+            item = result["features"][feature_id]
+            dependencies = ", ".join(item["depends_on"]) or "aucune"
+            print(f"{feature_id} · après {dependencies} · {item['worktree']}")
+            if result["prepared"] and item["spec_path"] and result["profile_path"]:
+                command_line = [
+                    "cohorte",
+                    "--data-dir",
+                    str(data_dir),
+                    "loop",
+                    item["spec_path"],
+                    "--profile",
+                    result["profile_path"],
+                    "--repo",
+                    result["repository"],
+                    "--worktrees",
+                    result["worktree_parent"],
+                    "--existing-worktree",
+                    item["worktree"],
+                    "--run-id",
+                    f"{result['fleet_id']}-{feature_id}"[:80],
+                    "--live",
+                ]
+                print(f"  Dans sa propre session : {shlex.join(command_line)}")
+        if result["prepared"]:
+            print(
+                f"Suivi : cohorte fleet-status {result['fleet_id']} --project-id {result['project_id']}"
+            )
+        else:
+            print("Après validation de l'ordre et des chevauchements, relancer avec --apply.")
+    elif command == "fleet-status":
+        print(f"Fleet {result['fleet_id']} · {len(result['rows'])} features actives")
+        for row in result["rows"]:
+            run = row.get("run")
+            phase = f" · {run['stage']}/{run['status']}" if run else ""
+            drift = f" · ↑{row['ahead']} ↓{row['behind']}" if "ahead" in row else ""
+            print(f"{row['feature_id']} · {row['state']}{phase}{drift} · {row['next']}")
+            if run:
+                evidence = run.get("evidence", {})
+                print(
+                    f"  Preuves : checks {evidence.get('checks', 'unknown')} · "
+                    f"revue {evidence.get('review', 'unknown')} · "
+                    f"agents {evidence.get('agent_liveness', 'unknown')}"
+                )
+    else:
+        print(f"Fleet {result['fleet_id']} · merge vérifié : {result['merged_feature']}")
+        for item in result["outcomes"]:
+            action = f" · {item['action']}" if item.get("action") else ""
+            print(f"{item['feature_id']} · {item['status']}{action}")
+
+
+def _fleet_run_evidence(database: Database, runs: list[RunState]) -> dict[str, dict[str, Any]]:
+    evidence: dict[str, dict[str, Any]] = {}
+    for state in runs:
+        summary: dict[str, Any] = {
+            "checks": "unknown",
+            "review": "unknown",
+            "agent_liveness": "unknown" if state.status == RunStatus.RUNNING else "not_applicable",
+        }
+        for label, event_type in (
+            ("checks", "phase.checks.completed"),
+            ("review", "phase.review.completed"),
+        ):
+            try:
+                event = database.latest_event(state.id, event_type)
+            except KeyError:
+                continue
+            data = event["data"]
+            if (
+                not state.candidate_tree_hash
+                or data.get("candidate_tree_hash") != state.candidate_tree_hash
+            ):
+                summary[label] = "stale"
+            elif label == "checks":
+                summary[label] = "passed" if data.get("passed") is True else "failed"
+            else:
+                summary[label] = "ready" if data.get("ready") is True else "blocked"
+        evidence[state.id] = summary
+    return evidence
 
 
 def _emit_project_status(database: Database, project: dict[str, Any]) -> None:
@@ -568,12 +945,170 @@ def run(argv: list[str] | None = None) -> int:
             args.repo = Path(project["root_path"])
             args.worktrees = worktrees
             args.run_id = run_id
+            args.existing_worktree = None
             args.live = True
         if args.command == "doctor":
-            _emit(_doctor(service, args), args.json)
+            _emit_doctor_result(_doctor(service, args), args.json)
+        elif args.command == "update-pipeline":
+            from cohorte.application.client_wrappers import (
+                apply_wrappers,
+                installed_wrappers,
+                wrapper_plan,
+            )
+            from cohorte.application.discovery import (
+                discover_project,
+                discovery_report,
+                reconcile_profile,
+            )
+            from cohorte.domain.models import ProjectProfile
+
+            project = _project_for_path(database, args.repo)
+            root = Path(project["root_path"])
+            current_profile = ProjectProfile.model_validate_json(json.dumps(project["profile"]))
+            detected, questions = discover_project(root, current_profile.language)
+            proposed = reconcile_profile(current_profile, detected)
+            before = current_profile.model_dump(mode="json")
+            after = proposed.model_dump(mode="json")
+            changed_fields = sorted(
+                key for key in before if key != "revision" and before[key] != after[key]
+            )
+            wrapper_runtimes = installed_wrappers(root)
+            wrapper_preview = wrapper_plan(root, wrapper_runtimes) if wrapper_runtimes else []
+            wrappers_can_apply = not any(item["status"] == "conflict" for item in wrapper_preview)
+            wrappers_need_update = any(item["status"] == "update" for item in wrapper_preview)
+            if args.apply and changed_fields:
+                saved = service.init_project(root, current_profile.language, refresh=True)
+                proposed_document = saved["profile"]
+                reference = saved["profile_ref"]
+            else:
+                proposed_document = after
+                reference = project["profile_ref"]
+            wrappers_applied = bool(args.apply and wrappers_can_apply and wrappers_need_update)
+            wrapper_results = (
+                apply_wrappers(root, wrapper_runtimes) if wrappers_applied else wrapper_preview
+            )
+            update_result = {
+                "project_id": current_profile.project_id,
+                "changed_fields": changed_fields,
+                "questions": questions,
+                "analysis": discovery_report(proposed, questions, root),
+                "profile": proposed_document,
+                "profile_ref": reference,
+                "applied": bool(args.apply and changed_fields),
+                "wrappers": wrapper_results,
+                "wrappers_applied": wrappers_applied,
+            }
+            if args.json:
+                _emit(update_result, True)
+            else:
+                print(
+                    f"Profil {current_profile.project_id} · "
+                    f"{'réconcilié' if update_result['applied'] else 'prévisualisation'}"
+                )
+                print(f"Champs détectés à mettre à jour : {', '.join(changed_fields) or 'aucun'}")
+                for question in questions:
+                    print(f"À confirmer : {question}")
+                for wrapper_item in wrapper_results:
+                    print(
+                        f"Raccourci {wrapper_item['runtime']} · {wrapper_item['status']} · "
+                        f"{wrapper_item['path']}"
+                    )
+                if any(item["status"] == "conflict" for item in wrapper_results):
+                    print("Raccourcis modifiés manuellement : résolution explicite requise.")
+                if changed_fields and not args.apply:
+                    print("Relancer avec --apply après validation du profil proposé en JSON.")
+        elif args.command == "wrappers":
+            from cohorte.application.client_wrappers import apply_wrappers, wrapper_plan
+
+            wrappers_result = (
+                apply_wrappers(args.repo, args.runtime)
+                if args.apply
+                else wrapper_plan(args.repo, args.runtime)
+            )
+            if args.json:
+                _emit({"wrappers": wrappers_result, "applied": args.apply}, True)
+            else:
+                for wrapper_item in wrappers_result:
+                    print(
+                        f"{wrapper_item['runtime']} · {wrapper_item['status']} · "
+                        f"{wrapper_item['path']}"
+                    )
+                if not args.apply:
+                    print("Relancer avec --apply pour créer les fichiers proposés.")
         elif args.command == "init":
+            if args.profile_file is not None:
+                if args.preview:
+                    raise ValueError("--profile-file cannot be combined with --preview")
+                from cohorte.domain.models import ProjectProfile
+
+                chosen_profile = ProjectProfile.model_validate_json(args.profile_file.read_text())
+                _emit_profile_result(
+                    service.init_project(
+                        args.path,
+                        args.language,
+                        refresh=args.refresh,
+                        profile_override=chosen_profile,
+                    ),
+                    args.json,
+                )
+                return 0
+            if args.preview or (not args.json and sys.stdin.isatty()):
+                from cohorte.application.discovery import (
+                    discover_project,
+                    discovery_report,
+                    profile_provenance,
+                    reconcile_profile,
+                )
+
+                candidate, questions = discover_project(args.path, args.language)
+                try:
+                    existing_project = database.get_project(candidate.project_id)
+                except KeyError:
+                    existing_project = None
+                if existing_project is not None and not args.refresh and not args.preview:
+                    _emit_profile_result(service.init_project(args.path, args.language), args.json)
+                    return 0
+                if existing_project is not None and args.refresh:
+                    from cohorte.domain.models import ProjectProfile
+
+                    current_profile = ProjectProfile.model_validate_json(
+                        json.dumps(existing_project["profile"])
+                    )
+                    candidate = reconcile_profile(current_profile, candidate)
+                preview = {
+                    "profile": candidate.model_dump(mode="json"),
+                    "questions": questions,
+                    "provenance": profile_provenance(args.path),
+                    "analysis": discovery_report(candidate, questions, args.path),
+                    "preview": True,
+                }
+                _emit_profile_result(preview, args.json)
+                if args.preview:
+                    return 0
+                candidate = _configure_init_candidate(
+                    candidate, cast(dict[str, Any], preview["analysis"]), args.path
+                )
+                if candidate.model_dump(mode="json") != preview["profile"]:
+                    print("Profil ajusté selon vos choix :")
+                    preview["profile"] = candidate.model_dump(mode="json")
+                    preview["analysis"] = discovery_report(candidate, questions, args.path)
+                    _emit_profile_result(preview, args.json)
+                if _prompt("Enregistrer ce profil ? [o/N]", required=False).casefold() not in {
+                    "o",
+                    "oui",
+                    "y",
+                    "yes",
+                }:
+                    print("Profil non enregistré.")
+                    return 0
             _emit_profile_result(
-                service.init_project(args.path, args.language, refresh=args.refresh), args.json
+                service.init_project(
+                    args.path,
+                    args.language,
+                    refresh=args.refresh,
+                    profile_override=candidate if not args.json and sys.stdin.isatty() else None,
+                ),
+                args.json,
             )
         elif args.command == "profile":
             project = (
@@ -625,6 +1160,45 @@ def run(argv: list[str] | None = None) -> int:
                     "runs": [r.model_dump(mode="json") for r in service.database.list_runs()]
                 }
                 _emit(payload, args.json)
+        elif args.command == "specs":
+            project = (
+                database.get_project(args.project_id)
+                if args.project_id
+                else _project_for_path(database, Path.cwd())
+            )
+            features = database.list_features(project["id"])
+            if args.status:
+                features = [item for item in features if item["status"] == args.status]
+            rows = []
+            for feature in features:
+                try:
+                    ready = database.latest_artifact(f"ready:{feature['id']}")
+                    ready_ref = {key: ready[key] for key in ("id", "revision", "sha256")}
+                except KeyError:
+                    ready_ref = None
+                rows.append(
+                    {
+                        "feature_id": feature["id"],
+                        "title": feature["title"],
+                        "kind": feature["kind"],
+                        "status": feature["status"],
+                        "ready_ref": ready_ref,
+                        "updated_at": feature["updated_at"],
+                    }
+                )
+            if args.json:
+                _emit({"project_id": project["id"], "features": rows}, True)
+            else:
+                print(f"Specs · {project['id']} · {len(rows)} fonctionnalités")
+                for row in rows:
+                    next_action = (
+                        f"cohorte start {row['feature_id']}"
+                        if row["status"] == "frozen" and row["ready_ref"]
+                        else f"cohorte spec {row['feature_id']}"
+                    )
+                    print(
+                        f"  {row['feature_id']} · {row['status']} · {row['title']} · {next_action}"
+                    )
         elif args.command == "export":
             exported = service.export_run(args.run_id, args.max_bytes)
             if args.output is None:
@@ -699,6 +1273,7 @@ def run(argv: list[str] | None = None) -> int:
             _emit(_schemas(args.output), args.json)
         elif args.command == "intake":
             from cohorte.application.intake import (
+                IntakeProposal,
                 IntakeReport,
                 IntakeSourceType,
                 IntakeTriage,
@@ -710,6 +1285,7 @@ def run(argv: list[str] | None = None) -> int:
                 ask_route,
                 parse_answers,
                 print_report,
+                propose_intake,
             )
             from cohorte.domain.models import ArtifactRef
 
@@ -719,6 +1295,7 @@ def run(argv: list[str] | None = None) -> int:
                 else _project_for_path(database, Path.cwd())
             )
             continuing = args.continue_feature_id is not None
+            intake_proposal: IntakeProposal | None = None
             if continuing:
                 if args.text is not None or args.file is not None or args.url is not None:
                     raise ValueError("intake --continue cannot read a new source")
@@ -763,6 +1340,17 @@ def run(argv: list[str] | None = None) -> int:
                 else:
                     source_type, value = IntakeSourceType.URL, args.url
                 source, locator = load_intake_source(source_type, value)
+                if not args.json and sys.stdin.isatty() and not args.manual:
+                    print(
+                        "L'agent analyse la demande et le dépôt en lecture seule…", file=sys.stderr
+                    )
+                    try:
+                        intake_proposal = propose_intake(project, source)
+                    except (CohorteError, ValueError, RuntimeError) as error:
+                        print(
+                            f"Triage agent indisponible : {error}; analyse déterministe conservée.",
+                            file=sys.stderr,
+                        )
                 intake_result = service.intake(
                     project["id"],
                     source,
@@ -775,6 +1363,54 @@ def run(argv: list[str] | None = None) -> int:
                     json.dumps(intake_result["report"])
                 )
                 intake_report_ref = ArtifactRef.model_validate(intake_result["report_ref"])
+                if intake_proposal is not None:
+                    proposal_ref = database.put_artifact(
+                        "intake-proposal",
+                        intake_proposal.model_dump_json(indent=2).encode(),
+                        artifact_id=f"proposal:intake:{feature_id}",
+                    )
+                    print(
+                        f"Piste de l'agent : {intake_proposal.route.value} · {intake_proposal.rationale}"
+                    )
+                    if intake_proposal.suspected_surfaces:
+                        print(
+                            f"Surfaces probables : {', '.join(intake_proposal.suspected_surfaces)}"
+                        )
+                    print(f"À vérifier : {intake_proposal.caveat}")
+                    proposed_questions = intake_proposal.questions
+                    proposal_route = intake_report_doc.triage
+                    if intake_proposal.route != proposal_route:
+                        choice = _prompt(
+                            f"Adopter le parcours {intake_proposal.route.value} proposé ? [o/N]",
+                            required=False,
+                        )
+                        if choice.casefold() in {"o", "oui", "y", "yes"}:
+                            proposal_route = intake_proposal.route
+                    intake_report_doc = intake_report_doc.model_copy(
+                        update={
+                            "triage": proposal_route,
+                            "questions": proposed_questions or intake_report_doc.questions,
+                            "reasons": [
+                                *intake_report_doc.reasons,
+                                "read-only agent proposal reviewed",
+                            ],
+                            "previous_report_ref": intake_report_ref,
+                        }
+                    )
+                    stored = database.put_artifact(
+                        "intake-report",
+                        intake_report_doc.model_dump_json(indent=2).encode(),
+                        artifact_id=f"intake:{feature_id}",
+                    )
+                    intake_report_ref = ArtifactRef.model_validate(stored)
+                    database.set_feature_kind(feature_id, proposal_route.value)
+                    intake_result.update(
+                        {
+                            "report": intake_report_doc.model_dump(mode="json"),
+                            "report_ref": intake_report_ref.model_dump(mode="json"),
+                            "proposal_ref": proposal_ref,
+                        }
+                    )
             if args.json:
                 intake_answers = parse_answers(args.answer, intake_report_doc.questions)
                 route = IntakeTriage(args.route) if args.route else None
@@ -811,7 +1447,10 @@ def run(argv: list[str] | None = None) -> int:
                 BrainstormRunner,
                 canonical_model_bytes,
             )
-            from cohorte.application.repository_context import collect_repository_context
+            from cohorte.application.repository_context import (
+                collect_project_overview,
+                collect_repository_context,
+            )
             from cohorte.domain.models import ArtifactRef, ProjectProfile
 
             guided = (
@@ -911,7 +1550,8 @@ def run(argv: list[str] | None = None) -> int:
                     print(f"Piste actuelle : {previous_brief.synthesis.recommendation}")
                     if not args.answer:
                         args.answer = _brainstorm_followup_answers(
-                            previous_brief.synthesis.blocking_questions
+                            previous_brief.synthesis.blocking_questions,
+                            previous_brief.synthesis.question_proposals,
                         )
                         if not args.answer:
                             print("Aucune nouvelle réponse ; brief inchangé.")
@@ -924,25 +1564,21 @@ def run(argv: list[str] | None = None) -> int:
                             _prompt(f"Identifiant [{suggested}]", required=False) or suggested
                         )
                     _require_new_brainstorm_feature(database, project["id"], args.feature_id)
-                    if not args.answer:
-                        for question in (
-                            "Qui est concerné et à quel moment ?",
-                            "Quel problème concret observes-tu ?",
-                            "Quel résultat veux-tu obtenir ?",
-                            "Quelles contraintes ou décisions faut-il respecter ? (facultatif)",
-                        ):
-                            answer = _prompt(question, required="facultatif" not in question)
-                            if answer:
-                                args.answer.append(f"{question} {answer}")
-                print("Le panel produit, architecture et QA travaille…", file=sys.stderr)
+                panel = (
+                    ProjectProfile.model_validate_json(
+                        json.dumps(project["profile"])
+                    ).brainstorm_panel
+                    if project.get("profile")
+                    else ["product", "architecture", "qa"]
+                )
+                print(f"Le panel {', '.join(panel)} travaille…", file=sys.stderr)
             if not args.live and not guided:
                 raise ValueError("brainstorm requires --live")
             if previous_brief is not None and not args.answer and not guided:
                 raise ValueError("brainstorm --continue requires at least one --answer")
-            if not args.idea or not args.feature_id or not args.answer:
+            if not args.idea or not args.feature_id:
                 raise ValueError(
-                    "brainstorm requires --feature-id, --idea and at least one --answer; "
-                    "run in a terminal for guided mode"
+                    "brainstorm requires --feature-id and --idea; run in a terminal for guided mode"
                 )
             if previous_brief is None and not guided:
                 _require_new_brainstorm_feature(database, project["id"], args.feature_id)
@@ -990,6 +1626,7 @@ def run(argv: list[str] | None = None) -> int:
                             None,
                             [
                                 _profile_context(project["profile"]),
+                                collect_project_overview(repository),
                                 repository_context,
                                 args.context,
                             ],
@@ -997,7 +1634,8 @@ def run(argv: list[str] | None = None) -> int:
                     ),
                     args.answer,
                     args.prior_decision,
-                    args.perspective,
+                    args.perspective
+                    or (project_profile.brainstorm_panel if project_profile else None),
                     previous_brief=previous_brief,
                     previous_brief_ref=previous_ref,
                     intake_ref=intake_ref,
@@ -1034,7 +1672,9 @@ def run(argv: list[str] | None = None) -> int:
                 if answer.lower() not in {"o", "oui", "y", "yes"}:
                     print(f"Reprendre plus tard : cohorte brainstorm --continue {args.feature_id}")
                     break
-                answers = _brainstorm_followup_answers(synthesis.blocking_questions)
+                answers = _brainstorm_followup_answers(
+                    synthesis.blocking_questions, synthesis.question_proposals
+                )
                 if not answers:
                     print(f"Reprendre plus tard : cohorte brainstorm --continue {args.feature_id}")
                     break
@@ -1073,6 +1713,230 @@ def run(argv: list[str] | None = None) -> int:
             project = _project_for_path(database, Path.cwd())
             guided_spec(
                 database, args.data_dir, project, args.feature_id, args.refresh, not args.manual
+            )
+        elif args.command == "spec-edit":
+            from cohorte.application.preparation import canonical_model_bytes
+            from cohorte.cli.guided_feature import _ask, _save, revise_draft_item
+            from cohorte.domain.models import FeatureSpec, ProjectProfile
+
+            project = _project_for_path(database, Path.cwd())
+            feature = database.get_feature(args.feature_id)
+            if feature["project_id"] != project["id"] or feature["status"] == "frozen":
+                raise ValueError("feature is not an editable draft in this project")
+            draft_path = args.data_dir / "guided" / project["id"] / args.feature_id / "draft.json"
+            if not draft_path.is_file():
+                raise ValueError("no saved draft; run cohorte spec first")
+            draft = FeatureSpec.model_validate_json(draft_path.read_text(encoding="utf-8"))
+            if draft.feature_id != args.feature_id:
+                raise ValueError("saved draft belongs to another feature")
+            if args.expect_revision is not None and args.expect_revision != draft.revision:
+                raise ValueError("draft revision changed; inspect it before editing")
+            profile = ProjectProfile.model_validate_json(json.dumps(project["profile"]))
+            scenario_id, criterion_id = args.scenario, args.criterion
+            fields = {
+                "given": args.given,
+                "when": args.when,
+                "then": args.then,
+                "statement": args.statement,
+                "verification": args.verification,
+                "check_ids": [] if args.clear_checks else args.check_id,
+            }
+            if args.clear_checks and args.check_id:
+                raise ValueError("choose --clear-checks or --check-id, not both")
+            if not scenario_id and not criterion_id:
+                if args.json or not sys.stdin.isatty():
+                    raise ValueError("choose --scenario or --criterion in non-interactive mode")
+                print("Scénarios : " + ", ".join(item.id for item in draft.scenarios))
+                print("Critères : " + ", ".join(item.id for item in draft.acceptance))
+                kind = _ask("Modifier scénario ou critère", "scénario")
+                if kind == "scénario":
+                    scenario_id = _ask("ID du scénario", draft.scenarios[0].id)
+                elif kind == "critère":
+                    criterion_id = _ask("ID du critère", draft.acceptance[0].id)
+                else:
+                    raise ValueError("choose scénario or critère")
+            if not any(value is not None for value in fields.values()):
+                if args.json or not sys.stdin.isatty():
+                    raise ValueError("provide at least one field to change")
+                if scenario_id:
+                    current_scenario = next(
+                        (item for item in draft.scenarios if item.id == scenario_id), None
+                    )
+                    if current_scenario is None:
+                        raise ValueError(f"unknown scenario: {scenario_id}")
+                    fields["given"] = _ask("Étant donné", current_scenario.given)
+                    fields["when"] = _ask("Quand", current_scenario.when)
+                    fields["then"] = _ask("Alors", current_scenario.then)
+                else:
+                    current_criterion = next(
+                        (item for item in draft.acceptance if item.id == criterion_id), None
+                    )
+                    if current_criterion is None:
+                        raise ValueError(f"unknown criterion: {criterion_id}")
+                    fields["statement"] = _ask("Critère observable", current_criterion.statement)
+                    fields["verification"] = _ask(
+                        "Preuve (automatic/review/manual)", current_criterion.verification
+                    )
+                    checks = _ask(
+                        "IDs des checks, séparés par des virgules (vide = conserver)",
+                        required=False,
+                    )
+                    if checks:
+                        fields["check_ids"] = [item.strip() for item in checks.split(",")]
+            revised = revise_draft_item(
+                draft,
+                profile,
+                scenario_id=scenario_id,
+                criterion_id=criterion_id,
+                **fields,
+            )
+            if revised != draft:
+                content = canonical_model_bytes(revised)
+                _save(draft_path, content)
+                database.put_artifact(
+                    "feature-spec-draft", content, artifact_id=f"draft:{args.feature_id}"
+                )
+            _emit(
+                {
+                    "draft": revised.model_dump(mode="json"),
+                    "output": str(draft_path),
+                    "changed": revised != draft,
+                },
+                args.json,
+            )
+        elif args.command == "spec-propose":
+            from cohorte.application.preparation import BrainstormBrief, canonical_model_bytes
+            from cohorte.cli.guided_feature import _propose_spec
+            from cohorte.domain.models import ProjectProfile
+
+            project = _project_for_path(database, args.repo)
+            feature = database.get_feature(args.feature_id)
+            if feature["project_id"] != project["id"]:
+                raise ValueError("feature belongs to another project")
+            if feature["status"] == "frozen":
+                raise ValueError("feature is already frozen; use cohorte start")
+            try:
+                stored = database.latest_artifact(f"brief:{args.feature_id}")
+            except KeyError as error:
+                raise ValueError(f"no brainstorm brief for feature: {args.feature_id}") from error
+            brief = BrainstormBrief.model_validate_json(stored["content"])
+            if brief.feature_id != args.feature_id:
+                raise ValueError("stored brief belongs to another feature")
+            profile = ProjectProfile.model_validate_json(json.dumps(project["profile"]))
+            spec_suggestion = _propose_spec(brief, profile, Path(project["root_path"]))
+            proposal_ref = database.put_artifact(
+                "feature-spec-proposal",
+                canonical_model_bytes(spec_suggestion),
+                artifact_id=f"proposal:{args.feature_id}",
+            )
+            brief_ref = {key: stored[key] for key in ("id", "revision", "sha256")}
+            database.put_artifact(
+                "feature-spec-proposal-context",
+                json.dumps(
+                    {"proposal_ref": proposal_ref, "brief_ref": brief_ref}, sort_keys=True
+                ).encode(),
+                artifact_id=f"proposal-context:{args.feature_id}",
+            )
+            payload = {
+                "proposal": spec_suggestion.model_dump(mode="json"),
+                "proposal_ref": proposal_ref,
+                "brief_ref": brief_ref,
+                "approved": False,
+            }
+            if args.json:
+                _emit(payload, True)
+            else:
+                print(f"Proposition de spec · {spec_suggestion.title}")
+                for spec_question in spec_suggestion.question_suggestions:
+                    print(f"  Question : {spec_question.question}")
+                    print(f"  Piste : {spec_question.suggestion}")
+                print(
+                    f"{len(spec_suggestion.scenarios)} scénarios · "
+                    f"{len(spec_suggestion.acceptance)} critères · "
+                    "à valider avec cohorte spec"
+                )
+        elif args.command == "spec-draft":
+            from cohorte.application.preparation import (
+                BrainstormBrief,
+                SpecProposal,
+                canonical_model_bytes,
+            )
+            from cohorte.cli.guided_feature import _save, draft_from_proposal
+            from cohorte.domain.models import ArtifactRef, ProjectProfile
+
+            if not args.accept_proposal:
+                raise ValueError(
+                    "spec-draft requires --accept-proposal after reviewing the proposal"
+                )
+            if args.output.exists():
+                raise ValueError("draft output already exists; choose a new path")
+            project = _project_for_path(database, args.repo)
+            feature = database.get_feature(args.feature_id)
+            if feature["project_id"] != project["id"]:
+                raise ValueError("feature belongs to another project")
+            if feature["status"] == "frozen":
+                raise ValueError("feature is already frozen; use cohorte start")
+            try:
+                brief_stored = database.latest_artifact(f"brief:{args.feature_id}")
+                link_stored = database.latest_artifact(f"proposal-context:{args.feature_id}")
+            except KeyError as error:
+                raise ValueError(
+                    "no linked proposal for this feature; run cohorte spec-propose first"
+                ) from error
+            link = json.loads(link_stored["content"])
+            current_brief_ref = {key: brief_stored[key] for key in ("id", "revision", "sha256")}
+            if link["brief_ref"] != current_brief_ref:
+                raise ValueError("brief changed after proposal; run cohorte spec-propose again")
+            stored_proposal_ref = ArtifactRef.model_validate(link["proposal_ref"])
+            proposal_stored = database.get_artifact(
+                stored_proposal_ref.id, stored_proposal_ref.revision, limit=2 * 1024 * 1024
+            )
+            if proposal_stored["sha256"] != stored_proposal_ref.sha256:
+                raise ValueError("proposal changed after review")
+            brief_document = BrainstormBrief.model_validate_json(brief_stored["content"])
+            spec_suggestion = SpecProposal.model_validate_json(proposal_stored["content"])
+            indexed_answers: dict[int, str] = {}
+            for raw_answer in args.answer:
+                number, separator, value = raw_answer.partition("=")
+                if not separator or not number.isdigit() or not value.strip():
+                    raise ValueError("--answer must be N=non-empty answer")
+                index = int(number)
+                if index in indexed_answers:
+                    raise ValueError("duplicate answer index")
+                indexed_answers[index] = value.strip()
+            repository = Path(project["root_path"]).resolve(strict=True)
+            contract_refs: list[ArtifactRef] = []
+            if args.contract is not None:
+                contract_path = (repository / args.contract).resolve(strict=True)
+                if not contract_path.is_relative_to(repository) or not contract_path.is_file():
+                    raise ValueError("contract must be a file in the registered repository")
+                contract_refs.append(
+                    ArtifactRef.model_validate(
+                        database.put_artifact("contract", contract_path.read_bytes())
+                    )
+                )
+            profile = ProjectProfile.model_validate_json(json.dumps(project["profile"]))
+            draft_document = draft_from_proposal(
+                brief_document,
+                ArtifactRef.model_validate(current_brief_ref),
+                profile,
+                spec_suggestion,
+                indexed_answers,
+                contract_refs,
+            )
+            content = canonical_model_bytes(draft_document)
+            _save(args.output, content)
+            draft_ref = database.put_artifact(
+                "feature-spec-draft", content, artifact_id=f"draft:{args.feature_id}"
+            )
+            _emit(
+                {
+                    "draft": draft_document.model_dump(mode="json"),
+                    "draft_ref": draft_ref,
+                    "output": str(args.output),
+                    "approved_for_freeze": False,
+                },
+                args.json,
             )
         elif args.command == "spec-freeze-request":
             from cohorte.application.preparation import SpecFreezer
@@ -1155,7 +2019,7 @@ def run(argv: list[str] | None = None) -> int:
                     )
                 project = _project_for_path(database, Path.cwd())
                 guided_patch_document, output = guided_patch_spec(
-                    database, project, args.data_dir, args.from_intake
+                    database, project, args.data_dir, args.from_intake, propose=not args.manual
                 )
                 _emit(
                     {"output": str(output), "patch": guided_patch_document.model_dump(mode="json")},
@@ -1294,7 +2158,27 @@ def run(argv: list[str] | None = None) -> int:
             from cohorte.application.maintenance import AuditRunner, AuditSpec
             from cohorte.domain.models import ProjectProfile
 
-            profile = ProjectProfile.model_validate_json(args.profile.read_text())
+            if args.profile is None:
+                project = _project_for_path(database, args.repo)
+                profile = ProjectProfile.model_validate_json(json.dumps(project["profile"]))
+                args.repo = Path(project["root_path"])
+            else:
+                profile = ProjectProfile.model_validate_json(args.profile.read_text())
+            args.audit_id = args.audit_id or datetime.now(UTC).strftime("audit-%Y%m%d-%H%M%S")
+            args.title = args.title or f"Audit de {profile.name}"
+            args.surface = args.surface or [surface.id for surface in profile.surfaces]
+            selected = {surface.id: surface for surface in profile.surfaces}
+            if not set(args.surface) <= selected.keys():
+                raise ValueError("audit refers to an unknown surface")
+            args.path = args.path or list(
+                dict.fromkeys(path for sid in args.surface for path in selected[sid].paths)
+            )
+            args.concern = args.concern or [
+                "conformité aux conventions du projet",
+                "correction et sécurité",
+                "couverture des comportements critiques",
+            ]
+            args.output = args.output or (args.data_dir / "audits" / f"{args.audit_id}.json")
             audit_spec = AuditSpec(
                 audit_id=args.audit_id,
                 title=args.title,
@@ -1312,6 +2196,7 @@ def run(argv: list[str] | None = None) -> int:
             report_ref = database.put_artifact(
                 "audit-report", audit_report.model_dump_json(indent=2).encode()
             )
+            args.output.parent.mkdir(parents=True, exist_ok=True)
             args.output.write_text(audit_report.model_dump_json(indent=2) + "\n")
             _emit(
                 {
@@ -1321,6 +2206,57 @@ def run(argv: list[str] | None = None) -> int:
                 },
                 args.json,
             )
+        elif args.command == "incoming-review":
+            from cohorte.application.incoming_review import (
+                lookup_incoming_metadata,
+                review_incoming,
+            )
+            from cohorte.domain.models import ProjectProfile
+
+            if args.json and not args.live:
+                raise ValueError("incoming-review in JSON mode requires --live")
+            repository = args.repo.resolve(strict=True)
+            if args.profile is not None:
+                profile = ProjectProfile.model_validate_json(args.profile.read_text())
+            else:
+                project = _project_for_path(database, repository)
+                profile = ProjectProfile.model_validate_json(json.dumps(project["profile"]))
+                if Path(project["root_path"]).resolve() != repository:
+                    raise ValueError("incoming review must use the registered project root")
+            metadata = lookup_incoming_metadata(
+                repository,
+                profile,
+                args.number,
+                title=args.title,
+                description=args.description,
+            )
+            incoming_result = review_incoming(
+                repository,
+                args.worktrees or args.data_dir / "worktrees",
+                profile,
+                metadata,
+                workflow_runtime(repository, profile),
+            )
+            result_ref = database.put_artifact(
+                "incoming-review",
+                incoming_result.model_dump_json(indent=2).encode(),
+                artifact_id=f"incoming-review:{profile.project_id}:{metadata.host}:{metadata.number}",
+            )
+            if args.json:
+                _emit(
+                    {"report": incoming_result.model_dump(mode="json"), "report_ref": result_ref},
+                    True,
+                )
+            else:
+                print(
+                    f"Revue {metadata.host} #{metadata.number} · {incoming_result.review.verdict.value} · "
+                    f"{len(incoming_result.changed_files)} fichiers · "
+                    f"{len(incoming_result.review.findings)} constats"
+                )
+                for finding in incoming_result.review.findings:
+                    print(f"  • {finding.severity} · {finding.path} · {finding.message}")
+                print(f"Artefact : {result_ref['id']} (révision {result_ref['revision']})")
+                print(f"Checkout isolé : {incoming_result.worktree}")
         elif args.command == "refactor":
             from cohorte.application.maintenance import (
                 AuditReport,
@@ -1345,7 +2281,11 @@ def run(argv: list[str] | None = None) -> int:
                     remediation="refresh the audit backlog reference",
                 )
             backlog = AuditReport.model_validate_json(backlog_artifact["content"])
-            if not selection.approval_ref.id.startswith("decision:"):
+            if (
+                not selection.approved
+                or selection.approval_ref is None
+                or not selection.approval_ref.id.startswith("decision:")
+            ):
                 raise CohorteError(
                     ErrorCode.APPROVAL_REQUIRED,
                     "refactor selection has no persisted approval decision",
@@ -1437,6 +2377,125 @@ def run(argv: list[str] | None = None) -> int:
                 raise
             request_id = _create_ship_request(database, args.run_id, refactor_result.candidate)
             _emit({**asdict(refactor_result), "ship_request_id": request_id}, args.json)
+        elif args.command == "refactor-plan":
+            from cohorte.adapters.git import path_is_owned
+            from cohorte.application.maintenance import (
+                AuditReport,
+                RefactorSelection,
+                refactor_subject_hash,
+                validate_refactor_backlog,
+            )
+            from cohorte.domain.models import ArtifactRef, ProjectProfile
+
+            repository = args.repo.resolve(strict=True)
+            if args.profile is None:
+                project = _project_for_path(database, repository)
+                profile = ProjectProfile.model_validate_json(json.dumps(project["profile"]))
+            else:
+                profile = ProjectProfile.model_validate_json(args.profile.read_text())
+            backlog = AuditReport.model_validate_json(args.report.read_text())
+            available = {finding.id: finding for finding in backlog.findings}
+            selected_ids = list(dict.fromkeys(args.finding))
+            if missing := sorted(set(selected_ids) - available.keys()):
+                raise ValueError(f"unknown audit findings: {', '.join(missing)}")
+            selected_findings = [available[finding_id] for finding_id in selected_ids]
+            selected_surfaces = [
+                surface
+                for surface in profile.surfaces
+                if any(path_is_owned(finding.path, surface.paths) for finding in selected_findings)
+            ]
+            if not selected_surfaces or any(
+                not any(path_is_owned(finding.path, surface.paths) for surface in selected_surfaces)
+                for finding in selected_findings
+            ):
+                raise ValueError("every selected finding must be owned by a profile surface")
+            check_ids = list(
+                dict.fromkeys(check for surface in selected_surfaces for check in surface.check_ids)
+            )
+            if not check_ids:
+                raise ValueError("selected surfaces need a configured check before refactor")
+            backlog_content = backlog.model_dump_json(indent=2).encode()
+            try:
+                backlog_reference = database.artifact_ref_by_hash(
+                    "audit-report", hashlib.sha256(backlog_content).hexdigest()
+                )
+            except KeyError as error:
+                raise ValueError(
+                    "audit report is not registered; run cohorte audit before refactor-plan"
+                ) from error
+            backlog_ref = ArtifactRef.model_validate(backlog_reference)
+            selection = RefactorSelection(
+                refactor_id=f"refactor-{backlog.audit_id}"[:80],
+                title=f"Corriger les constats de {backlog.audit_id}",
+                backlog_ref=backlog_ref,
+                selected_finding_ids=selected_ids,
+                invariants=args.invariant,
+                surfaces=[surface.id for surface in selected_surfaces],
+                write_paths=list(dict.fromkeys(finding.path for finding in selected_findings)),
+                check_ids=check_ids,
+                out_of_scope=[],
+                rollback=args.rollback,
+            )
+            validate_refactor_backlog(selection, backlog)
+            subject_hash = refactor_subject_hash(selection)
+            selection_path = args.output or (
+                args.data_dir / "refactors" / f"{selection.refactor_id}.json"
+            )
+            refactor_request_id: str | None = None
+            if args.approve:
+                refactor_request_id = database.create_request(
+                    None,
+                    "refactor-selection",
+                    {
+                        "refactor_id": selection.refactor_id,
+                        "selected_finding_ids": selected_ids,
+                        "write_paths": selection.write_paths,
+                        "invariants": selection.invariants,
+                    },
+                    subject_hash,
+                )
+                decision = database.respond_request(
+                    refactor_request_id,
+                    f"cli:refactor-plan:{refactor_request_id}",
+                    {"approved": True},
+                    subject_hash,
+                )
+                selection = selection.model_copy(
+                    update={
+                        "approved": True,
+                        "approval_ref": ArtifactRef(
+                            id=f"decision:{decision['decision_id']}",
+                            revision=1,
+                            sha256=subject_hash,
+                        ),
+                    }
+                )
+                selection_path.parent.mkdir(parents=True, exist_ok=True)
+                selection_path.write_text(selection.model_dump_json(indent=2) + "\n")
+            plan_result = {
+                "selection": selection.model_dump(mode="json"),
+                "subject_hash": subject_hash,
+                "approved": args.approve,
+                "request_id": refactor_request_id,
+                "output": str(selection_path) if args.approve else None,
+            }
+            if args.json:
+                _emit(plan_result, True)
+            else:
+                print(
+                    f"Refactor {selection.refactor_id} · {len(selected_ids)} constats · "
+                    f"{', '.join(selection.surfaces)}"
+                )
+                for audit_finding in selected_findings:
+                    print(
+                        f"  {audit_finding.id} · P{audit_finding.priority} · "
+                        f"{audit_finding.path} · {audit_finding.recommendation}"
+                    )
+                print(f"Invariant : {'; '.join(selection.invariants)}")
+                if args.approve:
+                    print(f"Sélection approuvée : {selection_path}")
+                else:
+                    print("Relancer avec --approve pour enregistrer cette sélection exacte.")
         elif args.command == "refactor-request":
             from cohorte.application.maintenance import (
                 RefactorSelection,
@@ -1462,17 +2521,110 @@ def run(argv: list[str] | None = None) -> int:
             )
         elif args.command == "retro":
             from cohorte.application.maintenance import AuditReport, propose_retro
+            from cohorte.application.retrospective import (
+                mine_review_patterns,
+                proposal_from_pattern,
+                suggest_retro_rules,
+            )
+            from cohorte.domain.models import ProjectProfile, Provider
 
-            reports = [
-                AuditReport.model_validate_json(report.read_text()) for report in args.reports
-            ]
-            proposal = propose_retro(args.proposal_id, args.rule, reports)
+            retro_project_id: str | None = None
+            if args.reports:
+                if not args.proposal_id or not args.rule or args.output is None:
+                    raise ValueError(
+                        "retro with report files requires --proposal-id, --rule and --output"
+                    )
+                reports = [
+                    AuditReport.model_validate_json(report.read_text()) for report in args.reports
+                ]
+                proposal = propose_retro(args.proposal_id, args.rule, reports)
+            else:
+                project = _project_for_path(database, Path.cwd())
+                retro_project_id = project["id"]
+                profile = ProjectProfile.model_validate_json(json.dumps(project["profile"]))
+                patterns = mine_review_patterns(database, profile)
+                suggestions = []
+                if patterns and not args.manual and (args.live or not args.json):
+                    repository = Path(project["root_path"]).resolve(strict=True)
+                    runtime = (
+                        ClaudeAdapter(repository)
+                        if profile.agent_defaults.provider == Provider.CLAUDE
+                        else CodexAdapter(repository)
+                    )
+                    try:
+                        suggestions = suggest_retro_rules(
+                            runtime, repository, profile, patterns
+                        ).suggestions
+                    except (CohorteError, ValueError, RuntimeError) as error:
+                        if not args.json:
+                            print(f"Propositions agent indisponibles : {error}", file=sys.stderr)
+                if args.pattern is None and (args.json or not sys.stdin.isatty()):
+                    _emit(
+                        {
+                            "patterns": [item.model_dump(mode="json") for item in patterns],
+                            "suggestions": [item.model_dump(mode="json") for item in suggestions],
+                        },
+                        args.json,
+                    )
+                    return 0
+                if not patterns:
+                    print("Aucun motif présent dans les revues d'au moins deux features.")
+                    return 0
+                if not args.json:
+                    for pattern in patterns:
+                        print(
+                            f"{pattern.id} · {pattern.surface_id}/{pattern.category} · "
+                            f"{len({item.feature_id for item in pattern.evidence})} features"
+                        )
+                        for item in pattern.evidence[:5]:
+                            print(f"  • {item.feature_id} · {item.path} · {item.message}")
+                        suggestion = next(
+                            (item for item in suggestions if item.pattern_id == pattern.id), None
+                        )
+                        if suggestion:
+                            label = (
+                                "Règle existante à mieux faire appliquer"
+                                if suggestion.existing_rule_gap
+                                else "Règle proposée"
+                            )
+                            print(f"  {label} : {suggestion.rule}")
+                            print(f"  Limite : {suggestion.caveat}")
+                selected = args.pattern or _prompt(
+                    "Motif à transformer en proposition (Entrée = arrêter)", required=False
+                )
+                if not selected:
+                    return 0
+                selected_pattern = next((item for item in patterns if item.id == selected), None)
+                if selected_pattern is None:
+                    raise ValueError("unknown retro pattern")
+                suggestion = next(
+                    (item for item in suggestions if item.pattern_id == selected_pattern.id), None
+                )
+                if args.json and not args.rule:
+                    raise ValueError("retro --pattern in JSON mode requires --rule")
+                if args.rule:
+                    rule = args.rule
+                elif suggestion is not None and not suggestion.existing_rule_gap:
+                    choice = _prompt("Adopter la règle proposée ? [o/N]", required=False)
+                    rule = suggestion.rule if choice.casefold() in {"o", "oui", "y", "yes"} else ""
+                else:
+                    rule = ""
+                rule = rule or _prompt("Règle concrète à proposer", required=False)
+                if not rule:
+                    print("Aucune règle proposée ; profil inchangé.")
+                    return 0
+                proposal = proposal_from_pattern(
+                    selected_pattern, args.proposal_id or f"retro-{selected_pattern.id}", rule
+                )
+                args.output = args.output or (
+                    args.data_dir / "retros" / f"{proposal.proposal_id}.json"
+                )
             proposal_ref = database.put_artifact(
                 "retro-proposal", proposal.model_dump_json(indent=2).encode()
             )
             subject_hash = hashlib.sha256(proposal.model_dump_json().encode()).hexdigest()
             request_id = database.create_request(
-                None,
+                retro_project_id,
                 "retro-ratification",
                 {
                     "proposal_id": proposal.proposal_id,
@@ -1481,6 +2633,7 @@ def run(argv: list[str] | None = None) -> int:
                 },
                 subject_hash,
             )
+            args.output.parent.mkdir(parents=True, exist_ok=True)
             args.output.write_text(proposal.model_dump_json(indent=2) + "\n")
             _emit(
                 {
@@ -1520,11 +2673,29 @@ def run(argv: list[str] | None = None) -> int:
                     sha256=request["subject_hash"],
                 ),
             )
-            profile_ref = database.put_artifact(
-                "project-profile",
-                ratified.profile_after.model_dump_json(indent=2).encode(),
-                artifact_id=f"profile:{profile.project_id}",
-            )
+            try:
+                active_project = database.get_project(profile.project_id)
+            except KeyError:
+                profile_ref = database.put_artifact(
+                    "project-profile",
+                    ratified.profile_after.model_dump_json(indent=2).encode(),
+                    artifact_id=f"profile:{profile.project_id}",
+                )
+            else:
+                if active_project["profile"] != profile.model_dump(mode="json"):
+                    raise ValueError("retro profile is stale; reload the active project profile")
+                updated_document = ratified.profile_after.model_dump(mode="json")
+                updated_document["revision"] = profile.revision
+                saved = service.save_project_profile(
+                    profile.project_id,
+                    updated_document,
+                    active_project["profile_ref"]["revision"],
+                )
+                profile_ref = cast(dict[str, Any], saved["profile_ref"])
+                if saved["profile"] != ratified.profile_after.model_dump(mode="json"):
+                    raise AssertionError(
+                        "ratified convention was not applied to the active profile"
+                    )
             args.output.write_text(ratified.profile_after.model_dump_json(indent=2) + "\n")
             _emit(
                 {
@@ -1607,6 +2778,7 @@ def run(argv: list[str] | None = None) -> int:
             )
         elif args.command == "align-ds-plan":
             from cohorte.application.context import (
+                DesignPort,
                 FileDesignPort,
                 capture_design,
                 plan_design_alignment,
@@ -1615,8 +2787,16 @@ def run(argv: list[str] | None = None) -> int:
 
             profile = ProjectProfile.model_validate_json(args.profile.read_text())
             design = profile.integrations.design
-            port = FileDesignPort(args.repo) if design.provider == "file" else None
-            capture = capture_design(design, port)
+            alignment_port: DesignPort | None
+            if design.provider == "file":
+                alignment_port = FileDesignPort(args.repo)
+            elif design.provider == "figma":
+                from cohorte.adapters.figma import FigmaDesignPort
+
+                alignment_port = FigmaDesignPort()
+            else:
+                alignment_port = None
+            capture = capture_design(design, alignment_port)
             plan = plan_design_alignment(args.repo, design, capture)
             if plan.status == "blocked":
                 raise CohorteError(
@@ -1835,7 +3015,25 @@ def run(argv: list[str] | None = None) -> int:
                 until=until,
                 group_by=cast(Literal["project", "run", "phase", "provider"], args.group_by),
             )
-            _emit(report.model_dump(mode="json"), args.json)
+            if args.json:
+                _emit(report.model_dump(mode="json"), True)
+            else:
+                print(
+                    f"Métriques · {report.project_id or 'tous les projets'} · "
+                    f"{args.days} jours · groupement {report.group_by}"
+                )
+                print(
+                    "Résultats : "
+                    + (
+                        ", ".join(f"{key}: {value}" for key, value in report.outcomes.items())
+                        or "aucun run"
+                    )
+                )
+                for metric in report.values:
+                    rendered = metric.value if metric.value is not None else "indisponible"
+                    print(f"  {metric.name} · {rendered} {metric.unit} · {metric.availability}")
+                if report.groups:
+                    print(f"Groupes : {', '.join(group.key for group in report.groups)}")
         elif args.command == "migrate":
             from cohorte.application.migration import (
                 V2MigrationPlan,
@@ -1888,6 +3086,66 @@ def run(argv: list[str] | None = None) -> int:
                 args.fleet_id,
             )
             _emit(asdict(fleet_result), args.json)
+        elif args.command in {"fleet-plan", "fleet-status", "fleet-sync"}:
+            from cohorte.application.fleet_control import (
+                create_supervised_fleet,
+                preview_supervised_fleet,
+                supervised_fleet_status,
+                sync_supervised_fleet,
+            )
+
+            if args.command == "fleet-plan":
+                from cohorte.domain.models import FeatureSpec, ProjectProfile
+
+                profile = ProjectProfile.model_validate_json(args.profile.read_text())
+                specs = [FeatureSpec.model_validate_json(path.read_text()) for path in args.specs]
+                manifest = args.data_dir / "fleets" / profile.project_id / f"{args.fleet_id}.json"
+                if args.apply:
+                    fleet_output = create_supervised_fleet(
+                        args.repo,
+                        args.worktrees,
+                        manifest,
+                        profile,
+                        specs,
+                        args.fleet_id,
+                        profile_path=args.profile,
+                        spec_paths=args.specs,
+                    )
+                else:
+                    if manifest.exists():
+                        raise ValueError("fleet already exists; inspect fleet-status")
+                    fleet_output = preview_supervised_fleet(
+                        args.repo,
+                        args.worktrees,
+                        profile,
+                        specs,
+                        args.fleet_id,
+                        profile_path=args.profile,
+                        spec_paths=args.specs,
+                    )
+            else:
+                manifest = args.data_dir / "fleets" / args.project_id / f"{args.fleet_id}.json"
+                if args.command == "fleet-status":
+                    project_runs = database.list_runs(args.project_id)
+                    fleet_output = supervised_fleet_status(
+                        manifest,
+                        fetch=not args.no_fetch,
+                        runs=project_runs,
+                        run_evidence=_fleet_run_evidence(database, project_runs),
+                    )
+                else:
+                    from cohorte.domain.models import RunStatus
+
+                    active_features = {
+                        state.feature_id
+                        for state in database.list_runs(args.project_id)
+                        if state.status
+                        not in {RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELLED}
+                    }
+                    fleet_output = sync_supervised_fleet(
+                        manifest, args.merged, apply=args.apply, active_features=active_features
+                    )
+            _emit_supervised_fleet(args.command, fleet_output, args.json, args.data_dir)
         elif args.command == "loop":
             from cohorte.domain.models import (
                 FeatureSpec,
@@ -1899,6 +3157,32 @@ def run(argv: list[str] | None = None) -> int:
 
             profile = ProjectProfile.model_validate_json(args.profile.read_text())
             spec = FeatureSpec.model_validate_json(args.spec.read_text())
+            execution_repo = args.existing_worktree or args.repo
+            if args.existing_worktree is not None:
+                source_common = Path(
+                    subprocess.run(
+                        ["git", "rev-parse", "--git-common-dir"],
+                        cwd=args.repo,
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                    ).stdout.strip()
+                )
+                candidate_common = Path(
+                    subprocess.run(
+                        ["git", "rev-parse", "--git-common-dir"],
+                        cwd=args.existing_worktree,
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                    ).stdout.strip()
+                )
+                source_common = (args.repo / source_common).resolve()
+                candidate_common = (args.existing_worktree / candidate_common).resolve()
+                if source_common != candidate_common:
+                    raise ValueError("existing worktree belongs to another repository")
+                if GitRepository(execution_repo).is_dirty():
+                    raise ValueError("existing worktree must be clean before starting a run")
             profile_ref = database.put_artifact(
                 "project-profile", profile.model_dump_json(indent=2).encode()
             )
@@ -1917,16 +3201,20 @@ def run(argv: list[str] | None = None) -> int:
                 stage=Stage.BUILD,
                 status=RunStatus.RUNNING,
                 state_version=1,
-                base_commit=GitRepository(args.repo).head,
+                base_commit=GitRepository(execution_repo).head,
                 created_at=now,
                 updated_at=now,
             )
             database.create_run(state)
-            worktree = args.worktrees.resolve() / f"{spec.feature_id}-{args.run_id}"
+            worktree = (
+                args.existing_worktree.resolve()
+                if args.existing_worktree is not None
+                else args.worktrees.resolve() / f"{spec.feature_id}-{args.run_id}"
+            )
             database.append_event(
                 "run.context",
                 {
-                    "repository": str(args.repo.resolve(strict=True)),
+                    "repository": str(execution_repo.resolve(strict=True)),
                     "worktree_parent": str(args.worktrees.resolve()),
                     "worktree": str(worktree),
                     "profile_ref": profile_ref,
@@ -1937,7 +3225,7 @@ def run(argv: list[str] | None = None) -> int:
             )
             journal = SqliteRunJournal(database, args.run_id)
             runtime = workflow_runtime(
-                args.repo,
+                execution_repo,
                 profile,
                 stop_requested=journal.stop_requested,
                 event_sink=journal.agent_event,
@@ -1946,21 +3234,23 @@ def run(argv: list[str] | None = None) -> int:
                 loop_result: Any
                 if len(spec.surfaces) > 1:
                     loop_result = MultiSurfaceRunner(runtime).run(
-                        args.repo,
+                        execution_repo,
                         args.worktrees,
                         profile,
                         spec,
                         args.run_id,
+                        existing_worktree=args.existing_worktree,
                         observe=journal,
                         task_journal=SqliteTaskJournal(database, args.run_id),
                     )
                 else:
                     loop_result = VerticalRunner(runtime).run(
-                        args.repo,
+                        execution_repo,
                         args.worktrees,
                         profile,
                         spec,
                         args.run_id,
+                        existing_worktree=args.existing_worktree,
                         observe=journal,
                     )
             except RunStopped:

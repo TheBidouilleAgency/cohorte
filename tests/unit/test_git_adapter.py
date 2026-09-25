@@ -1,6 +1,8 @@
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from cohorte.adapters.git import GitRepository, path_is_owned
 
 
@@ -32,3 +34,53 @@ def test_runtime_bytecode_does_not_change_candidate_snapshot(tmp_path: Path) -> 
 
     assert repository.changed_files(repository.head) == []
     assert repository.snapshot_digest() == original
+
+
+def test_task_commit_stages_only_validated_paths(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    (root / "src").mkdir(parents=True)
+    (root / "src" / "module.py").write_text("VALUE = 1\n")
+    (root / "README.md").write_text("original\n")
+    git(root, "init", "-b", "main")
+    git(root, "config", "user.email", "test@example.invalid")
+    git(root, "config", "user.name", "Test")
+    git(root, "add", ".")
+    git(root, "commit", "-m", "base")
+    repository = GitRepository(root)
+    (root / "src" / "module.py").write_text("VALUE = 2\n")
+    (root / "README.md").write_text("unrelated\n")
+    git(root, "add", "README.md")
+    cache = root / "src" / "__pycache__"
+    cache.mkdir()
+    (cache / "module.cpython-313.pyc").write_bytes(b"generated")
+
+    repository.commit_task("task", "run", "build-api", ["src/module.py"])
+
+    committed = subprocess.run(
+        ["git", "show", "--pretty=format:", "--name-only", "HEAD"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.splitlines()
+    assert committed == ["src/module.py"]
+    assert repository.changed_files(repository.head) == ["README.md"]
+
+
+def test_snapshot_hashes_symlink_targets_without_reading_outside_files(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    outside = tmp_path / "outside.txt"
+    outside.write_text("first secret")
+    git(root, "init", "-b", "main")
+    try:
+        (root / "link.txt").symlink_to(outside)
+    except OSError:
+        pytest.skip("symlink creation is unavailable")
+    repository = GitRepository(root)
+    initial = repository.snapshot_digest()
+    outside.write_text("different secret")
+    assert repository.snapshot_digest() == initial
+    (root / "link.txt").unlink()
+    (root / "link.txt").symlink_to(tmp_path / "other.txt")
+    assert repository.snapshot_digest() != initial

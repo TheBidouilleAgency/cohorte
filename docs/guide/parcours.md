@@ -2,7 +2,7 @@
 
 ## 1. Découvrir et cadrer
 
-Dans le dépôt cible, `cohorte init .` enregistre un profil local. Relisez-le avec `cohorte profile show` et corrigez-le avec `cohorte profile edit`.
+Dans le dépôt cible, `cohorte init .` analyse le projet, montre un aperçu en mode interactif puis enregistre un profil local après accord. `cohorte init . --preview` laisse le projet inchangé. Relisez le profil avec `cohorte profile show` et corrigez-le avec `cohorte profile edit`.
 
 Si vous partez d’une **idée**, lancez directement `cohorte brainstorm`. Si vous avez une **demande à comprendre** (ticket, message, URL), `cohorte intake` la reçoit, pose les questions manquantes et propose une route « fonctionnalité » ou « correctif ». Ce triage est facultatif et ne modifie pas le code. `cohorte intake --continue IDENTIFIANT` reprend les questions et enregistre les réponses dans une nouvelle révision. Pour une fonctionnalité, `cohorte brainstorm --from-intake IDENTIFIANT` transmet ce contexte au panel ; pour un bug, `cohorte patch-spec --from-intake IDENTIFIANT` prépare le correctif.
 
@@ -23,6 +23,7 @@ Le brief contient les objections et questions bloquantes. Répondez à ces quest
 ## 2. Préparer et geler une spec
 
 Dans un terminal, `cohorte spec` reprend le brief enregistré et le profil courant. Un agent en lecture seule propose des réponses aux questions ouvertes et un brouillon de scénarios, critères, checks, cas d’erreur et retour arrière. Vous pouvez accepter cette proposition, la corriger ou utiliser `--manual` pour renseigner chaque champ. Pour plusieurs surfaces, Cohorte demande un fichier de contrat partagé et en capture une référence. Si une question bloquante reste sans réponse, le brouillon est conservé dans les données locales et le gel n’est pas proposé. Une nouvelle invocation permet de répondre aux questions restantes. Après affichage du contenu, il faut taper `oui` pour approuver le hash exact de la spec et du profil.
+En mode structuré, `cohorte --json spec-propose IDENTIFIANT` renvoie et conserve la proposition ainsi que les références du brief. Elle reste consultative. Après relecture, `cohorte --json spec-draft IDENTIFIANT --accept-proposal --answer 1="votre décision" --output draft.json` crée un brouillon éditable lié au même brief ; omettre une réponse garde la question ouverte. Si le brief a changé, relancez `spec-propose`. Plusieurs surfaces exigent `--contract` avec un fichier du dépôt. `spec-draft` ne vaut pas approbation du gel.
 Si vous reprenez le brainstorm après avoir commencé la spec, `cohorte spec IDENTIFIANT` signale le nouveau brief et propose de le rattacher au brouillon sans effacer ses scénarios ni critères. `--refresh` reconstruit le brouillon à partir de la dernière révision ; relisez d’abord les modifications déjà faites.
 
 Pour un workflow automatisé ou une spec préparée manuellement, préparez le fichier au format attendu par le moteur, puis utilisez les commandes explicites :
@@ -48,7 +49,7 @@ cohorte --json loop frozen.json \
   --worktrees /chemin/vers/worktrees --run-id export-1 --live
 ```
 
-`loop` crée une branche et un worktree isolés, exécute le build, les checks et la revue. Il ne publie rien à cette étape. `fleet` accepte plusieurs specs gelées et planifie les fonctionnalités selon leurs zones d’écriture et dépendances.
+`loop` crée une branche et un worktree isolés, exécute le build, les checks et la revue. Il ne publie rien à cette étape. Pour plusieurs fonctionnalités supervisées, `fleet-plan` prévisualise les zones d’écriture et l’ordre ; `fleet-plan ... --apply` prépare un worktree par spec gelée, puis `fleet-status` suit chaque branche. Après le merge d’une feature, `fleet-sync` vérifie quelles branches doivent être rebasées ; `--apply` ne modifie que les worktrees propres et sans run Cohorte actif. Une nouvelle revue est nécessaire après rebase. La commande `fleet` conserve son exécution automatisée distincte.
 
 En cas d’interruption, `cohorte --json resume RUN_ID --live` reprend le run journalisé. `pause RUN_ID` et `cancel RUN_ID` prennent effet à la prochaine frontière de phase, après le tour fournisseur actif.
 
@@ -66,10 +67,12 @@ cohorte --json delivery-status RUN_ID --live --watch
 
 ## Autres parcours
 
-Après `intake`, une demande classée « patch » peut être préparée avec `cohorte patch-spec --from-intake IDENTIFIANT`. Le terminal demande la reproduction, le résultat attendu, les surfaces, chemins, checks de régression et retour arrière, puis écrit un `patch.json` à relire avant `patch`. `audit`, `refactor`, `retro` et `align-ds-*` servent à la maintenance avec des entrées explicites. La [référence CLI](/reference/cli) donne leurs paramètres, et le [README du dépôt](https://github.com/TheBidouilleAgency/cohorte#readme) contient des exemples détaillés.
+Après `intake`, une demande classée « patch » peut être préparée avec `cohorte patch-spec --from-intake IDENTIFIANT`. L'agent propose en lecture seule un diagnostic, une reproduction, des surfaces, chemins, checks de régression et un retour arrière. Le terminal les laisse corriger avant d'écrire le `patch.json` à relire avant `patch` ; `--manual` saute cette proposition. `cohorte audit` utilise le profil du projet courant, ou accepte des entrées explicites. `cohorte retro` cherche les constats de revue répétés entre au moins deux fonctionnalités et propose une règle à ratifier : seule une décision approuvée puis `retro-apply` l'ajoute au profil actif. Les revues antérieures à l'enregistrement structuré des constats ne peuvent pas être récupérées automatiquement. `refactor` et `align-ds-*` restent plus explicites. La [référence CLI](/reference/cli) donne leurs paramètres.
+
+Pour une PR ou MR déjà ouverte hors Cohorte, `cohorte incoming-review NUMÉRO` récupère ses commits et ses métadonnées, crée un worktree détaché et demande une revue en lecture seule sur le diff et les surfaces touchées. Le résultat est un artefact local ; aucun commentaire ou verdict n'est publié sur la forge. Quand la forge fournit les identités attendues, un changement de commit pendant la préparation fait refuser la revue. Les très grands diffs sont refusés plutôt que déclarés entièrement revus après troncature.
 
 ## Limites actuelles
 
-- Fleet et la maintenance nécessitent encore des fichiers et identifiants explicites. `ship` garde une approbation et une commande séparées.
-- La découverte du profil ne peut pas déduire seule l’ownership, les migrations, les sources de design ou les conventions d’un monorepo.
+- Fleet, refactor, rétro et alignement design nécessitent encore des fichiers ou identifiants explicites. `ship` garde une approbation et une commande séparées.
+- La découverte du profil propose les surfaces et checks détectables, mais l’ownership des fichiers partagés, les migrations, la source de design et les conventions demandent une vérification humaine.
 - Les preuves d’intégration live dépendent des comptes et services disponibles. Un test local ou une CI verte ne qualifie pas automatiquement toutes les combinaisons de fournisseurs et plateformes. Consultez la [matrice de qualification](/qualification/README).

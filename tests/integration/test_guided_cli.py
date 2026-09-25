@@ -10,6 +10,7 @@ import pytest
 from cohorte.application.preparation import (
     BrainstormContribution,
     BrainstormPerspectiveTurn,
+    BrainstormQuestionProposal,
     BrainstormSynthesis,
     BrainstormSynthesisTurn,
 )
@@ -72,9 +73,23 @@ class FollowupPanelRuntime(PanelRuntime):
         questions = ["Who is the user?"] if self.round == 0 else []
         self.round += 1
         self.perspectives = []
+        proposals = (
+            [
+                BrainstormQuestionProposal(
+                    question="Who is the user?",
+                    business_option="Operators",
+                    code_option="Scope the export route to operator accounts",
+                    caveat="Role permissions need confirmation",
+                )
+            ]
+            if questions
+            else []
+        )
         return turn.model_copy(
             update={
-                "synthesis": turn.synthesis.model_copy(update={"blocking_questions": questions})
+                "synthesis": turn.synthesis.model_copy(
+                    update={"blocking_questions": questions, "question_proposals": proposals}
+                )
             }
         )
 
@@ -89,7 +104,7 @@ def test_guided_brainstorm_from_project_directory(tmp_path: Path, monkeypatch, c
     CohorteService(database).init_project(project)
     database.close()
 
-    answers = iter(["Add safe export", "", "Operators", "Export is unsafe", "Atomic output", ""])
+    answers = iter(["Add safe export", ""])
     monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(cli, "CodexAdapter", lambda *_args, **_kwargs: PanelRuntime())
@@ -107,7 +122,7 @@ def test_guided_brainstorm_from_project_directory(tmp_path: Path, monkeypatch, c
     assert cli.run(["--data-dir", str(data), "brief", "show", "add-safe-export"]) == 0
     readable = capsys.readouterr().out
     assert "Brief add-safe-export · révision 1" in readable
-    assert "Réponses fournies :" in readable
+    assert "Réponses fournies :" not in readable
     assert "Piste du panel (pas une décision) : Use an atomic bounded export." in readable
     assert "Perspective product" in readable
 
@@ -155,12 +170,9 @@ def test_guided_brainstorm_can_answer_panel_questions_and_continue_later(
         [
             "Add safe export",
             "",
-            "Operators",
-            "Export is unsafe",
-            "Atomic output",
-            "",
             "o",
-            "Operators",
+            "tu proposes quoi?",
+            "p",
             "",
         ]
     )
@@ -170,12 +182,14 @@ def test_guided_brainstorm_can_answer_panel_questions_and_continue_later(
     output = capsys.readouterr().out
     assert "révision 1" in output
     assert "révision 2" in output
+    assert "Piste produit : Operators" in output
     stored = Database(data / "cohorte.sqlite3")
     latest = stored.latest_artifact("brief:add-safe-export")
     assert latest["revision"] == 2
     document = json.loads(latest["content"])
     assert document["previous_brief_ref"]["revision"] == 1
     assert "Who is the user? Operators" in document["user_answers"]
+    assert not any("tu proposes quoi" in item for item in document["user_answers"])
     stored.close()
 
     answers = iter(["A second observation", ""])

@@ -7,7 +7,9 @@ cohorte init .
 cohorte profile show
 ```
 
-`init` propose des surfaces de code et des checks à partir du dépôt. Relisez le profil avant un run, particulièrement les chemins partagés, les dépendances entre surfaces et les commandes de test. Pour corriger une proposition, utilisez `cohorte profile edit`. `cohorte init .` réutilise le profil existant ; `--refresh` relance la découverte et remplace vos corrections.
+`init` analyse les manifests, workspaces, scripts de validation, contrats, chemins de code et indices de design ou de release. Il signale aussi les fichiers de conventions, serveurs MCP de retrieval et indices d'isolation sans activer ces intégrations de lui-même. En mode interactif, il montre les surfaces, les rôles, les checks et les questions restantes, puis permet de choisir un serveur de retrieval détecté ou une source design explicite avec son snapshot JSON avant l'enregistrement. Relisez surtout les chemins partagés, les dépendances et les commandes de test. Utilisez `cohorte profile edit` pour corriger une proposition. `cohorte init .` réutilise le profil existant ; `--refresh` ajoute les éléments nouvellement détectés tout en conservant les choix personnalisés. `--preview` montre l'analyse sans enregistrer le projet, y compris en JSON. Pour enregistrer un profil validé par une autre interface, `cohorte --json init . --profile-file profil.json` applique exactement ce document ; ajoutez `--refresh` si le projet est déjà enregistré.
+
+`--language` à l'init (ou `profile.language` ensuite) désigne la langue des textes destinés au produit dans le dépôt. Elle est distincte du français utilisé par l'interface terminale Cohorte.
 
 ## Choisir votre point de départ
 
@@ -17,7 +19,7 @@ cohorte profile show
 cohorte brainstorm
 ```
 
-Le terminal vous demande l’idée, les personnes concernées, le problème observé et le résultat souhaité. Le panel produit, architecture et QA propose un brief avec pistes, objections et questions. Il ne modifie pas le code et ne transforme pas son avis en décision de votre part. Relisez le brief avec `cohorte brief show IDENTIFIANT`. Si des questions restent ouvertes, répondez dans le terminal ou revenez plus tard avec `cohorte brainstorm --continue IDENTIFIANT`.
+Le terminal vous demande l’idée puis lance le panel défini dans le profil, avec des extraits pertinents du dépôt. Le panel propose un brief, des objections, des questions ciblées et, pour chaque question, une piste produit et une piste code. Vous pouvez répondre librement ou taper `p` ou `c` pour reprendre une piste. Le panel ne modifie pas le code et ne transforme pas son avis en décision de votre part. Relisez le brief avec `cohorte brief show IDENTIFIANT`. Si des questions restent ouvertes, répondez dans le terminal ou revenez plus tard avec `cohorte brainstorm --continue IDENTIFIANT`.
 
 **Vous avez plutôt un ticket, un message client ou une URL ?** Commencez par :
 
@@ -25,7 +27,7 @@ Le terminal vous demande l’idée, les personnes concernées, le problème obse
 cohorte intake
 ```
 
-`intake` signifie **recevoir et trier la demande**. Cohorte garde la source, pose les questions utiles et indique si le sujet ressemble à une nouvelle fonctionnalité ou à un bug. Si vous quittez le terminal avec des questions ouvertes, `cohorte intake --continue IDENTIFIANT` les reprend. Aucun code n’est modifié à cette étape.
+`intake` signifie **recevoir et trier la demande**. L'agent examine la source et le contexte du dépôt en lecture seule, puis propose une route et des questions ciblées. Vous pouvez accepter ou corriger la route avant de l'enregistrer ; `--manual` conserve le tri déterministe. Si vous quittez le terminal avec des questions ouvertes, `cohorte intake --continue IDENTIFIANT` les reprend. Aucun code n’est modifié à cette étape.
 
 Après le triage :
 
@@ -44,6 +46,8 @@ cohorte spec IDENTIFIANT
 ```
 
 `spec` demande à l'agent du profil une proposition en lecture seule : réponses possibles aux questions ouvertes, scénarios, critères, checks du profil, tests, cas d'erreur et retour arrière. Ces pistes restent des propositions ; une question sans réponse de votre part demeure ouverte. Vous pouvez accepter le brouillon proposé, le corriger dans le fichier JSON ou choisir la saisie manuelle avec `cohorte spec IDENTIFIANT --manual`. Si l'agent est indisponible, la saisie manuelle reste accessible. Avant de geler la spec, Cohorte affiche son contenu et demande votre approbation exacte. **La préparation et le gel ne lancent pas les agents de code.**
+
+Lorsque le profil active le design, le RBAC ou le mobile sur une surface concernée, la spec demande aussi les contraintes correspondantes. Une spec sans ces contraintes ne peut pas être gelée ni construite ; la revue reçoit une liste explicite de points à contrôler.
 
 Le cadrage rappelle des fichiers pertinents du dépôt à vérifier avant le gel. Les agents de construction, revue et correction reçoivent ensuite la spec approuvée et un relevé récent des fichiers utiles dans leur worktree ; la revue inspecte également le diff. Relisez les décisions de la spec : le relevé de fichiers sert d'indice et peut manquer du contexte métier extérieur au dépôt.
 

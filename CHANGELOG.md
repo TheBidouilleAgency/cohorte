@@ -7,6 +7,13 @@ with the newest version first. Describe the verified scope and known limitations
 
 _No changes recorded yet._
 
+## 1.0.0a12 — 2026-09-25
+
+- Restore project-aware preparation: richer `init` discovery and explicit profile choices, repository-grounded multi-round brainstorm, editable agent spec proposals, and guided intake, patch and audit paths. Add a supervised Fleet board, local incoming PR/MR review, retro proposals, project doctor and optional client wrappers.
+- Carry bounded repository evidence into build, review and fix. Scope Fleet check/review evidence to the current candidate. Reject unsupported container execution explicitly instead of silently running on the host.
+- Validation: PR #68 passed documentation and Python 3.12/3.13 CI on Ubuntu, macOS and Windows. Local pytest, Ruff, mypy, wheel installation and upgrade checks pass. Bounded live Codex and Claude runs covered two-round brainstorm, spec proposals and synthetic single- and multi-surface build/review; the remaining evidence is tracked in `docs/V2-PARITY-AUDIT.md`.
+- This alpha is not a complete V2-parity claim. Native container execution, a successful provider-live fix cycle, real-project qualification and some host-client/delivery paths remain unverified or unimplemented.
+
 ## 1.0.0a11 — 2026-09-25
 
 - Show every read-only spec question suggestion and caveat before asking the user to decide, even when the agent paraphrases the original question. The same fix applies when continuing an existing draft; leaving an answer blank still keeps that question open.

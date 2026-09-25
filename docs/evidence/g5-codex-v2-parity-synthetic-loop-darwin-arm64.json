@@ -1,0 +1,40 @@
+{
+  "scenario": "frozen synthetic Python feature through live Codex build, checks and independent review; ship not approved",
+  "date": "2026-09-25",
+  "platform": "darwin-arm64",
+  "provider": "codex-subscription",
+  "repository": "synthetic temporary greeting project",
+  "result": {
+    "freeze_request": "passed after idempotency key included profile and plan hashes",
+    "run_1": {
+      "status": "blocked_correctly",
+      "checks": "passed",
+      "review_issue": "reviewer reran pytest in its read-only sandbox, could not create a temporary directory, and incorrectly filed a high-severity code finding",
+      "fix": "review prompts now carry Cohorte's check results and distinguish review-sandbox failures from project check failures"
+    },
+    "run_2": {
+      "status": "blocked_correctly",
+      "checks": "passed",
+      "review_issue": "reviewer omitted the exact python surface ID from covered_surfaces",
+      "fix": "review prompts now require exact IDs, and incomplete coverage is journaled before blocking"
+    },
+    "run_3": {
+      "status": "passed",
+      "ready_to_ship": true,
+      "changed_files": ["src/greeting.py", "tests/test_greeting.py"],
+      "tests_check": "passed",
+      "review_verdict": "ready",
+      "covered_surfaces": ["python"],
+      "blocking_findings": 0,
+      "fix_cycles": 0,
+      "ship_request_created": true,
+      "ship_approved_or_executed": false
+    }
+  },
+  "limits": [
+    "One small single-surface synthetic repository; multi-surface and real-project provider runs are unqualified.",
+    "The successful run did not exercise the fix path; earlier failed runs demonstrated stagnation protection, not successful remediation.",
+    "No push, PR, release notes, or ship action was performed.",
+    "A ready review on this candidate does not establish review quality for all projects or providers."
+  ]
+}

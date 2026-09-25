@@ -1,0 +1,43 @@
+{
+  "scenario": "two independent Python surfaces with a shared contract, separate checks and parallel live provider tasks",
+  "date": "2026-09-25",
+  "platform": "darwin-arm64",
+  "repository": "synthetic temporary API and web project",
+  "providers": ["codex-subscription", "claude-subscription"],
+  "observed_defect_and_fix": "The first Codex run conflicted while cherry-picking disjoint tasks because commit_task staged all files, including generated __pycache__ bytecode shared by both task worktrees. Task commits now stage only the validated changed paths; a regression test covers generated files and an unrelated staged file.",
+  "result": {
+    "codex_rerun": {
+      "status": "passed",
+      "ready_to_ship": true,
+      "max_scheduled_parallelism": 2,
+      "tasks": ["build-api", "build-web"],
+      "task_commits_contain_only_owned_paths": true,
+      "checks": {"api-tests": "passed", "web-tests": "passed"},
+      "review_verdict": "ready",
+      "covered_surfaces": ["api", "web"],
+      "blocking_findings": 0,
+      "fix_cycles": 0,
+      "ship_approved_or_executed": false
+    },
+    "claude_run": {
+      "status": "passed",
+      "ready_to_ship": true,
+      "max_scheduled_parallelism": 2,
+      "tasks": ["build-api", "build-web"],
+      "task_commits_contain_only_owned_paths": true,
+      "checks": {"api-tests": "passed", "web-tests": "passed"},
+      "review_verdict": "ready",
+      "covered_surfaces": ["api", "web"],
+      "blocking_findings": 0,
+      "low_findings": 3,
+      "fix_cycles": 0,
+      "ship_approved_or_executed": false
+    }
+  },
+  "limits": [
+    "The repository is synthetic and small; real monorepo integration remains unqualified.",
+    "Both runs ended before ship and neither exercised a successful live fix cycle.",
+    "The Claude review reported three semantically overlapping low-severity observations about html.escape quote handling; they were not blocking.",
+    "The shared contract was read and referenced, but this scenario did not require a contract modification or return to spec."
+  ]
+}

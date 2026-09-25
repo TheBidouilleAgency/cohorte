@@ -1,0 +1,26 @@
+{
+  "scenario": "frozen synthetic Python feature through live Claude build, checks and independent review; ship not approved",
+  "date": "2026-09-25",
+  "platform": "darwin-arm64",
+  "provider": "claude-subscription",
+  "repository": "synthetic temporary greeting project",
+  "result": {
+    "ready_to_ship": true,
+    "run_state": "ship/waiting_user",
+    "changed_files": ["src/greeting.py", "tests/test_greeting.py"],
+    "tests_check": "passed",
+    "review_verdict": "ready",
+    "covered_surfaces": ["python"],
+    "blocking_findings": 0,
+    "low_findings": 2,
+    "fix_cycles": 0,
+    "ship_request_created": true,
+    "ship_approved_or_executed": false
+  },
+  "limits": [
+    "One small single-surface synthetic repository; real-project and multi-surface execution are unqualified.",
+    "The run did not exercise a live fix cycle or ship.",
+    "The low-severity findings concern duplicate path rendering and a Windows winerror portability caveat; neither contradicted the frozen synthetic spec.",
+    "A ready review on this candidate does not establish review quality for all projects."
+  ]
+}

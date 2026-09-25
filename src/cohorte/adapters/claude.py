@@ -13,6 +13,8 @@ from typing import Any, NoReturn, TypeVar
 
 from cohorte.adapters.events import AgentEvents, AgentEventSink, claude_usage
 from cohorte.application.durable import RunStopped
+from cohorte.application.intake import IntakeProposal
+from cohorte.application.patch import PatchProposal
 from cohorte.application.preparation import (
     BrainstormContribution,
     BrainstormPerspectiveTurn,
@@ -20,6 +22,7 @@ from cohorte.application.preparation import (
     BrainstormSynthesisTurn,
     SpecProposal,
 )
+from cohorte.application.retrospective import RetroSuggestions
 from cohorte.application.vertical import AgentReport, AgentReview
 from cohorte.domain.auth import (
     AccountStatus,
@@ -389,6 +392,15 @@ class ClaudeAdapter:
 
     def spec_proposal(self, workspace: Path, prompt: str) -> SpecProposal:
         return self._structured_turn(workspace, prompt, SpecProposal, True, "spec_proposal")
+
+    def intake_proposal(self, workspace: Path, prompt: str) -> IntakeProposal:
+        return self._structured_turn(workspace, prompt, IntakeProposal, True, "intake_proposal")
+
+    def patch_proposal(self, workspace: Path, prompt: str) -> PatchProposal:
+        return self._structured_turn(workspace, prompt, PatchProposal, True, "patch_proposal")
+
+    def retro_suggestions(self, workspace: Path, prompt: str) -> RetroSuggestions:
+        return self._structured_turn(workspace, prompt, RetroSuggestions, True, "retro_suggestions")
 
     def build(self, workspace: Path, prompt: str) -> AgentReport:
         return self._structured_turn(workspace, prompt, AgentReport, False, "build")

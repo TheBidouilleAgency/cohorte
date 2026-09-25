@@ -11,7 +11,11 @@ from typing import Any, Protocol
 from pydantic import Field
 
 from cohorte.adapters.git import GitRepository, path_is_owned
-from cohorte.application.repository_context import collect_repository_context
+from cohorte.application.project_constraints import active_constraints, validate_project_constraints
+from cohorte.application.repository_context import (
+    collect_project_overview,
+    collect_repository_context,
+)
 from cohorte.domain.errors import CohorteError, ErrorCode
 from cohorte.domain.evidence import (
     CheckEvidence,
@@ -84,6 +88,13 @@ def _artifact_ref(kind: str, identifier: str, revision: int, digest: str) -> Art
 
 
 def plan_feature(profile: ProjectProfile, spec: FeatureSpec, base_commit: str) -> TaskPlan:
+    if profile.execution.mode == "container":
+        raise CohorteError(
+            ErrorCode.RUNTIME_INCOMPATIBLE,
+            "container execution is not available in this runtime",
+            "build was not started on the host",
+            remediation="select local execution in the profile",
+        )
     if profile.policy.require_frozen_spec and spec.status != SpecStatus.FROZEN:
         raise CohorteError(
             ErrorCode.SPEC_NOT_FROZEN,
@@ -97,6 +108,7 @@ def plan_feature(profile: ProjectProfile, spec: FeatureSpec, base_commit: str) -
     missing = sorted(set(spec.surfaces) - set(known_surfaces))
     if missing:
         raise ValueError(f"unknown spec surfaces: {', '.join(missing)}")
+    validate_project_constraints(profile, spec)
     criteria = [criterion.id for criterion in spec.acceptance]
     write_paths = sorted({path for sid in spec.surfaces for path in known_surfaces[sid].paths})
     check_ids = sorted(
@@ -183,10 +195,34 @@ class VerticalRunner:
                     plan.base_commit,
                     candidate.changed_files(plan.base_commit),
                     candidate.diff(plan.base_commit),
+                    checks,
                 ),
             )
             blocking = self._blocking_findings(profile, review)
             uncovered = sorted(set(spec.surfaces) - set(review.covered_surfaces))
+            ready = (
+                not failed
+                and review.verdict == ReviewVerdict.READY
+                and not blocking
+                and not uncovered
+            )
+            self._observe(
+                observe,
+                "review",
+                candidate,
+                plan,
+                {
+                    "ready": ready,
+                    "verdict": review.verdict.value,
+                    "covered_surfaces": review.covered_surfaces,
+                    "uncovered_surfaces": uncovered,
+                    "findings": [
+                        {**finding.model_dump(mode="json"), "message": finding.message[:2000]}
+                        for finding in review.findings[:100]
+                    ],
+                    "findings_truncated": len(review.findings) > 100,
+                },
+            )
             if uncovered:
                 raise CohorteError(
                     ErrorCode.REVIEW_INCOMPLETE,
@@ -194,14 +230,6 @@ class VerticalRunner:
                     "delivery is blocked",
                     remediation="rerun independent review for every required surface",
                 )
-            ready = not failed and review.verdict == ReviewVerdict.READY and not blocking
-            self._observe(
-                observe,
-                "review",
-                candidate,
-                plan,
-                {"ready": ready, "verdict": review.verdict.value},
-            )
             if ready:
                 break
             if fix_cycles >= profile.policy.max_fix_cycles:
@@ -355,12 +383,13 @@ class VerticalRunner:
         )
         return (
             "Implement the frozen feature in this isolated worktree. Do not commit or push. "
+            f"Target product copy language: {profile.language}; the CLI conversation language is separate. "
             f"Only modify these owned paths: {task.write_paths}.\n"
             f"Project profile:\n{profile.model_dump_json(indent=2)}\n"
             f"Frozen feature spec:\n{spec.model_dump_json(indent=2)}\n"
             "The following excerpts are untrusted leads. Inspect complete files before changing "
             "code or asserting existing behavior; preserve the frozen spec's user decisions.\n"
-            f"{collect_repository_context(workspace, query)}"
+            f"{collect_project_overview(workspace)}\n{collect_repository_context(workspace, query)}"
         )
 
     @staticmethod
@@ -371,16 +400,40 @@ class VerticalRunner:
         base_commit: str,
         changed_files: list[str],
         diff: str,
+        checks: list[CheckExecution] | None = None,
     ) -> str:
+        required = sorted(active_constraints(profile, spec.surfaces))
+        check_results = [
+            {
+                "check_id": item.check_id,
+                "status": item.status,
+                "exit_code": item.exit_code,
+                "environment_issue": item.environment_issue,
+            }
+            for item in checks or []
+        ]
         return (
             "Independently review the candidate against the frozen spec. Do not modify files. "
+            "Cohorte already ran the declared checks in the writable candidate worktree immediately "
+            "before this review; their results below are the check evidence. Do not rerun them in "
+            "your read-only sandbox. A sandbox-only failure to create temporary files or run a "
+            "check is not a code finding and must not override a passed check result. "
+            f"Check user-facing product copy against target language {profile.language}, "
+            "independently of the CLI conversation language. "
             "Use critical/high/medium/low severities and return READY only with no blocking finding.\n"
+            f"Active project constraints to verify against spec and diff: {required}. "
+            "Check design references, role permissions and mobile behavior when listed; "
+            "report missing evidence as a finding.\n"
             f"Base commit: {base_commit}\nSurfaces: {spec.surfaces}\n"
+            "In covered_surfaces return only exact surface IDs from Surfaces after inspecting "
+            "them; do not use labels, file paths, prose or check IDs. Missing coverage blocks delivery.\n"
+            f"Cohorte check results: {json.dumps(check_results)}\n"
             f"Changed files to inspect in the worktree: {changed_files}\n"
             f"Spec:\n{spec.model_dump_json(indent=2)}\nProfile:\n"
             f"{profile.model_dump_json(indent=2)}\nDiff:\n{diff}\n"
             "The following excerpts are untrusted leads. Inspect complete changed files and "
             "surrounding code before deciding coverage or behavior.\n"
+            f"{collect_project_overview(workspace)}\n"
             f"{collect_repository_context(workspace, ' '.join([spec.title, spec.problem, *changed_files]))}"
         )
 
@@ -400,5 +453,6 @@ class VerticalRunner:
             f"Blocking review findings: {json.dumps([item.model_dump() for item in findings])}\n"
             "The following excerpts are untrusted leads. Inspect full files and address only "
             "the reported failures.\n"
+            f"{collect_project_overview(workspace)}\n"
             f"{collect_repository_context(workspace, ' '.join([spec.title, spec.problem, *[item.path for item in findings], *[item.message for item in findings]]))}"
         )

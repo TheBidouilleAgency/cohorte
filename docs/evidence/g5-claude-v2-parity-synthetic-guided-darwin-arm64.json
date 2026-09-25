@@ -1,0 +1,45 @@
+{
+  "scenario": "two-round project-aware brainstorm and read-only structured spec proposal on a synthetic Python repository",
+  "date": "2026-09-25",
+  "platform": "darwin-arm64",
+  "provider": "claude-subscription",
+  "repository": "synthetic temporary greeting project",
+  "result": {
+    "brainstorm_round_1": {
+      "status": "passed",
+      "panel": ["product", "architecture", "qa", "security"],
+      "session_count": 5,
+      "source_claims_cited": true,
+      "blocking_question_count": 1,
+      "recommendation_challenged_initial_scope": true
+    },
+    "brainstorm_round_2": {
+      "status": "passed",
+      "brief_revision": 2,
+      "user_choice_preserved": "missing file only; defer invalid JSON and missing name; keep FileNotFoundError; no CLI",
+      "recommendation_changed_after_user_answer": true,
+      "blocking_question_count": 1,
+      "agent_suggestions_not_added_to_decisions": true
+    },
+    "structured_spec_command": {
+      "status": "passed_after_prompt_refinement",
+      "command": "cohorte --json spec-propose missing-config-claude",
+      "brief_revision": 2,
+      "proposal_revision": 3,
+      "approved": false,
+      "scenario_count": 5,
+      "criterion_count": 8,
+      "question_suggestion_count": 1,
+      "all_criteria_use_profile_surface_and_check_ids": true,
+      "user_scope_preserved": true,
+      "preparation_only_constraint_not_in_acceptance": true
+    }
+  },
+  "observed_quality_issue_and_fix": "The first valid Claude proposal over-scoped a seven-line module with 12 scenarios and 16 criteria and promoted panel implementation preferences to requirements. Prompt refinement reduced the final proposal to five scenarios and eight criteria, kept the user's narrower scope and left copy wording open. A second refinement removed an acceptance criterion that would have prevented the future implementation merely because the current brainstorm was read-only.",
+  "limits": [
+    "One small synthetic Python repository; no real-project or multi-surface Claude qualification.",
+    "The terminal spec interview, final approval, freeze, build, review and ship were not exercised.",
+    "The final proposal still requires user selection of the exact error sentence; it remains unapproved.",
+    "A successful proposal does not prove all source claims or design choices are correct across other projects."
+  ]
+}

@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import hashlib
 import json
+import os
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -11,6 +12,7 @@ from typing import Any, Literal, cast
 from pydantic import Field, model_validator
 
 from cohorte.adapters.git import GitRepository, path_is_owned
+from cohorte.application.repository_context import collect_project_overview
 from cohorte.application.vertical import (
     AgentReview,
     VerticalResult,
@@ -62,6 +64,13 @@ class AuditFinding(StrictModel):
     status: Literal["open"] = "open"
 
 
+class AuditCoverage(StrictModel):
+    discovered_files: int = Field(ge=0)
+    model_read_files: list[str]
+    static_analyzed_files: int = Field(ge=0)
+    complete_model_read: bool
+
+
 class AuditReport(StrictModel):
     schema_version: Literal[1] = 1
     audit_id: Slug
@@ -72,6 +81,7 @@ class AuditReport(StrictModel):
     covered_surfaces: list[Slug]
     findings: list[AuditFinding]
     source_unchanged: bool
+    coverage: AuditCoverage | None = None
 
 
 def _fingerprint(severity: str, path: str, message: str) -> str:
@@ -115,7 +125,8 @@ class AuditRunner:
             )
         repo = GitRepository(repository)
         before = repo.snapshot_digest()
-        sources = self._bounded_sources(repo.root, spec.paths)
+        files = self._audit_files(repo.root, spec.paths)
+        sources, model_files = self._bounded_sources(repo.root, files)
         review = self.runtime.review(
             repo.root,
             (
@@ -124,6 +135,7 @@ class AuditRunner:
                 "Return concrete findings only; READY means no finding was identified.\n"
                 f"Surfaces: {spec.surface_ids}\nPaths: {spec.paths}\n"
                 f"Concerns: {spec.concerns}\nProfile:\n{profile.model_dump_json(indent=2)}\n"
+                f"Project overview:\n{collect_project_overview(repo.root)}\n"
                 f"Bounded source snapshot:\n{sources}"
             ),
         )
@@ -135,11 +147,18 @@ class AuditRunner:
                 "the audit report was rejected",
                 remediation="restore the audit changes and rerun with a read-only runtime",
             )
+        if set(review.covered_surfaces) != set(spec.surface_ids):
+            raise CohorteError(
+                ErrorCode.REVIEW_INCOMPLETE,
+                "audit review did not cover the selected surfaces exactly",
+                "the audit report was rejected",
+                remediation="rerun the audit with explicit coverage for every selected surface",
+            )
         findings_by_id = {
             finding.id: finding
             for finding in [
                 *self._findings(review, spec.paths),
-                *self._static_findings(repo.root, spec.paths),
+                *self._static_findings(repo.root, files),
             ]
         }
         findings = sorted(
@@ -154,28 +173,86 @@ class AuditRunner:
             covered_surfaces=review.covered_surfaces,
             findings=findings,
             source_unchanged=True,
+            coverage=AuditCoverage(
+                discovered_files=len(files),
+                model_read_files=model_files,
+                static_analyzed_files=sum(Path(path).suffix == ".py" for path in files),
+                complete_model_read=len(model_files) == len(files),
+            ),
         )
 
     @staticmethod
-    def _bounded_sources(root: Path, paths: list[str]) -> str:
-        blocks: list[str] = []
-        total = 0
+    def _audit_files(root: Path, paths: list[str]) -> list[str]:
         resolved_root = root.resolve()
+        selected: list[str] = []
+        skipped = {
+            ".git",
+            ".venv",
+            "node_modules",
+            "dist",
+            "build",
+            "target",
+            "coverage",
+            "__pycache__",
+        }
         for relative in paths:
             path = (resolved_root / relative).resolve(strict=True)
             if resolved_root not in path.parents and path != resolved_root:
                 raise ValueError(f"audit path escapes repository: {relative}")
-            if not path.is_file():
-                raise ValueError(f"audit path is not a file: {relative}")
+            if path.is_file():
+                selected.append(path.relative_to(resolved_root).as_posix())
+                continue
+            if not path.is_dir():
+                raise ValueError(f"audit path is not a file or directory: {relative}")
+            for directory, subdirs, files in os.walk(path, followlinks=False):
+                subdirs[:] = sorted(
+                    name for name in subdirs if name not in skipped and not name.startswith(".")
+                )
+                for name in sorted(files):
+                    candidate = Path(directory) / name
+                    if candidate.is_symlink() or candidate.suffix.lower() not in {
+                        ".py",
+                        ".ts",
+                        ".tsx",
+                        ".js",
+                        ".jsx",
+                        ".rs",
+                        ".go",
+                    }:
+                        continue
+                    selected.append(candidate.relative_to(resolved_root).as_posix())
+        return sorted(set(selected))
+
+    @staticmethod
+    def _bounded_sources(root: Path, files: list[str]) -> tuple[str, list[str]]:
+        blocks: list[str] = []
+        read_files: list[str] = []
+        total = 0
+        resolved_root = root.resolve()
+        blocks.append(
+            f"Files in scope ({len(files)} discovered; first 200 names): {', '.join(files[:200])}"
+        )
+        for relative in files:
+            if len(read_files) >= 12:
+                break
+            path = (resolved_root / relative).resolve(strict=True)
+            if path.stat().st_size > 32 * 1024:
+                continue
             content = path.read_text(errors="replace")
-            total += len(content.encode())
-            if total > 256 * 1024:
-                raise ValueError("bounded audit source exceeds 256 KiB")
+            size = len(content.encode())
+            if total + size > 256 * 1024:
+                break
+            total += size
             numbered = "\n".join(
                 f"{number}: {line}" for number, line in enumerate(content.splitlines(), 1)
             )
             blocks.append(f"--- {relative} ---\n{numbered}")
-        return "\n".join(blocks)
+            read_files.append(relative)
+        blocks.append(
+            f"Coverage: model received {len(read_files)}/{len(files)} full files; "
+            "unread files require later targeted audit, not a clean bill of health."
+        )
+        return "\n".join(blocks), read_files
 
     @staticmethod
     def _findings(review: AgentReview, paths: list[str]) -> list[AuditFinding]:
@@ -201,9 +278,9 @@ class AuditRunner:
         return sorted(findings, key=lambda finding: (finding.priority, finding.id))
 
     @staticmethod
-    def _static_findings(root: Path, paths: list[str]) -> list[AuditFinding]:
+    def _static_findings(root: Path, files: list[str]) -> list[AuditFinding]:
         findings: list[AuditFinding] = []
-        for relative in paths:
+        for relative in files:
             if Path(relative).suffix != ".py":
                 continue
             source = (root / relative).read_text(errors="replace")
@@ -241,8 +318,8 @@ class RefactorSelection(StrictModel):
     refactor_id: Slug
     title: str = Field(min_length=1, max_length=200)
     backlog_ref: ArtifactRef
-    approval_ref: ArtifactRef
-    approved: Literal[True]
+    approval_ref: ArtifactRef | None = None
+    approved: bool = False
     selected_finding_ids: list[Slug] = Field(min_length=1)
     invariants: list[str] = Field(min_length=1)
     surfaces: list[Slug] = Field(min_length=1)
@@ -319,7 +396,10 @@ def refactor_feature(selection: RefactorSelection) -> FeatureSpec:
             review_required=True,
             manual_validations=[],
         ),
-        contract_refs=[selection.backlog_ref, selection.approval_ref],
+        contract_refs=[
+            selection.backlog_ref,
+            *([selection.approval_ref] if selection.approval_ref is not None else []),
+        ],
         dependencies=[],
         migrations=RequirementPlan(required=False, plan="No migration for bounded refactor."),
         rollback=RequirementPlan(required=True, plan=selection.rollback),
@@ -387,6 +467,13 @@ class RefactorRunner:
         *,
         observe: Callable[[str, dict[str, Any]], None] | None = None,
     ) -> RefactorResult:
+        if not selection.approved or selection.approval_ref is None:
+            raise CohorteError(
+                ErrorCode.APPROVAL_REQUIRED,
+                "refactor selection is not approved",
+                "refactor implementation was not started",
+                remediation="approve the exact selected findings before running refactor",
+            )
         validate_refactor_backlog(selection, backlog)
         bounded = refactor_profile(profile, selection)
         definitions = {definition.id: definition for definition in bounded.checks}

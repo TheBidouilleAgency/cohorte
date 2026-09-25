@@ -26,6 +26,18 @@ class IntakeTriage(StrEnum):
     QUESTIONS = "questions"
 
 
+class IntakeProposal(StrictModel):
+    """Read-only interpretation of incoming material, never a user-approved route."""
+
+    route: IntakeTriage
+    rationale: str = Field(min_length=1)
+    suspected_surfaces: list[str]
+    questions: list[str]
+    patch_seed: str
+    feature_seed: str
+    caveat: str
+
+
 class IntakeAnswer(StrictModel):
     question: str = Field(min_length=1)
     answer: str = Field(min_length=1)

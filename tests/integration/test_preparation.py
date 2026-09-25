@@ -298,6 +298,21 @@ def test_spec_freeze_refuses_incomplete_or_stale_draft_and_binds_exact_hash(
     prepared = freezer.prepare(complete, profile(), git(repository, "rev-parse", "HEAD"))
     request = database.get_request(prepared.request_id)
     assert request["subject_hash"] == prepared.spec_hash
+    changed_profile = profile().model_copy(
+        update={
+            "checks": [
+                CheckDefinition(id="test", argv=["python", "-m", "pytest"], timeout_seconds=30)
+            ]
+        }
+    )
+    changed = freezer.prepare(complete, changed_profile, git(repository, "rev-parse", "HEAD"))
+    assert changed.spec_hash == prepared.spec_hash
+    assert changed.profile_hash != prepared.profile_hash
+    assert changed.request_id != prepared.request_id
+    assert (
+        freezer.prepare(complete, changed_profile, git(repository, "rev-parse", "HEAD")).request_id
+        == changed.request_id
+    )
     decision = database.respond_request(
         prepared.request_id,
         "approve-freeze",

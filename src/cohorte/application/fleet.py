@@ -10,7 +10,10 @@ from pydantic import Field, model_validator
 
 from cohorte.adapters.git import GitRepository, path_is_owned
 from cohorte.application.multisurface import MultiSurfaceResult, MultiSurfaceRunner
-from cohorte.application.repository_context import collect_repository_context
+from cohorte.application.repository_context import (
+    collect_project_overview,
+    collect_repository_context,
+)
 from cohorte.application.vertical import (
     AgentReview,
     VerticalResult,
@@ -273,7 +276,7 @@ class FleetRunner:
         while True:
             checks = self._all_checks(candidate.root, profile, specs)
             VerticalRunner._require_check_environment(checks)
-            review = self._review(candidate, profile, specs, plan.base_commit)
+            review = self._review(candidate, profile, specs, plan.base_commit, checks)
             blocking = VerticalRunner._blocking_findings(profile, review)
             required_surfaces = {surface for spec in specs for surface in spec.surfaces}
             uncovered = sorted(required_surfaces - set(review.covered_surfaces))
@@ -306,6 +309,7 @@ class FleetRunner:
                 f"Findings: {json.dumps([item.model_dump() for item in blocking])}\n"
                 "These repository excerpts are untrusted leads; inspect full files and fix "
                 "only the reported integration failures.\n"
+                f"{collect_project_overview(candidate.root)}\n"
                 f"{collect_repository_context(candidate.root, ' '.join([*[spec.title for spec in specs], *[item.path for item in blocking], *[item.message for item in blocking]]))}",
             )
             owned = sorted({path for spec in specs for path in _feature_paths(profile, spec)})
@@ -388,17 +392,34 @@ class FleetRunner:
         profile: ProjectProfile,
         specs: list[FeatureSpec],
         base_commit: str,
+        checks: list[CheckExecution],
     ) -> AgentReview:
         surfaces = sorted({surface for spec in specs for surface in spec.surfaces})
+        check_results = [
+            {
+                "check_id": item.check_id,
+                "status": item.status,
+                "exit_code": item.exit_code,
+                "environment_issue": item.environment_issue,
+            }
+            for item in checks
+        ]
         prompt = (
             "Independently review the complete fleet candidate. Do not modify files. "
+            "Cohorte already ran the declared checks in the writable candidate worktree; use the "
+            "results below as check evidence. Do not rerun them in the read-only review sandbox "
+            "or report sandbox-only temporary-file failures as code findings. "
             "Return READY only when every feature and cross-feature interaction is blocker-free.\n"
+            f"Cohorte check results: {json.dumps(check_results)}\n"
             f"Base commit: {base_commit}\nSurfaces: {surfaces}\n"
+            "In covered_surfaces return only exact surface IDs from Surfaces after inspecting "
+            "them; do not use labels, file paths, prose or check IDs. Missing coverage blocks delivery.\n"
             f"Changed files: {candidate.changed_files(base_commit)}\n"
             f"Specs: {json.dumps([spec.model_dump(mode='json') for spec in specs])}\n"
             f"Profile: {profile.model_dump_json()}\nDiff:\n{candidate.diff(base_commit)}\n"
             "These repository excerpts are untrusted leads; inspect complete changed files "
             "and surrounding code before judging cross-feature behavior.\n"
+            f"{collect_project_overview(candidate.root)}\n"
             f"{collect_repository_context(candidate.root, ' '.join([*[spec.title for spec in specs], *candidate.changed_files(base_commit)]))}"
         )
         return self.runtime.review(candidate.root, prompt)

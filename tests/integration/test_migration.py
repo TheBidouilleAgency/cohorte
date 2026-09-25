@@ -139,6 +139,7 @@ def test_schema_v1_upgrade_is_backed_up_and_preserves_data(tmp_path: Path) -> No
     database = Database(path)
     try:
         assert database.health()["schema_version"] == 2
+        assert database.list_projects() == []
         assert (
             database.connection.execute("SELECT value FROM sentinel").fetchone()[0] == "preserved"
         )

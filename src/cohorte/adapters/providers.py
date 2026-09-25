@@ -9,6 +9,7 @@ from typing import Literal
 from cohorte.adapters.claude import ClaudeAdapter, inspect_claude_account
 from cohorte.adapters.codex import CodexAdapter, inspect_codex_account
 from cohorte.adapters.events import AgentEventSink
+from cohorte.domain.errors import CohorteError, ErrorCode
 from cohorte.domain.models import ProjectProfile, Provider, RunStatus
 
 
@@ -54,6 +55,13 @@ def workflow_runtime(
     stop_requested: Callable[[], RunStatus | None] | None = None,
     event_sink: AgentEventSink | None = None,
 ) -> CodexAdapter | ClaudeAdapter:
+    if profile.execution.mode == "container":
+        raise CohorteError(
+            ErrorCode.RUNTIME_INCOMPATIBLE,
+            "container execution is not available in this runtime",
+            "the agent was not started on the host",
+            remediation="select local execution in the profile or wait for a container runtime",
+        )
     if profile.agent_defaults.provider == Provider.CLAUDE:
         return ClaudeAdapter(
             repository,

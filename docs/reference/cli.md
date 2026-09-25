@@ -6,16 +6,23 @@ Forme générale : `cohorte [--json] [--config-dir DIR] [--data-dir DIR] COMMAND
 
 | Commande | Usage |
 | --- | --- |
-| `doctor` | Diagnostiquer l’installation et les capacités disponibles. |
-| `init [PATH] [--language fr] [--refresh]` | Découvrir et enregistrer un projet ; `--refresh` remplace le profil. |
+| `doctor [--repo DIR] [--project-id ID]` | Diagnostiquer l’installation, les fournisseurs et le profil du projet avec des actions correctives. |
+| `init [PATH] [--language fr] [--refresh] [--preview] [--profile-file FILE]` | Analyser puis enregistrer un projet ; `--preview` ne modifie rien, `--profile-file` applique un profil explicitement relu et `--refresh` préserve les choix personnalisés. Les règles candidates des fichiers de conventions sont proposées en lecture seule et ajoutées uniquement si vous les sélectionnez. |
+| `wrappers --runtime claude|codex|cursor|gemini|opencode [--repo DIR] [--apply]` | Prévisualiser puis créer des raccourcis facultatifs du client hôte vers la CLI Cohorte. Répétez `--runtime` pour plusieurs clients. |
+| `update-pipeline [--repo DIR] [--apply]` | Prévisualiser la redétection du projet et les raccourcis installés ; `--apply` réconcilie le profil et actualise les raccourcis générés restés intacts. Un raccourci personnalisé est signalé, sans être écrasé. |
 | `profile show [PROJECT_ID]` | Lire le profil local. |
 | `profile edit [PROJECT_ID]` | Éditer le JSON du profil. |
 | `profile apply FILE [--project-id ID]` | Valider et appliquer un profil révisé. |
 | `status [RUN_ID]` | Résumer le projet courant ou un run. |
+| `specs [--project-id ID] [--status ÉTAT]` | Afficher les fonctionnalités, leur état de spec et la prochaine commande utile. |
 | `check PROFILE CHECK_ID` | Exécuter un check défini dans un profil. |
 | `schemas OUTPUT` | Exporter les schémas JSON. |
-| `metrics [--project-id ID] [--days N]` | Lire les métriques enregistrées. |
+| `metrics [--project-id ID] [--days N]` | Lire un résumé humain ou les métriques structurées avec `--json`. |
 | `export RUN_ID [--output FILE] [--max-bytes N]` | Exporter les données d’un run avec une limite de taille. |
+
+Les wrappers sont de simples instructions : Cohorte garde le contrôle des étapes, checks et décisions et utilise Claude Code ou Codex comme fournisseurs natifs. Les chemins de commandes des clients suivent leurs formats documentés par [Cursor](https://docs.cursor.com/en/agent/chat/commands), [Gemini CLI](https://geminicli.com/docs/cli/custom-commands/) et [OpenCode](https://opencode.ai/v2/docs/commands). Leur génération et leur syntaxe sont testées localement ; leur exécution dans chaque interface reste à qualifier.
+
+Le mode `execution.mode=container` du profil n'a pas encore d'exécuteur natif : `doctor` le signale comme erreur et les agents ne sont pas lancés sur l'hôte à sa place. Choisissez `local` pour les runs actuels.
 
 ## Comptes et service local
 
@@ -34,16 +41,18 @@ Forme générale : `cohorte [--json] [--config-dir DIR] [--data-dir DIR] COMMAND
 
 | Commande | Usage |
 | --- | --- |
-| `intake [PROJECT_ID] [--text TEXTE | --file FILE | --url URL] [--title TITRE]` | Recevoir une demande et la classer : fonctionnalité, correctif ou questions à préciser. Sans source, ouvre le mode guidé. Les réponses sont conservées avec leur révision. |
+| `intake [PROJECT_ID] [--text TEXTE | --file FILE | --url URL] [--title TITRE] [--manual]` | Recevoir une demande, proposer un triage en lecture seule dans le terminal, puis confirmer la route ; `--manual` garde le tri déterministe. Les réponses sont conservées avec leur révision. |
 | `intake --continue FEATURE_ID [--answer N=RÉPONSE] [--route feature\|patch]` | Reprendre un triage du projet courant. Dans un terminal, les questions et le choix de parcours sont proposés. En JSON, fournissez les réponses ou le parcours explicitement. |
 | `brainstorm --from-intake FEATURE_ID [--live]` | Démarrer le panel depuis une demande classée « feature » en reprenant les réponses, questions ouvertes et la provenance de la source. |
 | `brainstorm [PROJECT_ID] [--feature-id ID] [--idea TEXTE] [--answer TEXTE] [--context TEXTE] [--provider codex|claude] [--output FILE] [--live]` | Exécuter le panel ou recueillir les réponses guidées ; `--answer` et `--perspective` sont répétables. Si le panel pose des questions bloquantes, le terminal propose d’y répondre et de relancer un tour. |
 | `brainstorm --continue FEATURE_ID [--answer TEXTE] [--live]` | Reprendre le dernier brief du projet courant avec de nouvelles réponses. Sans `--answer`, le terminal pose les questions encore ouvertes. En JSON, fournir au moins un `--answer` et `--live`. |
 | `spec [FEATURE_ID] [--manual] [--refresh]` | Préparer une spec guidée. Par défaut, l'agent du profil propose un brouillon en lecture seule ; `--manual` conserve la saisie champ par champ. `--refresh` remplace un brouillon enregistré. |
+| `spec-edit FEATURE_ID [--scenario ID --given TEXTE --when TEXTE --then TEXTE \| --criterion ID --statement TEXTE --verification TYPE --check-id ID] [--expect-revision N]` | Modifier un scénario ou critère du brouillon enregistré, sans remplacer les autres décisions. Sans cible, le terminal guide le choix ; en JSON, préciser la cible et les champs. Répétez `--check-id` pour plusieurs checks, ou utilisez `--clear-checks`. |
+| `spec-propose FEATURE_ID [--repo DIR]` | Obtenir la même proposition d'agent en lecture seule, avec références de brief et de proposition ; `--json` la rend exploitable par un client structuré sans l'approuver. |
+| `spec-draft FEATURE_ID --accept-proposal --output FILE [--answer N=RÉPONSE] [--contract FILE]` | Convertir la dernière proposition liée au dernier brief en brouillon éditable. Les réponses numérotées sont explicites ; les questions non résolues restent ouvertes. Un contrat du dépôt est requis pour plusieurs surfaces. Aucun gel n'est accordé par cette commande. |
 | `brief show FEATURE_ID` | Relire le dernier brief enregistré pour une fonctionnalité du projet courant, sans relancer le panel. `cohorte --json brief show FEATURE_ID` renvoie le brief complet. |
 | `spec-freeze-request DRAFT --profile PROFILE [--repo DIR]` | Demander l’approbation d’une spec précise. |
 | `spec-freeze DRAFT --profile PROFILE --decision-id ID --output FILE [--repo DIR]` | Produire la spec gelée après décision correspondante. |
-| `spec [FEATURE_ID] [--refresh]` | Préparer et geler une spec depuis un brief enregistré, dans un terminal. Le parcours accepte plusieurs surfaces, scénarios et critères ; il reprend les questions ouvertes. `--refresh` remplace le brouillon local. |
 
 `brainstorm` accepte aussi `--prior-decision` répétable. Chaque tour conserve son propre brief et une référence vers le tour précédent. `brief show` lit le dernier tour. Si un nouveau brief arrive après le brouillon de spec, `spec` propose de l'y rattacher sans effacer les scénarios ni critères existants et pose les nouvelles questions bloquantes. `--refresh` reconstruit le brouillon depuis le dernier brief. Une spec gelée ne se réouvre pas par un nouveau brainstorm.
 
@@ -56,8 +65,12 @@ Lors de `spec`, le terminal rappelle des chemins sourcés du brief et du dépôt
 | Commande | Usage |
 | --- | --- |
 | `loop SPEC --profile PROFILE --worktrees DIR --run-id ID --live [--repo DIR]` | Exécuter une spec gelée dans un worktree. |
+| `loop SPEC --profile PROFILE --repo DIR --worktrees DIR --existing-worktree DIR --run-id ID --live` | Exécuter le run dans un worktree Fleet déjà préparé et propre du même dépôt. |
 | `start [FEATURE_ID]` | Vérifier une spec gelée par `spec`, demander confirmation et lancer un run réel sans chemins à fournir. Terminal interactif uniquement. |
 | `fleet SPEC... --profile PROFILE --worktrees DIR --fleet-id ID --live [--repo DIR]` | Orchestrer plusieurs fonctionnalités. |
+| `fleet-plan SPEC... --profile PROFILE --worktrees DIR --fleet-id ID [--repo DIR] [--apply]` | Prévisualiser chevauchements et ordre ; `--apply` prépare les worktrees isolés après validation. |
+| `fleet-status ID --project-id PROJET [--no-fetch]` | Lire l'état de chaque worktree et son retard sur la branche distante. |
+| `fleet-sync ID --project-id PROJET --merged FEATURE [--apply]` | Vérifier le merge puis préparer le rebase ; `--apply` rebase seulement les worktrees propres et sans run actif. |
 | `resume RUN_ID --live` | Reprendre un run journalisé. |
 | `pause RUN_ID [--reason TEXTE]` | Demander l’arrêt à la prochaine frontière de phase. |
 | `cancel RUN_ID [--reason TEXTE]` | Demander l’annulation à la prochaine frontière de phase. |
@@ -66,20 +79,24 @@ Lors de `spec`, le terminal rappelle des chemins sourcés du brief et du dépôt
 | `ship RUN_ID --live` | Livrer un candidat approuvé par commit, push et PR/MR. |
 | `delivery-status RUN_ID --live [--watch] [--timeout N]` | Réconcilier ou surveiller la livraison. |
 
-`loop`, `fleet` et `patch` ne publient pas leur candidat. `ship` ne merge pas la PR/MR et ne déploie pas.
+`fleet-plan` est en lecture seule par défaut. Avec `--apply`, il crée un manifeste sous les données locales de Cohorte et un worktree par feature, puis imprime la commande `loop` exacte pour lancer chaque feature dans sa propre session. `fleet-sync` sans `--apply` est une simulation ; après rebase, une nouvelle revue est nécessaire. `loop`, `fleet` et `patch` ne publient pas leur candidat. `ship` ne merge pas la PR/MR et ne déploie pas.
 
 ## Correctifs et maintenance
 
 | Commande | Usage |
 | --- | --- |
 | `patch-spec` | Créer un patch borné à partir d’un artefact source, de la reproduction, des chemins, checks et rollback. Voir `--help` pour tous les champs obligatoires. |
-| `patch-spec --from-intake FEATURE_ID` | Préparer un `patch.json` guidé depuis une demande classée « patch » dans le projet courant. Vérifier ensuite le fichier avant `patch`. |
+| `patch-spec --from-intake FEATURE_ID [--manual]` | Proposer en lecture seule un correctif borné depuis un bug du projet courant, puis préparer un `patch.json` à vérifier. `--manual` ignore la proposition de l'agent. |
 | `patch SPEC --profile PROFILE --worktrees DIR --run-id ID --live [--repo DIR]` | Exécuter le patch et sa régression. |
-| `audit --profile PROFILE --audit-id ID --title TITRE --surface ID --path PATH --concern TEXTE --output FILE --live` | Auditer une surface ; `--surface`, `--path` et `--concern` sont répétables. |
+| `audit [--profile PROFILE] [--audit-id ID] [--title TITRE] [--surface ID] [--path PATH] [--concern TEXTE] [--output FILE] --live` | Auditer le projet courant ou une sélection explicite ; `--surface`, `--path` et `--concern` sont répétables. Le rapport chiffre les fichiers découverts, lus par l’agent et analysés statiquement ; si la lecture du modèle est partielle, relancez des audits plus ciblés. |
+| `incoming-review NUMBER [--profile PROFILE] [--repo PATH] [--worktrees PATH] [--title TITRE] [--description TEXTE] [--live]` | Revoir indépendamment une PR GitHub ou MR GitLab dans un worktree détaché en lecture seule. Les grands diffs sont découpés en passages bornés puis réunis par une revue d'intégration ; un passage bloquant reste bloquant. En JSON, `--live` est requis. `--title` permet un usage sans CLI de forge pour les métadonnées ; aucun commentaire n'est envoyé à la forge. |
+| `refactor-plan AUDIT.json --finding ID --invariant TEXTE --rollback TEXTE [--profile PROFILE] [--approve]` | Prévisualiser une sélection bornée à partir du backlog d'audit ; `--approve` enregistre la décision exacte et le fichier de sélection. Les findings et invariants sont répétables. |
 | `refactor-request SELECTION` | Demander l’approbation d’une sélection de refactor. |
 | `refactor SELECTION --profile PROFILE --worktrees DIR --run-id ID --live` | Exécuter une sélection approuvée. |
-| `retro REPORT... --proposal-id ID --rule TEXTE --output FILE` | Proposer une convention à partir des revues. |
+| `retro [--manual] [--pattern ID --rule TEXTE]` | Extraire les motifs récurrents des revues du projet courant, suggérer des règles en lecture seule puis créer une demande de ratification. En JSON sans `--pattern`, renvoie les motifs ; `--live` ajoute les suggestions agent. L'ancienne forme `retro REPORT... --proposal-id ID --rule TEXTE --output FILE` reste disponible pour les rapports d'audit. |
 | `retro-apply PROPOSAL --profile PROFILE --decision-id ID --output FILE` | Appliquer une convention approuvée. |
+
+`refactor-plan` exige un rapport déjà enregistré par `audit`. Sans `--approve`, il ne crée ni demande de décision ni fichier ; l'utilisateur relit les findings, chemins et invariants avant de confirmer. Le run `refactor` reste séparé et contrôle la décision persistée avant de modifier le code.
 
 ## Intégrations et migration
 

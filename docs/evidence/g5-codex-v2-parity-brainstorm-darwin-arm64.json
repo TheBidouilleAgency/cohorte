@@ -1,0 +1,40 @@
+{
+  "scenario": "two-round project-aware brainstorm after V2 parity changes",
+  "date": "2026-09-25",
+  "platform": "darwin-arm64",
+  "provider": "codex-subscription",
+  "commit": "d3221a328c67a405ce26063ace1533192606cccd",
+  "repository": "cohorte",
+  "feature_id": "service-restart-live",
+  "result": {
+    "round_1": {
+      "status": "passed",
+      "panel": ["product", "architecture", "qa"],
+      "session_count": 4,
+      "blocking_question_count": 1,
+      "question_proposal_count": 1,
+      "code_claims_cited": true
+    },
+    "round_2": {
+      "status": "passed",
+      "revision": 2,
+      "previous_brief_ref_verified": true,
+      "user_answer_preserved": true,
+      "recommendation_changed_to_deferred_automatic_restart": true,
+      "blocking_question_count": 1,
+      "question_proposal_count": 1,
+      "code_claims_cited": true
+    },
+    "checked_source_claims": [
+      "start_service returns the running service without comparing the CLI version",
+      "the POSIX shutdown path closes active writers without a drain phase",
+      "CLI loop constructs its own workflow runtime"
+    ]
+  },
+  "limits": [
+    "One Cohorte repository scenario with Codex only; no Claude qualification in this evidence.",
+    "Structured output and manually checked citations do not prove all proposed architecture is implementable.",
+    "No code build, service restart or live RPC drainage was executed.",
+    "The test used a temporary local data directory and did not change the repository source."
+  ]
+}

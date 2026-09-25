@@ -33,6 +33,21 @@ class RegressionMode(StrEnum):
     MANUAL = "manual"
 
 
+class PatchProposal(StrictModel):
+    """Read-only diagnosis to prefill, never freeze, a patch specification."""
+
+    reproduction: str
+    observed_behavior: str
+    expected_behavior: str
+    suspected_surfaces: list[Slug]
+    write_paths: list[str]
+    regression_check_ids: list[Slug]
+    in_scope: list[str]
+    out_of_scope: list[str]
+    rollback: str
+    caveats: list[str]
+
+
 class PatchSpec(StrictModel):
     schema_version: Literal[1] = 1
     patch_id: Slug

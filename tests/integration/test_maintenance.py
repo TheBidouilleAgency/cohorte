@@ -141,6 +141,32 @@ def test_audit_is_read_only_and_produces_prioritized_backlog(tmp_path: Path) -> 
     assert git(root, "status", "--short") == ""
 
 
+def test_audit_accepts_a_surface_directory_without_reading_generated_files(tmp_path: Path) -> None:
+    root = repository(tmp_path)
+    (root / "node_modules").mkdir()
+    (root / "node_modules/ignored.py").write_text("secret = 'do not inspect'\n")
+    bounded, read_files = AuditRunner._bounded_sources(root, AuditRunner._audit_files(root, ["."]))
+    assert "calc.py" in bounded
+    assert "ignored.py" not in bounded
+    assert "calc.py" in read_files
+
+
+def test_audit_reports_unread_files_instead_of_claiming_full_coverage(tmp_path: Path) -> None:
+    root = repository(tmp_path)
+    for index in range(15):
+        (root / f"module_{index:02}.py").write_text(f"VALUE = {index}\n")
+    full_profile = profile().model_copy(
+        update={"surfaces": [profile().surfaces[0].model_copy(update={"paths": ["."]})]}
+    )
+    spec = audit_spec().model_copy(update={"paths": ["."]})
+    report = AuditRunner(MaintenanceRuntime()).run(root, full_profile, spec)
+    assert report.coverage is not None
+    assert report.coverage.discovered_files == 17
+    assert len(report.coverage.model_read_files) == 12
+    assert report.coverage.static_analyzed_files == 17
+    assert report.coverage.complete_model_read is False
+
+
 def test_audit_rejects_any_source_mutation(tmp_path: Path) -> None:
     root = repository(tmp_path)
     runtime = MaintenanceRuntime()

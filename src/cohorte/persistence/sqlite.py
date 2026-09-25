@@ -162,11 +162,9 @@ class Database:
                 destination.close()
             self.connection.execute("BEGIN EXCLUSIVE")
             try:
-                self.connection.execute(
-                    "CREATE TABLE imports("
-                    "id TEXT PRIMARY KEY,source_kind TEXT NOT NULL,source_hash TEXT NOT NULL,"
-                    "payload_json TEXT NOT NULL,backup_path TEXT NOT NULL,created_at TEXT NOT NULL)"
-                )
+                for statement in _SCHEMA.split(";"):
+                    if statement.strip():
+                        self.connection.execute(statement)
                 self.connection.execute(
                     "INSERT INTO schema_migrations(version,applied_at) VALUES (?,?)",
                     (SCHEMA_VERSION, utc_now()),
@@ -276,6 +274,16 @@ class Database:
                 (artifact_id, revision, kind, digest, media_type, content, len(content), utc_now()),
             )
         return {"id": artifact_id, "revision": revision, "sha256": digest}
+
+    def artifact_ref_by_hash(self, kind: str, digest: str) -> dict[str, Any]:
+        row = self.connection.execute(
+            "SELECT id,revision,sha256 FROM artifacts WHERE kind=? AND sha256=? "
+            "ORDER BY revision DESC LIMIT 1",
+            (kind, digest),
+        ).fetchone()
+        if row is None:
+            raise KeyError(f"{kind}:{digest}")
+        return dict(row)
 
     def get_artifact(
         self, artifact_id: str, revision: int, offset: int = 0, limit: int = 65536
