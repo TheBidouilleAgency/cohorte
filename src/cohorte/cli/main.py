@@ -245,6 +245,17 @@ def _parser() -> argparse.ArgumentParser:
     refactor.add_argument("--worktrees", type=Path, required=True)
     refactor.add_argument("--run-id", required=True)
     refactor.add_argument("--live", action="store_true", required=True)
+    refactor_plan = sub.add_parser(
+        "refactor-plan", help="select audit findings for a bounded refactor"
+    )
+    refactor_plan.add_argument("report", type=Path)
+    refactor_plan.add_argument("--profile", type=Path)
+    refactor_plan.add_argument("--repo", type=Path, default=Path.cwd())
+    refactor_plan.add_argument("--finding", action="append", required=True)
+    refactor_plan.add_argument("--invariant", action="append", required=True)
+    refactor_plan.add_argument("--rollback", required=True)
+    refactor_plan.add_argument("--output", type=Path)
+    refactor_plan.add_argument("--approve", action="store_true")
     refactor_request = sub.add_parser("refactor-request")
     refactor_request.add_argument("selection", type=Path)
     retro = sub.add_parser("retro")
@@ -1893,7 +1904,11 @@ def run(argv: list[str] | None = None) -> int:
                     remediation="refresh the audit backlog reference",
                 )
             backlog = AuditReport.model_validate_json(backlog_artifact["content"])
-            if not selection.approval_ref.id.startswith("decision:"):
+            if (
+                not selection.approved
+                or selection.approval_ref is None
+                or not selection.approval_ref.id.startswith("decision:")
+            ):
                 raise CohorteError(
                     ErrorCode.APPROVAL_REQUIRED,
                     "refactor selection has no persisted approval decision",
@@ -1985,6 +2000,125 @@ def run(argv: list[str] | None = None) -> int:
                 raise
             request_id = _create_ship_request(database, args.run_id, refactor_result.candidate)
             _emit({**asdict(refactor_result), "ship_request_id": request_id}, args.json)
+        elif args.command == "refactor-plan":
+            from cohorte.adapters.git import path_is_owned
+            from cohorte.application.maintenance import (
+                AuditReport,
+                RefactorSelection,
+                refactor_subject_hash,
+                validate_refactor_backlog,
+            )
+            from cohorte.domain.models import ArtifactRef, ProjectProfile
+
+            repository = args.repo.resolve(strict=True)
+            if args.profile is None:
+                project = _project_for_path(database, repository)
+                profile = ProjectProfile.model_validate_json(json.dumps(project["profile"]))
+            else:
+                profile = ProjectProfile.model_validate_json(args.profile.read_text())
+            backlog = AuditReport.model_validate_json(args.report.read_text())
+            available = {finding.id: finding for finding in backlog.findings}
+            selected_ids = list(dict.fromkeys(args.finding))
+            if missing := sorted(set(selected_ids) - available.keys()):
+                raise ValueError(f"unknown audit findings: {', '.join(missing)}")
+            selected_findings = [available[finding_id] for finding_id in selected_ids]
+            selected_surfaces = [
+                surface
+                for surface in profile.surfaces
+                if any(path_is_owned(finding.path, surface.paths) for finding in selected_findings)
+            ]
+            if not selected_surfaces or any(
+                not any(path_is_owned(finding.path, surface.paths) for surface in selected_surfaces)
+                for finding in selected_findings
+            ):
+                raise ValueError("every selected finding must be owned by a profile surface")
+            check_ids = list(
+                dict.fromkeys(check for surface in selected_surfaces for check in surface.check_ids)
+            )
+            if not check_ids:
+                raise ValueError("selected surfaces need a configured check before refactor")
+            backlog_content = backlog.model_dump_json(indent=2).encode()
+            try:
+                backlog_reference = database.artifact_ref_by_hash(
+                    "audit-report", hashlib.sha256(backlog_content).hexdigest()
+                )
+            except KeyError as error:
+                raise ValueError(
+                    "audit report is not registered; run cohorte audit before refactor-plan"
+                ) from error
+            backlog_ref = ArtifactRef.model_validate(backlog_reference)
+            selection = RefactorSelection(
+                refactor_id=f"refactor-{backlog.audit_id}"[:80],
+                title=f"Corriger les constats de {backlog.audit_id}",
+                backlog_ref=backlog_ref,
+                selected_finding_ids=selected_ids,
+                invariants=args.invariant,
+                surfaces=[surface.id for surface in selected_surfaces],
+                write_paths=list(dict.fromkeys(finding.path for finding in selected_findings)),
+                check_ids=check_ids,
+                out_of_scope=[],
+                rollback=args.rollback,
+            )
+            validate_refactor_backlog(selection, backlog)
+            subject_hash = refactor_subject_hash(selection)
+            selection_path = args.output or (
+                args.data_dir / "refactors" / f"{selection.refactor_id}.json"
+            )
+            refactor_request_id: str | None = None
+            if args.approve:
+                refactor_request_id = database.create_request(
+                    None,
+                    "refactor-selection",
+                    {
+                        "refactor_id": selection.refactor_id,
+                        "selected_finding_ids": selected_ids,
+                        "write_paths": selection.write_paths,
+                        "invariants": selection.invariants,
+                    },
+                    subject_hash,
+                )
+                decision = database.respond_request(
+                    refactor_request_id,
+                    f"cli:refactor-plan:{refactor_request_id}",
+                    {"approved": True},
+                    subject_hash,
+                )
+                selection = selection.model_copy(
+                    update={
+                        "approved": True,
+                        "approval_ref": ArtifactRef(
+                            id=f"decision:{decision['decision_id']}",
+                            revision=1,
+                            sha256=subject_hash,
+                        ),
+                    }
+                )
+                selection_path.parent.mkdir(parents=True, exist_ok=True)
+                selection_path.write_text(selection.model_dump_json(indent=2) + "\n")
+            plan_result = {
+                "selection": selection.model_dump(mode="json"),
+                "subject_hash": subject_hash,
+                "approved": args.approve,
+                "request_id": refactor_request_id,
+                "output": str(selection_path) if args.approve else None,
+            }
+            if args.json:
+                _emit(plan_result, True)
+            else:
+                print(
+                    f"Refactor {selection.refactor_id} · {len(selected_ids)} constats · "
+                    f"{', '.join(selection.surfaces)}"
+                )
+                for audit_finding in selected_findings:
+                    print(
+                        f"  {audit_finding.id} · P{audit_finding.priority} · "
+                        f"{audit_finding.path} · {audit_finding.recommendation}"
+                    )
+                print(f"Invariant : {'; '.join(selection.invariants)}")
+                if args.approve:
+                    print(f"Sélection approuvée : {selection_path}")
+                else:
+                    print("Relancer avec --approve pour enregistrer cette sélection exacte.")
         elif args.command == "refactor-request":
             from cohorte.application.maintenance import (
                 RefactorSelection,

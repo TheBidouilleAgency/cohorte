@@ -290,8 +290,8 @@ class RefactorSelection(StrictModel):
     refactor_id: Slug
     title: str = Field(min_length=1, max_length=200)
     backlog_ref: ArtifactRef
-    approval_ref: ArtifactRef
-    approved: Literal[True]
+    approval_ref: ArtifactRef | None = None
+    approved: bool = False
     selected_finding_ids: list[Slug] = Field(min_length=1)
     invariants: list[str] = Field(min_length=1)
     surfaces: list[Slug] = Field(min_length=1)
@@ -368,7 +368,10 @@ def refactor_feature(selection: RefactorSelection) -> FeatureSpec:
             review_required=True,
             manual_validations=[],
         ),
-        contract_refs=[selection.backlog_ref, selection.approval_ref],
+        contract_refs=[
+            selection.backlog_ref,
+            *([selection.approval_ref] if selection.approval_ref is not None else []),
+        ],
         dependencies=[],
         migrations=RequirementPlan(required=False, plan="No migration for bounded refactor."),
         rollback=RequirementPlan(required=True, plan=selection.rollback),
@@ -436,6 +439,13 @@ class RefactorRunner:
         *,
         observe: Callable[[str, dict[str, Any]], None] | None = None,
     ) -> RefactorResult:
+        if not selection.approved or selection.approval_ref is None:
+            raise CohorteError(
+                ErrorCode.APPROVAL_REQUIRED,
+                "refactor selection is not approved",
+                "refactor implementation was not started",
+                remediation="approve the exact selected findings before running refactor",
+            )
         validate_refactor_backlog(selection, backlog)
         bounded = refactor_profile(profile, selection)
         definitions = {definition.id: definition for definition in bounded.checks}

@@ -277,6 +277,16 @@ class Database:
             )
         return {"id": artifact_id, "revision": revision, "sha256": digest}
 
+    def artifact_ref_by_hash(self, kind: str, digest: str) -> dict[str, Any]:
+        row = self.connection.execute(
+            "SELECT id,revision,sha256 FROM artifacts WHERE kind=? AND sha256=? "
+            "ORDER BY revision DESC LIMIT 1",
+            (kind, digest),
+        ).fetchone()
+        if row is None:
+            raise KeyError(f"{kind}:{digest}")
+        return dict(row)
+
     def get_artifact(
         self, artifact_id: str, revision: int, offset: int = 0, limit: int = 65536
     ) -> dict[str, Any]:

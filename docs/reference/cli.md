@@ -85,10 +85,13 @@ Lors de `spec`, le terminal rappelle des chemins sourcés du brief et du dépôt
 | `patch SPEC --profile PROFILE --worktrees DIR --run-id ID --live [--repo DIR]` | Exécuter le patch et sa régression. |
 | `audit [--profile PROFILE] [--audit-id ID] [--title TITRE] [--surface ID] [--path PATH] [--concern TEXTE] [--output FILE] --live` | Auditer le projet courant ou une sélection explicite ; `--surface`, `--path` et `--concern` sont répétables. |
 | `incoming-review NUMBER [--profile PROFILE] [--repo PATH] [--worktrees PATH] [--title TITRE] [--description TEXTE] [--live]` | Revoir indépendamment une PR GitHub ou MR GitLab dans un worktree détaché en lecture seule. En JSON, `--live` est requis. `--title` permet un usage sans CLI de forge pour les métadonnées ; aucun commentaire n'est envoyé à la forge. |
+| `refactor-plan AUDIT.json --finding ID --invariant TEXTE --rollback TEXTE [--profile PROFILE] [--approve]` | Prévisualiser une sélection bornée à partir du backlog d'audit ; `--approve` enregistre la décision exacte et le fichier de sélection. Les findings et invariants sont répétables. |
 | `refactor-request SELECTION` | Demander l’approbation d’une sélection de refactor. |
 | `refactor SELECTION --profile PROFILE --worktrees DIR --run-id ID --live` | Exécuter une sélection approuvée. |
 | `retro [--manual] [--pattern ID --rule TEXTE]` | Extraire les motifs récurrents des revues du projet courant, suggérer des règles en lecture seule puis créer une demande de ratification. En JSON sans `--pattern`, renvoie les motifs ; `--live` ajoute les suggestions agent. L'ancienne forme `retro REPORT... --proposal-id ID --rule TEXTE --output FILE` reste disponible pour les rapports d'audit. |
 | `retro-apply PROPOSAL --profile PROFILE --decision-id ID --output FILE` | Appliquer une convention approuvée. |
+
+`refactor-plan` exige un rapport déjà enregistré par `audit`. Sans `--approve`, il ne crée ni demande de décision ni fichier ; l'utilisateur relit les findings, chemins et invariants avant de confirmer. Le run `refactor` reste séparé et contrôle la décision persistée avant de modifier le code.
 
 ## Intégrations et migration
 
