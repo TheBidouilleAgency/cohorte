@@ -14,6 +14,7 @@ from cohorte.domain.models import (
     ArtifactRef,
     FeatureSpec,
     ProjectProfile,
+    Scenario,
     SpecStatus,
     StrictModel,
     TaskPlan,
@@ -72,6 +73,34 @@ class BrainstormBrief(StrictModel):
     panel_executed: bool
     previous_brief_ref: ArtifactRef | None = None
     intake_ref: ArtifactRef | None = None
+
+
+class SpecQuestionSuggestion(StrictModel):
+    question: str
+    suggestion: str
+    caveat: str
+
+
+class SpecCriterionSuggestion(StrictModel):
+    statement: str
+    surface_id: str
+    check_id: str | None
+
+
+class SpecProposal(StrictModel):
+    """Read-only agent suggestions; never an approved or frozen specification."""
+
+    title: str
+    in_scope: list[str] = Field(min_length=1)
+    out_of_scope: list[str]
+    question_suggestions: list[SpecQuestionSuggestion]
+    scenarios: list[Scenario] = Field(min_length=1)
+    acceptance: list[SpecCriterionSuggestion] = Field(min_length=1)
+    test_strategy: list[str] = Field(min_length=1)
+    error_cases: list[str] = Field(min_length=1)
+    migrations_required: bool
+    migrations: str
+    rollback: str
 
 
 class BrainstormRuntime(Protocol):

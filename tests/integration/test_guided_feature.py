@@ -13,11 +13,15 @@ from cohorte.application.preparation import (
     BrainstormBrief,
     BrainstormContribution,
     BrainstormSynthesis,
+    SpecCriterionSuggestion,
     SpecFreezer,
+    SpecProposal,
+    SpecQuestionSuggestion,
     canonical_model_bytes,
 )
 from cohorte.application.service import CohorteService
 from cohorte.application.vertical import AgentReport, AgentReview
+from cohorte.cli import guided_feature
 from cohorte.cli import main as cli
 from cohorte.cli.guided_feature import _new_draft, guided_start, repository_head
 from cohorte.domain.evidence import ReviewVerdict
@@ -27,6 +31,7 @@ from cohorte.domain.models import (
     FeatureSpec,
     ProjectProfile,
     Provider,
+    Scenario,
     Surface,
     VcsConfig,
 )
@@ -158,7 +163,7 @@ def test_guided_spec_requires_answer_before_freeze_and_preserves_draft(
     answers = iter(_answers(blocking_answer=""))
     monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
 
-    assert cli.run(["--data-dir", str(data_dir), "spec", "safe-export"]) == 0
+    assert cli.run(["--data-dir", str(data_dir), "spec", "safe-export", "--manual"]) == 0
     draft_path = data_dir / "guided" / "project" / "safe-export" / "draft.json"
     draft = FeatureSpec.model_validate_json(draft_path.read_text())
     assert draft.open_questions == ["Which format?"]
@@ -173,10 +178,111 @@ def test_guided_spec_requires_answer_before_freeze_and_preserves_draft(
 
     answers = iter(["CSV", "oui"])
     monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
-    assert cli.run(["--data-dir", str(data_dir), "spec", "safe-export"]) == 0
+    assert cli.run(["--data-dir", str(data_dir), "spec", "safe-export", "--manual"]) == 0
     frozen = FeatureSpec.model_validate_json((draft_path.parent / "frozen.json").read_text())
     assert "Which format? CSV" in frozen.problem
     assert frozen.open_questions == []
+
+
+def test_guided_spec_agent_proposes_complete_editable_draft(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repository, data_dir = _setup(tmp_path, blocking=True)
+    monkeypatch.chdir(repository)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.delenv("VISUAL", raising=False)
+    monkeypatch.delenv("EDITOR", raising=False)
+    proposal = SpecProposal(
+        title="Export safely",
+        in_scope=["Write a complete local export"],
+        out_of_scope=["Cloud upload"],
+        question_suggestions=[
+            SpecQuestionSuggestion(
+                question="Which format?", suggestion="CSV", caveat="Confirm consumer compatibility"
+            )
+        ],
+        scenarios=[
+            Scenario(
+                id="complete-export",
+                given="an operator has data",
+                when="the export completes",
+                then="one complete CSV file exists",
+            )
+        ],
+        acceptance=[
+            SpecCriterionSuggestion(
+                statement="No partial file remains", surface_id="api", check_id="test"
+            )
+        ],
+        test_strategy=["Interrupt an export and assert atomic replacement"],
+        error_cases=["Disk full leaves the previous export intact"],
+        migrations_required=False,
+        migrations="No migration required",
+        rollback="Restore the previous exporter",
+    )
+    monkeypatch.setattr(guided_feature, "_propose_spec", lambda *_args: proposal)
+    answers = iter(["CSV", "", "oui", "non"])
+    monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
+
+    assert cli.run(["--data-dir", str(data_dir), "spec", "safe-export"]) == 0
+    draft_path = data_dir / "guided" / "project" / "safe-export" / "draft.json"
+    draft = FeatureSpec.model_validate_json(draft_path.read_text())
+    assert draft.title == "Export safely"
+    assert draft.open_questions == []
+    assert "Which format? CSV" in draft.problem
+    assert draft.acceptance[0].check_ids == ["test"]
+    assert draft.scenarios[0].then == "one complete CSV file exists"
+    assert not (draft_path.parent / "frozen.json").exists()
+    database = Database(data_dir / "cohorte.sqlite3")
+    assert database.latest_artifact("proposal:safe-export")["revision"] == 1
+    database.close()
+    output = capsys.readouterr().out
+    assert "Proposition de l'agent : CSV" in output
+    assert "Proposition de spec (agent, à valider)" in output
+
+
+def test_agent_can_improve_existing_draft_without_erasing_user_decisions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repository, data_dir = _setup(tmp_path)
+    monkeypatch.chdir(repository)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.delenv("VISUAL", raising=False)
+    monkeypatch.delenv("EDITOR", raising=False)
+    first_answers = iter(_answers(approve="non"))
+    monkeypatch.setattr(builtins, "input", lambda _prompt: next(first_answers))
+    assert cli.run(["--data-dir", str(data_dir), "spec", "safe-export", "--manual"]) == 0
+    draft_path = data_dir / "guided" / "project" / "safe-export" / "draft.json"
+    original = FeatureSpec.model_validate_json(draft_path.read_text())
+    proposal = SpecProposal(
+        title="Atomic export",
+        in_scope=["Complete export only"],
+        out_of_scope=["Cloud upload"],
+        question_suggestions=[],
+        scenarios=[
+            Scenario(id="atomic", given="data exists", when="export runs", then="file is complete")
+        ],
+        acceptance=[
+            SpecCriterionSuggestion(statement="No partial file", surface_id="api", check_id="test")
+        ],
+        test_strategy=["Interrupt the writer"],
+        error_cases=["Disk full"],
+        migrations_required=False,
+        migrations="No migration",
+        rollback="Restore exporter",
+    )
+    monkeypatch.setattr(guided_feature, "_propose_spec", lambda *_args: proposal)
+    second_answers = iter(["oui", "non"])
+    monkeypatch.setattr(builtins, "input", lambda _prompt: next(second_answers))
+
+    assert cli.run(["--data-dir", str(data_dir), "spec", "safe-export"]) == 0
+    revised = FeatureSpec.model_validate_json(draft_path.read_text())
+    assert revised.revision == original.revision + 1
+    assert revised.title == "Atomic export"
+    assert revised.problem == original.problem
+    assert revised.brief_ref == original.brief_ref
+    assert revised.scenarios[0].id == "atomic"
+    assert not (draft_path.parent / "frozen.json").exists()
 
 
 def test_guided_spec_can_scope_multiple_surfaces_scenarios_and_criteria(
@@ -251,7 +357,7 @@ def test_guided_spec_reconciles_new_brief_without_erasing_draft(
     monkeypatch.delenv("EDITOR", raising=False)
     answers = iter(_answers(approve="non"))
     monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
-    assert cli.run(["--data-dir", str(data_dir), "spec", "safe-export"]) == 0
+    assert cli.run(["--data-dir", str(data_dir), "spec", "safe-export", "--manual"]) == 0
     draft_path = data_dir / "guided" / "project" / "safe-export" / "draft.json"
     first = FeatureSpec.model_validate_json(draft_path.read_text())
 
@@ -273,7 +379,7 @@ def test_guided_spec_reconciles_new_brief_without_erasing_draft(
 
     answers = iter(["oui", "Show disk full", "non"])
     monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
-    assert cli.run(["--data-dir", str(data_dir), "spec", "safe-export"]) == 0
+    assert cli.run(["--data-dir", str(data_dir), "spec", "safe-export", "--manual"]) == 0
     second = FeatureSpec.model_validate_json(draft_path.read_text())
     assert second.brief_ref is not None and second.brief_ref.revision == 2
     assert second.scenarios == first.scenarios
@@ -326,7 +432,7 @@ def test_guided_freeze_binds_profile_and_start_refuses_tampered_snapshot(
     answers = iter(_answers())
     monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
 
-    assert cli.run(["--data-dir", str(data_dir), "spec", "safe-export"]) == 0
+    assert cli.run(["--data-dir", str(data_dir), "spec", "safe-export", "--manual"]) == 0
     database = Database(data_dir / "cohorte.sqlite3")
     project = database.get_project("project")
     assert database.get_feature("safe-export")["status"] == "frozen"
@@ -380,7 +486,7 @@ def test_guided_start_reuses_loop_and_creates_ship_gate(
     monkeypatch.delenv("EDITOR", raising=False)
     answers = iter(_answers())
     monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
-    assert cli.run(["--data-dir", str(data_dir), "spec", "safe-export"]) == 0
+    assert cli.run(["--data-dir", str(data_dir), "spec", "safe-export", "--manual"]) == 0
     capsys.readouterr()
 
     monkeypatch.setattr(builtins, "input", lambda _prompt: "oui")

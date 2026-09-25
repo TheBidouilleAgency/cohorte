@@ -69,7 +69,7 @@ Ces parcours guidés sont disponibles depuis `1.0.0a5` ; `1.0.0a6` corrige aussi
 Projet → [intake si demande à trier] → brainstorm → spec approuvée → start → revue → ship approuvé
 ```
 
-`brainstorm` réunit des perspectives produit, architecture et QA. Il propose un cadrage, ne prend pas de décision à votre place, et peut relancer un tour après vos réponses. `cohorte brief show IDENTIFIANT` relit le résultat sans relancer le panel. `spec` recueille les scénarios, critères, surfaces, checks et cas d'erreur ; elle garde ouvertes les questions auxquelles vous n'avez pas encore répondu.
+`brainstorm` réunit des perspectives produit, architecture et QA. Il propose un cadrage, ne prend pas de décision à votre place, et peut relancer un tour après vos réponses. `cohorte brief show IDENTIFIANT` relit le résultat sans relancer le panel. `spec` demande à l'agent une proposition de scénarios, critères, checks et cas d'erreur, puis vous laisse accepter ou corriger le brouillon. Les questions sans réponse restent ouvertes ; `cohorte spec --manual` garde la saisie champ par champ.
 
 `start` lance les agents sur une spec gelée dans un worktree isolé, puis vérifie le résultat. `ship` reste une étape séparée : après accord, Cohorte peut créer un commit, pousser et ouvrir une PR ou MR. Il ne merge ni ne déploie. [Détails et exemples](https://thebidouilleagency.github.io/cohorte/guide/parcours).
 

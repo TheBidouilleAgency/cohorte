@@ -39,6 +39,7 @@ Forme générale : `cohorte [--json] [--config-dir DIR] [--data-dir DIR] COMMAND
 | `brainstorm --from-intake FEATURE_ID [--live]` | Démarrer le panel depuis une demande classée « feature » en reprenant les réponses, questions ouvertes et la provenance de la source. |
 | `brainstorm [PROJECT_ID] [--feature-id ID] [--idea TEXTE] [--answer TEXTE] [--context TEXTE] [--provider codex|claude] [--output FILE] [--live]` | Exécuter le panel ou recueillir les réponses guidées ; `--answer` et `--perspective` sont répétables. Si le panel pose des questions bloquantes, le terminal propose d’y répondre et de relancer un tour. |
 | `brainstorm --continue FEATURE_ID [--answer TEXTE] [--live]` | Reprendre le dernier brief du projet courant avec de nouvelles réponses. Sans `--answer`, le terminal pose les questions encore ouvertes. En JSON, fournir au moins un `--answer` et `--live`. |
+| `spec [FEATURE_ID] [--manual] [--refresh]` | Préparer une spec guidée. Par défaut, l'agent du profil propose un brouillon en lecture seule ; `--manual` conserve la saisie champ par champ. `--refresh` remplace un brouillon enregistré. |
 | `brief show FEATURE_ID` | Relire le dernier brief enregistré pour une fonctionnalité du projet courant, sans relancer le panel. `cohorte --json brief show FEATURE_ID` renvoie le brief complet. |
 | `spec-freeze-request DRAFT --profile PROFILE [--repo DIR]` | Demander l’approbation d’une spec précise. |
 | `spec-freeze DRAFT --profile PROFILE --decision-id ID --output FILE [--repo DIR]` | Produire la spec gelée après décision correspondante. |
