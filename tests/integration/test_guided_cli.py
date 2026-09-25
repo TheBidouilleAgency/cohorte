@@ -11,6 +11,7 @@ from cohorte.application.preparation import (
     BrainstormContribution,
     BrainstormPerspectiveTurn,
     BrainstormQuestionProposal,
+    BrainstormRunner,
     BrainstormSynthesis,
     BrainstormSynthesisTurn,
 )
@@ -150,6 +151,81 @@ def test_guided_brainstorm_from_project_directory(tmp_path: Path, monkeypatch, c
         )
     assert error.value.code == 3
     assert "brainstorm --continue add-safe-export" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    ("idea", "first_id", "corrected_id"),
+    [
+        ("Add safe export", "INVALID_ID", "safe-export"),
+        ("!!!", "", "chosen-id"),
+    ],
+)
+def test_guided_brainstorm_reprompts_for_invalid_id_before_panel(
+    tmp_path: Path, monkeypatch, capsys, idea: str, first_id: str, corrected_id: str
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    data = tmp_path / "data"
+    database = Database(data / "cohorte.sqlite3")
+    CohorteService(database).init_project(project)
+    database.close()
+    monkeypatch.chdir(project)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    runtime = PanelRuntime()
+    monkeypatch.setattr(cli, "CodexAdapter", lambda *_args, **_kwargs: runtime)
+
+    context_calls: list[object] = []
+    from cohorte.application import repository_context
+
+    original_context = repository_context.collect_repository_context
+    original_run = BrainstormRunner.run
+    runner_calls: list[object] = []
+
+    def observed_run(self: BrainstormRunner, *args: object, **kwargs: object):
+        runner_calls.append(args)
+        return original_run(self, *args, **kwargs)
+
+    monkeypatch.setattr(BrainstormRunner, "run", observed_run)
+
+    def observed_context(*args: object, **kwargs: object) -> str:
+        context_calls.append(args)
+        return original_context(*args, **kwargs)
+
+    monkeypatch.setattr(repository_context, "collect_repository_context", observed_context)
+    prompts: list[str] = []
+    answers = iter([idea, first_id, corrected_id])
+
+    def answer(prompt: str) -> str:
+        prompts.append(prompt)
+        if len(prompts) == 3:
+            output = capsys.readouterr()
+            assert "1 à 80 caractères" in output.err
+            assert "Le panel" not in output.err
+            assert context_calls == []
+            assert runner_calls == []
+            assert runtime.perspectives == []
+            pending = Database(data / "cohorte.sqlite3")
+            assert pending.list_features("project") == []
+            with pytest.raises(KeyError):
+                pending.latest_artifact(f"brief:{first_id}")
+            pending.close()
+        return next(answers)
+
+    monkeypatch.setattr(builtins, "input", answer)
+
+    assert cli.run(["--data-dir", str(data), "brainstorm"]) == 0
+    assert "Le panel" in capsys.readouterr().err
+    assert prompts[0] == "Quelle idée veux-tu explorer ?: "
+    assert len(prompts) == 3
+    assert all(prompt.startswith("Identifiant [") for prompt in prompts[1:])
+    assert len(context_calls) == 1
+    assert len(runner_calls) == 1
+    stored = Database(data / "cohorte.sqlite3")
+    brief = json.loads(stored.latest_artifact(f"brief:{corrected_id}")["content"])
+    assert brief["feature_id"] == corrected_id
+    assert brief["idea"] == idea
+    assert [item["id"] for item in stored.list_features("project")] == [corrected_id]
+    stored.close()
 
 
 def test_guided_brainstorm_can_answer_panel_questions_and_continue_later(

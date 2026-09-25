@@ -221,6 +221,15 @@ def test_brainstorm_rejects_reused_runtime_session(tmp_path: Path) -> None:
     assert caught.value.code == ErrorCode.CAPABILITY_MISSING
 
 
+def test_brainstorm_runner_rejects_invalid_feature_id_before_provider(tmp_path: Path) -> None:
+    runtime = PanelRuntime()
+    with pytest.raises(ValueError, match="feature_id must contain only lowercase"):
+        BrainstormRunner(runtime).run(
+            tmp_path, "INVALID_ID", "Add safe export", "Local workflow engine", []
+        )
+    assert runtime.calls == []
+
+
 def test_brainstorm_continuation_links_rounds_and_revisits_previous_synthesis(
     tmp_path: Path,
 ) -> None:

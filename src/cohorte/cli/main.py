@@ -382,10 +382,23 @@ def _emit(payload: Any, json_mode: bool) -> None:
         print(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
 
 
+class _InvalidBrainstormFeatureId(ValueError):
+    pass
+
+
 def _fail(error: Exception, json_mode: bool, debug: bool = False) -> NoReturn:
     if isinstance(error, CohorteError):
         data = error.as_data()
         exit_code = 6 if error.code.value in {"EFFECT_UNCERTAIN", "VERSION_CONFLICT"} else 3
+    elif isinstance(error, _InvalidBrainstormFeatureId):
+        data = {
+            "code": "VALIDATION_ERROR",
+            "message": str(error),
+            "impact": "la commande n'a pas été exécutée",
+            "retryable": False,
+            "remediation": "corrigez l'identifiant et réessayez",
+        }
+        exit_code = 3
     elif isinstance(error, (ValueError, ValidationError)):
         data = {
             "code": "VALIDATION_ERROR",
@@ -408,8 +421,14 @@ def _fail(error: Exception, json_mode: bool, debug: bool = False) -> NoReturn:
     if json_mode:
         print(json.dumps({"ok": False, "error": data}, ensure_ascii=False), file=sys.stdout)
     else:
+        impact_label, action_label = (
+            ("Effet", "À faire")
+            if isinstance(error, _InvalidBrainstormFeatureId)
+            else ("Impact", "Action")
+        )
         print(
-            f"{data['code']}: {data['message']}\nImpact: {data['impact']}\nAction: {data['remediation']}",
+            f"{data['code']}: {data['message']}\n"
+            f"{impact_label}: {data['impact']}\n{action_label}: {data['remediation']}",
             file=sys.stderr,
         )
     raise SystemExit(exit_code)
@@ -635,6 +654,16 @@ def _require_new_brainstorm_feature(database: Database, project_id: str, feature
     except KeyError:
         return
     raise ValueError(f"brainstorm already exists; run cohorte brainstorm --continue {feature_id}")
+
+
+def _valid_brainstorm_feature_id(feature_id: str) -> bool:
+    return re.fullmatch(r"[a-z0-9-]{1,80}", feature_id) is not None
+
+
+_BRAINSTORM_FEATURE_ID_RULE = (
+    "L'identifiant doit contenir de 1 à 80 caractères : lettres minuscules a-z, "
+    "chiffres 0-9 ou tirets."
+)
 
 
 def _profile_context(profile: dict[str, Any]) -> str:
@@ -1442,6 +1471,8 @@ def run(argv: list[str] | None = None) -> int:
             else:
                 print_report(feature_id, intake_report_doc, intake_report_ref.revision)
         elif args.command == "brainstorm":
+            if args.feature_id is not None and not _valid_brainstorm_feature_id(args.feature_id):
+                raise _InvalidBrainstormFeatureId(_BRAINSTORM_FEATURE_ID_RULE)
             from cohorte.application.preparation import (
                 BrainstormBrief,
                 BrainstormRunner,
@@ -1558,11 +1589,16 @@ def run(argv: list[str] | None = None) -> int:
                             return 0
                 else:
                     args.idea = args.idea or _prompt("Quelle idée veux-tu explorer ?")
-                    if not args.feature_id:
+                    if args.feature_id is None:
                         suggested = re.sub(r"[^a-z0-9]+", "-", args.idea.lower()).strip("-")[:80]
-                        args.feature_id = (
-                            _prompt(f"Identifiant [{suggested}]", required=False) or suggested
-                        )
+                        while True:
+                            candidate_id = (
+                                _prompt(f"Identifiant [{suggested}]", required=False) or suggested
+                            )
+                            if _valid_brainstorm_feature_id(candidate_id):
+                                args.feature_id = candidate_id
+                                break
+                            print(_BRAINSTORM_FEATURE_ID_RULE, file=sys.stderr)
                     _require_new_brainstorm_feature(database, project["id"], args.feature_id)
                 panel = (
                     ProjectProfile.model_validate_json(
