@@ -104,7 +104,9 @@ def _propose_spec(
     prompt = (
         "Propose an implementation-ready feature specification in the project's language. "
         "This is a read-only proposal, never a user decision. Give a concise suggested answer "
-        "and caveat for each blocking question; do not claim unresolved choices are settled. "
+        "and caveat for each blocking question. Copy each blocking question verbatim into "
+        "question_suggestions, in the same order and without extra questions; do not claim "
+        "unresolved choices are settled. "
         "Propose concrete scenarios, observable criteria, tests, errors, migration and rollback. "
         "Use only surface IDs and check IDs in the profile; check_id is an ID, not a shell command. "
         "Use null check_id when a criterion cannot be proven by a listed check. "
@@ -114,6 +116,21 @@ def _propose_spec(
         f"Facts: {json.dumps(facts, ensure_ascii=False)}"
     )
     return runtime.spec_proposal(repository, prompt)
+
+
+def _show_question_suggestions(proposal: SpecProposal | None) -> None:
+    if proposal is None:
+        return
+    if not proposal.question_suggestions:
+        print("L'agent n'a pas proposé de réponse aux questions ouvertes.")
+        return
+    print("Pistes de l'agent pour les questions ouvertes (libellés parfois reformulés) :")
+    for item in proposal.question_suggestions[:10]:
+        print(f"  • {item.question}")
+        print(f"    Proposition de l'agent : {item.suggestion}")
+        print(f"    À vérifier : {item.caveat}")
+    if len(proposal.question_suggestions) > 10:
+        print(f"  • {len(proposal.question_suggestions) - 10} autre(s) piste(s) dans l'artefact.")
 
 
 def _proposal_criteria(
@@ -175,14 +192,9 @@ def _new_draft(
             print(f"  • {reference}")
     decisions: list[str] = []
     open_questions: list[str] = []
-    suggestions = (
-        {item.question: item for item in proposal.question_suggestions} if proposal else {}
-    )
+    if synthesis.blocking_questions:
+        _show_question_suggestions(proposal)
     for question in synthesis.blocking_questions:
-        suggestion = suggestions.get(question)
-        if suggestion is not None:
-            print(f"Proposition de l'agent : {suggestion.suggestion}")
-            print(f"À vérifier : {suggestion.caveat}")
         answer = _ask(f"{question} (Entrée = encore ouvert)", required=False)
         if answer:
             decisions.append(f"{question} {answer}")
@@ -447,14 +459,8 @@ def guided_spec(
         if draft.open_questions:
             remaining: list[str] = []
             decisions: list[str] = []
-            suggestions = (
-                {item.question: item for item in proposal.question_suggestions} if proposal else {}
-            )
+            _show_question_suggestions(proposal)
             for question in draft.open_questions:
-                suggestion = suggestions.get(question)
-                if suggestion is not None:
-                    print(f"Proposition de l'agent : {suggestion.suggestion}")
-                    print(f"À vérifier : {suggestion.caveat}")
                 answer = _ask(f"{question} (Entrée = encore ouvert)", required=False)
                 if answer:
                     decisions.append(f"{question} {answer}")
