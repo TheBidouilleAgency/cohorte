@@ -198,7 +198,9 @@ def test_guided_spec_agent_proposes_complete_editable_draft(
         out_of_scope=["Cloud upload"],
         question_suggestions=[
             SpecQuestionSuggestion(
-                question="Which format?", suggestion="CSV", caveat="Confirm consumer compatibility"
+                question="What file format should be used?",
+                suggestion="CSV",
+                caveat="Confirm consumer compatibility",
             )
         ],
         scenarios=[
@@ -237,6 +239,7 @@ def test_guided_spec_agent_proposes_complete_editable_draft(
     assert database.latest_artifact("proposal:safe-export")["revision"] == 1
     database.close()
     output = capsys.readouterr().out
+    assert "What file format should be used?" in output
     assert "Proposition de l'agent : CSV" in output
     assert "Proposition de spec (agent, à valider)" in output
 
