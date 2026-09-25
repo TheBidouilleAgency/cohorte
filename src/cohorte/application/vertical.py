@@ -369,6 +369,7 @@ class VerticalRunner:
         )
         return (
             "Implement the frozen feature in this isolated worktree. Do not commit or push. "
+            f"Target product copy language: {profile.language}; the CLI conversation language is separate. "
             f"Only modify these owned paths: {task.write_paths}.\n"
             f"Project profile:\n{profile.model_dump_json(indent=2)}\n"
             f"Frozen feature spec:\n{spec.model_dump_json(indent=2)}\n"
@@ -389,6 +390,8 @@ class VerticalRunner:
         required = sorted(active_constraints(profile, spec.surfaces))
         return (
             "Independently review the candidate against the frozen spec. Do not modify files. "
+            f"Check user-facing product copy against target language {profile.language}, "
+            "independently of the CLI conversation language. "
             "Use critical/high/medium/low severities and return READY only with no blocking finding.\n"
             f"Active project constraints to verify against spec and diff: {required}. "
             "Check design references, role permissions and mobile behavior when listed; "

@@ -612,6 +612,7 @@ def _profile_context(profile: dict[str, Any]) -> str:
     summary = {
         "project": profile.get("name"),
         "description": profile.get("description", ""),
+        "target_product_language": profile.get("language"),
         "surfaces": [
             {
                 "id": item.get("id"),

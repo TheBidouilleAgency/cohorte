@@ -356,6 +356,9 @@ def test_active_design_rbac_and_mobile_constraints_must_be_in_spec(tmp_path: Pat
         }
     )
     assert plan_feature(selected_profile, selected_spec, "a" * 40).tasks
+    task = plan_feature(selected_profile, selected_spec, "a" * 40).tasks[0]
+    build_prompt = VerticalRunner._build_prompt(tmp_path, selected_profile, selected_spec, task)
+    assert "Target product copy language: en" in build_prompt
     review_prompt = VerticalRunner._review_prompt(
         tmp_path, selected_profile, selected_spec, "a" * 40, ["web.py"], ""
     )
@@ -363,6 +366,7 @@ def test_active_design_rbac_and_mobile_constraints_must_be_in_spec(tmp_path: Pat
         "Active project constraints to verify against spec and diff: ['design', 'mobile', 'rbac']"
         in review_prompt
     )
+    assert "target language en" in review_prompt
 
 
 def test_fleet_parallelizes_disjoint_features_and_revalidates_each(tmp_path: Path) -> None:

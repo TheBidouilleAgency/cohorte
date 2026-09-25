@@ -90,6 +90,7 @@ def _propose_spec(
     runtime = ClaudeAdapter(repository) if provider == Provider.CLAUDE else CodexAdapter(repository)
     facts = {
         "idea": brief.idea,
+        "target_product_language": profile.language,
         "problem": brief.synthesis.problem,
         "synthesis": brief.synthesis.model_dump(mode="json"),
         "user_answers": brief.user_answers,
@@ -108,7 +109,9 @@ def _propose_spec(
     if draft is not None:
         facts["current_draft"] = draft.model_dump(mode="json")
     prompt = (
-        "Propose an implementation-ready feature specification in the project's language. "
+        "Propose an implementation-ready feature specification. The user's conversation "
+        "language is separate from target_product_language: use the latter for any product copy "
+        "to be written into the repository. "
         "This is a read-only proposal, never a user decision. Give a concise suggested answer "
         "and caveat for each blocking question. Copy each blocking question verbatim into "
         "question_suggestions, in the same order and without extra questions; do not claim "
