@@ -710,6 +710,10 @@ def test_guided_freeze_binds_profile_and_start_refuses_tampered_snapshot(
     assert spec.brief_ref is not None
     assert database.latest_artifact("ready:safe-export")["content"]
 
+    with pytest.raises(SystemExit) as unchanged:
+        cli.run(["--data-dir", str(data_dir), "spec", "safe-export", "--manual"])
+    assert unchanged.value.code == 3
+
     monkeypatch.setattr(builtins, "input", lambda _prompt: "non")
     with pytest.raises(ValueError, match="cancelled before creating a run"):
         guided_start(database, data_dir, project, "safe-export")
@@ -727,6 +731,25 @@ def test_guided_freeze_binds_profile_and_start_refuses_tampered_snapshot(
     )
     with pytest.raises(ValueError, match="project profile changed after freeze"):
         guided_start(database, data_dir, database.get_project("project"), "safe-export")
+
+    ready_before = database.latest_artifact("ready:safe-export")
+    frozen_before = (location / "frozen.json").read_bytes()
+    profile_before = (location / "profile.json").read_bytes()
+    monkeypatch.setattr(builtins, "input", lambda _prompt: "non")
+    assert cli.run(["--data-dir", str(data_dir), "spec", "safe-export", "--manual"]) == 0
+    assert database.latest_artifact("ready:safe-export")["revision"] == ready_before["revision"]
+    assert (location / "frozen.json").read_bytes() == frozen_before
+    assert (location / "profile.json").read_bytes() == profile_before
+
+    monkeypatch.setattr(builtins, "input", lambda _prompt: "oui")
+    assert cli.run(["--data-dir", str(data_dir), "spec", "safe-export", "--manual"]) == 0
+    assert database.latest_artifact("ready:safe-export")["revision"] > ready_before["revision"]
+    assert (location / "profile.json").read_bytes() == canonical_model_bytes(changed_profile)
+    assert (location / "frozen.json").read_bytes() == frozen_before
+    monkeypatch.setattr(builtins, "input", lambda _prompt: "non")
+    with pytest.raises(ValueError, match="cancelled before creating a run"):
+        guided_start(database, data_dir, database.get_project("project"), "safe-export")
+    assert database.list_runs("project") == []
     database.close()
 
 

@@ -59,6 +59,8 @@ cohorte start IDENTIFIANT
 
 `start` montre le périmètre et attend votre accord avant de lancer le travail dans un worktree Git isolé. Le run passe ensuite par les checks et la revue. La création du commit et de la PR ou MR est une autre décision, décrite dans le [parcours complet](/guide/parcours).
 
+Si le profil a changé depuis le gel, `start` s'arrête. Lancez `cohorte spec IDENTIFIANT --manual` pour relire le brouillon existant avec le profil actuel et l'approuver à nouveau. Refuser l'approbation conserve le gel précédent ; aucun agent de code n'est lancé pendant cette étape.
+
 ::: tip Version installée
 Les commandes `intake --continue`, `brainstorm --from-intake`, la spec enrichie et `patch-spec --from-intake` sont disponibles depuis `1.0.0a5`. La version `1.0.0a6` corrige également l’arrêt du service quand un client reste connecté. Depuis `1.0.0a7`, `brainstorm` donne au panel des extraits du projet avec leurs chemins et lignes à chaque tour. `1.0.0a8` étend ces pistes à la spec et aux agents de construction, revue et correction ; `1.0.0a9` couvre aussi Fleet. `1.0.0a10` propose un brouillon de spec rédigé par l'agent et `1.0.0a11` rend visibles ses réponses même si les questions sont reformulées. Vérifiez avec `cohorte --version` ; depuis le dépôt, `uv run cohorte` exécute la version de développement.
 :::
