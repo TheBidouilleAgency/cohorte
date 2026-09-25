@@ -53,7 +53,14 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--config-dir", type=Path, default=user_config_path("cohorte"))
     parser.add_argument("--data-dir", type=Path, default=user_data_path("cohorte"))
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("doctor")
+    doctor = sub.add_parser("doctor")
+    doctor.add_argument("--repo", type=Path, default=Path.cwd())
+    doctor.add_argument("--project-id")
+    update_pipeline = sub.add_parser(
+        "update-pipeline", help="preview or apply profile reconciliation"
+    )
+    update_pipeline.add_argument("--repo", type=Path, default=Path.cwd())
+    update_pipeline.add_argument("--apply", action="store_true")
     wrappers = sub.add_parser("wrappers", help="preview or install optional host-client shortcuts")
     wrappers.add_argument("--runtime", action="append", required=True)
     wrappers.add_argument("--repo", type=Path, default=Path.cwd())
@@ -365,17 +372,60 @@ def _fail(error: Exception, json_mode: bool, debug: bool = False) -> NoReturn:
 
 
 def _doctor(service: CohorteService, args: argparse.Namespace) -> dict[str, Any]:
+    from cohorte.application.project_doctor import inspect_project
+    from cohorte.domain.models import ProjectProfile
+
     claude = inspect_runtime("claude")
     codex = inspect_runtime("codex")
+    try:
+        project = (
+            service.database.get_project(args.project_id)
+            if args.project_id
+            else _project_for_path(service.database, args.repo)
+        )
+    except (KeyError, ValueError):
+        project = None
+    project_health = (
+        inspect_project(
+            Path(project["root_path"]),
+            ProjectProfile.model_validate_json(json.dumps(project["profile"])),
+        )
+        if project is not None
+        else {"registered": False, "fix": "Run cohorte init . in this project."}
+    )
     return {
         **service.health(),
         "python_required": ">=3.12",
         "data_dir": str(args.data_dir),
         "config_dir": str(args.config_dir),
         "providers": [asdict(claude), asdict(codex)],
+        "project": project_health,
         "support_claim": "codex-bounded-live-align-local-integrations-migration-darwin-service-windows-ci-pipe",
         "next_validation": "Validate the external Francois client and Windows slow-client behavior, then complete the AC01-AC30 matrix.",
     }
+
+
+def _emit_doctor_result(result: dict[str, Any], json_mode: bool) -> None:
+    if json_mode:
+        _emit(result, True)
+        return
+    database = result["database"]
+    print(f"Cohorte {result['version']} · base {'OK' if database['ok'] else 'à corriger'}")
+    for provider in result["providers"]:
+        availability = provider["connection_state"]
+        version = provider["runtime_version"] or "version inconnue"
+        print(f"{provider['provider']} · {availability} · {version}")
+    project = result["project"]
+    if project.get("registered") is False:
+        print(f"Projet : non initialisé · {project['fix']}")
+        return
+    print(
+        f"Projet {project['project_id']} · {project['surfaces']} surfaces · "
+        f"{project['checks']} checks · {'OK' if project['ok'] else 'à corriger'}"
+    )
+    for finding in project["findings"]:
+        print(f"  {finding['code']} · {finding['message']}")
+        print(f"  Action : {finding['fix']}")
 
 
 def _schemas(output: Path) -> dict[str, Any]:
@@ -795,7 +845,53 @@ def run(argv: list[str] | None = None) -> int:
             args.existing_worktree = None
             args.live = True
         if args.command == "doctor":
-            _emit(_doctor(service, args), args.json)
+            _emit_doctor_result(_doctor(service, args), args.json)
+        elif args.command == "update-pipeline":
+            from cohorte.application.discovery import (
+                discover_project,
+                discovery_report,
+                reconcile_profile,
+            )
+            from cohorte.domain.models import ProjectProfile
+
+            project = _project_for_path(database, args.repo)
+            root = Path(project["root_path"])
+            current_profile = ProjectProfile.model_validate_json(json.dumps(project["profile"]))
+            detected, questions = discover_project(root, current_profile.language)
+            proposed = reconcile_profile(current_profile, detected)
+            before = current_profile.model_dump(mode="json")
+            after = proposed.model_dump(mode="json")
+            changed_fields = sorted(
+                key for key in before if key != "revision" and before[key] != after[key]
+            )
+            if args.apply and changed_fields:
+                saved = service.init_project(root, current_profile.language, refresh=True)
+                proposed_document = saved["profile"]
+                reference = saved["profile_ref"]
+            else:
+                proposed_document = after
+                reference = project["profile_ref"]
+            update_result = {
+                "project_id": current_profile.project_id,
+                "changed_fields": changed_fields,
+                "questions": questions,
+                "analysis": discovery_report(proposed, questions, root),
+                "profile": proposed_document,
+                "profile_ref": reference,
+                "applied": bool(args.apply and changed_fields),
+            }
+            if args.json:
+                _emit(update_result, True)
+            else:
+                print(
+                    f"Profil {current_profile.project_id} · "
+                    f"{'réconcilié' if update_result['applied'] else 'prévisualisation'}"
+                )
+                print(f"Champs détectés à mettre à jour : {', '.join(changed_fields) or 'aucun'}")
+                for question in questions:
+                    print(f"À confirmer : {question}")
+                if changed_fields and not args.apply:
+                    print("Relancer avec --apply après validation du profil proposé en JSON.")
         elif args.command == "wrappers":
             from cohorte.application.client_wrappers import apply_wrappers, wrapper_plan
 

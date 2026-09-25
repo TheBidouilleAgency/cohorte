@@ -6,9 +6,10 @@ Forme générale : `cohorte [--json] [--config-dir DIR] [--data-dir DIR] COMMAND
 
 | Commande | Usage |
 | --- | --- |
-| `doctor` | Diagnostiquer l’installation et les capacités disponibles. |
+| `doctor [--repo DIR] [--project-id ID]` | Diagnostiquer l’installation, les fournisseurs et le profil du projet avec des actions correctives. |
 | `init [PATH] [--language fr] [--refresh] [--preview] [--profile-file FILE]` | Analyser puis enregistrer un projet ; `--preview` ne modifie rien, `--profile-file` applique un profil explicitement relu et `--refresh` préserve les choix personnalisés. |
 | `wrappers --runtime claude|codex|cursor|gemini|opencode [--repo DIR] [--apply]` | Prévisualiser puis créer des raccourcis facultatifs du client hôte vers la CLI Cohorte. Répétez `--runtime` pour plusieurs clients. |
+| `update-pipeline [--repo DIR] [--apply]` | Prévisualiser la redétection du projet ; `--apply` réconcilie le profil local en gardant les choix personnalisés. |
 | `profile show [PROJECT_ID]` | Lire le profil local. |
 | `profile edit [PROJECT_ID]` | Éditer le JSON du profil. |
 | `profile apply FILE [--project-id ID]` | Valider et appliquer un profil révisé. |

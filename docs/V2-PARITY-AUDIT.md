@@ -19,7 +19,7 @@ requires requalification with both official providers before a parity release.
 | Retro | Review findings are now journaled; recurring category/surface findings across two features are mined, an agent may suggest a testable rule or identify an existing-rule gap, and ratification updates the active profile | Pre-change review history lacks structured findings; provider-live suggestion quality and more precise pattern grouping remain unqualified |
 | Incoming PR/MR review | Dedicated detached checkout at fetched PR/MR head, exact base/head check, read-only diff review, surface coverage and durable local report | Real GitHub/GitLab qualification and large-PR chunking remain unverified |
 | Design, RBAC and mobile constraints | Enabled project constraints are captured in guided specs, required at freeze/build, and called out in review prompts | Qualify provider-live proposal quality and full design/RBAC/mobile review evidence |
-| Doctor, update, design and delivery | Existing explicit commands; Figma now feeds the alignment plan as well as snapshot capture | Compare each human flow to V2 and qualify live integrations |
+| Doctor, update, design and delivery | Project doctor now reports missing paths/tools/integrations with exact fixes; update-pipeline previews profile reconciliation before apply; Figma feeds alignment planning and snapshot capture | Compare human flows to V2 and qualify live integrations; generated-wrapper reconciliation is still separate |
 
 The full test suite and static checks cover local behavior. They do not establish
 that a live model asks good questions, reads the right files or produces correct
