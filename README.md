@@ -36,7 +36,7 @@ Cohorte aide à **cadrer une demande, conserver les décisions et faire exécute
 Le paquet Python s'appelle **`cohorte-engine`** ; la commande est **`cohorte`**. Il faut Python 3.12 ou plus récent. Pour installer cette préversion après sa publication :
 
 ```bash
-uv tool install 'cohorte-engine==1.0.0a14'
+uv tool install 'cohorte-engine==1.0.0a15'
 cohorte --version
 cohorte doctor
 ```

@@ -7,6 +7,12 @@ with the newest version first. Describe the verified scope and known limitations
 
 _No changes recorded yet._
 
+## 1.0.0a15 — 2026-09-25
+
+- Allow a previously frozen guided spec to be reviewed and approved again after the project profile changes. `cohorte spec IDENTIFIANT --manual` reuses the saved draft and asks for exact approval of the current profile without rerunning the agent; declining leaves the old frozen snapshot unchanged.
+- Point a stale `cohorte start` error to that recovery command and document the flow. Existing frozen artifacts remain integrity-checked before reapproval.
+- Validation: PR #74 passed documentation and Python 3.12/3.13 CI on Ubuntu, macOS and Windows. Local pytest, Ruff lint/format and mypy passed. A new provider-live run from the published package remains to be performed by the user.
+
 ## 1.0.0a14 — 2026-09-25
 
 - On `init --refresh`, update previously generated Python `uv run` checks to load the development extras detected in the repository. Preserve customized check commands and metadata.
