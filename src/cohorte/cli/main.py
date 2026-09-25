@@ -54,6 +54,10 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--data-dir", type=Path, default=user_data_path("cohorte"))
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("doctor")
+    wrappers = sub.add_parser("wrappers", help="preview or install optional host-client shortcuts")
+    wrappers.add_argument("--runtime", action="append", required=True)
+    wrappers.add_argument("--repo", type=Path, default=Path.cwd())
+    wrappers.add_argument("--apply", action="store_true")
     init = sub.add_parser("init")
     init.add_argument("path", type=Path, nargs="?", default=Path.cwd())
     init.add_argument("--language", default="fr")
@@ -792,6 +796,24 @@ def run(argv: list[str] | None = None) -> int:
             args.live = True
         if args.command == "doctor":
             _emit(_doctor(service, args), args.json)
+        elif args.command == "wrappers":
+            from cohorte.application.client_wrappers import apply_wrappers, wrapper_plan
+
+            wrappers_result = (
+                apply_wrappers(args.repo, args.runtime)
+                if args.apply
+                else wrapper_plan(args.repo, args.runtime)
+            )
+            if args.json:
+                _emit({"wrappers": wrappers_result, "applied": args.apply}, True)
+            else:
+                for wrapper_item in wrappers_result:
+                    print(
+                        f"{wrapper_item['runtime']} · {wrapper_item['status']} · "
+                        f"{wrapper_item['path']}"
+                    )
+                if not args.apply:
+                    print("Relancer avec --apply pour créer les fichiers proposés.")
         elif args.command == "init":
             if args.profile_file is not None:
                 if args.preview:

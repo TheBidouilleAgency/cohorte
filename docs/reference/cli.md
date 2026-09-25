@@ -7,7 +7,8 @@ Forme générale : `cohorte [--json] [--config-dir DIR] [--data-dir DIR] COMMAND
 | Commande | Usage |
 | --- | --- |
 | `doctor` | Diagnostiquer l’installation et les capacités disponibles. |
-| `init [PATH] [--language fr] [--refresh] [--preview]` | Analyser puis enregistrer un projet ; `--preview` ne modifie rien et `--refresh` préserve les choix personnalisés. |
+| `init [PATH] [--language fr] [--refresh] [--preview] [--profile-file FILE]` | Analyser puis enregistrer un projet ; `--preview` ne modifie rien, `--profile-file` applique un profil explicitement relu et `--refresh` préserve les choix personnalisés. |
+| `wrappers --runtime claude|codex|cursor|gemini|opencode [--repo DIR] [--apply]` | Prévisualiser puis créer des raccourcis facultatifs du client hôte vers la CLI Cohorte. Répétez `--runtime` pour plusieurs clients. |
 | `profile show [PROJECT_ID]` | Lire le profil local. |
 | `profile edit [PROJECT_ID]` | Éditer le JSON du profil. |
 | `profile apply FILE [--project-id ID]` | Valider et appliquer un profil révisé. |
@@ -16,6 +17,8 @@ Forme générale : `cohorte [--json] [--config-dir DIR] [--data-dir DIR] COMMAND
 | `schemas OUTPUT` | Exporter les schémas JSON. |
 | `metrics [--project-id ID] [--days N]` | Lire les métriques enregistrées. |
 | `export RUN_ID [--output FILE] [--max-bytes N]` | Exporter les données d’un run avec une limite de taille. |
+
+Les wrappers sont de simples instructions : Cohorte garde le contrôle des étapes, checks et décisions et utilise Claude Code ou Codex comme fournisseurs natifs. Les chemins de commandes des clients suivent leurs formats documentés par [Cursor](https://docs.cursor.com/en/agent/chat/commands), [Gemini CLI](https://geminicli.com/docs/cli/custom-commands/) et [OpenCode](https://opencode.ai/v2/docs/commands). Leur génération et leur syntaxe sont testées localement ; leur exécution dans chaque interface reste à qualifier.
 
 ## Comptes et service local
 

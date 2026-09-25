@@ -9,6 +9,7 @@ requires requalification with both official providers before a parity release.
 | Workflow | Implemented in this branch | Still to qualify or build |
 | --- | --- | --- |
 | Init | Read-only preview, richer workspace/contract/check/role detection, conventions/design/retrieval/isolation signals, questions for ambiguous ownership, guided retrieval/design selection, structured profile-file acceptance and refresh preserving custom choices | Real-project validation of boundaries; convention/import and container setup still require explicit profile editing |
+| Host-client wrappers | Optional Claude/Codex/Cursor/Gemini/OpenCode shortcuts previewed and created without overwriting existing files; all direct execution to the Cohorte CLI | Validate actual invocation from each host client; these are not native Cohorte providers |
 | Intake | Read-only agent triage proposal grounded in source and repository, with human route decision and manual fallback | Provider-live proposal quality and revision UX |
 | Brainstorm | Project-configured panel, repository overview and cited search every round, focused question proposals with business/code options, acceptance shortcuts | One two-round live Codex scenario passed (see `evidence/g5-codex-v2-parity-brainstorm-darwin-arm64.json`); Claude and other real-project decisions remain unqualified |
 | Spec | Existing agent draft plus per-question acceptance of proposed answers and project overview | Provider-live quality, guided editing of existing scenarios/criteria |
