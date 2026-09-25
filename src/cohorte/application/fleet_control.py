@@ -133,7 +133,11 @@ def create_supervised_fleet(
 
 
 def supervised_fleet_status(
-    manifest_path: Path, *, fetch: bool = True, runs: list[RunState] | None = None
+    manifest_path: Path,
+    *,
+    fetch: bool = True,
+    runs: list[RunState] | None = None,
+    run_evidence: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     manifest = _load_manifest(manifest_path)
     remote = manifest["remote"]
@@ -207,6 +211,7 @@ def supervised_fleet_status(
                         "id": current_run.id,
                         "stage": current_run.stage.value,
                         "status": current_run.status.value,
+                        "evidence": (run_evidence or {}).get(current_run.id, {}),
                     }
                     if current_run is not None
                     else None

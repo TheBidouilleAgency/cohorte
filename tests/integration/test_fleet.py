@@ -4,6 +4,7 @@ import json
 import subprocess
 import threading
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 from cohorte.application.fleet import FleetRunner, plan_fleet
@@ -33,11 +34,15 @@ from cohorte.domain.models import (
     ProjectProfile,
     Provider,
     RequirementPlan,
+    RunState,
+    RunStatus,
     Scenario,
     SpecStatus,
+    Stage,
     Surface,
     VcsConfig,
 )
+from cohorte.persistence.sqlite import Database
 
 
 def git(root: Path, *args: str) -> str:
@@ -234,6 +239,41 @@ def test_supervised_fleet_provisions_status_and_syncs_after_merge(tmp_path: Path
     assert planned["prepared"] is True
     assert all(Path(item["worktree"]).is_dir() for item in planned["features"].values())
     assert all(row["behind"] == 0 for row in supervised_fleet_status(manifest)["rows"])
+
+    now = datetime.now(UTC)
+    run = RunState(
+        id="run-api",
+        project_id="test-project",
+        feature_id="api-feature",
+        stage=Stage.REVIEW,
+        status=RunStatus.RUNNING,
+        state_version=1,
+        base_commit=git(root, "rev-parse", "HEAD"),
+        candidate_tree_hash="current-tree",
+        created_at=now,
+        updated_at=now,
+    )
+    database = Database(tmp_path / "fleet-evidence.sqlite")
+    try:
+        database.append_event(
+            "phase.checks.completed",
+            {"candidate_tree_hash": "current-tree", "passed": True},
+            run_id=run.id,
+        )
+        database.append_event(
+            "phase.review.completed",
+            {"candidate_tree_hash": "old-tree", "ready": True},
+            run_id=run.id,
+        )
+        evidence = cli._fleet_run_evidence(database, [run])
+        status = supervised_fleet_status(manifest, fetch=False, runs=[run], run_evidence=evidence)
+        assert status["rows"][0]["run"]["evidence"] == {
+            "checks": "passed",
+            "review": "stale",
+            "agent_liveness": "unknown",
+        }
+    finally:
+        database.close()
 
     api = Path(planned["features"]["api-feature"]["worktree"])
     (api / "api.py").write_text("ready\n")

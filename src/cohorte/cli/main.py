@@ -38,6 +38,7 @@ from cohorte.application.multisurface import MultiSurfaceRunner
 from cohorte.application.service import CohorteService
 from cohorte.application.vertical import VerticalRunner
 from cohorte.domain.errors import CohorteError, ErrorCode
+from cohorte.domain.models import RunState, RunStatus
 from cohorte.domain.redaction import redact
 from cohorte.execution.checks import CheckRunner
 from cohorte.persistence.sqlite import Database
@@ -817,11 +818,48 @@ def _emit_supervised_fleet(
             phase = f" · {run['stage']}/{run['status']}" if run else ""
             drift = f" · ↑{row['ahead']} ↓{row['behind']}" if "ahead" in row else ""
             print(f"{row['feature_id']} · {row['state']}{phase}{drift} · {row['next']}")
+            if run:
+                evidence = run.get("evidence", {})
+                print(
+                    f"  Preuves : checks {evidence.get('checks', 'unknown')} · "
+                    f"revue {evidence.get('review', 'unknown')} · "
+                    f"agents {evidence.get('agent_liveness', 'unknown')}"
+                )
     else:
         print(f"Fleet {result['fleet_id']} · merge vérifié : {result['merged_feature']}")
         for item in result["outcomes"]:
             action = f" · {item['action']}" if item.get("action") else ""
             print(f"{item['feature_id']} · {item['status']}{action}")
+
+
+def _fleet_run_evidence(database: Database, runs: list[RunState]) -> dict[str, dict[str, Any]]:
+    evidence: dict[str, dict[str, Any]] = {}
+    for state in runs:
+        summary: dict[str, Any] = {
+            "checks": "unknown",
+            "review": "unknown",
+            "agent_liveness": "unknown" if state.status == RunStatus.RUNNING else "not_applicable",
+        }
+        for label, event_type in (
+            ("checks", "phase.checks.completed"),
+            ("review", "phase.review.completed"),
+        ):
+            try:
+                event = database.latest_event(state.id, event_type)
+            except KeyError:
+                continue
+            data = event["data"]
+            if (
+                not state.candidate_tree_hash
+                or data.get("candidate_tree_hash") != state.candidate_tree_hash
+            ):
+                summary[label] = "stale"
+            elif label == "checks":
+                summary[label] = "passed" if data.get("passed") is True else "failed"
+            else:
+                summary[label] = "ready" if data.get("ready") is True else "blocked"
+        evidence[state.id] = summary
+    return evidence
 
 
 def _emit_project_status(database: Database, project: dict[str, Any]) -> None:
@@ -2940,10 +2978,12 @@ def run(argv: list[str] | None = None) -> int:
             else:
                 manifest = args.data_dir / "fleets" / args.project_id / f"{args.fleet_id}.json"
                 if args.command == "fleet-status":
+                    project_runs = database.list_runs(args.project_id)
                     fleet_output = supervised_fleet_status(
                         manifest,
                         fetch=not args.no_fetch,
-                        runs=database.list_runs(args.project_id),
+                        runs=project_runs,
+                        run_evidence=_fleet_run_evidence(database, project_runs),
                     )
                 else:
                     from cohorte.domain.models import RunStatus
