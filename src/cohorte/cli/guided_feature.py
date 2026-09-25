@@ -201,6 +201,74 @@ def _proposal_criteria(
     ]
 
 
+def draft_from_proposal(
+    brief: BrainstormBrief,
+    brief_ref: ArtifactRef,
+    profile: ProjectProfile,
+    proposal: SpecProposal,
+    answers: dict[int, str],
+    contract_refs: list[ArtifactRef],
+) -> FeatureSpec:
+    questions = brief.synthesis.blocking_questions
+    if any(index < 1 or index > len(questions) for index in answers):
+        raise ValueError("answer index does not match a blocking question")
+    selected = list(dict.fromkeys(item.surface_id for item in proposal.acceptance))
+    if not selected:
+        raise ValueError("proposal has no surface-scoped acceptance criteria")
+    criteria = _proposal_criteria(proposal, profile, selected)
+    if criteria is None:
+        raise ValueError("proposal references a surface or check outside the active profile")
+    surfaces = {surface.id: surface for surface in profile.surfaces}
+    check_ids = list(dict.fromkeys(check for sid in selected for check in surfaces[sid].check_ids))
+    if len(selected) > 1 and not contract_refs:
+        raise ValueError("multi-surface draft requires --contract in the registered repository")
+    decisions = [
+        f"{question} {answers[index]}"
+        for index, question in enumerate(questions, 1)
+        if answers.get(index)
+    ]
+    open_questions = [
+        question for index, question in enumerate(questions, 1) if not answers.get(index)
+    ]
+    required = active_constraints(profile, selected)
+    design_refs: list[str] = []
+    if "design" in required:
+        design = profile.integrations.design
+        design_refs = [f"{design.provider}:{design.source}", *proposal.design_constraints]
+        if not proposal.design_constraints:
+            open_questions.append("Which concrete design constraint applies to this change?")
+    rbac_requirements = proposal.rbac_requirements if "rbac" in required else []
+    if "rbac" in required and not rbac_requirements:
+        open_questions.append("Which roles and permissions must this change preserve?")
+    mobile_requirements = proposal.mobile_requirements if "mobile" in required else []
+    if "mobile" in required and not mobile_requirements:
+        open_questions.append("What mobile behavior and viewport must be verified?")
+    return FeatureSpec(
+        feature_id=brief.feature_id,
+        revision=1,
+        status=SpecStatus.DRAFT,
+        title=proposal.title,
+        brief_ref=brief_ref,
+        problem="\n".join([brief.synthesis.problem, *decisions]),
+        in_scope=proposal.in_scope,
+        out_of_scope=proposal.out_of_scope,
+        surfaces=selected,
+        scenarios=proposal.scenarios,
+        acceptance=criteria,
+        dod=DefinitionOfDone(required_checks=check_ids),
+        test_strategy=proposal.test_strategy,
+        error_cases=proposal.error_cases,
+        contract_refs=contract_refs,
+        dependencies=[],
+        migrations=RequirementPlan(required=proposal.migrations_required, plan=proposal.migrations),
+        rollback=RequirementPlan(required=True, plan=proposal.rollback),
+        design_refs=design_refs,
+        rbac_requirements=rbac_requirements,
+        mobile_requirements=mobile_requirements,
+        open_questions=open_questions,
+    )
+
+
 def _spec_project_constraints(
     profile: ProjectProfile, surface_ids: list[str], proposal: SpecProposal | None
 ) -> tuple[list[str], list[str], list[str]]:

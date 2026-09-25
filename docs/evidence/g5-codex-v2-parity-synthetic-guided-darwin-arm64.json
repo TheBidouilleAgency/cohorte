@@ -3,7 +3,7 @@
   "date": "2026-09-25",
   "platform": "darwin-arm64",
   "provider": "codex-subscription",
-  "commit": "9f2b815",
+  "source": "feat/v2-behavior-parity worktree; structured-draft changes pending commit at qualification",
   "repository": "synthetic temporary greeting project",
   "result": {
     "brainstorm_round_1": {
@@ -29,11 +29,28 @@
       "criteria_use_profile_surface_and_check_ids": true,
       "preserves_user_choice": true,
       "migration_and_rollback_present": true
+    },
+    "structured_spec_command": {
+      "status": "passed",
+      "command": "cohorte --json spec-propose missing-config-error",
+      "brief_revision": 2,
+      "durable_proposal_revision": 1,
+      "approved": false,
+      "criteria_use_profile_surface_and_check_ids": true
+    },
+    "structured_draft_and_freeze_request": {
+      "status": "passed",
+      "draft_command": "cohorte --json spec-draft missing-config-error --accept-proposal --output draft.json",
+      "linked_latest_brief": true,
+      "draft_open_questions": 0,
+      "draft_approved_for_freeze": false,
+      "freeze_request_created": true,
+      "freeze_approved_or_applied": false
     }
   },
   "limits": [
     "One small synthetic Python project and Codex only; no Claude qualification.",
-    "The spec proposal was invoked through the guided-stage function, not the terminal interview or a structured spec command.",
+    "The terminal spec interview and final approval/freeze were not exercised.",
     "No spec was approved or frozen, and no build, review, or ship run was executed.",
     "Cited code claims were manually compared with the synthetic source, but model quality across other projects is unproven."
   ]

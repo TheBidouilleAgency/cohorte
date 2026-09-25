@@ -202,6 +202,49 @@ def test_structured_spec_proposal_preserves_brief_and_requires_approval(
     payload = json.loads(capsys.readouterr().out)["data"]
     assert payload["approved"] is False
     assert payload["proposal"]["question_suggestions"][0]["suggestion"] == "CSV"
+    draft_path = tmp_path / "draft.json"
+    with pytest.raises(SystemExit) as missing_approval:
+        cli.run(
+            [
+                "--json",
+                "--data-dir",
+                str(data_dir),
+                "spec-draft",
+                "safe-export",
+                "--repo",
+                str(repository),
+                "--output",
+                str(draft_path),
+            ]
+        )
+    assert missing_approval.value.code == 3
+    assert "--accept-proposal" in capsys.readouterr().out
+    assert not draft_path.exists()
+    assert (
+        cli.run(
+            [
+                "--json",
+                "--data-dir",
+                str(data_dir),
+                "spec-draft",
+                "safe-export",
+                "--repo",
+                str(repository),
+                "--answer",
+                "1=CSV",
+                "--accept-proposal",
+                "--output",
+                str(draft_path),
+            ]
+        )
+        == 0
+    )
+    draft_payload = json.loads(capsys.readouterr().out)["data"]
+    assert draft_payload["approved_for_freeze"] is False
+    draft = FeatureSpec.model_validate_json(draft_path.read_text())
+    assert draft.open_questions == []
+    assert "Which format? CSV" in draft.problem
+    assert draft.acceptance[0].check_ids == ["test"]
     database = Database(data_dir / "cohorte.sqlite3")
     try:
         assert (
@@ -210,8 +253,55 @@ def test_structured_spec_proposal_preserves_brief_and_requires_approval(
         )
         assert database.latest_artifact("proposal:safe-export")["revision"] == 1
         assert database.get_feature("safe-export")["status"] == "draft"
+        previous = BrainstormBrief.model_validate_json(
+            database.latest_artifact("brief:safe-export")["content"]
+        )
+        revised = previous.model_copy(update={"user_answers": [*previous.user_answers, "Use JSON"]})
+        database.put_artifact(
+            "brainstorm-brief", canonical_model_bytes(revised), artifact_id="brief:safe-export"
+        )
     finally:
         database.close()
+    with pytest.raises(SystemExit) as stale_proposal:
+        cli.run(
+            [
+                "--json",
+                "--data-dir",
+                str(data_dir),
+                "spec-draft",
+                "safe-export",
+                "--repo",
+                str(repository),
+                "--accept-proposal",
+                "--output",
+                str(tmp_path / "stale.json"),
+            ]
+        )
+    assert stale_proposal.value.code == 3
+    assert "brief changed after proposal" in capsys.readouterr().out
+
+
+def test_structured_draft_explains_missing_proposal(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repository, data_dir = _setup(tmp_path)
+    with pytest.raises(SystemExit) as missing:
+        cli.run(
+            [
+                "--json",
+                "--data-dir",
+                str(data_dir),
+                "spec-draft",
+                "safe-export",
+                "--repo",
+                str(repository),
+                "--accept-proposal",
+                "--output",
+                str(tmp_path / "draft.json"),
+            ]
+        )
+    assert missing.value.code == 3
+    assert "run cohorte spec-propose first" in capsys.readouterr().out
 
 
 def test_guided_spec_requires_answer_before_freeze_and_preserves_draft(

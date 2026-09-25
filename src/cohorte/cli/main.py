@@ -190,6 +190,15 @@ def _parser() -> argparse.ArgumentParser:
     )
     spec_propose.add_argument("feature_id")
     spec_propose.add_argument("--repo", type=Path, default=Path.cwd())
+    spec_draft = sub.add_parser(
+        "spec-draft", help="accept a stored proposal as an editable structured draft"
+    )
+    spec_draft.add_argument("feature_id")
+    spec_draft.add_argument("--repo", type=Path, default=Path.cwd())
+    spec_draft.add_argument("--answer", action="append", default=[], metavar="N=ANSWER")
+    spec_draft.add_argument("--contract", type=Path)
+    spec_draft.add_argument("--accept-proposal", action="store_true")
+    spec_draft.add_argument("--output", type=Path, required=True)
     guided_start = sub.add_parser("start", help="run a guided, frozen feature")
     guided_start.add_argument("feature_id", nargs="?")
     freeze_request = sub.add_parser("spec-freeze-request")
@@ -1634,10 +1643,18 @@ def run(argv: list[str] | None = None) -> int:
                 canonical_model_bytes(spec_suggestion),
                 artifact_id=f"proposal:{args.feature_id}",
             )
+            brief_ref = {key: stored[key] for key in ("id", "revision", "sha256")}
+            database.put_artifact(
+                "feature-spec-proposal-context",
+                json.dumps(
+                    {"proposal_ref": proposal_ref, "brief_ref": brief_ref}, sort_keys=True
+                ).encode(),
+                artifact_id=f"proposal-context:{args.feature_id}",
+            )
             payload = {
                 "proposal": spec_suggestion.model_dump(mode="json"),
                 "proposal_ref": proposal_ref,
-                "brief_ref": {key: stored[key] for key in ("id", "revision", "sha256")},
+                "brief_ref": brief_ref,
                 "approved": False,
             }
             if args.json:
@@ -1652,6 +1669,89 @@ def run(argv: list[str] | None = None) -> int:
                     f"{len(spec_suggestion.acceptance)} critères · "
                     "à valider avec cohorte spec"
                 )
+        elif args.command == "spec-draft":
+            from cohorte.application.preparation import (
+                BrainstormBrief,
+                SpecProposal,
+                canonical_model_bytes,
+            )
+            from cohorte.cli.guided_feature import _save, draft_from_proposal
+            from cohorte.domain.models import ArtifactRef, ProjectProfile
+
+            if not args.accept_proposal:
+                raise ValueError(
+                    "spec-draft requires --accept-proposal after reviewing the proposal"
+                )
+            if args.output.exists():
+                raise ValueError("draft output already exists; choose a new path")
+            project = _project_for_path(database, args.repo)
+            feature = database.get_feature(args.feature_id)
+            if feature["project_id"] != project["id"]:
+                raise ValueError("feature belongs to another project")
+            if feature["status"] == "frozen":
+                raise ValueError("feature is already frozen; use cohorte start")
+            try:
+                brief_stored = database.latest_artifact(f"brief:{args.feature_id}")
+                link_stored = database.latest_artifact(f"proposal-context:{args.feature_id}")
+            except KeyError as error:
+                raise ValueError(
+                    "no linked proposal for this feature; run cohorte spec-propose first"
+                ) from error
+            link = json.loads(link_stored["content"])
+            current_brief_ref = {key: brief_stored[key] for key in ("id", "revision", "sha256")}
+            if link["brief_ref"] != current_brief_ref:
+                raise ValueError("brief changed after proposal; run cohorte spec-propose again")
+            stored_proposal_ref = ArtifactRef.model_validate(link["proposal_ref"])
+            proposal_stored = database.get_artifact(
+                stored_proposal_ref.id, stored_proposal_ref.revision, limit=2 * 1024 * 1024
+            )
+            if proposal_stored["sha256"] != stored_proposal_ref.sha256:
+                raise ValueError("proposal changed after review")
+            brief_document = BrainstormBrief.model_validate_json(brief_stored["content"])
+            spec_suggestion = SpecProposal.model_validate_json(proposal_stored["content"])
+            indexed_answers: dict[int, str] = {}
+            for raw_answer in args.answer:
+                number, separator, value = raw_answer.partition("=")
+                if not separator or not number.isdigit() or not value.strip():
+                    raise ValueError("--answer must be N=non-empty answer")
+                index = int(number)
+                if index in indexed_answers:
+                    raise ValueError("duplicate answer index")
+                indexed_answers[index] = value.strip()
+            repository = Path(project["root_path"]).resolve(strict=True)
+            contract_refs: list[ArtifactRef] = []
+            if args.contract is not None:
+                contract_path = (repository / args.contract).resolve(strict=True)
+                if not contract_path.is_relative_to(repository) or not contract_path.is_file():
+                    raise ValueError("contract must be a file in the registered repository")
+                contract_refs.append(
+                    ArtifactRef.model_validate(
+                        database.put_artifact("contract", contract_path.read_bytes())
+                    )
+                )
+            profile = ProjectProfile.model_validate_json(json.dumps(project["profile"]))
+            draft_document = draft_from_proposal(
+                brief_document,
+                ArtifactRef.model_validate(current_brief_ref),
+                profile,
+                spec_suggestion,
+                indexed_answers,
+                contract_refs,
+            )
+            content = canonical_model_bytes(draft_document)
+            _save(args.output, content)
+            draft_ref = database.put_artifact(
+                "feature-spec-draft", content, artifact_id=f"draft:{args.feature_id}"
+            )
+            _emit(
+                {
+                    "draft": draft_document.model_dump(mode="json"),
+                    "draft_ref": draft_ref,
+                    "output": str(args.output),
+                    "approved_for_freeze": False,
+                },
+                args.json,
+            )
         elif args.command == "spec-freeze-request":
             from cohorte.application.preparation import SpecFreezer
             from cohorte.domain.models import FeatureSpec, ProjectProfile
