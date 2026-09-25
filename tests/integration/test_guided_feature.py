@@ -152,6 +152,68 @@ def _answers(*, blocking_answer: str | None = None, approve: str = "oui") -> lis
     ]
 
 
+def test_structured_spec_proposal_preserves_brief_and_requires_approval(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repository, data_dir = _setup(tmp_path, blocking=True)
+    proposal = SpecProposal(
+        title="Export safely",
+        in_scope=["Write one complete local export"],
+        out_of_scope=["Cloud upload"],
+        question_suggestions=[
+            SpecQuestionSuggestion(
+                question="Which format?", suggestion="CSV", caveat="Confirm consumers"
+            )
+        ],
+        scenarios=[
+            Scenario(
+                id="complete-export",
+                given="an operator has data",
+                when="the export completes",
+                then="one complete file exists",
+            )
+        ],
+        acceptance=[
+            SpecCriterionSuggestion(
+                statement="The export is atomic", surface_id="api", check_id="test"
+            )
+        ],
+        test_strategy=["Run test"],
+        error_cases=["Disk full"],
+        migrations_required=False,
+        migrations="No migration",
+        rollback="Revert the change",
+    )
+    monkeypatch.setattr(guided_feature, "_propose_spec", lambda *_args: proposal)
+    assert (
+        cli.run(
+            [
+                "--json",
+                "--data-dir",
+                str(data_dir),
+                "spec-propose",
+                "safe-export",
+                "--repo",
+                str(repository),
+            ]
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)["data"]
+    assert payload["approved"] is False
+    assert payload["proposal"]["question_suggestions"][0]["suggestion"] == "CSV"
+    database = Database(data_dir / "cohorte.sqlite3")
+    try:
+        assert (
+            payload["brief_ref"]["sha256"]
+            == database.latest_artifact("brief:safe-export")["sha256"]
+        )
+        assert database.latest_artifact("proposal:safe-export")["revision"] == 1
+        assert database.get_feature("safe-export")["status"] == "draft"
+    finally:
+        database.close()
+
+
 def test_guided_spec_requires_answer_before_freeze_and_preserves_draft(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

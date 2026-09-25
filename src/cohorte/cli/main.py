@@ -185,6 +185,11 @@ def _parser() -> argparse.ArgumentParser:
     guided_spec.add_argument(
         "--manual", action="store_true", help="skip the agent's draft proposal"
     )
+    spec_propose = sub.add_parser(
+        "spec-propose", help="produce a read-only spec proposal from a stored brief"
+    )
+    spec_propose.add_argument("feature_id")
+    spec_propose.add_argument("--repo", type=Path, default=Path.cwd())
     guided_start = sub.add_parser("start", help="run a guided, frozen feature")
     guided_start.add_argument("feature_id", nargs="?")
     freeze_request = sub.add_parser("spec-freeze-request")
@@ -1604,6 +1609,49 @@ def run(argv: list[str] | None = None) -> int:
             guided_spec(
                 database, args.data_dir, project, args.feature_id, args.refresh, not args.manual
             )
+        elif args.command == "spec-propose":
+            from cohorte.application.preparation import BrainstormBrief, canonical_model_bytes
+            from cohorte.cli.guided_feature import _propose_spec
+            from cohorte.domain.models import ProjectProfile
+
+            project = _project_for_path(database, args.repo)
+            feature = database.get_feature(args.feature_id)
+            if feature["project_id"] != project["id"]:
+                raise ValueError("feature belongs to another project")
+            if feature["status"] == "frozen":
+                raise ValueError("feature is already frozen; use cohorte start")
+            try:
+                stored = database.latest_artifact(f"brief:{args.feature_id}")
+            except KeyError as error:
+                raise ValueError(f"no brainstorm brief for feature: {args.feature_id}") from error
+            brief = BrainstormBrief.model_validate_json(stored["content"])
+            if brief.feature_id != args.feature_id:
+                raise ValueError("stored brief belongs to another feature")
+            profile = ProjectProfile.model_validate_json(json.dumps(project["profile"]))
+            spec_suggestion = _propose_spec(brief, profile, Path(project["root_path"]))
+            proposal_ref = database.put_artifact(
+                "feature-spec-proposal",
+                canonical_model_bytes(spec_suggestion),
+                artifact_id=f"proposal:{args.feature_id}",
+            )
+            payload = {
+                "proposal": spec_suggestion.model_dump(mode="json"),
+                "proposal_ref": proposal_ref,
+                "brief_ref": {key: stored[key] for key in ("id", "revision", "sha256")},
+                "approved": False,
+            }
+            if args.json:
+                _emit(payload, True)
+            else:
+                print(f"Proposition de spec · {spec_suggestion.title}")
+                for spec_question in spec_suggestion.question_suggestions:
+                    print(f"  Question : {spec_question.question}")
+                    print(f"  Piste : {spec_question.suggestion}")
+                print(
+                    f"{len(spec_suggestion.scenarios)} scénarios · "
+                    f"{len(spec_suggestion.acceptance)} critères · "
+                    "à valider avec cohorte spec"
+                )
         elif args.command == "spec-freeze-request":
             from cohorte.application.preparation import SpecFreezer
             from cohorte.domain.models import FeatureSpec, ProjectProfile

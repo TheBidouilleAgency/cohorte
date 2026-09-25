@@ -45,10 +45,10 @@ Les wrappers sont de simples instructions : Cohorte garde le contrôle des étap
 | `brainstorm [PROJECT_ID] [--feature-id ID] [--idea TEXTE] [--answer TEXTE] [--context TEXTE] [--provider codex|claude] [--output FILE] [--live]` | Exécuter le panel ou recueillir les réponses guidées ; `--answer` et `--perspective` sont répétables. Si le panel pose des questions bloquantes, le terminal propose d’y répondre et de relancer un tour. |
 | `brainstorm --continue FEATURE_ID [--answer TEXTE] [--live]` | Reprendre le dernier brief du projet courant avec de nouvelles réponses. Sans `--answer`, le terminal pose les questions encore ouvertes. En JSON, fournir au moins un `--answer` et `--live`. |
 | `spec [FEATURE_ID] [--manual] [--refresh]` | Préparer une spec guidée. Par défaut, l'agent du profil propose un brouillon en lecture seule ; `--manual` conserve la saisie champ par champ. `--refresh` remplace un brouillon enregistré. |
+| `spec-propose FEATURE_ID [--repo DIR]` | Obtenir la même proposition d'agent en lecture seule, avec références de brief et de proposition ; `--json` la rend exploitable par un client structuré sans l'approuver. |
 | `brief show FEATURE_ID` | Relire le dernier brief enregistré pour une fonctionnalité du projet courant, sans relancer le panel. `cohorte --json brief show FEATURE_ID` renvoie le brief complet. |
 | `spec-freeze-request DRAFT --profile PROFILE [--repo DIR]` | Demander l’approbation d’une spec précise. |
 | `spec-freeze DRAFT --profile PROFILE --decision-id ID --output FILE [--repo DIR]` | Produire la spec gelée après décision correspondante. |
-| `spec [FEATURE_ID] [--refresh]` | Préparer et geler une spec depuis un brief enregistré, dans un terminal. Le parcours accepte plusieurs surfaces, scénarios et critères ; il reprend les questions ouvertes. `--refresh` remplace le brouillon local. |
 
 `brainstorm` accepte aussi `--prior-decision` répétable. Chaque tour conserve son propre brief et une référence vers le tour précédent. `brief show` lit le dernier tour. Si un nouveau brief arrive après le brouillon de spec, `spec` propose de l'y rattacher sans effacer les scénarios ni critères existants et pose les nouvelles questions bloquantes. `--refresh` reconstruit le brouillon depuis le dernier brief. Une spec gelée ne se réouvre pas par un nouveau brainstorm.
 
