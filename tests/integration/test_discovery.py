@@ -60,6 +60,29 @@ def test_init_surfaces_convention_design_retrieval_and_isolation_signals(tmp_pat
     assert profile.execution.mode == "local"
 
 
+def test_init_proposes_bounded_conventions_and_imports_only_selected_rules(
+    tmp_path: Path, monkeypatch
+) -> None:
+    (tmp_path / "package.json").write_text('{"scripts":{"test":"node --test"}}')
+    (tmp_path / "src").mkdir()
+    (tmp_path / "AGENTS.md").write_text(
+        "# Rules\n- Run the tests before changing the API.\n"
+        "- Preserve the shared contracts when editing routes.\n"
+    )
+    profile, questions = discover_project(tmp_path)
+    analysis = discovery_report(profile, questions, tmp_path)
+    assert [item["rule"] for item in analysis["convention_candidates"]] == [
+        "Run the tests before changing the API.",
+        "Preserve the shared contracts when editing routes.",
+    ]
+    assert profile.conventions == []
+    monkeypatch.setattr(cli, "_prompt", lambda _label, **_kwargs: "2")
+    chosen = cli._configure_init_candidate(profile, analysis, tmp_path)
+    assert chosen.conventions == [
+        "Preserve the shared contracts when editing routes. (AGENTS.md:3)"
+    ]
+
+
 def test_discovers_simple_typescript_project(tmp_path: Path) -> None:
     (tmp_path / "package.json").write_text('{"scripts":{"test":"node --test"}}\n')
     (tmp_path / "src").mkdir()

@@ -21,6 +21,7 @@ from cohorte.domain.models import (
     VcsConfig,
     slugify,
 )
+from cohorte.domain.redaction import redact_text
 
 
 def _git(root: Path, *args: str) -> str | None:
@@ -294,6 +295,27 @@ def _discovery_signals(root: Path) -> dict[str, list[str]]:
         "retrieval": sorted(set(retrieval)),
         "isolation": isolation,
     }
+
+
+def _convention_candidates(root: Path, sources: list[str]) -> list[dict[str, Any]]:
+    """Offer bounded repository rules for explicit acceptance, never import them silently."""
+    candidates: list[dict[str, Any]] = []
+    for relative in sources:
+        source = root / relative
+        if source.is_symlink() or not source.is_file() or source.stat().st_size > 128_000:
+            continue
+        for number, raw in enumerate(
+            source.read_text(encoding="utf-8", errors="replace").splitlines(), 1
+        ):
+            line = raw.strip()
+            if not line.startswith(("- ", "* ")):
+                continue
+            rule = redact_text(line[2:].strip())
+            if 15 <= len(rule) <= 300:
+                candidates.append({"source": relative, "line": number, "rule": rule})
+            if len(candidates) >= 20:
+                return candidates
+    return candidates
 
 
 def discover_project(root: Path, language: str = "fr") -> tuple[ProjectProfile, list[str]]:
@@ -621,6 +643,7 @@ def profile_provenance(root: Path) -> dict[str, Any]:
 def discovery_report(profile: ProjectProfile, questions: list[str], root: Path) -> dict[str, Any]:
     """Explain what was detected and what still needs a human decision."""
     checks = {check.id: check for check in profile.checks}
+    signals = _discovery_signals(root.resolve(strict=True))
     return {
         "description": profile.description,
         "surfaces": [
@@ -643,7 +666,10 @@ def discovery_report(profile: ProjectProfile, questions: list[str], root: Path) 
         "brainstorm_panel": profile.brainstorm_panel,
         "vcs": profile.vcs.model_dump(mode="json"),
         "questions": questions,
-        "signals": _discovery_signals(root.resolve(strict=True)),
+        "signals": signals,
+        "convention_candidates": _convention_candidates(
+            root.resolve(strict=True), signals["conventions"]
+        ),
     }
 
 

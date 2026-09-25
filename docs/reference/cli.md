@@ -7,7 +7,7 @@ Forme générale : `cohorte [--json] [--config-dir DIR] [--data-dir DIR] COMMAND
 | Commande | Usage |
 | --- | --- |
 | `doctor [--repo DIR] [--project-id ID]` | Diagnostiquer l’installation, les fournisseurs et le profil du projet avec des actions correctives. |
-| `init [PATH] [--language fr] [--refresh] [--preview] [--profile-file FILE]` | Analyser puis enregistrer un projet ; `--preview` ne modifie rien, `--profile-file` applique un profil explicitement relu et `--refresh` préserve les choix personnalisés. |
+| `init [PATH] [--language fr] [--refresh] [--preview] [--profile-file FILE]` | Analyser puis enregistrer un projet ; `--preview` ne modifie rien, `--profile-file` applique un profil explicitement relu et `--refresh` préserve les choix personnalisés. Les règles candidates des fichiers de conventions sont proposées en lecture seule et ajoutées uniquement si vous les sélectionnez. |
 | `wrappers --runtime claude|codex|cursor|gemini|opencode [--repo DIR] [--apply]` | Prévisualiser puis créer des raccourcis facultatifs du client hôte vers la CLI Cohorte. Répétez `--runtime` pour plusieurs clients. |
 | `update-pipeline [--repo DIR] [--apply]` | Prévisualiser la redétection du projet et les raccourcis installés ; `--apply` réconcilie le profil et actualise les raccourcis générés restés intacts. Un raccourci personnalisé est signalé, sans être écrasé. |
 | `profile show [PROJECT_ID]` | Lire le profil local. |

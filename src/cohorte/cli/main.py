@@ -718,6 +718,27 @@ def _configure_init_candidate(profile: Any, analysis: dict[str, Any], root: Path
 
     document = profile.model_dump(mode="json")
     signals = analysis.get("signals", {})
+    convention_candidates = analysis.get("convention_candidates", [])
+    if convention_candidates:
+        print("Règles candidates du dépôt (aucune importation automatique) :")
+        for index, item in enumerate(convention_candidates, 1):
+            print(f"  {index}. {item['source']}:{item['line']} · {item['rule']}")
+        chosen = _prompt(
+            "Numéros des règles à ajouter, séparés par des virgules (Entrée = aucune)",
+            required=False,
+        ).strip()
+        if chosen:
+            numbers = [part.strip() for part in chosen.split(",")]
+            if any(
+                not part.isdigit() or not 1 <= int(part) <= len(convention_candidates)
+                for part in numbers
+            ):
+                raise ValueError("select valid convention candidate numbers")
+            for number in dict.fromkeys(int(part) for part in numbers):
+                item = convention_candidates[number - 1]
+                rule = f"{item['rule']} ({item['source']}:{item['line']})"
+                if rule not in document["conventions"]:
+                    document["conventions"].append(rule)
     retrieval_sources = signals.get("retrieval", [])
     if retrieval_sources:
         available = sorted(
