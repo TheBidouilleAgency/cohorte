@@ -125,6 +125,7 @@ def _parser() -> argparse.ArgumentParser:
     fleet_plan.add_argument("--repo", type=Path, default=Path.cwd())
     fleet_plan.add_argument("--worktrees", type=Path, required=True)
     fleet_plan.add_argument("--fleet-id", required=True)
+    fleet_plan.add_argument("--apply", action="store_true", help="provision the reviewed plan")
     fleet_status = sub.add_parser("fleet-status", help="inspect a supervised fleet")
     fleet_status.add_argument("fleet_id")
     fleet_status.add_argument("--project-id", required=True)
@@ -688,7 +689,8 @@ def _emit_supervised_fleet(
         return
     if command == "fleet-plan":
         print(
-            f"Fleet {result['fleet_id']} · {len(result['order'])} features · base {result['base_commit'][:12]}"
+            f"{'Fleet préparée' if result['prepared'] else 'Proposition Fleet'} "
+            f"{result['fleet_id']} · {len(result['order'])} features · base {result['base_commit'][:12]}"
         )
         for overlap in result["overlaps"]:
             print(
@@ -699,7 +701,7 @@ def _emit_supervised_fleet(
             item = result["features"][feature_id]
             dependencies = ", ".join(item["depends_on"]) or "aucune"
             print(f"{feature_id} · après {dependencies} · {item['worktree']}")
-            if item["spec_path"] and result["profile_path"]:
+            if result["prepared"] and item["spec_path"] and result["profile_path"]:
                 command_line = [
                     "cohorte",
                     "--data-dir",
@@ -719,9 +721,12 @@ def _emit_supervised_fleet(
                     "--live",
                 ]
                 print(f"  Dans sa propre session : {shlex.join(command_line)}")
-        print(
-            f"Suivi : cohorte fleet-status {result['fleet_id']} --project-id {result['project_id']}"
-        )
+        if result["prepared"]:
+            print(
+                f"Suivi : cohorte fleet-status {result['fleet_id']} --project-id {result['project_id']}"
+            )
+        else:
+            print("Après validation de l'ordre et des chevauchements, relancer avec --apply.")
     elif command == "fleet-status":
         print(f"Fleet {result['fleet_id']} · {len(result['rows'])} features actives")
         for row in result["rows"]:
@@ -2437,6 +2442,7 @@ def run(argv: list[str] | None = None) -> int:
         elif args.command in {"fleet-plan", "fleet-status", "fleet-sync"}:
             from cohorte.application.fleet_control import (
                 create_supervised_fleet,
+                preview_supervised_fleet,
                 supervised_fleet_status,
                 sync_supervised_fleet,
             )
@@ -2447,16 +2453,29 @@ def run(argv: list[str] | None = None) -> int:
                 profile = ProjectProfile.model_validate_json(args.profile.read_text())
                 specs = [FeatureSpec.model_validate_json(path.read_text()) for path in args.specs]
                 manifest = args.data_dir / "fleets" / profile.project_id / f"{args.fleet_id}.json"
-                fleet_output = create_supervised_fleet(
-                    args.repo,
-                    args.worktrees,
-                    manifest,
-                    profile,
-                    specs,
-                    args.fleet_id,
-                    profile_path=args.profile,
-                    spec_paths=args.specs,
-                )
+                if args.apply:
+                    fleet_output = create_supervised_fleet(
+                        args.repo,
+                        args.worktrees,
+                        manifest,
+                        profile,
+                        specs,
+                        args.fleet_id,
+                        profile_path=args.profile,
+                        spec_paths=args.specs,
+                    )
+                else:
+                    if manifest.exists():
+                        raise ValueError("fleet already exists; inspect fleet-status")
+                    fleet_output = preview_supervised_fleet(
+                        args.repo,
+                        args.worktrees,
+                        profile,
+                        specs,
+                        args.fleet_id,
+                        profile_path=args.profile,
+                        spec_paths=args.specs,
+                    )
             else:
                 manifest = args.data_dir / "fleets" / args.project_id / f"{args.fleet_id}.json"
                 if args.command == "fleet-status":

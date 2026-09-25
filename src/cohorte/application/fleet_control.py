@@ -35,10 +35,9 @@ def _git(root: Path, *args: str) -> str:
     return result.stdout.strip()
 
 
-def create_supervised_fleet(
+def preview_supervised_fleet(
     repository: Path,
     worktree_parent: Path,
-    manifest_path: Path,
     profile: ProjectProfile,
     specs: list[FeatureSpec],
     fleet_id: str,
@@ -46,8 +45,6 @@ def create_supervised_fleet(
     profile_path: Path | None = None,
     spec_paths: list[Path] | None = None,
 ) -> dict[str, Any]:
-    if manifest_path.exists():
-        raise ValueError("fleet already exists; inspect its status instead of replacing it")
     if any(spec.status != SpecStatus.FROZEN for spec in specs):
         raise ValueError("every fleet spec must be frozen")
     if spec_paths is not None and len(spec_paths) != len(specs):
@@ -57,14 +54,12 @@ def create_supervised_fleet(
     if source.is_dirty():
         raise ValueError("repository must be clean before provisioning fleet worktrees")
     worktree_parent = worktree_parent.resolve()
-    worktree_parent.mkdir(parents=True, exist_ok=True)
     paths = [worktree_parent / f"{fleet_id}-{feature_id}" for feature_id in plan.feature_ids]
     if any(path.exists() for path in paths):
         raise ValueError("a fleet worktree destination already exists")
     features: dict[str, dict[str, Any]] = {}
     for feature_id, destination in zip(plan.feature_ids, paths, strict=True):
         branch = f"cohorte/{fleet_id}/{feature_id}"
-        source.create_worktree(destination, branch, plan.base_commit)
         features[feature_id] = {
             "worktree": str(destination),
             "branch": branch,
@@ -84,7 +79,7 @@ def create_supervised_fleet(
                 else None
             ),
         }
-    document: dict[str, Any] = {
+    return {
         "schema_version": 1,
         "fleet_id": fleet_id,
         "project_id": profile.project_id,
@@ -100,7 +95,39 @@ def create_supervised_fleet(
         "overlaps": [overlap.model_dump(mode="json") for overlap in plan.overlaps],
         "features": features,
         "merged": [],
+        "prepared": False,
     }
+
+
+def create_supervised_fleet(
+    repository: Path,
+    worktree_parent: Path,
+    manifest_path: Path,
+    profile: ProjectProfile,
+    specs: list[FeatureSpec],
+    fleet_id: str,
+    *,
+    profile_path: Path | None = None,
+    spec_paths: list[Path] | None = None,
+) -> dict[str, Any]:
+    if manifest_path.exists():
+        raise ValueError("fleet already exists; inspect its status instead of replacing it")
+    document = preview_supervised_fleet(
+        repository,
+        worktree_parent,
+        profile,
+        specs,
+        fleet_id,
+        profile_path=profile_path,
+        spec_paths=spec_paths,
+    )
+    source = GitRepository(repository)
+    worktree_parent = worktree_parent.resolve()
+    worktree_parent.mkdir(parents=True, exist_ok=True)
+    for feature_id in document["order"]:
+        item = document["features"][feature_id]
+        source.create_worktree(Path(item["worktree"]), item["branch"], document["base_commit"])
+    document["prepared"] = True
     _write_manifest(manifest_path, document)
     return document
 

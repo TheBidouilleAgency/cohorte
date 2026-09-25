@@ -9,6 +9,7 @@ from pathlib import Path
 from cohorte.application.fleet import FleetRunner, plan_fleet
 from cohorte.application.fleet_control import (
     create_supervised_fleet,
+    preview_supervised_fleet,
     supervised_fleet_status,
     sync_supervised_fleet,
 )
@@ -222,10 +223,15 @@ def test_supervised_fleet_provisions_status_and_syncs_after_merge(tmp_path: Path
     git(root, "push", "-u", "origin", "main")
     manifest = tmp_path / "state" / "fleet.json"
     specs = [feature("api-feature", "api", "api-check"), feature("web-feature", "web", "web-check")]
+    preview = preview_supervised_fleet(root, tmp_path / "worktrees", profile(), specs, "supervised")
+    assert preview["prepared"] is False
+    assert not manifest.exists()
+    assert not (tmp_path / "worktrees").exists()
     planned = create_supervised_fleet(
         root, tmp_path / "worktrees", manifest, profile(), specs, "supervised"
     )
     assert planned["order"] == ["api-feature", "web-feature"]
+    assert planned["prepared"] is True
     assert all(Path(item["worktree"]).is_dir() for item in planned["features"].values())
     assert all(row["behind"] == 0 for row in supervised_fleet_status(manifest)["rows"])
 
