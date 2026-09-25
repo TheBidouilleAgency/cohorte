@@ -542,6 +542,73 @@ def test_guided_spec_reconciles_new_brief_without_erasing_draft(
     assert "Which error state must be shown? Show disk full" in second.problem
 
 
+def test_spec_edit_revises_one_saved_item_without_replacing_other_decisions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repository, data_dir = _setup(tmp_path)
+    monkeypatch.chdir(repository)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.delenv("VISUAL", raising=False)
+    monkeypatch.delenv("EDITOR", raising=False)
+    answers = iter(_answers(approve="non"))
+    monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
+    assert cli.run(["--data-dir", str(data_dir), "spec", "safe-export", "--manual"]) == 0
+    capsys.readouterr()
+
+    assert (
+        cli.run(
+            [
+                "--json",
+                "--data-dir",
+                str(data_dir),
+                "spec-edit",
+                "safe-export",
+                "--scenario",
+                "primary",
+                "--then",
+                "one complete local CSV exists",
+                "--expect-revision",
+                "1",
+            ]
+        )
+        == 0
+    )
+    revised = json.loads(capsys.readouterr().out)["data"]["draft"]
+    assert revised["revision"] == 2
+    assert revised["scenarios"][0]["then"] == "one complete local CSV exists"
+    assert revised["acceptance"][0]["statement"] == "Export is atomic"
+
+    assert (
+        cli.run(
+            [
+                "--json",
+                "--data-dir",
+                str(data_dir),
+                "spec-edit",
+                "safe-export",
+                "--criterion",
+                "primary",
+                "--statement",
+                "The CSV is written atomically",
+                "--check-id",
+                "test",
+                "--expect-revision",
+                "2",
+            ]
+        )
+        == 0
+    )
+    revised = json.loads(capsys.readouterr().out)["data"]["draft"]
+    assert revised["revision"] == 3
+    assert revised["acceptance"][0]["statement"] == "The CSV is written atomically"
+    assert revised["scenarios"][0]["then"] == "one complete local CSV exists"
+    database = Database(data_dir / "cohorte.sqlite3")
+    try:
+        assert database.latest_artifact("draft:safe-export")["revision"] == 3
+    finally:
+        database.close()
+
+
 def test_patch_spec_guided_from_intake_keeps_provenance_and_regression_scope(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

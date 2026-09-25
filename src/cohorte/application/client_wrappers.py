@@ -31,7 +31,7 @@ _BODY = (
 )
 
 
-def _render(runtime: str) -> str:
+def _render_legacy(runtime: str) -> str:
     if runtime == "gemini":
         return (
             'description = "Use the Cohorte CLI workflow engine"\n'
@@ -56,6 +56,24 @@ def _render(runtime: str) -> str:
     return frontmatter + _BODY + f"Requested Cohorte command: {arguments}\n"
 
 
+def _render(runtime: str) -> str:
+    marker = (
+        "# Managed by Cohorte; update with cohorte update-pipeline.\n"
+        if runtime == "gemini"
+        else "<!-- Managed by Cohorte; update with cohorte update-pipeline. -->\n"
+    )
+    return _render_legacy(runtime) + marker
+
+
+def installed_wrappers(root: Path) -> list[str]:
+    root = root.resolve(strict=True)
+    return [
+        runtime
+        for runtime, relative in RUNTIME_PATHS.items()
+        if (root / relative).exists() or (root / relative).is_symlink()
+    ]
+
+
 def wrapper_plan(root: Path, runtimes: list[str]) -> list[dict[str, Any]]:
     root = root.resolve(strict=True)
     if not root.is_dir():
@@ -76,14 +94,17 @@ def wrapper_plan(root: Path, runtimes: list[str]) -> list[dict[str, Any]]:
             raise ValueError(f"wrapper destination contains a symlink: {relative}")
         content = _render(runtime)
         existing = destination.read_text(encoding="utf-8") if destination.is_file() else None
+        occupied = destination.exists() or destination.is_symlink()
         plan.append(
             {
                 "runtime": runtime,
                 "path": relative,
                 "status": "current"
                 if existing == content
+                else "update"
+                if existing == _render_legacy(runtime)
                 else "conflict"
-                if existing
+                if occupied
                 else "create",
                 "sha256": hashlib.sha256(content.encode()).hexdigest(),
             }
@@ -97,7 +118,7 @@ def apply_wrappers(root: Path, runtimes: list[str]) -> list[dict[str, Any]]:
     if any(item["status"] == "conflict" for item in plan):
         raise ValueError("wrapper file already exists with different content; no file was changed")
     for item in plan:
-        if item["status"] != "create":
+        if item["status"] not in {"create", "update"}:
             continue
         destination = root / item["path"]
         destination.parent.mkdir(parents=True, exist_ok=True)

@@ -58,6 +58,70 @@ def _save(path: Path, document: bytes) -> None:
     temporary.replace(path)
 
 
+def revise_draft_item(
+    draft: FeatureSpec,
+    profile: ProjectProfile,
+    *,
+    scenario_id: str | None = None,
+    criterion_id: str | None = None,
+    given: str | None = None,
+    when: str | None = None,
+    then: str | None = None,
+    statement: str | None = None,
+    verification: str | None = None,
+    check_ids: list[str] | None = None,
+) -> FeatureSpec:
+    if draft.status != SpecStatus.DRAFT or bool(scenario_id) == bool(criterion_id):
+        raise ValueError("choose exactly one scenario or criterion in a draft")
+    if scenario_id:
+        if statement is not None or verification is not None or check_ids is not None:
+            raise ValueError("criterion fields cannot edit a scenario")
+        scenarios = [item.model_dump(mode="json") for item in draft.scenarios]
+        selected = next((item for item in scenarios if item["id"] == scenario_id), None)
+        if selected is None:
+            raise ValueError(f"unknown scenario: {scenario_id}")
+        selected.update(
+            {
+                key: value
+                for key, value in {"given": given, "when": when, "then": then}.items()
+                if value is not None
+            }
+        )
+        updated = draft.model_dump(mode="json")
+        updated["scenarios"] = scenarios
+    else:
+        if any(value is not None for value in (given, when, then)):
+            raise ValueError("scenario fields cannot edit a criterion")
+        criteria = [item.model_dump(mode="json") for item in draft.acceptance]
+        selected = next((item for item in criteria if item["id"] == criterion_id), None)
+        if selected is None:
+            raise ValueError(f"unknown criterion: {criterion_id}")
+        if statement is not None:
+            selected["statement"] = statement
+        if verification is not None:
+            selected["verification"] = verification
+        if check_ids is not None:
+            known = {check.id for check in profile.checks}
+            unknown = sorted(set(check_ids) - known)
+            if unknown:
+                raise ValueError(f"unknown check IDs: {', '.join(unknown)}")
+            surface_checks = {
+                check
+                for surface in profile.surfaces
+                if surface.id in selected["surface_ids"]
+                for check in surface.check_ids
+            }
+            if not set(check_ids) <= surface_checks:
+                raise ValueError("criterion checks must belong to its selected surfaces")
+            selected["check_ids"] = check_ids
+        updated = draft.model_dump(mode="json")
+        updated["acceptance"] = criteria
+    if updated == draft.model_dump(mode="json"):
+        return draft
+    updated["revision"] = draft.revision + 1
+    return FeatureSpec.model_validate_json(json.dumps(updated))
+
+
 def _feature_id(database: Database, project_id: str, supplied: str | None, status: str) -> str:
     if supplied:
         feature = database.get_feature(supplied)

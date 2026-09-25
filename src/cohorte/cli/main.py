@@ -186,6 +186,21 @@ def _parser() -> argparse.ArgumentParser:
     guided_spec.add_argument(
         "--manual", action="store_true", help="skip the agent's draft proposal"
     )
+    spec_edit = sub.add_parser(
+        "spec-edit", help="revise one scenario or criterion of a saved draft"
+    )
+    spec_edit.add_argument("feature_id")
+    spec_edit_target = spec_edit.add_mutually_exclusive_group()
+    spec_edit_target.add_argument("--scenario")
+    spec_edit_target.add_argument("--criterion")
+    spec_edit.add_argument("--given")
+    spec_edit.add_argument("--when")
+    spec_edit.add_argument("--then")
+    spec_edit.add_argument("--statement")
+    spec_edit.add_argument("--verification", choices=["automatic", "review", "manual"])
+    spec_edit.add_argument("--check-id", action="append")
+    spec_edit.add_argument("--clear-checks", action="store_true")
+    spec_edit.add_argument("--expect-revision", type=int)
     spec_propose = sub.add_parser(
         "spec-propose", help="produce a read-only spec proposal from a stored brief"
     )
@@ -914,6 +929,11 @@ def run(argv: list[str] | None = None) -> int:
         if args.command == "doctor":
             _emit_doctor_result(_doctor(service, args), args.json)
         elif args.command == "update-pipeline":
+            from cohorte.application.client_wrappers import (
+                apply_wrappers,
+                installed_wrappers,
+                wrapper_plan,
+            )
             from cohorte.application.discovery import (
                 discover_project,
                 discovery_report,
@@ -931,6 +951,10 @@ def run(argv: list[str] | None = None) -> int:
             changed_fields = sorted(
                 key for key in before if key != "revision" and before[key] != after[key]
             )
+            wrapper_runtimes = installed_wrappers(root)
+            wrapper_preview = wrapper_plan(root, wrapper_runtimes) if wrapper_runtimes else []
+            wrappers_can_apply = not any(item["status"] == "conflict" for item in wrapper_preview)
+            wrappers_need_update = any(item["status"] == "update" for item in wrapper_preview)
             if args.apply and changed_fields:
                 saved = service.init_project(root, current_profile.language, refresh=True)
                 proposed_document = saved["profile"]
@@ -938,6 +962,10 @@ def run(argv: list[str] | None = None) -> int:
             else:
                 proposed_document = after
                 reference = project["profile_ref"]
+            wrappers_applied = bool(args.apply and wrappers_can_apply and wrappers_need_update)
+            wrapper_results = (
+                apply_wrappers(root, wrapper_runtimes) if wrappers_applied else wrapper_preview
+            )
             update_result = {
                 "project_id": current_profile.project_id,
                 "changed_fields": changed_fields,
@@ -946,6 +974,8 @@ def run(argv: list[str] | None = None) -> int:
                 "profile": proposed_document,
                 "profile_ref": reference,
                 "applied": bool(args.apply and changed_fields),
+                "wrappers": wrapper_results,
+                "wrappers_applied": wrappers_applied,
             }
             if args.json:
                 _emit(update_result, True)
@@ -957,6 +987,13 @@ def run(argv: list[str] | None = None) -> int:
                 print(f"Champs détectés à mettre à jour : {', '.join(changed_fields) or 'aucun'}")
                 for question in questions:
                     print(f"À confirmer : {question}")
+                for wrapper_item in wrapper_results:
+                    print(
+                        f"Raccourci {wrapper_item['runtime']} · {wrapper_item['status']} · "
+                        f"{wrapper_item['path']}"
+                    )
+                if any(item["status"] == "conflict" for item in wrapper_results):
+                    print("Raccourcis modifiés manuellement : résolution explicite requise.")
                 if changed_fields and not args.apply:
                     print("Relancer avec --apply après validation du profil proposé en JSON.")
         elif args.command == "wrappers":
@@ -1655,6 +1692,96 @@ def run(argv: list[str] | None = None) -> int:
             project = _project_for_path(database, Path.cwd())
             guided_spec(
                 database, args.data_dir, project, args.feature_id, args.refresh, not args.manual
+            )
+        elif args.command == "spec-edit":
+            from cohorte.application.preparation import canonical_model_bytes
+            from cohorte.cli.guided_feature import _ask, _save, revise_draft_item
+            from cohorte.domain.models import FeatureSpec, ProjectProfile
+
+            project = _project_for_path(database, Path.cwd())
+            feature = database.get_feature(args.feature_id)
+            if feature["project_id"] != project["id"] or feature["status"] == "frozen":
+                raise ValueError("feature is not an editable draft in this project")
+            draft_path = args.data_dir / "guided" / project["id"] / args.feature_id / "draft.json"
+            if not draft_path.is_file():
+                raise ValueError("no saved draft; run cohorte spec first")
+            draft = FeatureSpec.model_validate_json(draft_path.read_text(encoding="utf-8"))
+            if draft.feature_id != args.feature_id:
+                raise ValueError("saved draft belongs to another feature")
+            if args.expect_revision is not None and args.expect_revision != draft.revision:
+                raise ValueError("draft revision changed; inspect it before editing")
+            profile = ProjectProfile.model_validate_json(json.dumps(project["profile"]))
+            scenario_id, criterion_id = args.scenario, args.criterion
+            fields = {
+                "given": args.given,
+                "when": args.when,
+                "then": args.then,
+                "statement": args.statement,
+                "verification": args.verification,
+                "check_ids": [] if args.clear_checks else args.check_id,
+            }
+            if args.clear_checks and args.check_id:
+                raise ValueError("choose --clear-checks or --check-id, not both")
+            if not scenario_id and not criterion_id:
+                if args.json or not sys.stdin.isatty():
+                    raise ValueError("choose --scenario or --criterion in non-interactive mode")
+                print("Scénarios : " + ", ".join(item.id for item in draft.scenarios))
+                print("Critères : " + ", ".join(item.id for item in draft.acceptance))
+                kind = _ask("Modifier scénario ou critère", "scénario")
+                if kind == "scénario":
+                    scenario_id = _ask("ID du scénario", draft.scenarios[0].id)
+                elif kind == "critère":
+                    criterion_id = _ask("ID du critère", draft.acceptance[0].id)
+                else:
+                    raise ValueError("choose scénario or critère")
+            if not any(value is not None for value in fields.values()):
+                if args.json or not sys.stdin.isatty():
+                    raise ValueError("provide at least one field to change")
+                if scenario_id:
+                    current_scenario = next(
+                        (item for item in draft.scenarios if item.id == scenario_id), None
+                    )
+                    if current_scenario is None:
+                        raise ValueError(f"unknown scenario: {scenario_id}")
+                    fields["given"] = _ask("Étant donné", current_scenario.given)
+                    fields["when"] = _ask("Quand", current_scenario.when)
+                    fields["then"] = _ask("Alors", current_scenario.then)
+                else:
+                    current_criterion = next(
+                        (item for item in draft.acceptance if item.id == criterion_id), None
+                    )
+                    if current_criterion is None:
+                        raise ValueError(f"unknown criterion: {criterion_id}")
+                    fields["statement"] = _ask("Critère observable", current_criterion.statement)
+                    fields["verification"] = _ask(
+                        "Preuve (automatic/review/manual)", current_criterion.verification
+                    )
+                    checks = _ask(
+                        "IDs des checks, séparés par des virgules (vide = conserver)",
+                        required=False,
+                    )
+                    if checks:
+                        fields["check_ids"] = [item.strip() for item in checks.split(",")]
+            revised = revise_draft_item(
+                draft,
+                profile,
+                scenario_id=scenario_id,
+                criterion_id=criterion_id,
+                **fields,
+            )
+            if revised != draft:
+                content = canonical_model_bytes(revised)
+                _save(draft_path, content)
+                database.put_artifact(
+                    "feature-spec-draft", content, artifact_id=f"draft:{args.feature_id}"
+                )
+            _emit(
+                {
+                    "draft": revised.model_dump(mode="json"),
+                    "output": str(draft_path),
+                    "changed": revised != draft,
+                },
+                args.json,
             )
         elif args.command == "spec-propose":
             from cohorte.application.preparation import BrainstormBrief, canonical_model_bytes

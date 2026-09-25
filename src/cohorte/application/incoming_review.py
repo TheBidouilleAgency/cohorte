@@ -17,6 +17,7 @@ from cohorte.application.repository_context import (
 )
 from cohorte.application.vertical import AgentReview
 from cohorte.domain.errors import CohorteError, ErrorCode
+from cohorte.domain.evidence import ReviewVerdict
 from cohorte.domain.models import ProjectProfile, StrictModel
 from cohorte.domain.redaction import redact_text
 
@@ -44,6 +45,7 @@ class IncomingReviewReport(StrictModel):
     merge_base_sha: str
     changed_files: list[str]
     covered_surfaces: list[str]
+    review_chunks: int = 1
     review: AgentReview
     before_tree_hash: str
     after_tree_hash: str
@@ -52,6 +54,54 @@ class IncomingReviewReport(StrictModel):
 
 class IncomingReviewRuntime(Protocol):
     def review(self, workspace: Path, prompt: str) -> AgentReview: ...
+
+
+def _diff_chunks(diff: str, *, max_bytes: int = 60_000) -> list[str]:
+    """Bound each agent prompt without dropping any diff line."""
+    chunks: list[str] = []
+    current: list[str] = []
+    size = 0
+    for line in diff.splitlines(keepends=True):
+        encoded = len(line.encode())
+        if encoded > max_bytes:
+            if current:
+                chunks.append("".join(current))
+                current, size = [], 0
+            fragment: list[str] = []
+            fragment_size = 0
+            for character in line:
+                character_size = len(character.encode())
+                if fragment and fragment_size + character_size > max_bytes:
+                    chunks.append("".join(fragment))
+                    fragment, fragment_size = [], 0
+                fragment.append(character)
+                fragment_size += character_size
+            if fragment:
+                chunks.append("".join(fragment))
+            continue
+        if current and size + encoded > max_bytes:
+            chunks.append("".join(current))
+            current, size = [], 0
+        current.append(line)
+        size += encoded
+    if current:
+        chunks.append("".join(current))
+    return chunks
+
+
+def _combine_reviews(reviews: list[AgentReview]) -> AgentReview:
+    verdict = (
+        ReviewVerdict.BLOCKED
+        if any(item.verdict == ReviewVerdict.BLOCKED for item in reviews)
+        else ReviewVerdict.FIX
+        if any(item.verdict == ReviewVerdict.FIX for item in reviews)
+        else ReviewVerdict.READY
+    )
+    return AgentReview(
+        verdict=verdict,
+        covered_surfaces=sorted({surface for item in reviews for surface in item.covered_surfaces}),
+        findings=[finding for item in reviews for finding in item.findings],
+    )
 
 
 def _run_metadata_command(repository: Path, argv: list[str]) -> dict[str, Any]:
@@ -157,11 +207,7 @@ def review_incoming(
     changed = source.changed_between(merge_base, head)
     if not changed:
         raise ValueError("incoming request has no changed files")
-    if len(changed) > 100:
-        raise ValueError("incoming review exceeds 100 changed files; split or narrow the request")
     diff = source.diff_between(merge_base, head)
-    if len(diff.encode()) > 120_000:
-        raise ValueError("incoming diff exceeds 120 KiB; split or narrow the request")
     surfaces = {
         surface.id
         for surface in profile.surfaces
@@ -196,24 +242,62 @@ def review_incoming(
         f"Profile: {profile.model_dump_json()}\n"
         f"Project overview: {collect_project_overview(worktree.root)}\n"
         f"Related source: {collect_repository_context(worktree.root, metadata.title + ' ' + metadata.description[:1000])}\n"
-        f"Full request diff:\n{redact_text(diff)}"
     )
-    review = runtime.review(worktree.root, prompt)
+    diff_parts = _diff_chunks(redact_text(diff))
+    reviews: list[AgentReview] = []
+    for index, part in enumerate(diff_parts, start=1):
+        review = runtime.review(
+            worktree.root,
+            prompt + f"Diff segment {index}/{len(diff_parts)}. Review only this segment's changes "
+            "against the checkout; do not infer that other segments passed. "
+            f"Segment:\n{part}",
+        )
+        if worktree.snapshot_digest() != before:
+            raise CohorteError(
+                ErrorCode.AUDIT_MUTATION,
+                "incoming review changed the dedicated checkout",
+                "the review report was rejected",
+                remediation="inspect the worktree and rerun with a read-only provider",
+            )
+        covered = set(review.covered_surfaces)
+        if (
+            not covered
+            or not covered.issubset(surfaces)
+            or (len(diff_parts) == 1 and covered != surfaces)
+        ):
+            raise CohorteError(
+                ErrorCode.REVIEW_INCOMPLETE,
+                f"incoming review segment {index} reported no valid touched surface",
+                "the review report was rejected",
+                remediation="rerun the independent review with the touched surfaces",
+            )
+        reviews.append(review)
+    if len(diff_parts) > 1:
+        integration = runtime.review(
+            worktree.root,
+            prompt
+            + "Integrate the segment reviews across files and surfaces. Inspect the checkout "
+            "for cross-file regressions and contradictions. Never override a blocking segment "
+            "with READY. Segment results: "
+            + redact_text(json.dumps([item.model_dump(mode="json") for item in reviews])),
+        )
+        if worktree.snapshot_digest() != before:
+            raise CohorteError(
+                ErrorCode.AUDIT_MUTATION,
+                "incoming integration review changed the dedicated checkout",
+                "the review report was rejected",
+                remediation="inspect the worktree and rerun with a read-only provider",
+            )
+        if set(integration.covered_surfaces) != surfaces:
+            raise CohorteError(
+                ErrorCode.REVIEW_INCOMPLETE,
+                "incoming integration review did not cover every touched surface exactly",
+                "the review report was rejected",
+                remediation="rerun the independent review with all touched surfaces",
+            )
+        reviews.append(integration)
+    review = _combine_reviews(reviews)
     after = worktree.snapshot_digest()
-    if before != after:
-        raise CohorteError(
-            ErrorCode.AUDIT_MUTATION,
-            "incoming review changed the dedicated checkout",
-            "the review report was rejected",
-            remediation="inspect the worktree and rerun with a read-only provider",
-        )
-    if set(review.covered_surfaces) != surfaces:
-        raise CohorteError(
-            ErrorCode.REVIEW_INCOMPLETE,
-            "incoming review did not cover every touched surface exactly",
-            "the review report was rejected",
-            remediation="rerun the independent review with all touched surfaces",
-        )
     return IncomingReviewReport(
         host=metadata.host,
         number=metadata.number,
@@ -226,6 +310,7 @@ def review_incoming(
         merge_base_sha=merge_base,
         changed_files=changed,
         covered_surfaces=sorted(surfaces),
+        review_chunks=len(diff_parts),
         review=review,
         before_tree_hash=before,
         after_tree_hash=after,

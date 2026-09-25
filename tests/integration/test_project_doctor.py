@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from cohorte.application.client_wrappers import _render_legacy
 from cohorte.application.discovery import discover_project
 from cohorte.application.project_doctor import inspect_project
 from cohorte.application.service import CohorteService
@@ -64,6 +65,9 @@ def test_update_pipeline_previews_then_preserves_choices_on_apply(tmp_path: Path
     document = initial["profile"]
     document["brainstorm_panel"] = ["product", "architecture", "qa", "security"]
     service.save_project_profile("project", document, initial["profile_ref"]["revision"])
+    wrapper = root / ".claude/commands/cohorte.md"
+    wrapper.parent.mkdir(parents=True)
+    wrapper.write_text(_render_legacy("claude"))
     (root / "src-tauri").mkdir()
     (root / "src-tauri/Cargo.toml").write_text("[package]\nname='app'\n")
     database.close()
@@ -71,6 +75,8 @@ def test_update_pipeline_previews_then_preserves_choices_on_apply(tmp_path: Path
     assert cli.run(["--json", "--data-dir", str(data), "update-pipeline", "--repo", str(root)]) == 0
     preview = json.loads(capsys.readouterr().out)["data"]
     assert preview["applied"] is False
+    assert preview["wrappers"][0]["status"] == "update"
+    assert wrapper.read_text() == _render_legacy("claude")
     assert "surfaces" in preview["changed_fields"]
     assert any(item["id"] == "rust" for item in preview["profile"]["surfaces"])
     database = Database(data / "cohorte.sqlite3")
@@ -86,5 +92,8 @@ def test_update_pipeline_previews_then_preserves_choices_on_apply(tmp_path: Path
     )
     applied = json.loads(capsys.readouterr().out)["data"]
     assert applied["applied"] is True
+    assert applied["wrappers_applied"] is True
+    assert applied["wrappers"][0]["status"] == "current"
+    assert "Managed by Cohorte" in wrapper.read_text()
     assert applied["profile"]["brainstorm_panel"] == document["brainstorm_panel"]
     assert any(item["id"] == "rust" for item in applied["profile"]["surfaces"])

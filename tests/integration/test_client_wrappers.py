@@ -5,7 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from cohorte.application.client_wrappers import apply_wrappers, wrapper_plan
+from cohorte.application.client_wrappers import (
+    _render_legacy,
+    apply_wrappers,
+    installed_wrappers,
+    wrapper_plan,
+)
 
 
 def test_wrappers_are_previewed_then_created_without_another_workflow(tmp_path: Path) -> None:
@@ -40,3 +45,19 @@ def test_wrappers_refuse_conflict_atomically_and_symlink_escape(tmp_path: Path) 
     (tmp_path / ".opencode").symlink_to(outside, target_is_directory=True)
     with pytest.raises(ValueError, match="symlink"):
         wrapper_plan(tmp_path, ["opencode"])
+
+
+def test_wrappers_upgrade_exact_generated_content_but_preserve_user_edits(tmp_path: Path) -> None:
+    old = tmp_path / ".claude/commands/cohorte.md"
+    old.parent.mkdir(parents=True)
+    old.write_text(_render_legacy("claude"))
+    assert installed_wrappers(tmp_path) == ["claude"]
+    assert wrapper_plan(tmp_path, ["claude"])[0]["status"] == "update"
+    assert apply_wrappers(tmp_path, ["claude"])[0]["status"] == "current"
+    assert "Managed by Cohorte" in old.read_text()
+
+    old.write_text(old.read_text() + "My project-specific instruction\n")
+    assert wrapper_plan(tmp_path, ["claude"])[0]["status"] == "conflict"
+    with pytest.raises(ValueError, match="no file was changed"):
+        apply_wrappers(tmp_path, ["claude"])
+    assert "My project-specific instruction" in old.read_text()

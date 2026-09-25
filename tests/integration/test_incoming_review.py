@@ -110,6 +110,62 @@ def test_incoming_review_rejects_agent_mutation(tmp_path: Path) -> None:
     assert caught.value.code == ErrorCode.AUDIT_MUTATION
 
 
+def test_incoming_review_chunks_large_diff_without_losing_blocking_findings(tmp_path: Path) -> None:
+    repository, _head = incoming_repository(tmp_path, "refs/pull/7/head")
+    git(repository, "checkout", "feature")
+    for index in range(101):
+        (repository / "src" / f"module_{index:03}.py").write_text(f"VALUE = {index}\n")
+    (repository / "src" / "large.py").write_text(
+        "".join(f"VALUE_{index:04} = '{index:04}-{'x' * 80}'\n" for index in range(1400))
+    )
+    git(repository, "add", "src")
+    git(repository, "commit", "-m", "large change")
+    git(repository, "push", "origin", "HEAD:refs/pull/7/head")
+    git(repository, "checkout", "main")
+
+    class Runtime:
+        def __init__(self) -> None:
+            self.segments = 0
+            self.integration = 0
+
+        def review(self, workspace: Path, prompt: str) -> AgentReview:
+            assert (workspace / "src/large.py").is_file()
+            if "Integrate the segment reviews" in prompt:
+                self.integration += 1
+                return AgentReview(verdict=ReviewVerdict.READY, covered_surfaces=["python"])
+            self.segments += 1
+            return AgentReview(
+                verdict=ReviewVerdict.BLOCKED if self.segments == 1 else ReviewVerdict.READY,
+                covered_surfaces=["python"],
+                findings=[ReviewFinding(severity="high", path="src/large.py", message="Issue")]
+                if self.segments == 1
+                else [],
+            )
+
+    runtime = Runtime()
+    report = review_incoming(
+        repository,
+        tmp_path / "worktrees",
+        profile("github"),
+        IncomingMetadata(host="github", number=7, title="Large change", base_branch="main"),
+        runtime,
+    )
+    assert report.review_chunks > 1
+    assert runtime.segments == report.review_chunks
+    assert runtime.integration == 1
+    assert len(report.changed_files) == 103
+    assert report.review.verdict == ReviewVerdict.BLOCKED
+    assert report.review.findings[0].message == "Issue"
+    assert report.source_unchanged is True
+
+
+def test_diff_chunks_preserve_unicode_and_every_character() -> None:
+    content = "diff --git a/src/a b/src/a\n" + "é" * 20 + "\n"
+    chunks = incoming._diff_chunks(content, max_bytes=10)
+    assert "".join(chunks) == content
+    assert all(len(chunk.encode()) <= 10 for chunk in chunks)
+
+
 def test_incoming_review_cli_stores_report_without_forge_comment(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
