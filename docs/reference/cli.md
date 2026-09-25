@@ -14,9 +14,10 @@ Forme générale : `cohorte [--json] [--config-dir DIR] [--data-dir DIR] COMMAND
 | `profile edit [PROJECT_ID]` | Éditer le JSON du profil. |
 | `profile apply FILE [--project-id ID]` | Valider et appliquer un profil révisé. |
 | `status [RUN_ID]` | Résumer le projet courant ou un run. |
+| `specs [--project-id ID] [--status ÉTAT]` | Afficher les fonctionnalités, leur état de spec et la prochaine commande utile. |
 | `check PROFILE CHECK_ID` | Exécuter un check défini dans un profil. |
 | `schemas OUTPUT` | Exporter les schémas JSON. |
-| `metrics [--project-id ID] [--days N]` | Lire les métriques enregistrées. |
+| `metrics [--project-id ID] [--days N]` | Lire un résumé humain ou les métriques structurées avec `--json`. |
 | `export RUN_ID [--output FILE] [--max-bytes N]` | Exporter les données d’un run avec une limite de taille. |
 
 Les wrappers sont de simples instructions : Cohorte garde le contrôle des étapes, checks et décisions et utilise Claude Code ou Codex comme fournisseurs natifs. Les chemins de commandes des clients suivent leurs formats documentés par [Cursor](https://docs.cursor.com/en/agent/chat/commands), [Gemini CLI](https://geminicli.com/docs/cli/custom-commands/) et [OpenCode](https://opencode.ai/v2/docs/commands). Leur génération et leur syntaxe sont testées localement ; leur exécution dans chaque interface reste à qualifier.

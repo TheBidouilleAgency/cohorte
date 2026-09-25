@@ -88,6 +88,9 @@ def _parser() -> argparse.ArgumentParser:
             child.add_argument("project_id", nargs="?")
     status = sub.add_parser("status")
     status.add_argument("run", nargs="?")
+    specs_board = sub.add_parser("specs", help="list project feature specifications")
+    specs_board.add_argument("--project-id")
+    specs_board.add_argument("--status")
     brief = sub.add_parser("brief", help="read a stored brainstorm brief")
     brief_sub = brief.add_subparsers(dest="brief_command", required=True)
     brief_show = brief_sub.add_parser("show", help="show the latest brief for a feature")
@@ -1046,6 +1049,45 @@ def run(argv: list[str] | None = None) -> int:
                     "runs": [r.model_dump(mode="json") for r in service.database.list_runs()]
                 }
                 _emit(payload, args.json)
+        elif args.command == "specs":
+            project = (
+                database.get_project(args.project_id)
+                if args.project_id
+                else _project_for_path(database, Path.cwd())
+            )
+            features = database.list_features(project["id"])
+            if args.status:
+                features = [item for item in features if item["status"] == args.status]
+            rows = []
+            for feature in features:
+                try:
+                    ready = database.latest_artifact(f"ready:{feature['id']}")
+                    ready_ref = {key: ready[key] for key in ("id", "revision", "sha256")}
+                except KeyError:
+                    ready_ref = None
+                rows.append(
+                    {
+                        "feature_id": feature["id"],
+                        "title": feature["title"],
+                        "kind": feature["kind"],
+                        "status": feature["status"],
+                        "ready_ref": ready_ref,
+                        "updated_at": feature["updated_at"],
+                    }
+                )
+            if args.json:
+                _emit({"project_id": project["id"], "features": rows}, True)
+            else:
+                print(f"Specs · {project['id']} · {len(rows)} fonctionnalités")
+                for row in rows:
+                    next_action = (
+                        f"cohorte start {row['feature_id']}"
+                        if row["status"] == "frozen" and row["ready_ref"]
+                        else f"cohorte spec {row['feature_id']}"
+                    )
+                    print(
+                        f"  {row['feature_id']} · {row['status']} · {row['title']} · {next_action}"
+                    )
         elif args.command == "export":
             exported = service.export_run(args.run_id, args.max_bytes)
             if args.output is None:
@@ -2638,7 +2680,25 @@ def run(argv: list[str] | None = None) -> int:
                 until=until,
                 group_by=cast(Literal["project", "run", "phase", "provider"], args.group_by),
             )
-            _emit(report.model_dump(mode="json"), args.json)
+            if args.json:
+                _emit(report.model_dump(mode="json"), True)
+            else:
+                print(
+                    f"Métriques · {report.project_id or 'tous les projets'} · "
+                    f"{args.days} jours · groupement {report.group_by}"
+                )
+                print(
+                    "Résultats : "
+                    + (
+                        ", ".join(f"{key}: {value}" for key, value in report.outcomes.items())
+                        or "aucun run"
+                    )
+                )
+                for metric in report.values:
+                    rendered = metric.value if metric.value is not None else "indisponible"
+                    print(f"  {metric.name} · {rendered} {metric.unit} · {metric.availability}")
+                if report.groups:
+                    print(f"Groupes : {', '.join(group.key for group in report.groups)}")
         elif args.command == "migrate":
             from cohorte.application.migration import (
                 V2MigrationPlan,
