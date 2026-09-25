@@ -48,7 +48,7 @@ cohorte --json loop frozen.json \
   --worktrees /chemin/vers/worktrees --run-id export-1 --live
 ```
 
-`loop` crée une branche et un worktree isolés, exécute le build, les checks et la revue. Il ne publie rien à cette étape. `fleet` accepte plusieurs specs gelées et planifie les fonctionnalités selon leurs zones d’écriture et dépendances.
+`loop` crée une branche et un worktree isolés, exécute le build, les checks et la revue. Il ne publie rien à cette étape. Pour plusieurs fonctionnalités supervisées, `fleet-plan` analyse les zones d’écriture et dépendances, prépare un worktree par spec gelée, puis `fleet-status` suit chaque branche. Après le merge d’une feature, `fleet-sync` vérifie quelles branches doivent être rebasées ; `--apply` ne modifie que les worktrees propres et sans run Cohorte actif. Une nouvelle revue est nécessaire après rebase. La commande `fleet` conserve son exécution automatisée distincte.
 
 En cas d’interruption, `cohorte --json resume RUN_ID --live` reprend le run journalisé. `pause RUN_ID` et `cancel RUN_ID` prennent effet à la prochaine frontière de phase, après le tour fournisseur actif.
 

@@ -56,8 +56,12 @@ Lors de `spec`, le terminal rappelle des chemins sourcés du brief et du dépôt
 | Commande | Usage |
 | --- | --- |
 | `loop SPEC --profile PROFILE --worktrees DIR --run-id ID --live [--repo DIR]` | Exécuter une spec gelée dans un worktree. |
+| `loop SPEC --profile PROFILE --repo DIR --worktrees DIR --existing-worktree DIR --run-id ID --live` | Exécuter le run dans un worktree Fleet déjà préparé et propre du même dépôt. |
 | `start [FEATURE_ID]` | Vérifier une spec gelée par `spec`, demander confirmation et lancer un run réel sans chemins à fournir. Terminal interactif uniquement. |
 | `fleet SPEC... --profile PROFILE --worktrees DIR --fleet-id ID --live [--repo DIR]` | Orchestrer plusieurs fonctionnalités. |
+| `fleet-plan SPEC... --profile PROFILE --worktrees DIR --fleet-id ID [--repo DIR]` | Préparer un lot supervisé depuis des specs gelées : overlap, ordre et worktrees isolés. |
+| `fleet-status ID --project-id PROJET [--no-fetch]` | Lire l'état de chaque worktree et son retard sur la branche distante. |
+| `fleet-sync ID --project-id PROJET --merged FEATURE [--apply]` | Vérifier le merge puis préparer le rebase ; `--apply` rebase seulement les worktrees propres et sans run actif. |
 | `resume RUN_ID --live` | Reprendre un run journalisé. |
 | `pause RUN_ID [--reason TEXTE]` | Demander l’arrêt à la prochaine frontière de phase. |
 | `cancel RUN_ID [--reason TEXTE]` | Demander l’annulation à la prochaine frontière de phase. |
@@ -66,7 +70,7 @@ Lors de `spec`, le terminal rappelle des chemins sourcés du brief et du dépôt
 | `ship RUN_ID --live` | Livrer un candidat approuvé par commit, push et PR/MR. |
 | `delivery-status RUN_ID --live [--watch] [--timeout N]` | Réconcilier ou surveiller la livraison. |
 
-`loop`, `fleet` et `patch` ne publient pas leur candidat. `ship` ne merge pas la PR/MR et ne déploie pas.
+`fleet-plan` crée un manifeste sous les données locales de Cohorte et un worktree par feature, puis imprime la commande `loop` exacte pour lancer chaque feature dans sa propre session. `fleet-sync` sans `--apply` est une simulation ; après rebase, une nouvelle revue est nécessaire. `loop`, `fleet` et `patch` ne publient pas leur candidat. `ship` ne merge pas la PR/MR et ne déploie pas.
 
 ## Correctifs et maintenance
 

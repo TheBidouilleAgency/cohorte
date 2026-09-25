@@ -7,7 +7,7 @@ cohorte init .
 cohorte profile show
 ```
 
-`init` analyse les manifests, workspaces, scripts de validation, contrats, chemins de code et indices de design ou de release. En mode interactif, il montre les surfaces, les rôles, les checks et les questions restantes avant l'enregistrement. Relisez surtout les chemins partagés, les dépendances et les commandes de test. Utilisez `cohorte profile edit` pour corriger une proposition. `cohorte init .` réutilise le profil existant ; `--refresh` ajoute les éléments nouvellement détectés tout en conservant les choix personnalisés. `--preview` montre l'analyse sans enregistrer le projet, y compris en JSON.
+`init` analyse les manifests, workspaces, scripts de validation, contrats, chemins de code et indices de design ou de release. Il signale aussi les fichiers de conventions, serveurs MCP de retrieval et indices d'isolation sans activer ces intégrations de lui-même. En mode interactif, il montre les surfaces, les rôles, les checks et les questions restantes, puis permet de choisir un serveur de retrieval détecté ou une source design explicite avant l'enregistrement. Relisez surtout les chemins partagés, les dépendances et les commandes de test. Utilisez `cohorte profile edit` pour corriger une proposition. `cohorte init .` réutilise le profil existant ; `--refresh` ajoute les éléments nouvellement détectés tout en conservant les choix personnalisés. `--preview` montre l'analyse sans enregistrer le projet, y compris en JSON. Pour enregistrer un profil validé par une autre interface, `cohorte --json init . --profile-file profil.json` applique exactement ce document ; ajoutez `--refresh` si le projet est déjà enregistré.
 
 ## Choisir votre point de départ
 

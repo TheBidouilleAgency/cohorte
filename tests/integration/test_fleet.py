@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import threading
 import time
 from pathlib import Path
 
 from cohorte.application.fleet import FleetRunner, plan_fleet
+from cohorte.application.fleet_control import (
+    create_supervised_fleet,
+    supervised_fleet_status,
+    sync_supervised_fleet,
+)
 from cohorte.application.vertical import AgentReport, AgentReview, ReviewFinding
+from cohorte.cli import main as cli
 from cohorte.domain.evidence import ReviewVerdict
 from cohorte.domain.models import (
     AgentDefaults,
@@ -199,6 +206,102 @@ def repository(tmp_path: Path) -> Path:
     git(root, "add", ".")
     git(root, "commit", "-m", "initial")
     return root
+
+
+def test_supervised_fleet_provisions_status_and_syncs_after_merge(tmp_path: Path) -> None:
+    root = repository(tmp_path)
+    remote = tmp_path / "remote.git"
+    git(tmp_path, "init", "--bare", str(remote))
+    git(root, "remote", "add", "origin", str(remote))
+    git(root, "push", "-u", "origin", "main")
+    manifest = tmp_path / "state" / "fleet.json"
+    specs = [feature("api-feature", "api", "api-check"), feature("web-feature", "web", "web-check")]
+    planned = create_supervised_fleet(
+        root, tmp_path / "worktrees", manifest, profile(), specs, "supervised"
+    )
+    assert planned["order"] == ["api-feature", "web-feature"]
+    assert all(Path(item["worktree"]).is_dir() for item in planned["features"].values())
+    assert all(row["behind"] == 0 for row in supervised_fleet_status(manifest)["rows"])
+
+    api = Path(planned["features"]["api-feature"]["worktree"])
+    (api / "api.py").write_text("ready\n")
+    git(api, "add", ".")
+    git(api, "commit", "-m", "api feature")
+    git(root, "merge", "--ff-only", planned["features"]["api-feature"]["branch"])
+    git(root, "push", "origin", "main")
+    preview = sync_supervised_fleet(manifest, "api-feature")
+    assert preview["outcomes"] == [
+        {"feature_id": "web-feature", "status": "rebase-ready", "action": "sync --apply"}
+    ]
+    applied = sync_supervised_fleet(manifest, "api-feature", apply=True)
+    assert applied["outcomes"][0]["status"] == "rebased"
+    assert applied["outcomes"][0]["action"] == "rerun review before ship"
+    assert supervised_fleet_status(manifest)["rows"][0]["behind"] == 0
+
+
+def test_supervised_fleet_refuses_dirty_branch_and_unmerged_sync(tmp_path: Path) -> None:
+    root = repository(tmp_path)
+    remote = tmp_path / "remote.git"
+    git(tmp_path, "init", "--bare", str(remote))
+    git(root, "remote", "add", "origin", str(remote))
+    git(root, "push", "-u", "origin", "main")
+    manifest = tmp_path / "state" / "fleet.json"
+    specs = [feature("api-feature", "api", "api-check"), feature("web-feature", "web", "web-check")]
+    planned = create_supervised_fleet(
+        root, tmp_path / "worktrees", manifest, profile(), specs, "supervised"
+    )
+    import pytest
+
+    with pytest.raises(ValueError, match="not merged"):
+        sync_supervised_fleet(manifest, "api-feature", apply=True)
+    api = Path(planned["features"]["api-feature"]["worktree"])
+    (api / "api.py").write_text("ready\n")
+    git(api, "add", ".")
+    git(api, "commit", "-m", "api feature")
+    git(root, "merge", "--ff-only", planned["features"]["api-feature"]["branch"])
+    git(root, "push", "origin", "main")
+    web = Path(planned["features"]["web-feature"]["worktree"])
+    (web / "work.txt").write_text("in progress\n")
+    outcome = sync_supervised_fleet(manifest, "api-feature", apply=True)
+    assert outcome["outcomes"][0]["status"] == "dirty"
+    assert (web / "work.txt").read_text() == "in progress\n"
+
+
+def test_loop_can_build_in_prepared_fleet_worktree(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    root = repository(tmp_path)
+    selected_profile = profile()
+    selected_spec = feature("api-feature", "api", "api-check")
+    profile_path = tmp_path / "profile.json"
+    spec_path = tmp_path / "spec.json"
+    profile_path.write_text(selected_profile.model_dump_json())
+    spec_path.write_text(selected_spec.model_dump_json())
+    manifest = tmp_path / "state" / "fleet.json"
+    planned = create_supervised_fleet(
+        root,
+        tmp_path / "worktrees",
+        manifest,
+        selected_profile,
+        [selected_spec],
+        "supervised",
+        profile_path=profile_path,
+        spec_paths=[spec_path],
+    )
+    candidate = Path(planned["features"]["api-feature"]["worktree"])
+    monkeypatch.setattr(cli, "workflow_runtime", lambda *_args, **_kwargs: FleetRuntime())
+    assert cli.run(
+        [
+            "--json", "--data-dir", str(tmp_path / "data"), "loop", str(spec_path),
+            "--profile", str(profile_path), "--repo", str(root),
+            "--worktrees", str(tmp_path / "worktrees"),
+            "--existing-worktree", str(candidate), "--run-id", "supervised-api-feature", "--live",
+        ]
+    ) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["ok"] is True
+    assert (candidate / "api.py").read_text() == "api-feature\n"
+    assert output["data"]["worktree"] == str(candidate)
 
 
 def test_fleet_parallelizes_disjoint_features_and_revalidates_each(tmp_path: Path) -> None:

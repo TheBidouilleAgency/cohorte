@@ -225,6 +225,77 @@ def _project_description(root: Path) -> str:
     return ""
 
 
+def _discovery_signals(root: Path) -> dict[str, list[str]]:
+    conventions = [
+        path
+        for path in (
+            "AGENTS.md",
+            "PIPELINE.md",
+            "CONTRIBUTING.md",
+            ".github/copilot-instructions.md",
+            ".cursor/rules",
+        )
+        if (root / path).exists()
+    ]
+    design = [
+        path
+        for path in (
+            "design-reference",
+            "docs/design-system.md",
+            "src/components/ui",
+            "components/ui",
+            "src/styles/tokens.css",
+            "tokens",
+        )
+        if (root / path).exists()
+    ]
+    isolation = [
+        path
+        for path in (
+            "Dockerfile",
+            "docker-compose.yml",
+            "compose.yml",
+            "compose.yaml",
+            ".devcontainer/devcontainer.json",
+        )
+        if (root / path).exists()
+    ]
+    retrieval: list[str] = []
+    for relative in (".mcp.json", ".cursor/mcp.json", ".claude/settings.json"):
+        path = root / relative
+        try:
+            resolved = path.resolve(strict=True)
+            if (
+                not resolved.is_relative_to(root)
+                or not resolved.is_file()
+                or resolved.stat().st_size > 64_000
+            ):
+                continue
+        except OSError:
+            continue
+        try:
+            document = json.loads(resolved.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            continue
+        if not isinstance(document, dict):
+            continue
+        for key in ("mcpServers", "mcp_servers", "servers"):
+            servers = document.get(key)
+            if isinstance(servers, dict):
+                retrieval.extend(
+                    f"{relative}:{name}"
+                    for name in servers
+                    if isinstance(name, str)
+                    and any(provider in name.casefold() for provider in ("serena", "graphify"))
+                )
+    return {
+        "conventions": conventions,
+        "design": design,
+        "retrieval": sorted(set(retrieval)),
+        "isolation": isolation,
+    }
+
+
 def discover_project(root: Path, language: str = "fr") -> tuple[ProjectProfile, list[str]]:
     root = root.resolve(strict=True)
     if not root.is_dir():
@@ -528,6 +599,17 @@ def discover_project(root: Path, language: str = "fr") -> tuple[ProjectProfile, 
         else ["product", "architecture", "qa", "security"],
         integrations=integrations,
     )
+    signals = _discovery_signals(root)
+    if signals["conventions"]:
+        questions.append(
+            "Confirmer les règles à importer depuis les fichiers de conventions détectés."
+        )
+    if signals["design"] and not any("design system" in item for item in questions):
+        questions.append("Confirmer la source de design et son périmètre avant activation.")
+    if signals["retrieval"]:
+        questions.append("Confirmer le serveur MCP de retrieval à utiliser et son accès.")
+    if signals["isolation"]:
+        questions.append("Confirmer le mode d'exécution local ou conteneur et ses dépendances.")
     return profile, questions
 
 
@@ -536,7 +618,7 @@ def profile_provenance(root: Path) -> dict[str, Any]:
     return {name: (root / name).exists() for name in names}
 
 
-def discovery_report(profile: ProjectProfile, questions: list[str]) -> dict[str, Any]:
+def discovery_report(profile: ProjectProfile, questions: list[str], root: Path) -> dict[str, Any]:
     """Explain what was detected and what still needs a human decision."""
     checks = {check.id: check for check in profile.checks}
     return {
@@ -561,6 +643,7 @@ def discovery_report(profile: ProjectProfile, questions: list[str]) -> dict[str,
         "brainstorm_panel": profile.brainstorm_panel,
         "vcs": profile.vcs.model_dump(mode="json"),
         "questions": questions,
+        "signals": _discovery_signals(root.resolve(strict=True)),
     }
 
 

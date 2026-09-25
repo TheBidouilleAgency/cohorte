@@ -41,11 +41,16 @@ class CohorteService:
         }
 
     def init_project(
-        self, path: Path, language: str = "fr", *, refresh: bool = False
+        self,
+        path: Path,
+        language: str = "fr",
+        *,
+        refresh: bool = False,
+        profile_override: ProjectProfile | None = None,
     ) -> dict[str, object]:
         path = path.resolve(strict=True)
         profile, questions = discover_project(path, language)
-        analysis = discovery_report(profile, questions)
+        analysis = discovery_report(profile, questions, path)
         try:
             existing = self.database.get_project(profile.project_id)
         except KeyError:
@@ -56,6 +61,8 @@ class CohorteService:
                     f"project {profile.project_id} is already registered at another path"
                 )
             if not refresh:
+                if profile_override is not None:
+                    raise ValueError("project already exists; use --refresh to apply a profile file")
                 return {
                     "profile": existing["profile"],
                     "profile_ref": existing["profile_ref"],
@@ -66,7 +73,14 @@ class CohorteService:
                 }
             current = ProjectProfile.model_validate_json(json.dumps(existing["profile"]))
             profile = reconcile_profile(current, profile)
-            analysis = discovery_report(profile, questions)
+            if profile_override is not None:
+                if (
+                    profile_override.project_id != profile.project_id
+                    or profile_override.revision != profile.revision
+                ):
+                    raise ValueError("profile override does not match the refreshed project")
+                profile = profile_override
+            analysis = discovery_report(profile, questions, path)
             artifact = self.database.update_project_profile(
                 profile.project_id,
                 profile.model_dump_json(indent=2).encode(),
@@ -80,6 +94,14 @@ class CohorteService:
                 "analysis": analysis,
                 "refreshed": True,
             }
+        if profile_override is not None:
+            if (
+                profile_override.project_id != profile.project_id
+                or profile_override.revision != profile.revision
+            ):
+                raise ValueError("profile override does not match the discovered project")
+            profile = profile_override
+        analysis = discovery_report(profile, questions, path)
         document = profile.model_dump_json(indent=2).encode()
         artifact = self.database.put_artifact("project-profile", document)
         self.database.register_project(profile.project_id, str(path.resolve()), artifact["id"])

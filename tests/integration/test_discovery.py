@@ -2,7 +2,7 @@ import json
 import sys
 from pathlib import Path
 
-from cohorte.application.discovery import discover_project, reconcile_profile
+from cohorte.application.discovery import discover_project, discovery_report, reconcile_profile
 from cohorte.application.service import CohorteService
 from cohorte.cli import main as cli
 from cohorte.persistence.sqlite import Database
@@ -35,6 +35,29 @@ def test_python_project_without_uv_does_not_invent_uv_commands(tmp_path: Path) -
     (tmp_path / "tests").mkdir()
     profile, _ = discover_project(tmp_path)
     assert profile.checks[0].argv == ["python", "-m", "pytest", "-q"]
+
+
+def test_init_surfaces_convention_design_retrieval_and_isolation_signals(tmp_path: Path) -> None:
+    (tmp_path / "package.json").write_text('{"scripts":{"test":"node --test"}}')
+    (tmp_path / "src").mkdir()
+    (tmp_path / "AGENTS.md").write_text("# Project rules\n")
+    (tmp_path / "design-reference").mkdir()
+    (tmp_path / "Dockerfile").write_text("FROM node:22\n")
+    (tmp_path / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"serena": {"command": "run"}, "other": {}}})
+    )
+
+    profile, questions = discover_project(tmp_path)
+    analysis = discovery_report(profile, questions, tmp_path)
+    assert analysis["signals"] == {
+        "conventions": ["AGENTS.md"],
+        "design": ["design-reference"],
+        "retrieval": [".mcp.json:serena"],
+        "isolation": ["Dockerfile"],
+    }
+    assert len(questions) == 4
+    assert profile.integrations.retrieval.provider == "none"
+    assert profile.execution.mode == "local"
 
 
 def test_discovers_simple_typescript_project(tmp_path: Path) -> None:
@@ -232,3 +255,40 @@ def test_init_preview_is_read_only_and_interactive_init_requires_confirmation(
     database = Database(data / "cohorte.sqlite3")
     assert len(database.list_projects()) == 1
     database.close()
+
+
+def test_interactive_init_persists_accepted_retrieval_choice(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "package.json").write_text('{"scripts":{"test":"node --test"}}')
+    (project / ".mcp.json").write_text('{"mcpServers":{"serena":{"command":"run"}}}')
+    answers = iter(["serena", "o"])
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
+    data = tmp_path / "data"
+    assert cli.run(["--data-dir", str(data), "init", str(project)]) == 0
+    assert "Retrieval détecté" in capsys.readouterr().out
+    database = Database(data / "cohorte.sqlite3")
+    stored = database.get_project("project")["profile"]
+    assert stored["integrations"]["retrieval"]["provider"] == "serena"
+    assert stored["integrations"]["retrieval"]["fallback_to_files"] is True
+    database.close()
+
+
+def test_init_profile_file_registers_explicit_structured_choices(tmp_path: Path, capsys) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "package.json").write_text('{"scripts":{"test":"node --test"}}')
+    detected, _ = discover_project(project)
+    document = detected.model_dump(mode="json")
+    document["brainstorm_panel"] = ["product", "architecture", "qa", "security"]
+    chosen = tmp_path / "profile.json"
+    chosen.write_text(json.dumps(document))
+    data = tmp_path / "data"
+    assert cli.run(
+        ["--json", "--data-dir", str(data), "init", str(project), "--profile-file", str(chosen)]
+    ) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["data"]["profile"]["brainstorm_panel"] == document["brainstorm_panel"]

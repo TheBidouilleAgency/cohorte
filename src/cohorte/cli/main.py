@@ -63,6 +63,9 @@ def _parser() -> argparse.ArgumentParser:
     init.add_argument(
         "--refresh", action="store_true", help="replace the stored profile with a new discovery"
     )
+    init.add_argument(
+        "--profile-file", type=Path, help="register an explicitly reviewed profile JSON"
+    )
     profile = sub.add_parser("profile")
     profile_sub = profile.add_subparsers(dest="profile_command", required=True)
     for action in ("show", "edit", "apply"):
@@ -106,6 +109,7 @@ def _parser() -> argparse.ArgumentParser:
     loop.add_argument("--profile", type=Path, required=True)
     loop.add_argument("--repo", type=Path, default=Path.cwd())
     loop.add_argument("--worktrees", type=Path, required=True)
+    loop.add_argument("--existing-worktree", type=Path)
     loop.add_argument("--run-id", required=True)
     loop.add_argument("--live", action="store_true", required=True)
     fleet = sub.add_parser("fleet")
@@ -115,6 +119,21 @@ def _parser() -> argparse.ArgumentParser:
     fleet.add_argument("--worktrees", type=Path, required=True)
     fleet.add_argument("--fleet-id", required=True)
     fleet.add_argument("--live", action="store_true", required=True)
+    fleet_plan = sub.add_parser("fleet-plan", help="provision supervised feature worktrees")
+    fleet_plan.add_argument("specs", type=Path, nargs="+")
+    fleet_plan.add_argument("--profile", type=Path, required=True)
+    fleet_plan.add_argument("--repo", type=Path, default=Path.cwd())
+    fleet_plan.add_argument("--worktrees", type=Path, required=True)
+    fleet_plan.add_argument("--fleet-id", required=True)
+    fleet_status = sub.add_parser("fleet-status", help="inspect a supervised fleet")
+    fleet_status.add_argument("fleet_id")
+    fleet_status.add_argument("--project-id", required=True)
+    fleet_status.add_argument("--no-fetch", action="store_true")
+    fleet_sync = sub.add_parser("fleet-sync", help="synchronize after a feature merge")
+    fleet_sync.add_argument("fleet_id")
+    fleet_sync.add_argument("--project-id", required=True)
+    fleet_sync.add_argument("--merged", required=True)
+    fleet_sync.add_argument("--apply", action="store_true")
     intake = sub.add_parser("intake")
     intake.add_argument("project_id", nargs="?")
     intake_source = intake.add_mutually_exclusive_group()
@@ -577,11 +596,111 @@ def _emit_profile_result(result: dict[str, Any], json_mode: bool) -> None:
         contract = analysis.get("contract", {})
         if contract.get("enabled"):
             print(f"Contrat détecté : {contract['mechanism']} · {', '.join(contract['paths'])}")
+        for signal, label in (
+            ("conventions", "Règles présentes"),
+            ("design", "Design présent"),
+            ("retrieval", "Retrieval configuré"),
+            ("isolation", "Isolation possible"),
+        ):
+            sources = analysis.get("signals", {}).get(signal, [])
+            if sources:
+                print(f"{label} : {', '.join(sources)}")
         print(f"Panel brainstorm : {', '.join(analysis.get('brainstorm_panel', []))}")
     for question in result.get("questions", []):
         print(f"À confirmer : {question}")
     print("Voir le détail : cohorte profile show")
     print("Corriger le profil : cohorte profile edit")
+
+
+def _configure_init_candidate(profile: Any, analysis: dict[str, Any], root: Path) -> Any:
+    """Offer only detected integrations; a skipped choice keeps the safe default."""
+    from cohorte.domain.models import ProjectProfile
+
+    document = profile.model_dump(mode="json")
+    signals = analysis.get("signals", {})
+    retrieval_sources = signals.get("retrieval", [])
+    if retrieval_sources:
+        available = sorted(
+            {provider for provider in ("serena", "graphify") if any(provider in item.casefold() for item in retrieval_sources)}
+        )
+        print(f"Retrieval détecté : {', '.join(retrieval_sources)}")
+        selected = _prompt(
+            f"Utiliser quel provider ? [{'/'.join([*available, 'files', 'none'])}; Entrée = inchangé]",
+            required=False,
+        ).casefold()
+        if selected and selected not in {*available, "files", "none"}:
+            raise ValueError("retrieval provider must match a detected server, files or none")
+        if selected:
+            document["integrations"]["retrieval"] = {
+                "provider": selected,
+                "fallback_to_files": selected in {"serena", "graphify"},
+                "roots": ["."],
+            }
+    if signals.get("design"):
+        print(f"Design détecté : {', '.join(signals['design'])}")
+        source = _prompt(
+            "Source design JSON relative ou URL Figma (Entrée = désactivé)", required=False
+        ).strip()
+        if source:
+            if source.startswith("https://www.figma.com/"):
+                provider = "figma"
+            else:
+                candidate = (root / source).resolve(strict=True)
+                if not candidate.is_relative_to(root.resolve(strict=True)) or not candidate.is_file():
+                    raise ValueError("design source must be a file inside the project")
+                if candidate.stat().st_size > 2 * 1024 * 1024:
+                    raise ValueError("design source exceeds 2 MiB")
+                payload = json.loads(candidate.read_text(encoding="utf-8"))
+                if not isinstance(payload, dict):
+                    raise ValueError("design source must contain a JSON object")
+                provider = "file"
+            document["integrations"]["design"] = {
+                "enabled": True,
+                "provider": provider,
+                "source": source,
+            }
+    return ProjectProfile.model_validate_json(json.dumps(document))
+
+
+def _emit_supervised_fleet(
+    command: str, result: dict[str, Any], json_mode: bool, data_dir: Path
+) -> None:
+    if json_mode:
+        _emit(result, True)
+        return
+    if command == "fleet-plan":
+        print(f"Fleet {result['fleet_id']} · {len(result['order'])} features · base {result['base_commit'][:12]}")
+        for overlap in result["overlaps"]:
+            print(
+                f"Chevauchement : {overlap['left_feature']} / {overlap['right_feature']} · "
+                f"{', '.join(overlap['paths'])}"
+            )
+        for feature_id in result["order"]:
+            item = result["features"][feature_id]
+            dependencies = ", ".join(item["depends_on"]) or "aucune"
+            print(f"{feature_id} · après {dependencies} · {item['worktree']}")
+            if item["spec_path"] and result["profile_path"]:
+                command_line = [
+                    "cohorte", "--data-dir", str(data_dir), "loop", item["spec_path"],
+                    "--profile", result["profile_path"], "--repo", result["repository"],
+                    "--worktrees", result["worktree_parent"],
+                    "--existing-worktree", item["worktree"],
+                    "--run-id", f"{result['fleet_id']}-{feature_id}"[:80], "--live",
+                ]
+                print(f"  Dans sa propre session : {shlex.join(command_line)}")
+        print(f"Suivi : cohorte fleet-status {result['fleet_id']} --project-id {result['project_id']}")
+    elif command == "fleet-status":
+        print(f"Fleet {result['fleet_id']} · {len(result['rows'])} features actives")
+        for row in result["rows"]:
+            run = row.get("run")
+            phase = f" · {run['stage']}/{run['status']}" if run else ""
+            drift = f" · ↑{row['ahead']} ↓{row['behind']}" if "ahead" in row else ""
+            print(f"{row['feature_id']} · {row['state']}{phase}{drift} · {row['next']}")
+    else:
+        print(f"Fleet {result['fleet_id']} · merge vérifié : {result['merged_feature']}")
+        for item in result["outcomes"]:
+            action = f" · {item['action']}" if item.get("action") else ""
+            print(f"{item['feature_id']} · {item['status']}{action}")
 
 
 def _emit_project_status(database: Database, project: dict[str, Any]) -> None:
@@ -631,10 +750,27 @@ def run(argv: list[str] | None = None) -> int:
             args.repo = Path(project["root_path"])
             args.worktrees = worktrees
             args.run_id = run_id
+            args.existing_worktree = None
             args.live = True
         if args.command == "doctor":
             _emit(_doctor(service, args), args.json)
         elif args.command == "init":
+            if args.profile_file is not None:
+                if args.preview:
+                    raise ValueError("--profile-file cannot be combined with --preview")
+                from cohorte.domain.models import ProjectProfile
+
+                chosen_profile = ProjectProfile.model_validate_json(args.profile_file.read_text())
+                _emit_profile_result(
+                    service.init_project(
+                        args.path,
+                        args.language,
+                        refresh=args.refresh,
+                        profile_override=chosen_profile,
+                    ),
+                    args.json,
+                )
+                return 0
             if args.preview or (not args.json and sys.stdin.isatty()):
                 from cohorte.application.discovery import (
                     discover_project,
@@ -662,12 +798,20 @@ def run(argv: list[str] | None = None) -> int:
                     "profile": candidate.model_dump(mode="json"),
                     "questions": questions,
                     "provenance": profile_provenance(args.path),
-                    "analysis": discovery_report(candidate, questions),
+                    "analysis": discovery_report(candidate, questions, args.path),
                     "preview": True,
                 }
                 _emit_profile_result(preview, args.json)
                 if args.preview:
                     return 0
+                candidate = _configure_init_candidate(
+                    candidate, cast(dict[str, Any], preview["analysis"]), args.path
+                )
+                if candidate.model_dump(mode="json") != preview["profile"]:
+                    print("Profil ajusté selon vos choix :")
+                    preview["profile"] = candidate.model_dump(mode="json")
+                    preview["analysis"] = discovery_report(candidate, questions, args.path)
+                    _emit_profile_result(preview, args.json)
                 if _prompt("Enregistrer ce profil ? [o/N]", required=False).casefold() not in {
                     "o",
                     "oui",
@@ -677,7 +821,13 @@ def run(argv: list[str] | None = None) -> int:
                     print("Profil non enregistré.")
                     return 0
             _emit_profile_result(
-                service.init_project(args.path, args.language, refresh=args.refresh), args.json
+                service.init_project(
+                    args.path,
+                    args.language,
+                    refresh=args.refresh,
+                    profile_override=candidate if not args.json and sys.stdin.isatty() else None,
+                ),
+                args.json,
             )
         elif args.command == "profile":
             project = (
@@ -2242,6 +2392,49 @@ def run(argv: list[str] | None = None) -> int:
                 args.fleet_id,
             )
             _emit(asdict(fleet_result), args.json)
+        elif args.command in {"fleet-plan", "fleet-status", "fleet-sync"}:
+            from cohorte.application.fleet_control import (
+                create_supervised_fleet,
+                supervised_fleet_status,
+                sync_supervised_fleet,
+            )
+
+            if args.command == "fleet-plan":
+                from cohorte.domain.models import FeatureSpec, ProjectProfile
+
+                profile = ProjectProfile.model_validate_json(args.profile.read_text())
+                specs = [FeatureSpec.model_validate_json(path.read_text()) for path in args.specs]
+                manifest = args.data_dir / "fleets" / profile.project_id / f"{args.fleet_id}.json"
+                fleet_output = create_supervised_fleet(
+                    args.repo,
+                    args.worktrees,
+                    manifest,
+                    profile,
+                    specs,
+                    args.fleet_id,
+                    profile_path=args.profile,
+                    spec_paths=args.specs,
+                )
+            else:
+                manifest = args.data_dir / "fleets" / args.project_id / f"{args.fleet_id}.json"
+                if args.command == "fleet-status":
+                    fleet_output = supervised_fleet_status(
+                        manifest,
+                        fetch=not args.no_fetch,
+                        runs=database.list_runs(args.project_id),
+                    )
+                else:
+                    from cohorte.domain.models import RunStatus
+
+                    active_features = {
+                        state.feature_id
+                        for state in database.list_runs(args.project_id)
+                        if state.status not in {RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELLED}
+                    }
+                    fleet_output = sync_supervised_fleet(
+                        manifest, args.merged, apply=args.apply, active_features=active_features
+                    )
+            _emit_supervised_fleet(args.command, fleet_output, args.json, args.data_dir)
         elif args.command == "loop":
             from cohorte.domain.models import (
                 FeatureSpec,
@@ -2253,6 +2446,32 @@ def run(argv: list[str] | None = None) -> int:
 
             profile = ProjectProfile.model_validate_json(args.profile.read_text())
             spec = FeatureSpec.model_validate_json(args.spec.read_text())
+            execution_repo = args.existing_worktree or args.repo
+            if args.existing_worktree is not None:
+                source_common = Path(
+                    subprocess.run(
+                        ["git", "rev-parse", "--git-common-dir"],
+                        cwd=args.repo,
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                    ).stdout.strip()
+                )
+                candidate_common = Path(
+                    subprocess.run(
+                        ["git", "rev-parse", "--git-common-dir"],
+                        cwd=args.existing_worktree,
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                    ).stdout.strip()
+                )
+                source_common = (args.repo / source_common).resolve()
+                candidate_common = (args.existing_worktree / candidate_common).resolve()
+                if source_common != candidate_common:
+                    raise ValueError("existing worktree belongs to another repository")
+                if GitRepository(execution_repo).is_dirty():
+                    raise ValueError("existing worktree must be clean before starting a run")
             profile_ref = database.put_artifact(
                 "project-profile", profile.model_dump_json(indent=2).encode()
             )
@@ -2271,16 +2490,20 @@ def run(argv: list[str] | None = None) -> int:
                 stage=Stage.BUILD,
                 status=RunStatus.RUNNING,
                 state_version=1,
-                base_commit=GitRepository(args.repo).head,
+                base_commit=GitRepository(execution_repo).head,
                 created_at=now,
                 updated_at=now,
             )
             database.create_run(state)
-            worktree = args.worktrees.resolve() / f"{spec.feature_id}-{args.run_id}"
+            worktree = (
+                args.existing_worktree.resolve()
+                if args.existing_worktree is not None
+                else args.worktrees.resolve() / f"{spec.feature_id}-{args.run_id}"
+            )
             database.append_event(
                 "run.context",
                 {
-                    "repository": str(args.repo.resolve(strict=True)),
+                    "repository": str(execution_repo.resolve(strict=True)),
                     "worktree_parent": str(args.worktrees.resolve()),
                     "worktree": str(worktree),
                     "profile_ref": profile_ref,
@@ -2291,7 +2514,7 @@ def run(argv: list[str] | None = None) -> int:
             )
             journal = SqliteRunJournal(database, args.run_id)
             runtime = workflow_runtime(
-                args.repo,
+                execution_repo,
                 profile,
                 stop_requested=journal.stop_requested,
                 event_sink=journal.agent_event,
@@ -2300,21 +2523,23 @@ def run(argv: list[str] | None = None) -> int:
                 loop_result: Any
                 if len(spec.surfaces) > 1:
                     loop_result = MultiSurfaceRunner(runtime).run(
-                        args.repo,
+                        execution_repo,
                         args.worktrees,
                         profile,
                         spec,
                         args.run_id,
+                        existing_worktree=args.existing_worktree,
                         observe=journal,
                         task_journal=SqliteTaskJournal(database, args.run_id),
                     )
                 else:
                     loop_result = VerticalRunner(runtime).run(
-                        args.repo,
+                        execution_repo,
                         args.worktrees,
                         profile,
                         spec,
                         args.run_id,
+                        existing_worktree=args.existing_worktree,
                         observe=journal,
                     )
             except RunStopped:
