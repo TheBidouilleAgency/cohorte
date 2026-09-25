@@ -7,6 +7,12 @@ with the newest version first. Describe the verified scope and known limitations
 
 _No changes recorded yet._
 
+## 1.0.0a11 — 2026-09-25
+
+- Show every read-only spec question suggestion and caveat before asking the user to decide, even when the agent paraphrases the original question. The same fix applies when continuing an existing draft; leaving an answer blank still keeps that question open.
+- Ask the agent to copy blocking-question wording and order, while keeping the CLI display independent of exact wording.
+- Validation: PR #66 passed documentation and Python 3.12/3.13 CI on Ubuntu, macOS and Windows. The live `1.0.0a10` proposal contained five suggestions that the CLI hid because their labels differed; a regression test now exercises that mismatch. The corrected display has not yet been retested with a live provider after publication.
+
 ## 1.0.0a10 — 2026-09-25
 
 - Restore agent proposals in the guided `spec` flow: the profile's Codex or Claude agent suggests answers to open questions and a complete, project-grounded draft with scenarios, acceptance criteria, check IDs, tests, errors, migration and rollback. Suggestions run read-only and never resolve a user decision or freeze a spec automatically.
