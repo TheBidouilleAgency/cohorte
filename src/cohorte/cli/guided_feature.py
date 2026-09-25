@@ -614,12 +614,18 @@ def guided_spec(
             "spec requires an interactive terminal; use spec-freeze-request for scripts"
         )
     selected = _feature_id(database, project["id"], feature_id, "draft")
-    if database.get_feature(selected)["status"] == "frozen":
-        raise ValueError("feature is already frozen; use cohorte start")
     profile = ProjectProfile.model_validate_json(json.dumps(project["profile"]))
     repository = Path(project["root_path"]).resolve(strict=True)
     location = data_dir / "guided" / project["id"] / selected
     draft_path = location / "draft.json"
+    if database.get_feature(selected)["status"] == "frozen":
+        frozen_profile, _ = _load_frozen_snapshot(database, location, selected)
+        if model_hash(profile) == model_hash(frozen_profile):
+            raise ValueError("feature is already frozen; use cohorte start")
+        if not draft_path.is_file():
+            raise ValueError("saved draft is missing; the frozen spec cannot be reviewed")
+        print("Le profil a changé depuis le gel. Relis la spec avant de l'approuver à nouveau.")
+        assisted = False
     if draft_path.exists() and not refresh:
         draft = FeatureSpec.model_validate_json(draft_path.read_text(encoding="utf-8"))
         print(f"Brouillon existant : {draft_path}")
@@ -825,20 +831,11 @@ def repository_head(repository: Path) -> str:
     return GitRepository(repository).head
 
 
-def guided_start(
-    database: Database,
-    data_dir: Path,
-    project: dict[str, Any],
-    feature_id: str | None,
-) -> tuple[Path, Path, Path, str]:
-    if not sys.stdin.isatty():
-        raise ValueError("start requires an interactive terminal; use loop for scripts")
-    selected = _feature_id(database, project["id"], feature_id, "frozen")
-    if database.get_feature(selected)["status"] != "frozen":
-        raise ValueError("feature is not frozen; run cohorte spec first")
-    ready = database.latest_artifact(f"ready:{selected}")
+def _load_frozen_snapshot(
+    database: Database, location: Path, feature_id: str
+) -> tuple[ProjectProfile, FeatureSpec]:
+    ready = database.latest_artifact(f"ready:{feature_id}")
     refs = json.loads(ready["content"])
-    location = data_dir / "guided" / project["id"] / selected
     spec_path = location / "frozen.json"
     profile_path = location / "profile.json"
     spec_ref = ArtifactRef.model_validate(refs["spec_ref"])
@@ -850,13 +847,35 @@ def guided_start(
         stored = database.get_artifact(reference.id, reference.revision, limit=2 * 1024 * 1024)
         if stored["sha256"] != reference.sha256 or stored["content"].encode() != content:
             raise ValueError("guided artifact no longer matches the approved database snapshot")
-    profile = ProjectProfile.model_validate_json(profile_path.read_text(encoding="utf-8"))
-    spec = FeatureSpec.model_validate_json(spec_path.read_text(encoding="utf-8"))
+    return (
+        ProjectProfile.model_validate_json(profile_path.read_text(encoding="utf-8")),
+        FeatureSpec.model_validate_json(spec_path.read_text(encoding="utf-8")),
+    )
+
+
+def guided_start(
+    database: Database,
+    data_dir: Path,
+    project: dict[str, Any],
+    feature_id: str | None,
+) -> tuple[Path, Path, Path, str]:
+    if not sys.stdin.isatty():
+        raise ValueError("start requires an interactive terminal; use loop for scripts")
+    selected = _feature_id(database, project["id"], feature_id, "frozen")
+    if database.get_feature(selected)["status"] != "frozen":
+        raise ValueError("feature is not frozen; run cohorte spec first")
+    location = data_dir / "guided" / project["id"] / selected
+    spec_path = location / "frozen.json"
+    profile_path = location / "profile.json"
+    profile, spec = _load_frozen_snapshot(database, location, selected)
     if profile.project_id != project["id"] or spec.feature_id != selected:
         raise ValueError("guided spec and profile do not belong to this project")
     current_profile = ProjectProfile.model_validate_json(json.dumps(project["profile"]))
     if model_hash(current_profile) != model_hash(profile):
-        raise ValueError("project profile changed after freeze; review and freeze the spec again")
+        raise ValueError(
+            "project profile changed after freeze; run "
+            f"cohorte spec {selected} --manual to review and freeze the spec again"
+        )
     repository = Path(project["root_path"]).resolve(strict=True)
     print(f"Exécution réelle · {spec.title} · {', '.join(spec.surfaces)}")
     print(f"Dépôt : {repository}\nChecks : {', '.join(spec.dod.required_checks)}")
