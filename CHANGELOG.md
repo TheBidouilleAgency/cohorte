@@ -7,6 +7,13 @@ with the newest version first. Describe the verified scope and known limitations
 
 _No changes recorded yet._
 
+## 1.0.0a10 — 2026-09-25
+
+- Restore agent proposals in the guided `spec` flow: the profile's Codex or Claude agent suggests answers to open questions and a complete, project-grounded draft with scenarios, acceptance criteria, check IDs, tests, errors, migration and rollback. Suggestions run read-only and never resolve a user decision or freeze a spec automatically.
+- Let users accept the proposed draft, continue with `--manual`, or request a proposal for an existing draft without losing its prior decisions. Reject proposed criteria that reference a surface or check outside the selected profile; clarify that a check prompt expects its ID, not a shell command.
+- Validation: PR #64 passed documentation and Python 3.12/3.13 CI on Ubuntu, macOS and Windows. Integration tests cover new and existing drafts and preserve exact approval. Provider-live proposal quality remains to be verified in a real project run.
+- Scope: this release improves the guided CLI; the planned graphical interface with shadcn is not included.
+
 ## 1.0.0a9 — 2026-09-24
 
 - Complete the project-context handoff for Fleet integration: its independent review and correction agents now receive bounded, cited excerpts from the current candidate worktree. Fleet correction also receives every participating frozen spec and the project profile, alongside failed checks and findings.
