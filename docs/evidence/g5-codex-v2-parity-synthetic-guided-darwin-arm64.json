@@ -1,0 +1,40 @@
+{
+  "scenario": "project-aware two-round brainstorm and read-only spec proposal on a synthetic Python repository",
+  "date": "2026-09-25",
+  "platform": "darwin-arm64",
+  "provider": "codex-subscription",
+  "commit": "9f2b815",
+  "repository": "synthetic temporary greeting project",
+  "result": {
+    "brainstorm_round_1": {
+      "status": "passed",
+      "panel": ["product", "architecture", "qa"],
+      "question_proposal_count": 1,
+      "business_and_code_options": true,
+      "repository_claims_cited": true,
+      "target_product_language": "en"
+    },
+    "brainstorm_round_2": {
+      "status": "passed",
+      "brief_revision": 2,
+      "user_choice_preserved": "actionable FileNotFoundError from greeting, no CLI",
+      "blocking_question_count": 0,
+      "source_files_unchanged": true
+    },
+    "spec_proposal": {
+      "status": "passed",
+      "read_only": true,
+      "scenario_count": 3,
+      "criterion_count": 3,
+      "criteria_use_profile_surface_and_check_ids": true,
+      "preserves_user_choice": true,
+      "migration_and_rollback_present": true
+    }
+  },
+  "limits": [
+    "One small synthetic Python project and Codex only; no Claude qualification.",
+    "The spec proposal was invoked through the guided-stage function, not the terminal interview or a structured spec command.",
+    "No spec was approved or frozen, and no build, review, or ship run was executed.",
+    "Cited code claims were manually compared with the synthetic source, but model quality across other projects is unproven."
+  ]
+}
