@@ -708,9 +708,8 @@ def _emit_profile_result(result: dict[str, Any], json_mode: bool) -> None:
         _emit(result, True)
         return
     profile = result["profile"]
-    reference = result.get("profile_ref", {"revision": profile["revision"]})
     print(
-        f"{'Brouillon' if result.get('preview') else 'Profil'} {profile['project_id']} · révision {reference['revision']} · "
+        f"{'Brouillon' if result.get('preview') else 'Profil'} {profile['project_id']} · révision {profile['revision']} · "
         f"{len(profile['surfaces'])} surfaces · {len(profile['checks'])} checks"
     )
     analysis = result.get("analysis", {})

@@ -704,7 +704,18 @@ def reconcile_profile(current: ProjectProfile, detected: ProjectProfile) -> Proj
     """Add newly detected ownership without replacing user-configured project choices."""
     checks = {check.id: check for check in current.checks}
     for check in detected.checks:
-        checks.setdefault(check.id, check)
+        previous_check = checks.get(check.id)
+        if previous_check is None:
+            checks[check.id] = check
+        elif (
+            check.argv[:3] == ["uv", "run", "--all-extras"]
+            and previous_check.argv == ["uv", "run", *check.argv[3:]]
+        ) or (
+            check.argv[:4] == ["uv", "run", "--extra", "dev"]
+            and previous_check.argv == ["uv", "run", *check.argv[4:]]
+        ):
+            # Upgrade the old generated command while preserving edited check metadata.
+            checks[check.id] = previous_check.model_copy(update={"argv": check.argv})
     surfaces = {surface.id: surface for surface in current.surfaces}
     owned = [path for surface in current.surfaces for path in surface.paths]
     for surface in detected.surfaces:
