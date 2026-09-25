@@ -10,7 +10,7 @@ requires requalification with both official providers before a parity release.
 | --- | --- | --- |
 | Init | Read-only preview, richer workspace/contract/check/role detection, questions for ambiguous ownership, refresh preserving custom choices | Real-project review of detected boundaries, migrations, design source, retrieval and execution isolation |
 | Intake | Read-only agent triage proposal grounded in source and repository, with human route decision and manual fallback | Provider-live proposal quality and revision UX |
-| Brainstorm | Project-configured panel, repository overview and cited search every round, focused question proposals with business/code options, acceptance shortcuts | Provider-live quality, multi-round memory and decisions across real projects |
+| Brainstorm | Project-configured panel, repository overview and cited search every round, focused question proposals with business/code options, acceptance shortcuts | One two-round live Codex scenario passed (see `evidence/g5-codex-v2-parity-brainstorm-darwin-arm64.json`); Claude and other real-project decisions remain unqualified |
 | Spec | Existing agent draft plus per-question acceptance of proposed answers and project overview | Provider-live quality, guided editing of existing scenarios/criteria |
 | Build, review, fix and fleet | Fresh project overview alongside task-specific repository evidence | Real provider runs over multi-surface projects and integration order |
 | Patch | Read-only code-grounded patch proposal, user-editable scope and regression check, manual fallback | Live diagnosis quality and guided execution of the approved patch |
