@@ -68,6 +68,8 @@ cohorte --json delivery-status RUN_ID --live --watch
 
 Après `intake`, une demande classée « patch » peut être préparée avec `cohorte patch-spec --from-intake IDENTIFIANT`. L'agent propose en lecture seule un diagnostic, une reproduction, des surfaces, chemins, checks de régression et un retour arrière. Le terminal les laisse corriger avant d'écrire le `patch.json` à relire avant `patch` ; `--manual` saute cette proposition. `cohorte audit` utilise le profil du projet courant, ou accepte des entrées explicites. `cohorte retro` cherche les constats de revue répétés entre au moins deux fonctionnalités et propose une règle à ratifier : seule une décision approuvée puis `retro-apply` l'ajoute au profil actif. Les revues antérieures à l'enregistrement structuré des constats ne peuvent pas être récupérées automatiquement. `refactor` et `align-ds-*` restent plus explicites. La [référence CLI](/reference/cli) donne leurs paramètres.
 
+Pour une PR ou MR déjà ouverte hors Cohorte, `cohorte incoming-review NUMÉRO` récupère ses commits et ses métadonnées, crée un worktree détaché et demande une revue en lecture seule sur le diff et les surfaces touchées. Le résultat est un artefact local ; aucun commentaire ou verdict n'est publié sur la forge. Quand la forge fournit les identités attendues, un changement de commit pendant la préparation fait refuser la revue. Les très grands diffs sont refusés plutôt que déclarés entièrement revus après troncature.
+
 ## Limites actuelles
 
 - Fleet, refactor, rétro et alignement design nécessitent encore des fichiers ou identifiants explicites. `ship` garde une approbation et une commande séparées.

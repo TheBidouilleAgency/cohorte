@@ -16,7 +16,7 @@ requires requalification with both official providers before a parity release.
 | Patch | Read-only code-grounded patch proposal, user-editable scope and regression check, manual fallback | Live diagnosis quality and guided execution of the approved patch |
 | Audit | Current-project defaults and bounded directory-level source inspection | Broader coverage accounting, guided finding selection and refactor execution |
 | Retro | Review findings are now journaled; recurring category/surface findings across two features are mined, an agent may suggest a testable rule or identify an existing-rule gap, and ratification updates the active profile | Pre-change review history lacks structured findings; provider-live suggestion quality and more precise pattern grouping remain unqualified |
-| Incoming PR/MR review | None | Independent checkout and review report |
+| Incoming PR/MR review | Dedicated detached checkout at fetched PR/MR head, exact base/head check, read-only diff review, surface coverage and durable local report | Real GitHub/GitLab qualification and large-PR chunking remain unverified |
 | Doctor, update, design and delivery | Existing explicit commands | Compare each human flow to V2 and qualify live integrations |
 
 The full test suite and static checks cover local behavior. They do not establish

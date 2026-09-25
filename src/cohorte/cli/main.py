@@ -199,6 +199,14 @@ def _parser() -> argparse.ArgumentParser:
     audit.add_argument("--concern", action="append")
     audit.add_argument("--output", type=Path)
     audit.add_argument("--live", action="store_true")
+    incoming_review = sub.add_parser("incoming-review")
+    incoming_review.add_argument("number", type=int)
+    incoming_review.add_argument("--profile", type=Path)
+    incoming_review.add_argument("--repo", type=Path, default=Path.cwd())
+    incoming_review.add_argument("--worktrees", type=Path)
+    incoming_review.add_argument("--title")
+    incoming_review.add_argument("--description")
+    incoming_review.add_argument("--live", action="store_true")
     refactor = sub.add_parser("refactor")
     refactor.add_argument("selection", type=Path)
     refactor.add_argument("--profile", type=Path, required=True)
@@ -1504,6 +1512,57 @@ def run(argv: list[str] | None = None) -> int:
                 },
                 args.json,
             )
+        elif args.command == "incoming-review":
+            from cohorte.application.incoming_review import (
+                lookup_incoming_metadata,
+                review_incoming,
+            )
+            from cohorte.domain.models import ProjectProfile
+
+            if args.json and not args.live:
+                raise ValueError("incoming-review in JSON mode requires --live")
+            repository = args.repo.resolve(strict=True)
+            if args.profile is not None:
+                profile = ProjectProfile.model_validate_json(args.profile.read_text())
+            else:
+                project = _project_for_path(database, repository)
+                profile = ProjectProfile.model_validate_json(json.dumps(project["profile"]))
+                if Path(project["root_path"]).resolve() != repository:
+                    raise ValueError("incoming review must use the registered project root")
+            metadata = lookup_incoming_metadata(
+                repository,
+                profile,
+                args.number,
+                title=args.title,
+                description=args.description,
+            )
+            incoming_result = review_incoming(
+                repository,
+                args.worktrees or args.data_dir / "worktrees",
+                profile,
+                metadata,
+                workflow_runtime(repository, profile),
+            )
+            result_ref = database.put_artifact(
+                "incoming-review",
+                incoming_result.model_dump_json(indent=2).encode(),
+                artifact_id=f"incoming-review:{profile.project_id}:{metadata.host}:{metadata.number}",
+            )
+            if args.json:
+                _emit(
+                    {"report": incoming_result.model_dump(mode="json"), "report_ref": result_ref},
+                    True,
+                )
+            else:
+                print(
+                    f"Revue {metadata.host} #{metadata.number} · {incoming_result.review.verdict.value} · "
+                    f"{len(incoming_result.changed_files)} fichiers · "
+                    f"{len(incoming_result.review.findings)} constats"
+                )
+                for finding in incoming_result.review.findings:
+                    print(f"  • {finding.severity} · {finding.path} · {finding.message}")
+                print(f"Artefact : {result_ref['id']} (révision {result_ref['revision']})")
+                print(f"Checkout isolé : {incoming_result.worktree}")
         elif args.command == "refactor":
             from cohorte.application.maintenance import (
                 AuditReport,

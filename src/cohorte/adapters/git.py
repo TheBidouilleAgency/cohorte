@@ -56,6 +56,31 @@ class GitRepository:
             self._run("worktree", "add", "-b", branch, str(destination), start_point or self.head)
             return GitRepository(destination)
 
+    def create_detached_worktree(self, destination: Path, commit: str) -> GitRepository:
+        destination = destination.resolve()
+        if destination.exists():
+            raise ValueError(f"worktree destination already exists: {destination}")
+        with _WORKTREE_CREATE_LOCK:
+            self._run("worktree", "add", "--detach", str(destination), commit)
+            return GitRepository(destination)
+
+    def fetch_ref(self, remote: str, ref: str) -> str:
+        self._run("fetch", "--no-tags", remote, ref)
+        return self._run("rev-parse", "FETCH_HEAD")
+
+    def merge_base(self, left: str, right: str) -> str:
+        return self._run("merge-base", left, right)
+
+    def diff_between(self, base: str, head: str) -> str:
+        return self._run("diff", "--no-ext-diff", "--no-textconv", base, head, "--")
+
+    def changed_between(self, base: str, head: str) -> list[str]:
+        return [
+            path
+            for path in self._run("diff", "--name-only", "-z", "--no-ext-diff", base, head, "--").split("\0")
+            if path
+        ]
+
     def changed_files(self, base_commit: str) -> list[str]:
         tracked = self._run("diff", "--name-only", "--relative", base_commit, "--").splitlines()
         untracked = self._run("ls-files", "--others", "--exclude-standard", "-z").split("\0")
@@ -127,6 +152,16 @@ class GitRepository:
             names[:] = sorted(
                 name for name in names if name != ".git" and name not in _RUNTIME_DIRECTORIES
             )
+            for name in tuple(names):
+                symlink = Path(directory, name)
+                if not symlink.is_symlink():
+                    continue
+                relative = symlink.relative_to(self.root).as_posix()
+                digest.update(relative.encode())
+                digest.update(b"\0")
+                digest.update(os.readlink(symlink).encode())
+                digest.update(b"\0")
+                names.remove(name)
             for name in sorted(files):
                 path = Path(directory, name)
                 if ".git" in path.relative_to(self.root).parts:
@@ -136,7 +171,9 @@ class GitRepository:
                     continue
                 digest.update(relative.encode())
                 digest.update(b"\0")
-                digest.update(path.read_bytes())
+                digest.update(
+                    os.readlink(path).encode() if path.is_symlink() else path.read_bytes()
+                )
                 digest.update(b"\0")
         return digest.hexdigest()
 

@@ -1,6 +1,8 @@
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from cohorte.adapters.git import GitRepository, path_is_owned
 
 
@@ -32,3 +34,22 @@ def test_runtime_bytecode_does_not_change_candidate_snapshot(tmp_path: Path) -> 
 
     assert repository.changed_files(repository.head) == []
     assert repository.snapshot_digest() == original
+
+
+def test_snapshot_hashes_symlink_targets_without_reading_outside_files(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    outside = tmp_path / "outside.txt"
+    outside.write_text("first secret")
+    git(root, "init", "-b", "main")
+    try:
+        (root / "link.txt").symlink_to(outside)
+    except OSError:
+        pytest.skip("symlink creation is unavailable")
+    repository = GitRepository(root)
+    initial = repository.snapshot_digest()
+    outside.write_text("different secret")
+    assert repository.snapshot_digest() == initial
+    (root / "link.txt").unlink()
+    (root / "link.txt").symlink_to(tmp_path / "other.txt")
+    assert repository.snapshot_digest() != initial
