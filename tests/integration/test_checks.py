@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import sys
 
 import pytest
@@ -15,6 +16,24 @@ def test_check_runner_uses_argv_and_reports_failure(tmp_path) -> None:
     result = CheckRunner(tmp_path).run(definition)
     assert result.status == "failed"
     assert result.exit_code == 7
+
+
+def test_uv_missing_tool_is_an_environment_error(tmp_path, monkeypatch) -> None:
+    def missing_tool(*_args, **_kwargs):
+        return subprocess.CompletedProcess(
+            args=["uv", "run", "ruff"],
+            returncode=2,
+            stdout=b"",
+            stderr=b"error: Failed to spawn: `ruff`\n  Caused by: No such file or directory",
+        )
+
+    monkeypatch.setattr("cohorte.execution.checks.subprocess.run", missing_tool)
+    result = CheckRunner(tmp_path).run(
+        CheckDefinition(id="lint", argv=["uv", "run", "ruff"], timeout_seconds=10)
+    )
+    assert result.status == "errored"
+    assert result.environment_issue == "dependency_missing"
+    assert result.error_code == "CHECK_ENVIRONMENT"
 
 
 def test_check_runner_rejects_escaping_cwd(tmp_path) -> None:
