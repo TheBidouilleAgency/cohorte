@@ -22,6 +22,8 @@ Forme générale : `cohorte [--json] [--config-dir DIR] [--data-dir DIR] COMMAND
 
 Les wrappers sont de simples instructions : Cohorte garde le contrôle des étapes, checks et décisions et utilise Claude Code ou Codex comme fournisseurs natifs. Les chemins de commandes des clients suivent leurs formats documentés par [Cursor](https://docs.cursor.com/en/agent/chat/commands), [Gemini CLI](https://geminicli.com/docs/cli/custom-commands/) et [OpenCode](https://opencode.ai/v2/docs/commands). Leur génération et leur syntaxe sont testées localement ; leur exécution dans chaque interface reste à qualifier.
 
+Le mode `execution.mode=container` du profil n'a pas encore d'exécuteur natif : `doctor` le signale comme erreur et les agents ne sont pas lancés sur l'hôte à sa place. Choisissez `local` pour les runs actuels.
+
 ## Comptes et service local
 
 | Commande | Usage |
@@ -86,7 +88,7 @@ Lors de `spec`, le terminal rappelle des chemins sourcés du brief et du dépôt
 | `patch-spec` | Créer un patch borné à partir d’un artefact source, de la reproduction, des chemins, checks et rollback. Voir `--help` pour tous les champs obligatoires. |
 | `patch-spec --from-intake FEATURE_ID [--manual]` | Proposer en lecture seule un correctif borné depuis un bug du projet courant, puis préparer un `patch.json` à vérifier. `--manual` ignore la proposition de l'agent. |
 | `patch SPEC --profile PROFILE --worktrees DIR --run-id ID --live [--repo DIR]` | Exécuter le patch et sa régression. |
-| `audit [--profile PROFILE] [--audit-id ID] [--title TITRE] [--surface ID] [--path PATH] [--concern TEXTE] [--output FILE] --live` | Auditer le projet courant ou une sélection explicite ; `--surface`, `--path` et `--concern` sont répétables. |
+| `audit [--profile PROFILE] [--audit-id ID] [--title TITRE] [--surface ID] [--path PATH] [--concern TEXTE] [--output FILE] --live` | Auditer le projet courant ou une sélection explicite ; `--surface`, `--path` et `--concern` sont répétables. Le rapport chiffre les fichiers découverts, lus par l’agent et analysés statiquement ; si la lecture du modèle est partielle, relancez des audits plus ciblés. |
 | `incoming-review NUMBER [--profile PROFILE] [--repo PATH] [--worktrees PATH] [--title TITRE] [--description TEXTE] [--live]` | Revoir indépendamment une PR GitHub ou MR GitLab dans un worktree détaché en lecture seule. Les grands diffs sont découpés en passages bornés puis réunis par une revue d'intégration ; un passage bloquant reste bloquant. En JSON, `--live` est requis. `--title` permet un usage sans CLI de forge pour les métadonnées ; aucun commentaire n'est envoyé à la forge. |
 | `refactor-plan AUDIT.json --finding ID --invariant TEXTE --rollback TEXTE [--profile PROFILE] [--approve]` | Prévisualiser une sélection bornée à partir du backlog d'audit ; `--approve` enregistre la décision exacte et le fichier de sélection. Les findings et invariants sont répétables. |
 | `refactor-request SELECTION` | Demander l’approbation d’une sélection de refactor. |

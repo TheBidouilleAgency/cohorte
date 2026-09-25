@@ -77,12 +77,12 @@ def inspect_project(root: Path, profile: ProjectProfile) -> dict[str, Any]:
             f"{retrieval} is selected but no matching project MCP server was detected",
             "Verify the MCP connection, or use cohorte profile edit to select files retrieval.",
         )
-    if profile.execution.mode == "container" and not signals["isolation"]:
+    if profile.execution.mode == "container":
         report(
-            "ISOLATION_CONFIG_MISSING",
-            "warning",
-            "container execution is selected but no container configuration was detected",
-            "Add Docker or devcontainer configuration, or select local execution in cohorte profile edit.",
+            "CONTAINER_EXECUTION_UNAVAILABLE",
+            "error",
+            "container execution is selected but this runtime cannot execute agents in a container",
+            "Select local execution with cohorte profile edit until a container runtime is supported.",
         )
     return {
         "project_id": profile.project_id,

@@ -64,6 +64,13 @@ class AuditFinding(StrictModel):
     status: Literal["open"] = "open"
 
 
+class AuditCoverage(StrictModel):
+    discovered_files: int = Field(ge=0)
+    model_read_files: list[str]
+    static_analyzed_files: int = Field(ge=0)
+    complete_model_read: bool
+
+
 class AuditReport(StrictModel):
     schema_version: Literal[1] = 1
     audit_id: Slug
@@ -74,6 +81,7 @@ class AuditReport(StrictModel):
     covered_surfaces: list[Slug]
     findings: list[AuditFinding]
     source_unchanged: bool
+    coverage: AuditCoverage | None = None
 
 
 def _fingerprint(severity: str, path: str, message: str) -> str:
@@ -117,7 +125,8 @@ class AuditRunner:
             )
         repo = GitRepository(repository)
         before = repo.snapshot_digest()
-        sources = self._bounded_sources(repo.root, spec.paths)
+        files = self._audit_files(repo.root, spec.paths)
+        sources, model_files = self._bounded_sources(repo.root, files)
         review = self.runtime.review(
             repo.root,
             (
@@ -138,11 +147,18 @@ class AuditRunner:
                 "the audit report was rejected",
                 remediation="restore the audit changes and rerun with a read-only runtime",
             )
+        if set(review.covered_surfaces) != set(spec.surface_ids):
+            raise CohorteError(
+                ErrorCode.REVIEW_INCOMPLETE,
+                "audit review did not cover the selected surfaces exactly",
+                "the audit report was rejected",
+                remediation="rerun the audit with explicit coverage for every selected surface",
+            )
         findings_by_id = {
             finding.id: finding
             for finding in [
                 *self._findings(review, spec.paths),
-                *self._static_findings(repo.root, spec.paths),
+                *self._static_findings(repo.root, files),
             ]
         }
         findings = sorted(
@@ -157,6 +173,12 @@ class AuditRunner:
             covered_surfaces=review.covered_surfaces,
             findings=findings,
             source_unchanged=True,
+            coverage=AuditCoverage(
+                discovered_files=len(files),
+                model_read_files=model_files,
+                static_analyzed_files=sum(Path(path).suffix == ".py" for path in files),
+                complete_model_read=len(model_files) == len(files),
+            ),
         )
 
     @staticmethod
@@ -199,32 +221,38 @@ class AuditRunner:
                     }:
                         continue
                     selected.append(candidate.relative_to(resolved_root).as_posix())
-                    if len(selected) >= 500:
-                        return sorted(set(selected))
         return sorted(set(selected))
 
     @staticmethod
-    def _bounded_sources(root: Path, paths: list[str]) -> str:
+    def _bounded_sources(root: Path, files: list[str]) -> tuple[str, list[str]]:
         blocks: list[str] = []
+        read_files: list[str] = []
         total = 0
         resolved_root = root.resolve()
-        files = AuditRunner._audit_files(root, paths)
         blocks.append(
-            f"Files in scope ({len(files)} shown, capped at 500): {', '.join(files[:200])}"
+            f"Files in scope ({len(files)} discovered; first 200 names): {', '.join(files[:200])}"
         )
-        for relative in files[:12]:
+        for relative in files:
+            if len(read_files) >= 12:
+                break
             path = (resolved_root / relative).resolve(strict=True)
             if path.stat().st_size > 32 * 1024:
                 continue
             content = path.read_text(errors="replace")
-            total += len(content.encode())
-            if total > 256 * 1024:
+            size = len(content.encode())
+            if total + size > 256 * 1024:
                 break
+            total += size
             numbered = "\n".join(
                 f"{number}: {line}" for number, line in enumerate(content.splitlines(), 1)
             )
             blocks.append(f"--- {relative} ---\n{numbered}")
-        return "\n".join(blocks)
+            read_files.append(relative)
+        blocks.append(
+            f"Coverage: model received {len(read_files)}/{len(files)} full files; "
+            "unread files require later targeted audit, not a clean bill of health."
+        )
+        return "\n".join(blocks), read_files
 
     @staticmethod
     def _findings(review: AgentReview, paths: list[str]) -> list[AuditFinding]:
@@ -250,9 +278,9 @@ class AuditRunner:
         return sorted(findings, key=lambda finding: (finding.priority, finding.id))
 
     @staticmethod
-    def _static_findings(root: Path, paths: list[str]) -> list[AuditFinding]:
+    def _static_findings(root: Path, files: list[str]) -> list[AuditFinding]:
         findings: list[AuditFinding] = []
-        for relative in AuditRunner._audit_files(root, paths):
+        for relative in files:
             if Path(relative).suffix != ".py":
                 continue
             source = (root / relative).read_text(errors="replace")

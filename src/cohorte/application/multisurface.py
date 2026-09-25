@@ -57,6 +57,13 @@ class MultiSurfaceResult:
 
 
 def plan_multisurface(profile: ProjectProfile, spec: FeatureSpec, base_commit: str) -> TaskPlan:
+    if profile.execution.mode == "container":
+        raise CohorteError(
+            ErrorCode.RUNTIME_INCOMPATIBLE,
+            "container execution is not available in this runtime",
+            "build was not started on the host",
+            remediation="select local execution in the profile",
+        )
     if profile.policy.require_frozen_spec and spec.status != SpecStatus.FROZEN:
         raise CohorteError(
             ErrorCode.SPEC_NOT_FROZEN,

@@ -3,11 +3,16 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
+from cohorte.adapters.providers import workflow_runtime
 from cohorte.application.client_wrappers import _render_legacy
 from cohorte.application.discovery import discover_project
 from cohorte.application.project_doctor import inspect_project
 from cohorte.application.service import CohorteService
 from cohorte.cli import main as cli
+from cohorte.domain.errors import CohorteError, ErrorCode
+from cohorte.domain.models import ExecutionConfig
 from cohorte.persistence.sqlite import Database
 
 
@@ -22,6 +27,18 @@ def test_doctor_names_missing_surface_with_a_concrete_fix(tmp_path: Path) -> Non
     assert report["ok"] is False
     finding = next(item for item in report["findings"] if item["code"] == "SURFACE_PATH_MISSING")
     assert "cohorte init . --refresh" in finding["fix"]
+
+
+def test_container_profile_never_falls_back_to_host_agents(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='demo'\nversion='0.1'\n")
+    profile, _ = discover_project(tmp_path)
+    profile = profile.model_copy(update={"execution": ExecutionConfig(mode="container")})
+    report = inspect_project(tmp_path, profile)
+    assert report["ok"] is False
+    assert any(item["code"] == "CONTAINER_EXECUTION_UNAVAILABLE" for item in report["findings"])
+    with pytest.raises(CohorteError) as caught:
+        workflow_runtime(tmp_path, profile)
+    assert caught.value.code == ErrorCode.RUNTIME_INCOMPATIBLE
 
 
 def test_doctor_human_output_gives_one_action_per_finding(capsys) -> None:
