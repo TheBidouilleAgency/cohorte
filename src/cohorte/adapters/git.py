@@ -97,8 +97,18 @@ class GitRepository:
         self._run("commit", "-m", message, "-m", f"Cohorte-Run: {run_id}")
         return self.head
 
-    def commit_task(self, message: str, run_id: str, task_id: str) -> str:
-        self._run("add", "--all", "--")
+    def commit_task(self, message: str, run_id: str, task_id: str, paths: list[str]) -> str:
+        if not paths:
+            raise ValueError("task commit requires validated changed paths")
+        self._run("reset", "--mixed", "HEAD", "--")
+        self._run("add", "--all", "--", *paths)
+        staged = [
+            path
+            for path in self._run("diff", "--cached", "--name-only", "-z", "--").split("\0")
+            if path
+        ]
+        if not staged or set(staged) != set(paths):
+            raise ValueError("task staging differs from validated changed paths")
         self._run(
             "commit",
             "-m",

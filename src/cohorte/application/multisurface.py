@@ -450,7 +450,7 @@ class MultiSurfaceRunner:
                 remediation="retry the task with a concrete implementation instruction",
             )
         commit = task_repo.commit_task(
-            f"feat({task.surface_ids[0]}): implement {spec.feature_id}", run_id, task.id
+            f"feat({task.surface_ids[0]}): implement {spec.feature_id}", run_id, task.id, changed
         )
         return commit, changed
 
