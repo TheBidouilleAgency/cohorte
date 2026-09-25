@@ -50,6 +50,41 @@ def test_python_uv_checks_install_declared_extras_and_match_ci(tmp_path: Path) -
     assert all(check.argv[:3] == ["uv", "run", "--all-extras"] for check in profile.checks)
 
 
+def test_refresh_upgrades_generated_uv_checks_without_replacing_custom_commands(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname = 'demo'\n"
+        "[project.optional-dependencies]\ndev = ['pytest', 'ruff', 'mypy']\n"
+        "[tool.ruff]\n[tool.mypy]\n"
+    )
+    (tmp_path / "uv.lock").write_text("version = 1\n")
+    (tmp_path / "tests").mkdir()
+    workflows = tmp_path / ".github" / "workflows"
+    workflows.mkdir(parents=True)
+    (workflows / "ci.yml").write_text("- run: uv sync --all-extras\n")
+    detected, _ = discover_project(tmp_path)
+    old_checks = [
+        check.model_copy(update={"argv": ["uv", "run", *check.argv[3:]]})
+        for check in detected.checks
+    ]
+    current = detected.model_copy(update={"checks": old_checks})
+
+    refreshed = reconcile_profile(current, detected)
+    assert [check.argv for check in refreshed.checks] == [check.argv for check in detected.checks]
+
+    custom_checks = [
+        check.model_copy(update={"argv": ["python", "-m", "pytest", "-q"]})
+        if check.id == "tests"
+        else check
+        for check in old_checks
+    ]
+    customized = current.model_copy(update={"checks": custom_checks})
+    refreshed = reconcile_profile(customized, detected)
+    assert refreshed.checks[0].argv == ["python", "-m", "pytest", "-q"]
+    assert refreshed.checks[1].argv[:3] == ["uv", "run", "--all-extras"]
+
+
 def test_python_project_without_uv_does_not_invent_uv_commands(tmp_path: Path) -> None:
     (tmp_path / "pyproject.toml").write_text("[project]\nname = 'demo'\n[tool.ruff]\n")
     (tmp_path / "tests").mkdir()
@@ -273,6 +308,34 @@ def test_registered_profile_refresh_preserves_custom_choices(tmp_path: Path) -> 
     assert refreshed["profile"]["brainstorm_panel"] == ["product", "architecture", "security"]
     assert any(surface["id"] == "rust" for surface in refreshed["profile"]["surfaces"])
     assert refreshed["analysis"]["contract"]["enabled"] is False
+    database.close()
+
+
+def test_refresh_and_edit_keep_profile_revision_when_artifact_revision_differs(
+    tmp_path: Path, capsys
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "package.json").write_text('{"scripts":{"test":"node --test"}}')
+    (project / "src").mkdir()
+    original, _ = discover_project(project)
+    original = original.model_copy(update={"revision": 3})
+    database = Database(tmp_path / "state.sqlite3")
+    artifact = database.put_artifact("project-profile", original.model_dump_json().encode())
+    database.register_project("project", str(project), artifact["id"])
+    service = CohorteService(database)
+
+    refreshed = service.init_project(project, refresh=True)
+    assert refreshed["profile"]["revision"] == 4
+    assert refreshed["profile_ref"]["revision"] == 2
+    cli._emit_profile_result(refreshed, False)
+    assert "Profil project · révision 4" in capsys.readouterr().out
+
+    document = refreshed["profile"].copy()
+    document["name"] = "Edited"
+    edited = service.save_project_profile("project", document, refreshed["profile_ref"]["revision"])
+    assert edited["profile"]["revision"] == 5
+    assert edited["profile_ref"]["revision"] == 3
     database.close()
 
 

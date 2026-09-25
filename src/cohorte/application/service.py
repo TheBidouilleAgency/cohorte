@@ -124,9 +124,10 @@ class CohorteService:
         profile = ProjectProfile.model_validate_json(json.dumps(document))
         if profile.project_id != project_id:
             raise ValueError("profile project_id cannot be changed")
-        if profile.revision != expected_revision:
+        current_revision = project["profile"]["revision"]
+        if profile.revision != current_revision:
             raise ValueError("profile revision must match the version being edited")
-        updated = profile.model_copy(update={"revision": expected_revision + 1})
+        updated = profile.model_copy(update={"revision": current_revision + 1})
         content = (
             json.dumps(updated.model_dump(mode="json"), ensure_ascii=False, indent=2) + "\n"
         ).encode()
