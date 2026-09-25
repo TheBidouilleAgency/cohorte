@@ -62,7 +62,9 @@ class CohorteService:
                 )
             if not refresh:
                 if profile_override is not None:
-                    raise ValueError("project already exists; use --refresh to apply a profile file")
+                    raise ValueError(
+                        "project already exists; use --refresh to apply a profile file"
+                    )
                 return {
                     "profile": existing["profile"],
                     "profile_ref": existing["profile_ref"],

@@ -267,9 +267,7 @@ def test_supervised_fleet_refuses_dirty_branch_and_unmerged_sync(tmp_path: Path)
     assert (web / "work.txt").read_text() == "in progress\n"
 
 
-def test_loop_can_build_in_prepared_fleet_worktree(
-    tmp_path: Path, monkeypatch, capsys
-) -> None:
+def test_loop_can_build_in_prepared_fleet_worktree(tmp_path: Path, monkeypatch, capsys) -> None:
     root = repository(tmp_path)
     selected_profile = profile()
     selected_spec = feature("api-feature", "api", "api-check")
@@ -290,14 +288,29 @@ def test_loop_can_build_in_prepared_fleet_worktree(
     )
     candidate = Path(planned["features"]["api-feature"]["worktree"])
     monkeypatch.setattr(cli, "workflow_runtime", lambda *_args, **_kwargs: FleetRuntime())
-    assert cli.run(
-        [
-            "--json", "--data-dir", str(tmp_path / "data"), "loop", str(spec_path),
-            "--profile", str(profile_path), "--repo", str(root),
-            "--worktrees", str(tmp_path / "worktrees"),
-            "--existing-worktree", str(candidate), "--run-id", "supervised-api-feature", "--live",
-        ]
-    ) == 0
+    assert (
+        cli.run(
+            [
+                "--json",
+                "--data-dir",
+                str(tmp_path / "data"),
+                "loop",
+                str(spec_path),
+                "--profile",
+                str(profile_path),
+                "--repo",
+                str(root),
+                "--worktrees",
+                str(tmp_path / "worktrees"),
+                "--existing-worktree",
+                str(candidate),
+                "--run-id",
+                "supervised-api-feature",
+                "--live",
+            ]
+        )
+        == 0
+    )
     output = json.loads(capsys.readouterr().out)
     assert output["ok"] is True
     assert (candidate / "api.py").read_text() == "api-feature\n"

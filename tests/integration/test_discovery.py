@@ -287,8 +287,11 @@ def test_init_profile_file_registers_explicit_structured_choices(tmp_path: Path,
     chosen = tmp_path / "profile.json"
     chosen.write_text(json.dumps(document))
     data = tmp_path / "data"
-    assert cli.run(
-        ["--json", "--data-dir", str(data), "init", str(project), "--profile-file", str(chosen)]
-    ) == 0
+    assert (
+        cli.run(
+            ["--json", "--data-dir", str(data), "init", str(project), "--profile-file", str(chosen)]
+        )
+        == 0
+    )
     output = json.loads(capsys.readouterr().out)
     assert output["data"]["profile"]["brainstorm_panel"] == document["brainstorm_panel"]

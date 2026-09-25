@@ -71,7 +71,15 @@ def create_supervised_fleet(
             "depends_on": plan.dependencies[feature_id],
             "spec_revision": next(spec.revision for spec in specs if spec.feature_id == feature_id),
             "spec_path": (
-                str(spec_paths[next(index for index, spec in enumerate(specs) if spec.feature_id == feature_id)].resolve())
+                str(
+                    spec_paths[
+                        next(
+                            index
+                            for index, spec in enumerate(specs)
+                            if spec.feature_id == feature_id
+                        )
+                    ].resolve()
+                )
                 if spec_paths is not None
                 else None
             ),
@@ -120,7 +128,9 @@ def supervised_fleet_status(
             continue
         repo = GitRepository(worktree)
         if _git(worktree, "branch", "--show-current") != item["branch"]:
-            rows.append({"feature_id": feature_id, "state": "branch-mismatch", "next": "inspect worktree"})
+            rows.append(
+                {"feature_id": feature_id, "state": "branch-mismatch", "next": "inspect worktree"}
+            )
             continue
         try:
             if fetch:
@@ -131,7 +141,12 @@ def supervised_fleet_status(
             behind = int(_git(worktree, "rev-list", "--count", f"HEAD..{upstream}"))
         except RuntimeError as error:
             rows.append(
-                {"feature_id": feature_id, "state": "upstream-unavailable", "next": "retry fetch", "error": str(error)}
+                {
+                    "feature_id": feature_id,
+                    "state": "upstream-unavailable",
+                    "next": "retry fetch",
+                    "error": str(error),
+                }
             )
             continue
         dirty = repo.is_dirty()
@@ -161,7 +176,11 @@ def supervised_fleet_status(
                 "behind": behind,
                 "depends_on": depends_on,
                 "run": (
-                    {"id": current_run.id, "stage": current_run.stage.value, "status": current_run.status.value}
+                    {
+                        "id": current_run.id,
+                        "stage": current_run.stage.value,
+                        "status": current_run.status.value,
+                    }
                     if current_run is not None
                     else None
                 ),
@@ -187,9 +206,10 @@ def sync_supervised_fleet(
     upstream = source.fetch_ref(remote, f"refs/heads/{default_branch}")
     merged_branch = manifest["features"][merged_feature]["branch"]
     merged_head = _git(source.root, "rev-parse", f"refs/heads/{merged_branch}")
-    if merged_head == manifest["base_commit"] or _git(
-        source.root, "merge-base", merged_head, upstream
-    ) != merged_head:
+    if (
+        merged_head == manifest["base_commit"]
+        or _git(source.root, "merge-base", merged_head, upstream) != merged_head
+    ):
         raise ValueError("feature branch is not merged in the fetched default branch")
     manifest["merged"].append(merged_feature)
     manifest["order"].remove(merged_feature)
@@ -206,18 +226,26 @@ def sync_supervised_fleet(
             continue
         if active_features and feature_id in active_features:
             outcomes.append(
-                {"feature_id": feature_id, "status": "active-run", "action": "rebase in owning session"}
+                {
+                    "feature_id": feature_id,
+                    "status": "active-run",
+                    "action": "rebase in owning session",
+                }
             )
             continue
         if repo.is_dirty():
-            outcomes.append({"feature_id": feature_id, "status": "dirty", "action": "rebase in owning session"})
+            outcomes.append(
+                {"feature_id": feature_id, "status": "dirty", "action": "rebase in owning session"}
+            )
             continue
         behind = int(_git(worktree, "rev-list", "--count", f"HEAD..{upstream}"))
         if not behind:
             outcomes.append({"feature_id": feature_id, "status": "current"})
             continue
         if not apply:
-            outcomes.append({"feature_id": feature_id, "status": "rebase-ready", "action": "sync --apply"})
+            outcomes.append(
+                {"feature_id": feature_id, "status": "rebase-ready", "action": "sync --apply"}
+            )
             continue
         try:
             _git(worktree, "rebase", upstream)
@@ -226,8 +254,17 @@ def sync_supervised_fleet(
             outcomes.append({"feature_id": feature_id, "status": "conflict", "error": str(error)})
             continue
         outcomes.append(
-            {"feature_id": feature_id, "status": "rebased", "head": repo.head, "action": "rerun review before ship"}
+            {
+                "feature_id": feature_id,
+                "status": "rebased",
+                "head": repo.head,
+                "action": "rerun review before ship",
+            }
         )
     if apply:
         _write_manifest(manifest_path, manifest)
-    return {"fleet_id": manifest["fleet_id"], "merged_feature": merged_feature, "outcomes": outcomes}
+    return {
+        "fleet_id": manifest["fleet_id"],
+        "merged_feature": merged_feature,
+        "outcomes": outcomes,
+    }

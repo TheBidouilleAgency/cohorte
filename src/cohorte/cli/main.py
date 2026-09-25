@@ -621,7 +621,11 @@ def _configure_init_candidate(profile: Any, analysis: dict[str, Any], root: Path
     retrieval_sources = signals.get("retrieval", [])
     if retrieval_sources:
         available = sorted(
-            {provider for provider in ("serena", "graphify") if any(provider in item.casefold() for item in retrieval_sources)}
+            {
+                provider
+                for provider in ("serena", "graphify")
+                if any(provider in item.casefold() for item in retrieval_sources)
+            }
         )
         print(f"Retrieval détecté : {', '.join(retrieval_sources)}")
         selected = _prompt(
@@ -642,11 +646,14 @@ def _configure_init_candidate(profile: Any, analysis: dict[str, Any], root: Path
             "Source design JSON relative ou URL Figma (Entrée = désactivé)", required=False
         ).strip()
         if source:
-            if source.startswith("https://www.figma.com/"):
+            if source.startswith(("https://www.figma.com/", "https://figma.com/")):
                 provider = "figma"
             else:
                 candidate = (root / source).resolve(strict=True)
-                if not candidate.is_relative_to(root.resolve(strict=True)) or not candidate.is_file():
+                if (
+                    not candidate.is_relative_to(root.resolve(strict=True))
+                    or not candidate.is_file()
+                ):
                     raise ValueError("design source must be a file inside the project")
                 if candidate.stat().st_size > 2 * 1024 * 1024:
                     raise ValueError("design source exceeds 2 MiB")
@@ -654,10 +661,21 @@ def _configure_init_candidate(profile: Any, analysis: dict[str, Any], root: Path
                 if not isinstance(payload, dict):
                     raise ValueError("design source must contain a JSON object")
                 provider = "file"
+            snapshot_path = _prompt(
+                "Snapshot design JSON du dépôt (chemin relatif, obligatoire)", required=True
+            ).strip()
+            snapshot = (root / snapshot_path).resolve(strict=True)
+            if not snapshot.is_relative_to(root.resolve(strict=True)) or not snapshot.is_file():
+                raise ValueError("design snapshot must be a file inside the project")
+            if snapshot.stat().st_size > 2 * 1024 * 1024:
+                raise ValueError("design snapshot exceeds 2 MiB")
+            if not isinstance(json.loads(snapshot.read_text(encoding="utf-8")), dict):
+                raise ValueError("design snapshot must contain a JSON object")
             document["integrations"]["design"] = {
                 "enabled": True,
                 "provider": provider,
                 "source": source,
+                "snapshot_path": snapshot_path,
             }
     return ProjectProfile.model_validate_json(json.dumps(document))
 
@@ -669,7 +687,9 @@ def _emit_supervised_fleet(
         _emit(result, True)
         return
     if command == "fleet-plan":
-        print(f"Fleet {result['fleet_id']} · {len(result['order'])} features · base {result['base_commit'][:12]}")
+        print(
+            f"Fleet {result['fleet_id']} · {len(result['order'])} features · base {result['base_commit'][:12]}"
+        )
         for overlap in result["overlaps"]:
             print(
                 f"Chevauchement : {overlap['left_feature']} / {overlap['right_feature']} · "
@@ -681,14 +701,27 @@ def _emit_supervised_fleet(
             print(f"{feature_id} · après {dependencies} · {item['worktree']}")
             if item["spec_path"] and result["profile_path"]:
                 command_line = [
-                    "cohorte", "--data-dir", str(data_dir), "loop", item["spec_path"],
-                    "--profile", result["profile_path"], "--repo", result["repository"],
-                    "--worktrees", result["worktree_parent"],
-                    "--existing-worktree", item["worktree"],
-                    "--run-id", f"{result['fleet_id']}-{feature_id}"[:80], "--live",
+                    "cohorte",
+                    "--data-dir",
+                    str(data_dir),
+                    "loop",
+                    item["spec_path"],
+                    "--profile",
+                    result["profile_path"],
+                    "--repo",
+                    result["repository"],
+                    "--worktrees",
+                    result["worktree_parent"],
+                    "--existing-worktree",
+                    item["worktree"],
+                    "--run-id",
+                    f"{result['fleet_id']}-{feature_id}"[:80],
+                    "--live",
                 ]
                 print(f"  Dans sa propre session : {shlex.join(command_line)}")
-        print(f"Suivi : cohorte fleet-status {result['fleet_id']} --project-id {result['project_id']}")
+        print(
+            f"Suivi : cohorte fleet-status {result['fleet_id']} --project-id {result['project_id']}"
+        )
     elif command == "fleet-status":
         print(f"Fleet {result['fleet_id']} · {len(result['rows'])} features actives")
         for row in result["rows"]:
@@ -2111,6 +2144,7 @@ def run(argv: list[str] | None = None) -> int:
             )
         elif args.command == "align-ds-plan":
             from cohorte.application.context import (
+                DesignPort,
                 FileDesignPort,
                 capture_design,
                 plan_design_alignment,
@@ -2119,8 +2153,16 @@ def run(argv: list[str] | None = None) -> int:
 
             profile = ProjectProfile.model_validate_json(args.profile.read_text())
             design = profile.integrations.design
-            port = FileDesignPort(args.repo) if design.provider == "file" else None
-            capture = capture_design(design, port)
+            alignment_port: DesignPort | None
+            if design.provider == "file":
+                alignment_port = FileDesignPort(args.repo)
+            elif design.provider == "figma":
+                from cohorte.adapters.figma import FigmaDesignPort
+
+                alignment_port = FigmaDesignPort()
+            else:
+                alignment_port = None
+            capture = capture_design(design, alignment_port)
             plan = plan_design_alignment(args.repo, design, capture)
             if plan.status == "blocked":
                 raise CohorteError(
@@ -2429,7 +2471,8 @@ def run(argv: list[str] | None = None) -> int:
                     active_features = {
                         state.feature_id
                         for state in database.list_runs(args.project_id)
-                        if state.status not in {RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELLED}
+                        if state.status
+                        not in {RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELLED}
                     }
                     fleet_output = sync_supervised_fleet(
                         manifest, args.merged, apply=args.apply, active_features=active_features

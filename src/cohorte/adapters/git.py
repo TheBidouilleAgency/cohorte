@@ -77,7 +77,9 @@ class GitRepository:
     def changed_between(self, base: str, head: str) -> list[str]:
         return [
             path
-            for path in self._run("diff", "--name-only", "-z", "--no-ext-diff", base, head, "--").split("\0")
+            for path in self._run(
+                "diff", "--name-only", "-z", "--no-ext-diff", base, head, "--"
+            ).split("\0")
             if path
         ]
 

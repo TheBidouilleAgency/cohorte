@@ -6,7 +6,9 @@ from typing import Any, ClassVar
 import pytest
 
 from cohorte.adapters.figma import FigmaDesignPort
-from cohorte.application.context import capture_design
+from cohorte.application.context import DesignDocument, capture_design
+from cohorte.application.discovery import discover_project
+from cohorte.cli import main as cli
 from cohorte.domain.models import DesignConfig
 
 
@@ -88,3 +90,46 @@ def test_figma_missing_token_stays_explicit_and_offline(monkeypatch: pytest.Monk
 def test_figma_rejects_non_figma_url() -> None:
     with pytest.raises(ValueError, match="Figma HTTPS"):
         FigmaDesignPort(token="test").fetch("https://example.com/file/AbCdEf123456")
+
+
+def test_align_ds_plan_uses_configured_figma_source(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    (tmp_path / "package.json").write_text('{"scripts":{"test":"node --test"}}')
+    (tmp_path / "design-snapshot.json").write_text("{}")
+    profile, _ = discover_project(tmp_path)
+    document = profile.model_dump(mode="json")
+    document["integrations"]["design"] = {
+        "enabled": True,
+        "provider": "figma",
+        "source": "https://www.figma.com/design/AbCdEf123456/Design",
+        "snapshot_path": "design-snapshot.json",
+    }
+    profile_path = tmp_path / "profile.json"
+    profile_path.write_text(json.dumps(document))
+    monkeypatch.setattr(
+        FigmaDesignPort,
+        "fetch",
+        lambda _self, _source: DesignDocument(
+            provider="figma",
+            source="AbCdEf123456",
+            version="v2",
+            content={"document": {"id": "1"}},
+        ),
+    )
+    result = cli.run(
+        [
+            "--json",
+            "--data-dir",
+            str(tmp_path / "data"),
+            "align-ds-plan",
+            "--profile",
+            str(profile_path),
+            "--repo",
+            str(tmp_path),
+            "--output",
+            str(tmp_path / "plan.json"),
+        ]
+    )
+    assert result == 0
+    assert json.loads(capsys.readouterr().out)["data"]["plan"]["status"] == "changes"
