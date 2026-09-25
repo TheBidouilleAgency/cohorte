@@ -330,9 +330,25 @@ def discover_project(root: Path, language: str = "fr") -> tuple[ProjectProfile, 
     if (root / "pyproject.toml").is_file():
         pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
         tooling = pyproject.get("tool", {})
+        uv_project = (root / "uv.lock").is_file()
+        uv_extras: list[str] = []
+        if uv_project:
+            workflow_dir = root / ".github" / "workflows"
+            workflows = (
+                [*workflow_dir.glob("*.yml"), *workflow_dir.glob("*.yaml")]
+                if workflow_dir.is_dir()
+                else []
+            )
+            if any(
+                "uv sync --all-extras" in path.read_text(encoding="utf-8", errors="replace")
+                for path in workflows
+            ):
+                uv_extras = ["--all-extras"]
+            elif "dev" in pyproject.get("project", {}).get("optional-dependencies", {}):
+                uv_extras = ["--extra", "dev"]
         command_prefix = (
-            ["uv", "run"]
-            if (root / "uv.lock").is_file()
+            ["uv", "run", *uv_extras]
+            if uv_project
             else ["poetry", "run"]
             if (root / "poetry.lock").is_file()
             else []
@@ -355,6 +371,17 @@ def discover_project(root: Path, language: str = "fr") -> tuple[ProjectProfile, 
                 CheckDefinition(
                     id="lint", argv=[*command_prefix, "ruff", "check", "."], timeout_seconds=120
                 )
+            )
+            detected_checks.append(
+                CheckDefinition(
+                    id="format",
+                    argv=[*command_prefix, "ruff", "format", "--check", "."],
+                    timeout_seconds=120,
+                )
+            )
+        if "mypy" in tooling:
+            detected_checks.append(
+                CheckDefinition(id="types", argv=[*command_prefix, "mypy"], timeout_seconds=300)
             )
         if not detected_checks:
             questions.append("Aucun check Python confirmé : choisir les commandes de validation.")

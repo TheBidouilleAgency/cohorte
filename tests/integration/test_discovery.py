@@ -27,7 +27,27 @@ def test_discovers_python_project(tmp_path: Path) -> None:
     assert [check.argv for check in profile.checks] == [
         ["uv", "run", "pytest", "-q"],
         ["uv", "run", "ruff", "check", "."],
+        ["uv", "run", "ruff", "format", "--check", "."],
     ]
+
+
+def test_python_uv_checks_install_declared_extras_and_match_ci(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname = 'demo'\n"
+        "[project.optional-dependencies]\ndev = ['pytest', 'ruff', 'mypy']\n"
+        "[tool.ruff]\n[tool.mypy]\n"
+    )
+    (tmp_path / "uv.lock").write_text("version = 1\n")
+    (tmp_path / "tests").mkdir()
+    profile, _ = discover_project(tmp_path)
+    assert [check.id for check in profile.checks] == ["tests", "lint", "format", "types"]
+    assert all(check.argv[:4] == ["uv", "run", "--extra", "dev"] for check in profile.checks)
+
+    workflows = tmp_path / ".github" / "workflows"
+    workflows.mkdir(parents=True)
+    (workflows / "ci.yml").write_text("- run: uv sync --all-extras\n")
+    profile, _ = discover_project(tmp_path)
+    assert all(check.argv[:3] == ["uv", "run", "--all-extras"] for check in profile.checks)
 
 
 def test_python_project_without_uv_does_not_invent_uv_commands(tmp_path: Path) -> None:
