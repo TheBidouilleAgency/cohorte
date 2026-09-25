@@ -78,7 +78,7 @@ Lors de `spec`, le terminal rappelle des chemins sourcés du brief et du dépôt
 | `audit [--profile PROFILE] [--audit-id ID] [--title TITRE] [--surface ID] [--path PATH] [--concern TEXTE] [--output FILE] --live` | Auditer le projet courant ou une sélection explicite ; `--surface`, `--path` et `--concern` sont répétables. |
 | `refactor-request SELECTION` | Demander l’approbation d’une sélection de refactor. |
 | `refactor SELECTION --profile PROFILE --worktrees DIR --run-id ID --live` | Exécuter une sélection approuvée. |
-| `retro REPORT... --proposal-id ID --rule TEXTE --output FILE` | Proposer une convention à partir des revues. |
+| `retro [--manual] [--pattern ID --rule TEXTE]` | Extraire les motifs récurrents des revues du projet courant, suggérer des règles en lecture seule puis créer une demande de ratification. En JSON sans `--pattern`, renvoie les motifs ; `--live` ajoute les suggestions agent. L'ancienne forme `retro REPORT... --proposal-id ID --rule TEXTE --output FILE` reste disponible pour les rapports d'audit. |
 | `retro-apply PROPOSAL --profile PROFILE --decision-id ID --output FILE` | Appliquer une convention approuvée. |
 
 ## Intégrations et migration

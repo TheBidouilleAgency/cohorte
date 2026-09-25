@@ -28,6 +28,7 @@ from cohorte.application.preparation import (
     BrainstormSynthesisTurn,
     SpecProposal,
 )
+from cohorte.application.retrospective import RetroSuggestions
 from cohorte.application.vertical import AgentReport, AgentReview
 from cohorte.domain.auth import (
     AccountStatus,
@@ -307,6 +308,11 @@ class CodexAdapter:
     def patch_proposal(self, workspace: Path, prompt: str) -> PatchProposal:
         return self._structured_turn(
             workspace, prompt, PatchProposal, Sandbox.read_only, "patch_proposal"
+        )
+
+    def retro_suggestions(self, workspace: Path, prompt: str) -> RetroSuggestions:
+        return self._structured_turn(
+            workspace, prompt, RetroSuggestions, Sandbox.read_only, "retro_suggestions"
         )
 
     def build(self, workspace: Path, prompt: str) -> AgentReport:

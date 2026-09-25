@@ -203,7 +203,16 @@ class VerticalRunner:
                 "review",
                 candidate,
                 plan,
-                {"ready": ready, "verdict": review.verdict.value},
+                {
+                    "ready": ready,
+                    "verdict": review.verdict.value,
+                    "covered_surfaces": review.covered_surfaces,
+                    "findings": [
+                        {**finding.model_dump(mode="json"), "message": finding.message[:2000]}
+                        for finding in review.findings[:100]
+                    ],
+                    "findings_truncated": len(review.findings) > 100,
+                },
             )
             if ready:
                 break

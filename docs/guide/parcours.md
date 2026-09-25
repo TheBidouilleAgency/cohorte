@@ -66,7 +66,7 @@ cohorte --json delivery-status RUN_ID --live --watch
 
 ## Autres parcours
 
-Après `intake`, une demande classée « patch » peut être préparée avec `cohorte patch-spec --from-intake IDENTIFIANT`. L'agent propose en lecture seule un diagnostic, une reproduction, des surfaces, chemins, checks de régression et un retour arrière. Le terminal les laisse corriger avant d'écrire le `patch.json` à relire avant `patch` ; `--manual` saute cette proposition. `cohorte audit` utilise le profil du projet courant, ou accepte des entrées explicites. `refactor`, `retro` et `align-ds-*` servent aussi à la maintenance. La [référence CLI](/reference/cli) donne leurs paramètres.
+Après `intake`, une demande classée « patch » peut être préparée avec `cohorte patch-spec --from-intake IDENTIFIANT`. L'agent propose en lecture seule un diagnostic, une reproduction, des surfaces, chemins, checks de régression et un retour arrière. Le terminal les laisse corriger avant d'écrire le `patch.json` à relire avant `patch` ; `--manual` saute cette proposition. `cohorte audit` utilise le profil du projet courant, ou accepte des entrées explicites. `cohorte retro` cherche les constats de revue répétés entre au moins deux fonctionnalités et propose une règle à ratifier : seule une décision approuvée puis `retro-apply` l'ajoute au profil actif. Les revues antérieures à l'enregistrement structuré des constats ne peuvent pas être récupérées automatiquement. `refactor` et `align-ds-*` restent plus explicites. La [référence CLI](/reference/cli) donne leurs paramètres.
 
 ## Limites actuelles
 

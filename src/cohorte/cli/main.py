@@ -209,10 +209,13 @@ def _parser() -> argparse.ArgumentParser:
     refactor_request = sub.add_parser("refactor-request")
     refactor_request.add_argument("selection", type=Path)
     retro = sub.add_parser("retro")
-    retro.add_argument("reports", type=Path, nargs="+")
-    retro.add_argument("--proposal-id", required=True)
-    retro.add_argument("--rule", required=True)
-    retro.add_argument("--output", type=Path, required=True)
+    retro.add_argument("reports", type=Path, nargs="*")
+    retro.add_argument("--proposal-id")
+    retro.add_argument("--rule")
+    retro.add_argument("--output", type=Path)
+    retro.add_argument("--pattern")
+    retro.add_argument("--manual", action="store_true")
+    retro.add_argument("--live", action="store_true")
     retro_apply = sub.add_parser("retro-apply")
     retro_apply.add_argument("proposal", type=Path)
     retro_apply.add_argument("--profile", type=Path, required=True)
@@ -1642,17 +1645,110 @@ def run(argv: list[str] | None = None) -> int:
             )
         elif args.command == "retro":
             from cohorte.application.maintenance import AuditReport, propose_retro
+            from cohorte.application.retrospective import (
+                mine_review_patterns,
+                proposal_from_pattern,
+                suggest_retro_rules,
+            )
+            from cohorte.domain.models import ProjectProfile, Provider
 
-            reports = [
-                AuditReport.model_validate_json(report.read_text()) for report in args.reports
-            ]
-            proposal = propose_retro(args.proposal_id, args.rule, reports)
+            retro_project_id: str | None = None
+            if args.reports:
+                if not args.proposal_id or not args.rule or args.output is None:
+                    raise ValueError(
+                        "retro with report files requires --proposal-id, --rule and --output"
+                    )
+                reports = [
+                    AuditReport.model_validate_json(report.read_text()) for report in args.reports
+                ]
+                proposal = propose_retro(args.proposal_id, args.rule, reports)
+            else:
+                project = _project_for_path(database, Path.cwd())
+                retro_project_id = project["id"]
+                profile = ProjectProfile.model_validate_json(json.dumps(project["profile"]))
+                patterns = mine_review_patterns(database, profile)
+                suggestions = []
+                if patterns and not args.manual and (args.live or not args.json):
+                    repository = Path(project["root_path"]).resolve(strict=True)
+                    runtime = (
+                        ClaudeAdapter(repository)
+                        if profile.agent_defaults.provider == Provider.CLAUDE
+                        else CodexAdapter(repository)
+                    )
+                    try:
+                        suggestions = suggest_retro_rules(
+                            runtime, repository, profile, patterns
+                        ).suggestions
+                    except (CohorteError, ValueError, RuntimeError) as error:
+                        if not args.json:
+                            print(f"Propositions agent indisponibles : {error}", file=sys.stderr)
+                if args.pattern is None and (args.json or not sys.stdin.isatty()):
+                    _emit(
+                        {
+                            "patterns": [item.model_dump(mode="json") for item in patterns],
+                            "suggestions": [item.model_dump(mode="json") for item in suggestions],
+                        },
+                        args.json,
+                    )
+                    return 0
+                if not patterns:
+                    print("Aucun motif présent dans les revues d'au moins deux features.")
+                    return 0
+                if not args.json:
+                    for pattern in patterns:
+                        print(
+                            f"{pattern.id} · {pattern.surface_id}/{pattern.category} · "
+                            f"{len({item.feature_id for item in pattern.evidence})} features"
+                        )
+                        for item in pattern.evidence[:5]:
+                            print(f"  • {item.feature_id} · {item.path} · {item.message}")
+                        suggestion = next(
+                            (item for item in suggestions if item.pattern_id == pattern.id), None
+                        )
+                        if suggestion:
+                            label = (
+                                "Règle existante à mieux faire appliquer"
+                                if suggestion.existing_rule_gap
+                                else "Règle proposée"
+                            )
+                            print(f"  {label} : {suggestion.rule}")
+                            print(f"  Limite : {suggestion.caveat}")
+                selected = args.pattern or _prompt(
+                    "Motif à transformer en proposition (Entrée = arrêter)", required=False
+                )
+                if not selected:
+                    return 0
+                selected_pattern = next((item for item in patterns if item.id == selected), None)
+                if selected_pattern is None:
+                    raise ValueError("unknown retro pattern")
+                suggestion = next(
+                    (item for item in suggestions if item.pattern_id == selected_pattern.id), None
+                )
+                if args.json and not args.rule:
+                    raise ValueError("retro --pattern in JSON mode requires --rule")
+                if args.rule:
+                    rule = args.rule
+                elif suggestion is not None and not suggestion.existing_rule_gap:
+                    choice = _prompt("Adopter la règle proposée ? [o/N]", required=False)
+                    rule = suggestion.rule if choice.casefold() in {"o", "oui", "y", "yes"} else ""
+                else:
+                    rule = ""
+                rule = rule or _prompt("Règle concrète à proposer", required=False)
+                if not rule:
+                    print("Aucune règle proposée ; profil inchangé.")
+                    return 0
+                proposal = proposal_from_pattern(
+                    selected_pattern, args.proposal_id or f"retro-{selected_pattern.id}", rule
+                )
+                args.output = args.output or (
+                    args.data_dir / "retros" / f"{proposal.proposal_id}.json"
+                )
             proposal_ref = database.put_artifact(
                 "retro-proposal", proposal.model_dump_json(indent=2).encode()
             )
             subject_hash = hashlib.sha256(proposal.model_dump_json().encode()).hexdigest()
             request_id = database.create_request(
-                None,
+                retro_project_id,
                 "retro-ratification",
                 {
                     "proposal_id": proposal.proposal_id,
@@ -1661,6 +1757,7 @@ def run(argv: list[str] | None = None) -> int:
                 },
                 subject_hash,
             )
+            args.output.parent.mkdir(parents=True, exist_ok=True)
             args.output.write_text(proposal.model_dump_json(indent=2) + "\n")
             _emit(
                 {
@@ -1700,11 +1797,29 @@ def run(argv: list[str] | None = None) -> int:
                     sha256=request["subject_hash"],
                 ),
             )
-            profile_ref = database.put_artifact(
-                "project-profile",
-                ratified.profile_after.model_dump_json(indent=2).encode(),
-                artifact_id=f"profile:{profile.project_id}",
-            )
+            try:
+                active_project = database.get_project(profile.project_id)
+            except KeyError:
+                profile_ref = database.put_artifact(
+                    "project-profile",
+                    ratified.profile_after.model_dump_json(indent=2).encode(),
+                    artifact_id=f"profile:{profile.project_id}",
+                )
+            else:
+                if active_project["profile"] != profile.model_dump(mode="json"):
+                    raise ValueError("retro profile is stale; reload the active project profile")
+                updated_document = ratified.profile_after.model_dump(mode="json")
+                updated_document["revision"] = profile.revision
+                saved = service.save_project_profile(
+                    profile.project_id,
+                    updated_document,
+                    active_project["profile_ref"]["revision"],
+                )
+                profile_ref = cast(dict[str, Any], saved["profile_ref"])
+                if saved["profile"] != ratified.profile_after.model_dump(mode="json"):
+                    raise AssertionError(
+                        "ratified convention was not applied to the active profile"
+                    )
             args.output.write_text(ratified.profile_after.model_dump_json(indent=2) + "\n")
             _emit(
                 {

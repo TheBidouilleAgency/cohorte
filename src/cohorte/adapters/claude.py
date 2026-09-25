@@ -22,6 +22,7 @@ from cohorte.application.preparation import (
     BrainstormSynthesisTurn,
     SpecProposal,
 )
+from cohorte.application.retrospective import RetroSuggestions
 from cohorte.application.vertical import AgentReport, AgentReview
 from cohorte.domain.auth import (
     AccountStatus,
@@ -397,6 +398,9 @@ class ClaudeAdapter:
 
     def patch_proposal(self, workspace: Path, prompt: str) -> PatchProposal:
         return self._structured_turn(workspace, prompt, PatchProposal, True, "patch_proposal")
+
+    def retro_suggestions(self, workspace: Path, prompt: str) -> RetroSuggestions:
+        return self._structured_turn(workspace, prompt, RetroSuggestions, True, "retro_suggestions")
 
     def build(self, workspace: Path, prompt: str) -> AgentReport:
         return self._structured_turn(workspace, prompt, AgentReport, False, "build")
