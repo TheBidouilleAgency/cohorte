@@ -109,6 +109,9 @@ class SpecProposal(StrictModel):
     migrations_required: bool
     migrations: str
     rollback: str
+    design_constraints: list[str] = Field(default_factory=list)
+    rbac_requirements: list[str] = Field(default_factory=list)
+    mobile_requirements: list[str] = Field(default_factory=list)
 
 
 class BrainstormRuntime(Protocol):

@@ -11,6 +11,7 @@ from typing import Any, Protocol
 from pydantic import Field
 
 from cohorte.adapters.git import GitRepository, path_is_owned
+from cohorte.application.project_constraints import active_constraints, validate_project_constraints
 from cohorte.application.repository_context import (
     collect_project_overview,
     collect_repository_context,
@@ -100,6 +101,7 @@ def plan_feature(profile: ProjectProfile, spec: FeatureSpec, base_commit: str) -
     missing = sorted(set(spec.surfaces) - set(known_surfaces))
     if missing:
         raise ValueError(f"unknown spec surfaces: {', '.join(missing)}")
+    validate_project_constraints(profile, spec)
     criteria = [criterion.id for criterion in spec.acceptance]
     write_paths = sorted({path for sid in spec.surfaces for path in known_surfaces[sid].paths})
     check_ids = sorted(
@@ -384,9 +386,13 @@ class VerticalRunner:
         changed_files: list[str],
         diff: str,
     ) -> str:
+        required = sorted(active_constraints(profile, spec.surfaces))
         return (
             "Independently review the candidate against the frozen spec. Do not modify files. "
             "Use critical/high/medium/low severities and return READY only with no blocking finding.\n"
+            f"Active project constraints to verify against spec and diff: {required}. "
+            "Check design references, role permissions and mobile behavior when listed; "
+            "report missing evidence as a finding.\n"
             f"Base commit: {base_commit}\nSurfaces: {spec.surfaces}\n"
             f"Changed files to inspect in the worktree: {changed_files}\n"
             f"Spec:\n{spec.model_dump_json(indent=2)}\nProfile:\n"

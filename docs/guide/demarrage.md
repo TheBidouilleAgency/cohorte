@@ -45,6 +45,8 @@ cohorte spec IDENTIFIANT
 
 `spec` demande à l'agent du profil une proposition en lecture seule : réponses possibles aux questions ouvertes, scénarios, critères, checks du profil, tests, cas d'erreur et retour arrière. Ces pistes restent des propositions ; une question sans réponse de votre part demeure ouverte. Vous pouvez accepter le brouillon proposé, le corriger dans le fichier JSON ou choisir la saisie manuelle avec `cohorte spec IDENTIFIANT --manual`. Si l'agent est indisponible, la saisie manuelle reste accessible. Avant de geler la spec, Cohorte affiche son contenu et demande votre approbation exacte. **La préparation et le gel ne lancent pas les agents de code.**
 
+Lorsque le profil active le design, le RBAC ou le mobile sur une surface concernée, la spec demande aussi les contraintes correspondantes. Une spec sans ces contraintes ne peut pas être gelée ni construite ; la revue reçoit une liste explicite de points à contrôler.
+
 Le cadrage rappelle des fichiers pertinents du dépôt à vérifier avant le gel. Les agents de construction, revue et correction reçoivent ensuite la spec approuvée et un relevé récent des fichiers utiles dans leur worktree ; la revue inspecte également le diff. Relisez les décisions de la spec : le relevé de fichiers sert d'indice et peut manquer du contexte métier extérieur au dépôt.
 
 Une fois la spec gelée :

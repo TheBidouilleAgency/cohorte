@@ -192,6 +192,7 @@ class Integrations(StrictModel):
     retrieval: RetrievalConfig = Field(default_factory=RetrievalConfig)
     design: DesignConfig = Field(default_factory=DesignConfig)
     rbac: dict[str, Any] = Field(default_factory=lambda: {"enabled": False})
+    mobile: dict[str, Any] = Field(default_factory=lambda: {"enabled": False})
     kanban: KanbanConfig = Field(default_factory=KanbanConfig)
     release_notes: dict[str, Any] = Field(default_factory=lambda: {"enabled": False})
 
@@ -325,6 +326,7 @@ class FeatureSpec(StrictModel):
     rollback: RequirementPlan
     design_refs: list[str]
     rbac_requirements: list[str]
+    mobile_requirements: list[str] = Field(default_factory=list)
     open_questions: list[str]
 
     @model_validator(mode="after")

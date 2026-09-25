@@ -8,6 +8,7 @@ from typing import Any
 
 from cohorte.adapters.git import GitRepository
 from cohorte.application.durable import SqliteTaskJournal, TaskAttemptHandle
+from cohorte.application.project_constraints import validate_project_constraints
 from cohorte.application.vertical import (
     AgentReview,
     VerticalRunner,
@@ -69,6 +70,7 @@ def plan_multisurface(profile: ProjectProfile, spec: FeatureSpec, base_commit: s
     missing = sorted(selected - set(surfaces))
     if missing:
         raise ValueError(f"unknown spec surfaces: {', '.join(missing)}")
+    validate_project_constraints(profile, spec)
     for surface_id in spec.surfaces:
         missing_dependencies = set(surfaces[surface_id].depends_on) - selected
         if missing_dependencies:

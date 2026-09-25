@@ -12,7 +12,13 @@ from cohorte.application.fleet_control import (
     supervised_fleet_status,
     sync_supervised_fleet,
 )
-from cohorte.application.vertical import AgentReport, AgentReview, ReviewFinding
+from cohorte.application.vertical import (
+    AgentReport,
+    AgentReview,
+    ReviewFinding,
+    VerticalRunner,
+    plan_feature,
+)
 from cohorte.cli import main as cli
 from cohorte.domain.evidence import ReviewVerdict
 from cohorte.domain.models import (
@@ -315,6 +321,42 @@ def test_loop_can_build_in_prepared_fleet_worktree(tmp_path: Path, monkeypatch, 
     assert output["ok"] is True
     assert (candidate / "api.py").read_text() == "api-feature\n"
     assert output["data"]["worktree"] == str(candidate)
+
+
+def test_active_design_rbac_and_mobile_constraints_must_be_in_spec(tmp_path: Path) -> None:
+    import pytest
+
+    selected_profile = profile()
+    document = selected_profile.model_dump(mode="json")
+    document["surfaces"][1]["role_profile"] = "frontend"
+    document["surfaces"][1]["uses_design"] = True
+    document["integrations"]["design"] = {
+        "enabled": True,
+        "provider": "file",
+        "source": "design.json",
+        "snapshot_path": "snapshot.json",
+    }
+    document["integrations"]["rbac"] = {"enabled": True}
+    document["integrations"]["mobile"] = {"enabled": True}
+    selected_profile = ProjectProfile.model_validate_json(json.dumps(document))
+    selected_spec = feature("web-feature", "web", "web-check")
+    with pytest.raises(ValueError, match="design, rbac, mobile"):
+        plan_feature(selected_profile, selected_spec, "a" * 40)
+    selected_spec = selected_spec.model_copy(
+        update={
+            "design_refs": ["file:design.json", "Use the declared tokens"],
+            "rbac_requirements": ["Only admins may edit"],
+            "mobile_requirements": ["Works at 375px width"],
+        }
+    )
+    assert plan_feature(selected_profile, selected_spec, "a" * 40).tasks
+    review_prompt = VerticalRunner._review_prompt(
+        tmp_path, selected_profile, selected_spec, "a" * 40, ["web.py"], ""
+    )
+    assert (
+        "Active project constraints to verify against spec and diff: ['design', 'mobile', 'rbac']"
+        in review_prompt
+    )
 
 
 def test_fleet_parallelizes_disjoint_features_and_revalidates_each(tmp_path: Path) -> None:
