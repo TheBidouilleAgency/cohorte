@@ -38,6 +38,9 @@ _CONTAINER_FAILURE = re.compile(
     r"no such container|podman.*(?:unavailable|not running)",
     re.IGNORECASE,
 )
+_UV_MISSING_COMMAND = re.compile(
+    r"Failed to spawn:.*No such file or directory", re.IGNORECASE | re.DOTALL
+)
 
 
 class CheckRunner:
@@ -75,6 +78,12 @@ class CheckRunner:
                 status, environment_issue = "errored", "network_unavailable"
             elif result.returncode != 0 and _CONTAINER_FAILURE.search(decoded):
                 status, environment_issue = "errored", "container_unavailable"
+            elif (
+                result.returncode != 0
+                and Path(definition.argv[0]).name == "uv"
+                and _UV_MISSING_COMMAND.search(decoded)
+            ):
+                status, environment_issue = "errored", "dependency_missing"
         except FileNotFoundError as error:
             raw, status, exit_code = str(error).encode(), "errored", None
             executable = Path(definition.argv[0]).name.casefold()
