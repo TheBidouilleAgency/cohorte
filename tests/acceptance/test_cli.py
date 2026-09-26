@@ -11,20 +11,120 @@ from cohorte.domain.models import RunState, RunStatus, Stage
 from cohorte.persistence.sqlite import Database
 
 
-def run_cli(data_dir: Path, *args: str) -> subprocess.CompletedProcess[str]:
+def run_cli(
+    data_dir: Path, *args: str, cwd: Path | None = None, json_mode: bool = True
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [
             sys.executable,
             "-m",
             "cohorte.cli.main",
-            "--json",
+            *(["--json"] if json_mode else []),
             "--data-dir",
             str(data_dir),
             *args,
         ],
+        cwd=cwd,
         capture_output=True,
         text=True,
         check=False,
+    )
+
+
+def test_profile_checks_show_references_arguments_and_do_not_execute(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    data_dir = tmp_path / "data"
+    initialized = run_cli(data_dir, "init", str(project))
+    assert initialized.returncode == 0, initialized.stderr
+    profile = json.loads(initialized.stdout)["data"]["profile"]
+    witness = tmp_path / "check-ran"
+    tricky = 'value with spaces and "quotes"\nand a newline'
+    argv = [
+        sys.executable,
+        "-c",
+        f"from pathlib import Path; Path({str(witness)!r}).touch()",
+        tricky,
+    ]
+    profile["checks"] = [
+        {"id": "shared", "cwd": ".", "argv": argv, "timeout_seconds": 30},
+        {"id": "unreferenced", "cwd": "src", "argv": ["echo", "unused"], "timeout_seconds": 30},
+    ]
+    profile["surfaces"] = [
+        {
+            "id": "api",
+            "label": "API",
+            "paths": ["api"],
+            "role_profile": "implementer",
+            "check_ids": ["shared"],
+        },
+        {
+            "id": "web",
+            "label": "Web",
+            "paths": ["web"],
+            "role_profile": "implementer",
+            "check_ids": ["shared"],
+        },
+    ]
+    source = tmp_path / "profile.json"
+    source.write_text(json.dumps(profile))
+    applied = run_cli(
+        data_dir, "profile", "apply", str(source), "--project-id", profile["project_id"]
+    )
+    assert applied.returncode == 0, applied.stderr
+    reference = json.loads(applied.stdout)["data"]["profile_ref"]
+    database = Database(data_dir / "cohorte.sqlite3")
+    saved_profile = database.get_project(profile["project_id"])["profile"]
+    before = {
+        table: database.connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+        for table in ("artifacts", "runs", "features")
+    }
+    database.close()
+
+    structured = run_cli(data_dir, "profile", "checks", cwd=project)
+    assert structured.returncode == 0, structured.stderr
+    payload = json.loads(structured.stdout)
+    assert payload["ok"] is True
+    assert payload["data"] == {
+        "profile_ref": reference,
+        "checks": [
+            {"id": "shared", "cwd": ".", "argv": argv, "surfaces": ["api", "web"]},
+            {"id": "unreferenced", "cwd": "src", "argv": ["echo", "unused"], "surfaces": []},
+        ],
+    }
+    text_result = run_cli(data_dir, "profile", "checks", cwd=project, json_mode=False)
+    assert text_result.returncode == 0, text_result.stderr
+    assert f"argv : {json.dumps(argv, ensure_ascii=False)}" in text_result.stdout
+    assert 'surfaces : ["api", "web"]' in text_result.stdout
+    assert "surfaces : []" in text_result.stdout
+    assert not witness.exists()
+
+    database = Database(data_dir / "cohorte.sqlite3")
+    assert database.get_project(profile["project_id"])["profile"] == saved_profile
+    assert database.get_project(profile["project_id"])["profile_ref"] == reference
+    assert before == {
+        table: database.connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+        for table in ("artifacts", "runs", "features")
+    }
+    database.close()
+
+
+def test_profile_checks_empty_and_unregistered_directory(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    data_dir = tmp_path / "data"
+    initialized = run_cli(data_dir, "init", str(project))
+    assert initialized.returncode == 0, initialized.stderr
+    reference = json.loads(initialized.stdout)["data"]["profile_ref"]
+
+    empty = run_cli(data_dir, "profile", "checks", cwd=project)
+    assert empty.returncode == 0, empty.stderr
+    assert json.loads(empty.stdout)["data"] == {"profile_ref": reference, "checks": []}
+
+    missing = run_cli(data_dir, "profile", "checks", cwd=tmp_path)
+    assert missing.returncode == 3
+    assert json.loads(missing.stdout)["error"]["message"] == (
+        "no registered Cohorte project for this directory; run cohorte init ."
     )
 
 

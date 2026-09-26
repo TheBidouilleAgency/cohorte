@@ -80,12 +80,12 @@ def _parser() -> argparse.ArgumentParser:
     )
     profile = sub.add_parser("profile")
     profile_sub = profile.add_subparsers(dest="profile_command", required=True)
-    for action in ("show", "edit", "apply"):
+    for action in ("show", "edit", "apply", "checks"):
         child = profile_sub.add_parser(action)
         if action == "apply":
             child.add_argument("file", type=Path)
             child.add_argument("--project-id")
-        else:
+        elif action != "checks":
             child.add_argument("project_id", nargs="?")
     status = sub.add_parser("status")
     status.add_argument("run", nargs="?")
@@ -1141,7 +1141,7 @@ def run(argv: list[str] | None = None) -> int:
         elif args.command == "profile":
             project = (
                 database.get_project(args.project_id)
-                if args.project_id
+                if getattr(args, "project_id", None)
                 else _project_for_path(database, Path.cwd())
             )
             if args.profile_command == "show":
@@ -1149,6 +1149,28 @@ def run(argv: list[str] | None = None) -> int:
                     {"profile": project["profile"], "profile_ref": project["profile_ref"]},
                     args.json,
                 )
+            elif args.profile_command == "checks":
+                profile = project["profile"]
+                profile_checks = [
+                    {
+                        "id": check["id"],
+                        "cwd": check["cwd"],
+                        "argv": check["argv"],
+                        "surfaces": [
+                            surface["id"]
+                            for surface in profile["surfaces"]
+                            if check["id"] in surface["check_ids"]
+                        ],
+                    }
+                    for check in profile["checks"]
+                ]
+                if args.json:
+                    _emit({"profile_ref": project["profile_ref"], "checks": profile_checks}, True)
+                else:
+                    for check in profile_checks:
+                        print(f"{check['id']} · cwd : {check['cwd']}")
+                        print(f"  argv : {json.dumps(check['argv'], ensure_ascii=False)}")
+                        print(f"  surfaces : {json.dumps(check['surfaces'], ensure_ascii=False)}")
             else:
                 if args.profile_command == "edit":
                     if args.json or not sys.stdin.isatty():
