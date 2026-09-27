@@ -89,6 +89,11 @@ def _parser() -> argparse.ArgumentParser:
             child.add_argument("project_id", nargs="?")
     status = sub.add_parser("status")
     status.add_argument("run", nargs="?")
+    runs = sub.add_parser("runs", help="list saved runs for the current project")
+    runs.add_argument("--limit", type=int, default=20)
+    run_view = sub.add_parser("run", help="read a run and its timeline")
+    run_view.add_argument("action", choices=["show"])
+    run_view.add_argument("run_id")
     specs_board = sub.add_parser("specs", help="list project feature specifications")
     specs_board.add_argument("--project-id")
     specs_board.add_argument("--status")
@@ -1188,6 +1193,42 @@ def run(argv: list[str] | None = None) -> int:
                     "runs": [r.model_dump(mode="json") for r in service.database.list_runs()]
                 }
                 _emit(payload, args.json)
+        elif args.command == "runs":
+            from cohorte.cli.run_view import run_summary_line
+
+            if args.limit < 1 or args.limit > 1000:
+                raise ValueError("runs --limit must be between 1 and 1000")
+            project = _project_for_path(database, Path.cwd())
+            saved_runs = database.list_runs(project["id"])[: args.limit]
+            if args.json:
+                _emit(
+                    {
+                        "project_id": project["id"],
+                        "runs": [item.model_dump(mode="json") for item in saved_runs],
+                    },
+                    True,
+                )
+            else:
+                print(f"Runs · {project['id']} · {len(saved_runs)} affiché(s)")
+                for saved_run in saved_runs:
+                    print(f"  {run_summary_line(saved_run)}")
+                if saved_runs:
+                    print(f"Détail : cohorte run show {saved_runs[0].id}")
+        elif args.command == "run":
+            from cohorte.cli.run_view import print_run, run_events
+
+            state = database.get_run(args.run_id)
+            events = run_events(database, args.run_id)
+            ship_request_id = None
+            if state.stage.value == "ship" and state.status.value == "waiting_user":
+                try:
+                    ship_request_id = str(database.ship_request_for_run(args.run_id)["id"])
+                except KeyError:
+                    ship_request_id = None
+            if args.json:
+                _emit({"run": state.model_dump(mode="json"), "events": redact(events)}, True)
+            else:
+                print_run(state, events, ship_request_id)
         elif args.command == "specs":
             project = (
                 database.get_project(args.project_id)
@@ -3182,6 +3223,7 @@ def run(argv: list[str] | None = None) -> int:
                     )
             _emit_supervised_fleet(args.command, fleet_output, args.json, args.data_dir)
         elif args.command == "loop":
+            from cohorte.cli.run_view import RunProgress, print_result, print_run, run_events
             from cohorte.domain.models import (
                 FeatureSpec,
                 ProjectProfile,
@@ -3267,41 +3309,65 @@ def run(argv: list[str] | None = None) -> int:
             )
             try:
                 loop_result: Any
-                if len(spec.surfaces) > 1:
-                    loop_result = MultiSurfaceRunner(runtime).run(
-                        execution_repo,
-                        args.worktrees,
-                        profile,
-                        spec,
-                        args.run_id,
-                        existing_worktree=args.existing_worktree,
-                        observe=journal,
-                        task_journal=SqliteTaskJournal(database, args.run_id),
-                    )
-                else:
-                    loop_result = VerticalRunner(runtime).run(
-                        execution_repo,
-                        args.worktrees,
-                        profile,
-                        spec,
-                        args.run_id,
-                        existing_worktree=args.existing_worktree,
-                        observe=journal,
-                    )
+                with RunProgress(database.path, args.run_id, enabled=not args.json):
+                    if len(spec.surfaces) > 1:
+                        loop_result = MultiSurfaceRunner(runtime).run(
+                            execution_repo,
+                            args.worktrees,
+                            profile,
+                            spec,
+                            args.run_id,
+                            existing_worktree=args.existing_worktree,
+                            observe=journal,
+                            task_journal=SqliteTaskJournal(database, args.run_id),
+                        )
+                    else:
+                        loop_result = VerticalRunner(runtime).run(
+                            execution_repo,
+                            args.worktrees,
+                            profile,
+                            spec,
+                            args.run_id,
+                            existing_worktree=args.existing_worktree,
+                            observe=journal,
+                        )
             except RunStopped:
-                _emit(database.get_run(args.run_id).model_dump(mode="json"), args.json)
+                stopped = database.get_run(args.run_id)
+                if args.json:
+                    _emit(stopped.model_dump(mode="json"), True)
+                else:
+                    print_run(stopped, run_events(database, args.run_id))
                 return 0
             except Exception as error:
                 record_run_error(database, args.run_id, error)
                 raise
             request_id = _create_ship_request(database, args.run_id, loop_result)
-            _emit({**asdict(loop_result), "ship_request_id": request_id}, args.json)
+            run_result_payload = {
+                **asdict(loop_result),
+                "ship_request_id": request_id,
+            }
+            if args.json:
+                _emit(run_result_payload, True)
+            else:
+                print_result({**run_result_payload, "run_id": args.run_id})
         elif args.command == "resume":
+            from cohorte.cli.run_view import RunProgress, print_result, print_run, run_events
             from cohorte.domain.models import FeatureSpec, ProjectProfile, RunStatus, Stage
 
             state = database.get_run(args.run_id)
             if state.stage == Stage.SHIP and state.status == RunStatus.WAITING_USER:
-                _emit(state.model_dump(mode="json"), args.json)
+                if args.json:
+                    _emit(state.model_dump(mode="json"), True)
+                else:
+                    try:
+                        request_id = str(database.ship_request_for_run(args.run_id)["id"])
+                    except KeyError:
+                        request_id = None
+                    print_run(
+                        state,
+                        run_events(database, args.run_id),
+                        request_id,
+                    )
                 return 0
             if state.status not in {RunStatus.RUNNING, RunStatus.FAILED, RunStatus.PAUSED}:
                 raise ValueError(f"run {args.run_id} cannot resume from {state.status.value}")
@@ -3337,39 +3403,48 @@ def run(argv: list[str] | None = None) -> int:
             )
             try:
                 resume_result: Any
-                if len(spec.surfaces) > 1:
-                    resume_result = MultiSurfaceRunner(runtime).run(
-                        repository,
-                        Path(context["worktree_parent"]),
-                        profile,
-                        spec,
-                        args.run_id,
-                        existing_worktree=worktree if worktree.exists() else None,
-                        resume_stage=state.stage,
-                        initial_fix_cycles=state.fix_cycles,
-                        observe=journal,
-                        task_journal=SqliteTaskJournal(database, args.run_id),
-                    )
-                else:
-                    resume_result = VerticalRunner(runtime).run(
-                        repository,
-                        Path(context["worktree_parent"]),
-                        profile,
-                        spec,
-                        args.run_id,
-                        existing_worktree=worktree if worktree.exists() else None,
-                        resume_stage=state.stage,
-                        initial_fix_cycles=state.fix_cycles,
-                        observe=journal,
-                    )
+                with RunProgress(database.path, args.run_id, enabled=not args.json):
+                    if len(spec.surfaces) > 1:
+                        resume_result = MultiSurfaceRunner(runtime).run(
+                            repository,
+                            Path(context["worktree_parent"]),
+                            profile,
+                            spec,
+                            args.run_id,
+                            existing_worktree=worktree if worktree.exists() else None,
+                            resume_stage=state.stage,
+                            initial_fix_cycles=state.fix_cycles,
+                            observe=journal,
+                            task_journal=SqliteTaskJournal(database, args.run_id),
+                        )
+                    else:
+                        resume_result = VerticalRunner(runtime).run(
+                            repository,
+                            Path(context["worktree_parent"]),
+                            profile,
+                            spec,
+                            args.run_id,
+                            existing_worktree=worktree if worktree.exists() else None,
+                            resume_stage=state.stage,
+                            initial_fix_cycles=state.fix_cycles,
+                            observe=journal,
+                        )
             except RunStopped:
-                _emit(database.get_run(args.run_id).model_dump(mode="json"), args.json)
+                stopped = database.get_run(args.run_id)
+                if args.json:
+                    _emit(stopped.model_dump(mode="json"), True)
+                else:
+                    print_run(stopped, run_events(database, args.run_id))
                 return 0
             except Exception as error:
                 record_run_error(database, args.run_id, error)
                 raise
             request_id = _create_ship_request(database, args.run_id, resume_result)
-            _emit({**asdict(resume_result), "ship_request_id": request_id}, args.json)
+            run_result_payload = {**asdict(resume_result), "ship_request_id": request_id}
+            if args.json:
+                _emit(run_result_payload, True)
+            else:
+                print_result({**run_result_payload, "run_id": args.run_id})
         elif args.command == "pause":
             _emit(service.pause(args.run_id, args.reason).model_dump(mode="json"), args.json)
         elif args.command == "cancel":
