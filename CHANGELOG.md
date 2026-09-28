@@ -7,6 +7,12 @@ with the newest version first. Describe the verified scope and known limitations
 
 _No changes recorded yet._
 
+## 1.0.0a16 — 2026-09-28
+
+- Add `cohorte profile checks` to inspect each saved check's ID, working directory, exact argument array and referencing surfaces. The JSON view includes the profile revision and does not execute a check.
+- Show durable run milestones and an activity signal during long CLI operations. `start` and `resume` now finish with a readable summary; `cohorte runs` and `cohorte run show RUN_ID` expose saved run history without requiring SQLite access. Scripted `--json` responses remain structured.
+- Validation: PRs #76 and #77 passed documentation and Python 3.12/3.13 CI on Ubuntu, macOS and Windows. Local pytest, Ruff, mypy and VitePress build passed. The activity display was smoke-tested with `init --preview`; a provider-live run from the published package is still pending. A run shown as "running" after an abrupt CLI exit reflects its last saved state, not verified process liveness.
+
 ## 1.0.0a15 — 2026-09-25
 
 - Allow a previously frozen guided spec to be reviewed and approved again after the project profile changes. `cohorte spec IDENTIFIANT --manual` reuses the saved draft and asks for exact approval of the current profile without rerunning the agent; declining leaves the old frozen snapshot unchanged.
