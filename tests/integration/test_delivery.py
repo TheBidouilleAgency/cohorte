@@ -126,6 +126,26 @@ def test_ship_requires_current_explicit_authorization(tmp_path: Path) -> None:
         )
 
     assert caught.value.code == ErrorCode.PERMISSION_DENIED
+    request = database.ship_request_for_run(state.id)
+    assert caught.value.remediation == f"cohorte approve {request['id']}"
+    assert database.connection.execute("SELECT COUNT(*) FROM effects").fetchone()[0] == 0
+    database.close()
+
+
+def test_ship_does_not_suggest_reapproving_denied_request(tmp_path: Path) -> None:
+    database, worktree, state, branch = prepared_delivery(tmp_path, approved=False)
+    request = database.ship_request_for_run(state.id)
+    database.respond_request(
+        request["id"], "deny-demo-run", {"approved": False}, state.candidate_tree_hash
+    )
+
+    with pytest.raises(CohorteError) as caught:
+        ShipRunner(database, FakeProvider()).run(
+            state, project_profile(), worktree, branch, "Add feature", "Validated candidate."
+        )
+
+    assert caught.value.code == ErrorCode.PERMISSION_DENIED
+    assert caught.value.remediation != f"cohorte approve {request['id']}"
     assert database.connection.execute("SELECT COUNT(*) FROM effects").fetchone()[0] == 0
     database.close()
 

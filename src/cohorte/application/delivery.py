@@ -107,6 +107,17 @@ class ShipRunner:
         request = self.database.ship_request_for_run(state.id)
         approval = self.database.approval_for_request(request["id"])
         if (
+            request["status"] == "pending"
+            and request["subject_hash"] == state.candidate_tree_hash
+            and approval is None
+        ):
+            raise CohorteError(
+                ErrorCode.PERMISSION_DENIED,
+                "ship authorization is missing",
+                "no delivery effect was executed",
+                remediation=f"cohorte approve {request['id']}",
+            )
+        if (
             request["status"] != "answered"
             or request["subject_hash"] != state.candidate_tree_hash
             or approval is None
