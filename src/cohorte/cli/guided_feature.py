@@ -24,6 +24,7 @@ from cohorte.application.repository_context import (
     collect_project_overview,
     collect_repository_context,
 )
+from cohorte.cli.activity import Activity
 from cohorte.domain.errors import CohorteError
 from cohorte.domain.models import (
     ArtifactRef,
@@ -664,14 +665,14 @@ def guided_spec(
                     draft.brief_ref.id, draft.brief_ref.revision, limit=2 * 1024 * 1024
                 )["content"]
             )
-            print("L'agent examine le brouillon existant en lecture seule…", file=sys.stderr)
             try:
-                proposal = _propose_spec(
-                    BrainstormBrief.model_validate_json(brief_document),
-                    profile,
-                    repository,
-                    draft,
-                )
+                with Activity("Analyse du brouillon de spec"):
+                    proposal = _propose_spec(
+                        BrainstormBrief.model_validate_json(brief_document),
+                        profile,
+                        repository,
+                        draft,
+                    )
             except (CohorteError, ImportError) as error:
                 print(f"Proposition indisponible ({error}); brouillon conservé.", file=sys.stderr)
             else:
@@ -739,9 +740,9 @@ def guided_spec(
         )
         proposal = None
         if assisted:
-            print("L'agent prépare une proposition de spec en lecture seule…", file=sys.stderr)
             try:
-                proposal = _propose_spec(brief, profile, repository)
+                with Activity("Proposition de spec"):
+                    proposal = _propose_spec(brief, profile, repository)
             except (CohorteError, ImportError) as error:
                 print(
                     f"Proposition indisponible ({error}); poursuite en saisie manuelle.",

@@ -51,6 +51,10 @@ cohorte --json loop frozen.json \
 
 `loop` crée une branche et un worktree isolés, exécute le build, les checks et la revue. Il ne publie rien à cette étape. Pour plusieurs fonctionnalités supervisées, `fleet-plan` prévisualise les zones d’écriture et l’ordre ; `fleet-plan ... --apply` prépare un worktree par spec gelée, puis `fleet-status` suit chaque branche. Après le merge d’une feature, `fleet-sync` vérifie quelles branches doivent être rebasées ; `--apply` ne modifie que les worktrees propres et sans run Cohorte actif. Une nouvelle revue est nécessaire après rebase. La commande `fleet` conserve son exécution automatisée distincte.
 
+Pendant `start`, `loop` et `resume` en mode texte, Cohorte affiche l'identifiant du run, les jalons enregistrés et un signal d'activité toutes les 15 secondes pendant une longue phase. À la fin, il résume les fichiers, checks et la revue. Pour relire une exécution plus tard, lancez `cohorte runs`, puis `cohorte run show RUN_ID`. Cette vue indique le dernier état enregistré ; après un arrêt brutal de la CLI, « en cours » ne prouve pas qu'un processus est encore actif. `cohorte --json run show RUN_ID` conserve la chronologie structurée pour les outils ; `export RUN_ID` fournit les données complètes du journal.
+
+Les autres opérations longues en mode texte (analyse du dépôt, panel de brainstorm, proposition de spec ou de correctif, checks, audit, revue externe, flotte, livraison et intégrations) indiquent leur début, leur durée et leur fin ou interruption. Le signal d'activité ne couvre que l'opération en cours : il s'arrête avant une question interactive. Les commandes de lecture rapide n'affichent pas de loader ; `--json` reste réservé à une réponse structurée sans messages de progression.
+
 En cas d’interruption, `cohorte --json resume RUN_ID --live` reprend le run journalisé. `pause RUN_ID` et `cancel RUN_ID` prennent effet à la prochaine frontière de phase, après le tour fournisseur actif.
 
 ## 4. Livrer

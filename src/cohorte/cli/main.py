@@ -37,6 +37,7 @@ from cohorte.application.fleet import FleetRunner
 from cohorte.application.multisurface import MultiSurfaceRunner
 from cohorte.application.service import CohorteService
 from cohorte.application.vertical import VerticalRunner
+from cohorte.cli.activity import Activity
 from cohorte.domain.errors import CohorteError, ErrorCode
 from cohorte.domain.models import RunState, RunStatus
 from cohorte.domain.redaction import redact
@@ -89,6 +90,11 @@ def _parser() -> argparse.ArgumentParser:
             child.add_argument("project_id", nargs="?")
     status = sub.add_parser("status")
     status.add_argument("run", nargs="?")
+    runs = sub.add_parser("runs", help="list saved runs for the current project")
+    runs.add_argument("--limit", type=int, default=20)
+    run_view = sub.add_parser("run", help="read a run and its timeline")
+    run_view.add_argument("action", choices=["show"])
+    run_view.add_argument("run_id")
     specs_board = sub.add_parser("specs", help="list project feature specifications")
     specs_board.add_argument("--project-id")
     specs_board.add_argument("--status")
@@ -976,7 +982,9 @@ def run(argv: list[str] | None = None) -> int:
             args.existing_worktree = None
             args.live = True
         if args.command == "doctor":
-            _emit_doctor_result(_doctor(service, args), args.json)
+            with Activity("Diagnostic Cohorte", enabled=not args.json):
+                doctor_result = _doctor(service, args)
+            _emit_doctor_result(doctor_result, args.json)
         elif args.command == "update-pipeline":
             from cohorte.application.client_wrappers import (
                 apply_wrappers,
@@ -993,7 +1001,8 @@ def run(argv: list[str] | None = None) -> int:
             project = _project_for_path(database, args.repo)
             root = Path(project["root_path"])
             current_profile = ProjectProfile.model_validate_json(json.dumps(project["profile"]))
-            detected, questions = discover_project(root, current_profile.language)
+            with Activity("Analyse du dépôt", enabled=not args.json):
+                detected, questions = discover_project(root, current_profile.language)
             proposed = reconcile_profile(current_profile, detected)
             before = current_profile.model_dump(mode="json")
             after = proposed.model_dump(mode="json")
@@ -1088,7 +1097,8 @@ def run(argv: list[str] | None = None) -> int:
                     reconcile_profile,
                 )
 
-                candidate, questions = discover_project(args.path, args.language)
+                with Activity("Analyse du dépôt", enabled=not args.json):
+                    candidate, questions = discover_project(args.path, args.language)
                 try:
                     existing_project = database.get_project(candidate.project_id)
                 except KeyError:
@@ -1210,6 +1220,42 @@ def run(argv: list[str] | None = None) -> int:
                     "runs": [r.model_dump(mode="json") for r in service.database.list_runs()]
                 }
                 _emit(payload, args.json)
+        elif args.command == "runs":
+            from cohorte.cli.run_view import run_summary_line
+
+            if args.limit < 1 or args.limit > 1000:
+                raise ValueError("runs --limit must be between 1 and 1000")
+            project = _project_for_path(database, Path.cwd())
+            saved_runs = database.list_runs(project["id"])[: args.limit]
+            if args.json:
+                _emit(
+                    {
+                        "project_id": project["id"],
+                        "runs": [item.model_dump(mode="json") for item in saved_runs],
+                    },
+                    True,
+                )
+            else:
+                print(f"Runs · {project['id']} · {len(saved_runs)} affiché(s)")
+                for saved_run in saved_runs:
+                    print(f"  {run_summary_line(saved_run)}")
+                if saved_runs:
+                    print(f"Détail : cohorte run show {saved_runs[0].id}")
+        elif args.command == "run":
+            from cohorte.cli.run_view import print_run, run_events
+
+            state = database.get_run(args.run_id)
+            events = run_events(database, args.run_id)
+            ship_request_id = None
+            if state.stage.value == "ship" and state.status.value == "waiting_user":
+                try:
+                    ship_request_id = str(database.ship_request_for_run(args.run_id)["id"])
+                except KeyError:
+                    ship_request_id = None
+            if args.json:
+                _emit({"run": state.model_dump(mode="json"), "events": redact(events)}, True)
+            else:
+                print_run(state, events, ship_request_id)
         elif args.command == "specs":
             project = (
                 database.get_project(args.project_id)
@@ -1280,11 +1326,15 @@ def run(argv: list[str] | None = None) -> int:
                 )
             elif args.auth_command == "verify" and args.target == "codex" and args.live:
                 adapter = CodexAdapter(Path.cwd())
-                _emit(adapter.verify_full() if args.full else adapter.verify_live(), args.json)
+                with Activity("Vérification Codex", enabled=not args.json):
+                    verified = adapter.verify_full() if args.full else adapter.verify_live()
+                _emit(verified, args.json)
             elif args.auth_command == "verify" and args.target == "claude" and args.live:
                 if args.full:
                     raise ValueError("Claude full G0 qualification is not implemented")
-                _emit(ClaudeAdapter(Path.cwd()).verify_live(), args.json)
+                with Activity("Vérification Claude", enabled=not args.json):
+                    verified = ClaudeAdapter(Path.cwd()).verify_live()
+                _emit(verified, args.json)
             elif args.auth_command == "verify" and not args.live:
                 target = cast(Literal["claude", "codex"], args.target)
                 _emit(asdict(inspect_runtime(target)), args.json)
@@ -1305,11 +1355,13 @@ def run(argv: list[str] | None = None) -> int:
             from cohorte.service.host import service_status, start_service, stop_service
 
             if args.action == "start":
-                service_result = start_service(args.data_dir)
+                with Activity("Démarrage du service", enabled=not args.json):
+                    service_result = start_service(args.data_dir)
             elif args.action == "status":
                 service_result = service_status(args.data_dir)
             else:
-                service_result = stop_service(args.data_dir)
+                with Activity("Arrêt du service", enabled=not args.json):
+                    service_result = stop_service(args.data_dir)
             _emit(service_result, args.json)
         elif args.command == "check":
             from cohorte.domain.models import ProjectProfile
@@ -1318,7 +1370,9 @@ def run(argv: list[str] | None = None) -> int:
             definition = next((item for item in profile.checks if item.id == args.check_id), None)
             if definition is None:
                 raise ValueError(f"unknown check: {args.check_id}")
-            _emit(asdict(CheckRunner(Path.cwd()).run(definition)), args.json)
+            with Activity(f"Check {definition.id}", enabled=not args.json):
+                check_result = CheckRunner(Path.cwd()).run(definition)
+            _emit(asdict(check_result), args.json)
         elif args.command == "schemas":
             _emit(_schemas(args.output), args.json)
         elif args.command == "intake":
@@ -1389,13 +1443,12 @@ def run(argv: list[str] | None = None) -> int:
                     source_type, value = IntakeSourceType.FILE, str(args.file)
                 else:
                     source_type, value = IntakeSourceType.URL, args.url
-                source, locator = load_intake_source(source_type, value)
+                with Activity("Lecture de la demande", enabled=not args.json):
+                    source, locator = load_intake_source(source_type, value)
                 if not args.json and sys.stdin.isatty() and not args.manual:
-                    print(
-                        "L'agent analyse la demande et le dépôt en lecture seule…", file=sys.stderr
-                    )
                     try:
-                        intake_proposal = propose_intake(project, source)
+                        with Activity("Analyse de la demande", enabled=not args.json):
+                            intake_proposal = propose_intake(project, source)
                     except (CohorteError, ValueError, RuntimeError) as error:
                         print(
                             f"Triage agent indisponible : {error}; analyse déterministe conservée.",
@@ -1621,14 +1674,6 @@ def run(argv: list[str] | None = None) -> int:
                                 break
                             print(_BRAINSTORM_FEATURE_ID_RULE, file=sys.stderr)
                     _require_new_brainstorm_feature(database, project["id"], args.feature_id)
-                panel = (
-                    ProjectProfile.model_validate_json(
-                        json.dumps(project["profile"])
-                    ).brainstorm_panel
-                    if project.get("profile")
-                    else ["product", "architecture", "qa"]
-                )
-                print(f"Le panel {', '.join(panel)} travaille…", file=sys.stderr)
             if not args.live and not guided:
                 raise ValueError("brainstorm requires --live")
             if previous_brief is not None and not args.answer and not guided:
@@ -1662,6 +1707,9 @@ def run(argv: list[str] | None = None) -> int:
             else:
                 brainstorm_runtime = CodexAdapter(repository, event_sink=agent_events)
             runner = BrainstormRunner(brainstorm_runtime)
+            perspectives = args.perspective or (
+                project_profile.brainstorm_panel if project_profile else None
+            )
             while True:
                 repository_context = collect_repository_context(
                     repository,
@@ -1674,29 +1722,34 @@ def run(argv: list[str] | None = None) -> int:
                         ]
                     ),
                 )
-                brief = runner.run(
-                    repository,
-                    args.feature_id,
-                    args.idea,
-                    "\n".join(
-                        filter(
-                            None,
-                            [
-                                _profile_context(project["profile"]),
-                                collect_project_overview(repository),
-                                repository_context,
-                                args.context,
-                            ],
-                        )
-                    ),
-                    args.answer,
-                    args.prior_decision,
-                    args.perspective
-                    or (project_profile.brainstorm_panel if project_profile else None),
-                    previous_brief=previous_brief,
-                    previous_brief_ref=previous_ref,
-                    intake_ref=intake_ref,
+                panel_label = (
+                    f"Le panel {', '.join(perspectives)} travaille"
+                    if perspectives
+                    else "Le panel brainstorm travaille"
                 )
+                with Activity(panel_label, enabled=not args.json):
+                    brief = runner.run(
+                        repository,
+                        args.feature_id,
+                        args.idea,
+                        "\n".join(
+                            filter(
+                                None,
+                                [
+                                    _profile_context(project["profile"]),
+                                    collect_project_overview(repository),
+                                    repository_context,
+                                    args.context,
+                                ],
+                            )
+                        ),
+                        args.answer,
+                        args.prior_decision,
+                        perspectives,
+                        previous_brief=previous_brief,
+                        previous_brief_ref=previous_ref,
+                        intake_ref=intake_ref,
+                    )
                 brief_ref = database.put_artifact(
                     "brainstorm-brief",
                     canonical_model_bytes(brief),
@@ -1880,7 +1933,8 @@ def run(argv: list[str] | None = None) -> int:
             if brief.feature_id != args.feature_id:
                 raise ValueError("stored brief belongs to another feature")
             profile = ProjectProfile.model_validate_json(json.dumps(project["profile"]))
-            spec_suggestion = _propose_spec(brief, profile, Path(project["root_path"]))
+            with Activity("Proposition de spec", enabled=not args.json):
+                spec_suggestion = _propose_spec(brief, profile, Path(project["root_path"]))
             proposal_ref = database.put_artifact(
                 "feature-spec-proposal",
                 canonical_model_bytes(spec_suggestion),
@@ -2141,6 +2195,7 @@ def run(argv: list[str] | None = None) -> int:
                 patch_feature_spec,
                 patch_profile,
             )
+            from cohorte.cli.run_view import RunProgress
             from cohorte.domain.models import ProjectProfile, RunState, RunStatus, Stage
 
             profile = ProjectProfile.model_validate_json(args.profile.read_text())
@@ -2188,21 +2243,22 @@ def run(argv: list[str] | None = None) -> int:
             )
             journal = SqliteRunJournal(database, args.run_id)
             try:
-                patch_result = PatchRunner(
-                    workflow_runtime(
+                with RunProgress(database.path, args.run_id, enabled=not args.json):
+                    patch_result = PatchRunner(
+                        workflow_runtime(
+                            repository,
+                            profile,
+                            stop_requested=journal.stop_requested,
+                            event_sink=journal.agent_event,
+                        )
+                    ).run(
                         repository,
+                        args.worktrees,
                         profile,
-                        stop_requested=journal.stop_requested,
-                        event_sink=journal.agent_event,
+                        patch_document,
+                        args.run_id,
+                        observe=journal,
                     )
-                ).run(
-                    repository,
-                    args.worktrees,
-                    profile,
-                    patch_document,
-                    args.run_id,
-                    observe=journal,
-                )
             except RunStopped:
                 _emit(database.get_run(args.run_id).model_dump(mode="json"), args.json)
                 return 0
@@ -2243,13 +2299,14 @@ def run(argv: list[str] | None = None) -> int:
                 paths=args.path,
                 concerns=args.concern,
             )
-            audit_report = AuditRunner(
-                workflow_runtime(
-                    args.repo,
-                    profile,
-                    event_sink=SqliteAgentEventSink(database.path, profile.project_id),
-                )
-            ).run(args.repo, profile, audit_spec)
+            with Activity("Audit du dépôt", enabled=not args.json):
+                audit_report = AuditRunner(
+                    workflow_runtime(
+                        args.repo,
+                        profile,
+                        event_sink=SqliteAgentEventSink(database.path, profile.project_id),
+                    )
+                ).run(args.repo, profile, audit_spec)
             report_ref = database.put_artifact(
                 "audit-report", audit_report.model_dump_json(indent=2).encode()
             )
@@ -2280,20 +2337,22 @@ def run(argv: list[str] | None = None) -> int:
                 profile = ProjectProfile.model_validate_json(json.dumps(project["profile"]))
                 if Path(project["root_path"]).resolve() != repository:
                     raise ValueError("incoming review must use the registered project root")
-            metadata = lookup_incoming_metadata(
-                repository,
-                profile,
-                args.number,
-                title=args.title,
-                description=args.description,
-            )
-            incoming_result = review_incoming(
-                repository,
-                args.worktrees or args.data_dir / "worktrees",
-                profile,
-                metadata,
-                workflow_runtime(repository, profile),
-            )
+            with Activity("Lecture de la PR/MR", enabled=not args.json):
+                metadata = lookup_incoming_metadata(
+                    repository,
+                    profile,
+                    args.number,
+                    title=args.title,
+                    description=args.description,
+                )
+            with Activity("Revue de la PR/MR", enabled=not args.json):
+                incoming_result = review_incoming(
+                    repository,
+                    args.worktrees or args.data_dir / "worktrees",
+                    profile,
+                    metadata,
+                    workflow_runtime(repository, profile),
+                )
             result_ref = database.put_artifact(
                 "incoming-review",
                 incoming_result.model_dump_json(indent=2).encode(),
@@ -2323,6 +2382,7 @@ def run(argv: list[str] | None = None) -> int:
                 refactor_profile,
                 refactor_subject_hash,
             )
+            from cohorte.cli.run_view import RunProgress
             from cohorte.domain.models import ProjectProfile, RunState, RunStatus, Stage
 
             profile = ProjectProfile.model_validate_json(args.profile.read_text())
@@ -2410,22 +2470,23 @@ def run(argv: list[str] | None = None) -> int:
             )
             journal = SqliteRunJournal(database, args.run_id)
             try:
-                refactor_result = RefactorRunner(
-                    workflow_runtime(
+                with RunProgress(database.path, args.run_id, enabled=not args.json):
+                    refactor_result = RefactorRunner(
+                        workflow_runtime(
+                            repository,
+                            profile,
+                            stop_requested=journal.stop_requested,
+                            event_sink=journal.agent_event,
+                        )
+                    ).run(
                         repository,
+                        args.worktrees,
                         profile,
-                        stop_requested=journal.stop_requested,
-                        event_sink=journal.agent_event,
+                        selection,
+                        backlog,
+                        args.run_id,
+                        observe=journal,
                     )
-                ).run(
-                    repository,
-                    args.worktrees,
-                    profile,
-                    selection,
-                    backlog,
-                    args.run_id,
-                    observe=journal,
-                )
             except RunStopped:
                 _emit(database.get_run(args.run_id).model_dump(mode="json"), args.json)
                 return 0
@@ -2609,9 +2670,10 @@ def run(argv: list[str] | None = None) -> int:
                         else CodexAdapter(repository)
                     )
                     try:
-                        suggestions = suggest_retro_rules(
-                            runtime, repository, profile, patterns
-                        ).suggestions
+                        with Activity("Analyse des motifs de revue", enabled=not args.json):
+                            suggestions = suggest_retro_rules(
+                                runtime, repository, profile, patterns
+                            ).suggestions
                     except (CohorteError, ValueError, RuntimeError) as error:
                         if not args.json:
                             print(f"Propositions agent indisponibles : {error}", file=sys.stderr)
@@ -2776,7 +2838,8 @@ def run(argv: list[str] | None = None) -> int:
                 port = FigmaDesignPort()
             else:
                 port = None
-            capture = capture_design(profile.integrations.design, port)
+            with Activity("Capture du design", enabled=not args.json):
+                capture = capture_design(profile.integrations.design, port)
             if capture.status == "blocked":
                 raise CohorteError(
                     ErrorCode.DESIGN_UNAVAILABLE,
@@ -2816,13 +2879,14 @@ def run(argv: list[str] | None = None) -> int:
                 )
             else:
                 retrieval_port = None
-            result = retrieve_context(
-                args.repo,
-                profile.integrations.retrieval,
-                args.query,
-                port=retrieval_port,
-                limit=args.limit,
-            )
+            with Activity("Recherche dans le projet", enabled=not args.json):
+                result = retrieve_context(
+                    args.repo,
+                    profile.integrations.retrieval,
+                    args.query,
+                    port=retrieval_port,
+                    limit=args.limit,
+                )
             result_ref = database.put_artifact(
                 "retrieval-snapshot", result.model_dump_json(indent=2).encode()
             )
@@ -2909,6 +2973,7 @@ def run(argv: list[str] | None = None) -> int:
                 alignment_subject_hash,
             )
             from cohorte.application.context import DesignAlignmentPlan
+            from cohorte.cli.run_view import RunProgress
             from cohorte.domain.models import ProjectProfile, RunState, RunStatus, Stage
 
             profile = ProjectProfile.model_validate_json(args.profile.read_text())
@@ -2994,22 +3059,23 @@ def run(argv: list[str] | None = None) -> int:
             )
             journal = SqliteRunJournal(database, args.run_id)
             try:
-                alignment_result = AlignmentRunner(
-                    workflow_runtime(
+                with RunProgress(database.path, args.run_id, enabled=not args.json):
+                    alignment_result = AlignmentRunner(
+                        workflow_runtime(
+                            repository,
+                            profile,
+                            stop_requested=journal.stop_requested,
+                            event_sink=journal.agent_event,
+                        )
+                    ).run(
                         repository,
+                        args.worktrees,
                         profile,
-                        stop_requested=journal.stop_requested,
-                        event_sink=journal.agent_event,
+                        alignment_selection,
+                        plan,
+                        args.run_id,
+                        observe=journal,
                     )
-                ).run(
-                    repository,
-                    args.worktrees,
-                    profile,
-                    alignment_selection,
-                    plan,
-                    args.run_id,
-                    observe=journal,
-                )
             except RunStopped:
                 _emit(database.get_run(args.run_id).model_dump(mode="json"), args.json)
                 return 0
@@ -3102,7 +3168,8 @@ def run(argv: list[str] | None = None) -> int:
             if args.from_v2 is not None:
                 if args.plan is None:
                     raise ValueError("migrate --from-v2 requires --plan OUTPUT")
-                migration_plan = plan_v2_migration(args.from_v2)
+                with Activity("Analyse des données v2", enabled=not args.json):
+                    migration_plan = plan_v2_migration(args.from_v2)
                 args.plan.parent.mkdir(parents=True, exist_ok=True)
                 args.plan.write_text(migration_plan.model_dump_json(indent=2) + "\n")
                 _emit(
@@ -3114,12 +3181,14 @@ def run(argv: list[str] | None = None) -> int:
                     raise ValueError("--plan is only valid with --from-v2")
                 migration_plan = V2MigrationPlan.model_validate_json(args.apply.read_text())
                 backup_dir = args.backup_dir or (args.data_dir / "backups")
-                migration_result = apply_v2_migration(database, migration_plan, backup_dir)
+                with Activity("Migration des données v2", enabled=not args.json):
+                    migration_result = apply_v2_migration(database, migration_plan, backup_dir)
                 _emit(migration_result.model_dump(mode="json"), args.json)
             else:
                 if args.plan is not None or args.backup_dir is not None:
                     raise ValueError("--plan and --backup-dir are not valid with --rollback")
-                safety = rollback_database(database, args.rollback)
+                with Activity("Restauration des données", enabled=not args.json):
+                    safety = rollback_database(database, args.rollback)
                 _emit(
                     {"restored_from": str(args.rollback), "safety_backup": str(safety)},
                     args.json,
@@ -3129,19 +3198,20 @@ def run(argv: list[str] | None = None) -> int:
 
             profile = ProjectProfile.model_validate_json(args.profile.read_text())
             specs = [FeatureSpec.model_validate_json(path.read_text()) for path in args.specs]
-            fleet_result = FleetRunner(
-                workflow_runtime(
+            with Activity("Exécution de la flotte", enabled=not args.json):
+                fleet_result = FleetRunner(
+                    workflow_runtime(
+                        args.repo,
+                        profile,
+                        event_sink=SqliteAgentEventSink(database.path, profile.project_id),
+                    )
+                ).run(
                     args.repo,
+                    args.worktrees,
                     profile,
-                    event_sink=SqliteAgentEventSink(database.path, profile.project_id),
+                    specs,
+                    args.fleet_id,
                 )
-            ).run(
-                args.repo,
-                args.worktrees,
-                profile,
-                specs,
-                args.fleet_id,
-            )
             _emit(asdict(fleet_result), args.json)
         elif args.command in {"fleet-plan", "fleet-status", "fleet-sync"}:
             from cohorte.application.fleet_control import (
@@ -3158,38 +3228,41 @@ def run(argv: list[str] | None = None) -> int:
                 specs = [FeatureSpec.model_validate_json(path.read_text()) for path in args.specs]
                 manifest = args.data_dir / "fleets" / profile.project_id / f"{args.fleet_id}.json"
                 if args.apply:
-                    fleet_output = create_supervised_fleet(
-                        args.repo,
-                        args.worktrees,
-                        manifest,
-                        profile,
-                        specs,
-                        args.fleet_id,
-                        profile_path=args.profile,
-                        spec_paths=args.specs,
-                    )
+                    with Activity("Préparation de la flotte", enabled=not args.json):
+                        fleet_output = create_supervised_fleet(
+                            args.repo,
+                            args.worktrees,
+                            manifest,
+                            profile,
+                            specs,
+                            args.fleet_id,
+                            profile_path=args.profile,
+                            spec_paths=args.specs,
+                        )
                 else:
                     if manifest.exists():
                         raise ValueError("fleet already exists; inspect fleet-status")
-                    fleet_output = preview_supervised_fleet(
-                        args.repo,
-                        args.worktrees,
-                        profile,
-                        specs,
-                        args.fleet_id,
-                        profile_path=args.profile,
-                        spec_paths=args.specs,
-                    )
+                    with Activity("Analyse de la flotte", enabled=not args.json):
+                        fleet_output = preview_supervised_fleet(
+                            args.repo,
+                            args.worktrees,
+                            profile,
+                            specs,
+                            args.fleet_id,
+                            profile_path=args.profile,
+                            spec_paths=args.specs,
+                        )
             else:
                 manifest = args.data_dir / "fleets" / args.project_id / f"{args.fleet_id}.json"
                 if args.command == "fleet-status":
                     project_runs = database.list_runs(args.project_id)
-                    fleet_output = supervised_fleet_status(
-                        manifest,
-                        fetch=not args.no_fetch,
-                        runs=project_runs,
-                        run_evidence=_fleet_run_evidence(database, project_runs),
-                    )
+                    with Activity("État de la flotte", enabled=not args.json):
+                        fleet_output = supervised_fleet_status(
+                            manifest,
+                            fetch=not args.no_fetch,
+                            runs=project_runs,
+                            run_evidence=_fleet_run_evidence(database, project_runs),
+                        )
                 else:
                     from cohorte.domain.models import RunStatus
 
@@ -3199,11 +3272,13 @@ def run(argv: list[str] | None = None) -> int:
                         if state.status
                         not in {RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELLED}
                     }
-                    fleet_output = sync_supervised_fleet(
-                        manifest, args.merged, apply=args.apply, active_features=active_features
-                    )
+                    with Activity("Synchronisation de la flotte", enabled=not args.json):
+                        fleet_output = sync_supervised_fleet(
+                            manifest, args.merged, apply=args.apply, active_features=active_features
+                        )
             _emit_supervised_fleet(args.command, fleet_output, args.json, args.data_dir)
         elif args.command == "loop":
+            from cohorte.cli.run_view import RunProgress, print_result, print_run, run_events
             from cohorte.domain.models import (
                 FeatureSpec,
                 ProjectProfile,
@@ -3289,41 +3364,65 @@ def run(argv: list[str] | None = None) -> int:
             )
             try:
                 loop_result: Any
-                if len(spec.surfaces) > 1:
-                    loop_result = MultiSurfaceRunner(runtime).run(
-                        execution_repo,
-                        args.worktrees,
-                        profile,
-                        spec,
-                        args.run_id,
-                        existing_worktree=args.existing_worktree,
-                        observe=journal,
-                        task_journal=SqliteTaskJournal(database, args.run_id),
-                    )
-                else:
-                    loop_result = VerticalRunner(runtime).run(
-                        execution_repo,
-                        args.worktrees,
-                        profile,
-                        spec,
-                        args.run_id,
-                        existing_worktree=args.existing_worktree,
-                        observe=journal,
-                    )
+                with RunProgress(database.path, args.run_id, enabled=not args.json):
+                    if len(spec.surfaces) > 1:
+                        loop_result = MultiSurfaceRunner(runtime).run(
+                            execution_repo,
+                            args.worktrees,
+                            profile,
+                            spec,
+                            args.run_id,
+                            existing_worktree=args.existing_worktree,
+                            observe=journal,
+                            task_journal=SqliteTaskJournal(database, args.run_id),
+                        )
+                    else:
+                        loop_result = VerticalRunner(runtime).run(
+                            execution_repo,
+                            args.worktrees,
+                            profile,
+                            spec,
+                            args.run_id,
+                            existing_worktree=args.existing_worktree,
+                            observe=journal,
+                        )
             except RunStopped:
-                _emit(database.get_run(args.run_id).model_dump(mode="json"), args.json)
+                stopped = database.get_run(args.run_id)
+                if args.json:
+                    _emit(stopped.model_dump(mode="json"), True)
+                else:
+                    print_run(stopped, run_events(database, args.run_id))
                 return 0
             except Exception as error:
                 record_run_error(database, args.run_id, error)
                 raise
             request_id = _create_ship_request(database, args.run_id, loop_result)
-            _emit({**asdict(loop_result), "ship_request_id": request_id}, args.json)
+            run_result_payload = {
+                **asdict(loop_result),
+                "ship_request_id": request_id,
+            }
+            if args.json:
+                _emit(run_result_payload, True)
+            else:
+                print_result({**run_result_payload, "run_id": args.run_id})
         elif args.command == "resume":
+            from cohorte.cli.run_view import RunProgress, print_result, print_run, run_events
             from cohorte.domain.models import FeatureSpec, ProjectProfile, RunStatus, Stage
 
             state = database.get_run(args.run_id)
             if state.stage == Stage.SHIP and state.status == RunStatus.WAITING_USER:
-                _emit(state.model_dump(mode="json"), args.json)
+                if args.json:
+                    _emit(state.model_dump(mode="json"), True)
+                else:
+                    try:
+                        request_id = str(database.ship_request_for_run(args.run_id)["id"])
+                    except KeyError:
+                        request_id = None
+                    print_run(
+                        state,
+                        run_events(database, args.run_id),
+                        request_id,
+                    )
                 return 0
             if state.status not in {RunStatus.RUNNING, RunStatus.FAILED, RunStatus.PAUSED}:
                 raise ValueError(f"run {args.run_id} cannot resume from {state.status.value}")
@@ -3359,39 +3458,48 @@ def run(argv: list[str] | None = None) -> int:
             )
             try:
                 resume_result: Any
-                if len(spec.surfaces) > 1:
-                    resume_result = MultiSurfaceRunner(runtime).run(
-                        repository,
-                        Path(context["worktree_parent"]),
-                        profile,
-                        spec,
-                        args.run_id,
-                        existing_worktree=worktree if worktree.exists() else None,
-                        resume_stage=state.stage,
-                        initial_fix_cycles=state.fix_cycles,
-                        observe=journal,
-                        task_journal=SqliteTaskJournal(database, args.run_id),
-                    )
-                else:
-                    resume_result = VerticalRunner(runtime).run(
-                        repository,
-                        Path(context["worktree_parent"]),
-                        profile,
-                        spec,
-                        args.run_id,
-                        existing_worktree=worktree if worktree.exists() else None,
-                        resume_stage=state.stage,
-                        initial_fix_cycles=state.fix_cycles,
-                        observe=journal,
-                    )
+                with RunProgress(database.path, args.run_id, enabled=not args.json):
+                    if len(spec.surfaces) > 1:
+                        resume_result = MultiSurfaceRunner(runtime).run(
+                            repository,
+                            Path(context["worktree_parent"]),
+                            profile,
+                            spec,
+                            args.run_id,
+                            existing_worktree=worktree if worktree.exists() else None,
+                            resume_stage=state.stage,
+                            initial_fix_cycles=state.fix_cycles,
+                            observe=journal,
+                            task_journal=SqliteTaskJournal(database, args.run_id),
+                        )
+                    else:
+                        resume_result = VerticalRunner(runtime).run(
+                            repository,
+                            Path(context["worktree_parent"]),
+                            profile,
+                            spec,
+                            args.run_id,
+                            existing_worktree=worktree if worktree.exists() else None,
+                            resume_stage=state.stage,
+                            initial_fix_cycles=state.fix_cycles,
+                            observe=journal,
+                        )
             except RunStopped:
-                _emit(database.get_run(args.run_id).model_dump(mode="json"), args.json)
+                stopped = database.get_run(args.run_id)
+                if args.json:
+                    _emit(stopped.model_dump(mode="json"), True)
+                else:
+                    print_run(stopped, run_events(database, args.run_id))
                 return 0
             except Exception as error:
                 record_run_error(database, args.run_id, error)
                 raise
             request_id = _create_ship_request(database, args.run_id, resume_result)
-            _emit({**asdict(resume_result), "ship_request_id": request_id}, args.json)
+            run_result_payload = {**asdict(resume_result), "ship_request_id": request_id}
+            if args.json:
+                _emit(run_result_payload, True)
+            else:
+                print_result({**run_result_payload, "run_id": args.run_id})
         elif args.command == "pause":
             _emit(service.pause(args.run_id, args.reason).model_dump(mode="json"), args.json)
         elif args.command == "cancel":
@@ -3447,9 +3555,10 @@ def run(argv: list[str] | None = None) -> int:
             )
             if notes is not None:
                 body += f"\n\n{notes}"
-            delivery_result = ShipRunner(database, provider).run(
-                state, profile, worktree, branch, spec.title, body
-            )
+            with Activity("Livraison Git", enabled=not args.json):
+                delivery_result = ShipRunner(database, provider).run(
+                    state, profile, worktree, branch, spec.title, body
+                )
             current = database.get_run(args.run_id)
             completed = current.model_copy(
                 update={
@@ -3485,20 +3594,21 @@ def run(argv: list[str] | None = None) -> int:
             document = database.latest_event(args.run_id, "delivery.confirmed")["data"]
             delivery = DeliveryResult.model_validate_json(json.dumps(document))
             deadline = time.monotonic() + max(0, args.timeout)
-            while True:
-                delivery = ShipRunner(database, status_provider).refresh(delivery)
-                database.append_event(
-                    "delivery.status",
-                    delivery.model_dump(mode="json"),
-                    run_id=args.run_id,
-                )
-                if (
-                    not args.watch
-                    or delivery.status in {DeliveryStatus.CI_PASSED, DeliveryStatus.CI_FAILED}
-                    or time.monotonic() >= deadline
-                ):
-                    break
-                time.sleep(5)
+            with Activity("Suivi de la livraison", enabled=not args.json):
+                while True:
+                    delivery = ShipRunner(database, status_provider).refresh(delivery)
+                    database.append_event(
+                        "delivery.status",
+                        delivery.model_dump(mode="json"),
+                        run_id=args.run_id,
+                    )
+                    if (
+                        not args.watch
+                        or delivery.status in {DeliveryStatus.CI_PASSED, DeliveryStatus.CI_FAILED}
+                        or time.monotonic() >= deadline
+                    ):
+                        break
+                    time.sleep(5)
             _emit(delivery.model_dump(mode="json"), args.json)
         return 0
     except Exception as error:

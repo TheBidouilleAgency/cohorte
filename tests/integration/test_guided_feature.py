@@ -789,5 +789,5 @@ def test_guided_start_reuses_loop_and_creates_ship_gate(
     ship_request = database.ship_request_for_run(runs[0].id)
     assert ship_request["status"] == "pending"
     assert (repository / "src" / "export.txt").read_text() == "original\n"
-    assert "ship_request_id" in capsys.readouterr().out
+    assert "Livraison en attente · demande" in capsys.readouterr().out
     database.close()

@@ -11,6 +11,7 @@ from cohorte.application.repository_context import (
     collect_project_overview,
     collect_repository_context,
 )
+from cohorte.cli.activity import Activity
 from cohorte.domain.errors import CohorteError
 from cohorte.domain.models import ArtifactRef, ProjectProfile, Provider
 from cohorte.domain.redaction import redact_text
@@ -77,7 +78,8 @@ def guided_patch_spec(
             f"Intake: {redact_text(report.model_dump_json())[:8192]}"
         )
         try:
-            proposal = runtime.patch_proposal(repository, prompt)
+            with Activity("Diagnostic du correctif"):
+                proposal = runtime.patch_proposal(repository, prompt)
             known_surfaces = {item.id for item in profile.surfaces}
             known_checks = {item.id for item in profile.checks}
             if (
