@@ -75,6 +75,8 @@ class DeliveryProvider(Protocol):
 
     def find_pull_request(self, branch: str, head_sha: str) -> PullRequest | None: ...
 
+    def get_pull_request(self, pr_id: str) -> PullRequest | None: ...
+
     def create_pull_request(
         self, branch: str, base: str, head_sha: str, title: str, body: str
     ) -> PullRequest: ...
@@ -215,8 +217,12 @@ class ShipRunner:
         )
 
     def refresh(self, delivery: DeliveryResult) -> DeliveryResult:
-        pull_request = self.provider.find_pull_request(delivery.branch, delivery.head_sha)
-        if pull_request is None or pull_request.id != delivery.pr_id:
+        pull_request = self.provider.get_pull_request(delivery.pr_id)
+        if (
+            pull_request is None
+            or pull_request.id != delivery.pr_id
+            or pull_request.head_sha != delivery.head_sha
+        ):
             raise CohorteError(
                 ErrorCode.EFFECT_UNCERTAIN,
                 "the recorded pull request could not be reconciled",

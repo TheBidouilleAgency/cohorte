@@ -3536,7 +3536,13 @@ def run(argv: list[str] | None = None) -> int:
             state = database.get_run(args.run_id)
             if state.stage == Stage.DONE and state.status == RunStatus.COMPLETED:
                 delivery = database.latest_event(args.run_id, "delivery.confirmed")["data"]
-                _emit(delivery, args.json)
+                if args.json:
+                    _emit(delivery, True)
+                else:
+                    from cohorte.application.delivery import DeliveryResult
+                    from cohorte.cli.delivery_view import print_delivery_result
+
+                    print_delivery_result(DeliveryResult.model_validate(delivery))
                 return 0
             context = database.latest_event(args.run_id, "run.context")["data"]
             profile_ref = context["profile_ref"]
@@ -3589,7 +3595,12 @@ def run(argv: list[str] | None = None) -> int:
                 "delivery.confirmed",
                 delivery_result.model_dump(mode="json"),
             )
-            _emit(delivery_result.model_dump(mode="json"), args.json)
+            if args.json:
+                _emit(delivery_result.model_dump(mode="json"), True)
+            else:
+                from cohorte.cli.delivery_view import print_delivery_result
+
+                print_delivery_result(delivery_result)
         elif args.command == "delivery-status":
             from cohorte.application.delivery import DeliveryResult, DeliveryStatus
             from cohorte.domain.models import ProjectProfile
@@ -3624,7 +3635,12 @@ def run(argv: list[str] | None = None) -> int:
                     ):
                         break
                     time.sleep(5)
-            _emit(delivery.model_dump(mode="json"), args.json)
+            if args.json:
+                _emit(delivery.model_dump(mode="json"), True)
+            else:
+                from cohorte.cli.delivery_view import print_delivery_result
+
+                print_delivery_result(delivery)
         return 0
     except Exception as error:
         _fail(error, args.json)

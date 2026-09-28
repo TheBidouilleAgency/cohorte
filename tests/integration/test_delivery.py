@@ -38,6 +38,9 @@ class FakeProvider:
         item = self.requests.get(branch)
         return item if item is not None and item.head_sha == head_sha else None
 
+    def get_pull_request(self, pr_id: str) -> PullRequest | None:
+        return next((item for item in self.requests.values() if item.id == pr_id), None)
+
     def create_pull_request(
         self, branch: str, base: str, head_sha: str, title: str, body: str
     ) -> PullRequest:
@@ -114,6 +117,24 @@ def test_ship_commits_pushes_and_confirms_pull_request(tmp_path: Path) -> None:
     assert GitRepository(worktree).remote_head("origin", branch) == result.head_sha
     assert GitRepository(worktree).commit_for_run(state.id) == result.head_sha
     assert provider.created == 1
+    database.close()
+
+
+def test_delivery_status_reconciles_after_merge_and_rejects_changed_head(tmp_path: Path) -> None:
+    database, worktree, state, branch = prepared_delivery(tmp_path)
+    provider = FakeProvider()
+    runner = ShipRunner(database, provider)
+    delivery = runner.run(
+        state, project_profile(), worktree, branch, "Add feature", "Validated candidate."
+    )
+    provider.requests[branch] = provider.requests[branch].model_copy(update={"status": "merged"})
+
+    assert runner.refresh(delivery).status == DeliveryStatus.CI_PENDING
+
+    provider.requests[branch] = provider.requests[branch].model_copy(update={"head_sha": "b" * 40})
+    with pytest.raises(CohorteError) as caught:
+        runner.refresh(delivery)
+    assert caught.value.code == ErrorCode.EFFECT_UNCERTAIN
     database.close()
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import shlex
 import sqlite3
 import sys
 import threading
@@ -114,6 +115,28 @@ def print_run(
     if lines:
         print("Déroulement :")
         print("\n".join(lines))
+    if state.status.value == "completed" and state.stage.value == "done":
+        latest_delivery = next(
+            (
+                event.get("data", {})
+                for event in reversed(events)
+                if event.get("type") in {"delivery.status", "delivery.confirmed"}
+            ),
+            None,
+        )
+        if isinstance(latest_delivery, dict):
+            ci_status = str(latest_delivery.get("status", "ci_unknown"))
+            ci_label = {
+                "ci_unknown": "inconnu",
+                "ci_pending": "en cours",
+                "ci_passed": "checks visibles réussis",
+                "ci_failed": "checks en échec ou annulés",
+            }.get(ci_status, _safe(ci_status))
+            print(f"CI (dernier état enregistré) : {ci_label}")
+            if ci_status in {"ci_unknown", "ci_pending"}:
+                print(
+                    f"Actualiser : cohorte delivery-status {shlex.quote(state.id)} --live --watch"
+                )
     if state.status.value == "waiting_user" and state.stage.value == "ship":
         if ship_request_id:
             print(f"Pour livrer : cohorte approve {ship_request_id}")
