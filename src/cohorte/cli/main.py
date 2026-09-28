@@ -92,6 +92,7 @@ def _parser() -> argparse.ArgumentParser:
     status.add_argument("run", nargs="?")
     runs = sub.add_parser("runs", help="list saved runs for the current project")
     runs.add_argument("--limit", type=int, default=20)
+    runs.add_argument("--status", help="filtrer par état enregistré du run")
     run_view = sub.add_parser("run", help="read a run and its timeline")
     run_view.add_argument("action", choices=["show"])
     run_view.add_argument("run_id")
@@ -1222,11 +1223,25 @@ def run(argv: list[str] | None = None) -> int:
                 _emit(payload, args.json)
         elif args.command == "runs":
             from cohorte.cli.run_view import run_summary_line
+            from cohorte.domain.models import RunStatus
 
             if args.limit < 1 or args.limit > 1000:
                 raise ValueError("runs --limit must be between 1 and 1000")
+            selected_status = None
+            if args.status is not None:
+                try:
+                    selected_status = RunStatus(args.status)
+                except ValueError as error:
+                    accepted = ", ".join(status.value for status in RunStatus)
+                    raise ValueError(
+                        f"État de run inconnu : {args.status!r}. Valeurs acceptées : {accepted}"
+                    ) from error
             project = _project_for_path(database, Path.cwd())
-            saved_runs = database.list_runs(project["id"])[: args.limit]
+            saved_runs = [
+                state
+                for state in database.list_runs(project["id"])
+                if selected_status is None or state.status == selected_status
+            ][: args.limit]
             if args.json:
                 _emit(
                     {

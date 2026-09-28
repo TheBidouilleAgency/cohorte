@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from cohorte.cli.main import run
@@ -79,6 +79,133 @@ def test_runs_and_timeline_are_readable_and_json_is_structured(
     assert len(detail_json["data"]["events"]) == 3
     assert "private-value" not in json.dumps(detail_json)
     assert (data_dir / "cohorte.sqlite3").stat().st_size == before
+
+
+def test_runs_status_filters_before_limit_and_preserves_project_and_order(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    data_dir, project_id = _saved_run(tmp_path, monkeypatch, capsys)
+    other_project = tmp_path / "other-project"
+    other_project.mkdir()
+    assert run(["--json", "--data-dir", str(data_dir), "init", str(other_project)]) == 0
+    other_id = json.loads(capsys.readouterr().out)["data"]["profile"]["project_id"]
+    database = Database(data_dir / "cohorte.sqlite3")
+    try:
+        now = datetime.now(UTC)
+        for run_id, owner, status, created_at in (
+            ("waiting-old", project_id, RunStatus.WAITING_USER, now - timedelta(days=3)),
+            ("waiting-new", project_id, RunStatus.WAITING_USER, now - timedelta(days=1)),
+            ("newest-running", project_id, RunStatus.RUNNING, now + timedelta(days=1)),
+            ("blocked-run", project_id, RunStatus.BLOCKED_UNCERTAIN, now - timedelta(days=2)),
+            ("other-waiting", other_id, RunStatus.WAITING_USER, now + timedelta(days=2)),
+        ):
+            database.create_run(
+                RunState(
+                    id=run_id,
+                    project_id=owner,
+                    feature_id="example",
+                    stage=Stage.BUILD,
+                    status=status,
+                    state_version=1,
+                    base_commit="a" * 40,
+                    created_at=created_at,
+                    updated_at=created_at,
+                )
+            )
+    finally:
+        database.close()
+
+    assert (
+        run(["--data-dir", str(data_dir), "runs", "--status", "waiting_user", "--limit", "1"]) == 0
+    )
+    listing = capsys.readouterr().out
+    assert "waiting-new · Construction · en attente de votre décision" in listing
+    assert "waiting-old" not in listing
+    assert "other-waiting" not in listing
+
+    assert run(["--json", "--data-dir", str(data_dir), "runs", "--status", "waiting_user"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["data"]["project_id"] == project_id
+    assert [item["id"] for item in payload["data"]["runs"]] == [
+        "waiting-new",
+        "waiting-old",
+    ]
+    assert run(["--data-dir", str(data_dir), "runs", "--status", "waiting_user"]) == 0
+    listing = capsys.readouterr().out
+    assert listing.index("waiting-new") < listing.index("waiting-old")
+    assert "other-waiting" not in listing
+
+    assert run(["--json", "--data-dir", str(data_dir), "runs", "--limit", "1"]) == 0
+    unfiltered = json.loads(capsys.readouterr().out)
+    assert [item["id"] for item in unfiltered["data"]["runs"]] == ["newest-running"]
+
+    assert run(["--data-dir", str(data_dir), "runs", "--status", "blocked_uncertain"]) == 0
+    assert "blocked-run · Construction · bloqué, effet incertain" in capsys.readouterr().out
+    assert (
+        run(["--json", "--data-dir", str(data_dir), "runs", "--status", "blocked_uncertain"]) == 0
+    )
+    assert [item["id"] for item in json.loads(capsys.readouterr().out)["data"]["runs"]] == [
+        "blocked-run"
+    ]
+
+    assert run(["--data-dir", str(data_dir), "runs", "--status", "paused"]) == 0
+    assert "0 affiché(s)" in capsys.readouterr().out
+    assert run(["--json", "--data-dir", str(data_dir), "runs", "--status", "paused"]) == 0
+    assert json.loads(capsys.readouterr().out)["data"]["runs"] == []
+
+
+def test_runs_without_status_keeps_default_limit_of_twenty(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    data_dir, project_id = _saved_run(tmp_path, monkeypatch, capsys)
+    database = Database(data_dir / "cohorte.sqlite3")
+    try:
+        now = datetime.now(UTC)
+        for index in range(21):
+            created_at = now + timedelta(minutes=index + 1)
+            database.create_run(
+                RunState(
+                    id=f"run-{index:02}",
+                    project_id=project_id,
+                    feature_id="example",
+                    stage=Stage.BUILD,
+                    status=RunStatus.RUNNING,
+                    state_version=1,
+                    base_commit="a" * 40,
+                    created_at=created_at,
+                    updated_at=created_at,
+                )
+            )
+    finally:
+        database.close()
+
+    assert run(["--json", "--data-dir", str(data_dir), "runs"]) == 0
+    selected = json.loads(capsys.readouterr().out)["data"]["runs"]
+    assert len(selected) == 20
+    assert selected[0]["id"] == "run-20"
+    assert selected[-1]["id"] == "run-01"
+
+
+def test_runs_status_rejects_unknown_value_in_text_and_json(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    data_dir, _ = _saved_run(tmp_path, monkeypatch, capsys)
+    for prefix in ([], ["--json"]):
+        try:
+            run([*prefix, "--data-dir", str(data_dir), "runs", "--status", "WAITING_USER"])
+        except SystemExit as error:
+            assert error.code != 0
+        else:
+            raise AssertionError("invalid status was accepted")
+        output = capsys.readouterr()
+        if prefix:
+            payload = json.loads(output.out)
+            assert payload["ok"] is False
+            assert payload["error"]["code"] == "VALIDATION_ERROR"
+            assert "WAITING_USER" in payload["error"]["message"]
+        else:
+            assert "WAITING_USER" in output.err
+            assert "État de run inconnu" in output.err
 
 
 def test_progress_reports_journal_events_and_human_result(
