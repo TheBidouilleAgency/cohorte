@@ -7,6 +7,12 @@ with the newest version first. Describe the verified scope and known limitations
 
 _No changes recorded yet._
 
+## 1.0.0a17 — 2026-09-28
+
+- Add `cohorte runs --status ÉTAT` to filter saved runs by one exact state before applying `--limit`. Keep the current project boundary, readable text output and structured `--json` response; invalid states return an error.
+- When `cohorte ship` is missing approval for its current candidate, show the exact `cohorte approve REQUEST_ID` command. Denied or stale requests do not suggest reusing an approval that cannot be applied.
+- Validation: PRs #79 and #80 passed documentation and Python 3.12/3.13 CI on Ubuntu, macOS and Windows. Local pytest, Ruff and mypy passed. A provider-live run from the published package remains unverified.
+
 ## 1.0.0a16 — 2026-09-28
 
 - Add `cohorte profile checks` to inspect each saved check's ID, working directory, exact argument array and referencing surfaces. The JSON view includes the profile revision and does not execute a check.
