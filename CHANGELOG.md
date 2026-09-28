@@ -7,6 +7,12 @@ with the newest version first. Describe the verified scope and known limitations
 
 _No changes recorded yet._
 
+## 1.0.0a18 — 2026-09-28
+
+- Show a readable CI state and the exact `cohorte delivery-status RUN_ID --live --watch` follow-up after `ship`; `run show` identifies the last recorded delivery status without claiming live process state. Structured `--json` output remains available.
+- On GitHub, do not report CI success while the observed Actions workflow for the PR commit is still running. Keep an entirely skipped check set unknown, and reconcile PR/MR status by its recorded ID and head commit after merge.
+- Validation: PR #82 passed documentation and Python 3.12/3.13 CI on Ubuntu, macOS and Windows. Local pytest, Ruff lint/format, mypy and VitePress build passed. A read-only call against merged GitHub PR #79 returned seven successful checks; merged GitLab reconciliation is covered by a synthetic adapter test, not a live call.
+
 ## 1.0.0a17 — 2026-09-28
 
 - Add `cohorte runs --status ÉTAT` to filter saved runs by one exact state before applying `--limit`. Keep the current project boundary, readable text output and structured `--json` response; invalid states return an error.
