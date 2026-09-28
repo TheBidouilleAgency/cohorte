@@ -8,9 +8,13 @@ from cohorte.cli.activity import Activity
 
 
 def test_activity_reports_work_and_stops_before_next_prompt(capsys) -> None:
+    output = ""
     with Activity("Analyse", interval_seconds=0.01):
-        time.sleep(0.05)
-    output = capsys.readouterr().err
+        deadline = time.monotonic() + 2
+        while "Analyse · toujours en cours" not in output and time.monotonic() < deadline:
+            time.sleep(0.01)
+            output += capsys.readouterr().err
+    output += capsys.readouterr().err
     assert "Analyse…" in output
     assert "Analyse · toujours en cours" in output
     assert "Analyse · terminé" in output

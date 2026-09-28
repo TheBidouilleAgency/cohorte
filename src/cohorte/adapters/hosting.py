@@ -58,6 +58,19 @@ class GitHubProvider(_CliProvider):
                 return PullRequest(id=str(value["number"]), url=value["url"], head_sha=head_sha)
         return None
 
+    def get_pull_request(self, pr_id: str) -> PullRequest | None:
+        value = json.loads(
+            self._run("pr", "view", pr_id, "--json", "number,url,headRefOid,state") or "{}"
+        )
+        if not value.get("number") or not value.get("headRefOid"):
+            return None
+        return PullRequest(
+            id=str(value["number"]),
+            url=str(value["url"]),
+            head_sha=str(value["headRefOid"]),
+            status=str(value.get("state", "")).lower(),
+        )
+
     def create_pull_request(
         self, branch: str, base: str, head_sha: str, title: str, body: str
     ) -> PullRequest:
@@ -87,7 +100,7 @@ class GitHubProvider(_CliProvider):
             "checks",
             pull_request.id,
             "--json",
-            "name,state,bucket",
+            "name,state,bucket,link",
             check=False,
         )
         checks: list[dict[str, Any]] = json.loads(raw or "[]")
@@ -97,7 +110,45 @@ class GitHubProvider(_CliProvider):
         buckets = {str(item.get("bucket", "pending")).lower() for item in checks}
         if buckets & {"fail", "cancel"}:
             return DeliveryStatus.CI_FAILED, names
-        if checks and buckets <= {"pass", "skipping"}:
+        if buckets == {"skipping"}:
+            return DeliveryStatus.CI_UNKNOWN, names
+        if "pass" in buckets and buckets <= {"pass", "skipping"}:
+            if any("/actions/runs/" in str(item.get("link", "")) for item in checks):
+                try:
+                    raw_runs = self._run(
+                        "run",
+                        "list",
+                        "--commit",
+                        pull_request.head_sha,
+                        "--json",
+                        "status,conclusion,headSha",
+                        "--limit",
+                        "100",
+                    )
+                except RuntimeError:
+                    return DeliveryStatus.CI_UNKNOWN, names
+                try:
+                    runs = json.loads(raw_runs or "[]")
+                except json.JSONDecodeError:
+                    return DeliveryStatus.CI_UNKNOWN, names
+                if not isinstance(runs, list):
+                    return DeliveryStatus.CI_UNKNOWN, names
+                matching = [
+                    run
+                    for run in runs
+                    if isinstance(run, dict) and run.get("headSha") == pull_request.head_sha
+                ]
+                if not matching:
+                    return DeliveryStatus.CI_PENDING, names
+                conclusions = {str(run.get("conclusion", "")) for run in matching}
+                if conclusions & {"failure", "cancelled", "timed_out", "action_required"}:
+                    return DeliveryStatus.CI_FAILED, names
+                if len(runs) >= 100:
+                    return DeliveryStatus.CI_UNKNOWN, names
+                if any(run.get("status") != "completed" for run in matching):
+                    return DeliveryStatus.CI_PENDING, names
+                if conclusions != {"success"}:
+                    return DeliveryStatus.CI_UNKNOWN, names
             return DeliveryStatus.CI_PASSED, names
         return DeliveryStatus.CI_PENDING, names
 
@@ -127,6 +178,18 @@ class GitLabProvider(_CliProvider):
                     head_sha=head_sha,
                 )
         return None
+
+    def get_pull_request(self, pr_id: str) -> PullRequest | None:
+        value = json.loads(self._run("mr", "view", pr_id, "--output", "json") or "{}")
+        sha = (value.get("diff_refs") or {}).get("head_sha") or value.get("sha")
+        if not sha or not (value.get("iid") or value.get("id")):
+            return None
+        return PullRequest(
+            id=str(value.get("iid") or value.get("id")),
+            url=str(value.get("web_url") or value.get("url")),
+            head_sha=str(sha),
+            status=str(value.get("state", "")).lower(),
+        )
 
     def create_pull_request(
         self, branch: str, base: str, head_sha: str, title: str, body: str

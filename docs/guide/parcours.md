@@ -62,12 +62,12 @@ En cas d’interruption, `cohorte --json resume RUN_ID --live` reprend le run jo
 La livraison dispose d’une approbation séparée :
 
 ```bash
-cohorte --json approve REQUEST_ID
-cohorte --json ship RUN_ID --live
-cohorte --json delivery-status RUN_ID --live --watch
+cohorte approve REQUEST_ID
+cohorte ship RUN_ID --live
+cohorte delivery-status RUN_ID --live --watch
 ```
 
-`ship` revérifie le candidat et la base distante, crée un commit, pousse sans force et confirme la PR GitHub ou MR GitLab. Il ne merge ni ne déploie. L’intégration de notes de release dans la description est optionnelle.
+`ship` revérifie le candidat et la base distante, crée un commit, pousse sans force et confirme la PR GitHub ou MR GitLab. Il ne merge ni ne déploie. Juste après la création, GitHub peut n'avoir encore aucun check visible : Cohorte affiche alors un résultat CI inconnu et la commande de suivi, sans annoncer un succès. `delivery-status --live --watch` interroge de nouveau le fournisseur et affiche le résultat observé ; `--json` conserve la réponse structurée pour les scripts. L’intégration de notes de release dans la description est optionnelle.
 
 ## Autres parcours
 

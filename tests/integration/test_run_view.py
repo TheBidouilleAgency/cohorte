@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from cohorte.cli.main import run
-from cohorte.cli.run_view import RunProgress, print_result
+from cohorte.cli.run_view import RunProgress, print_result, print_run
 from cohorte.domain.models import RunState, RunStatus, Stage
 from cohorte.persistence.sqlite import Database
 
@@ -79,6 +79,39 @@ def test_runs_and_timeline_are_readable_and_json_is_structured(
     assert len(detail_json["data"]["events"]) == 3
     assert "private-value" not in json.dumps(detail_json)
     assert (data_dir / "cohorte.sqlite3").stat().st_size == before
+
+
+def test_completed_run_shows_last_recorded_ci_and_refresh_command(capsys) -> None:
+    now = datetime.now(UTC)
+    state = RunState(
+        id="example-run",
+        project_id="example",
+        feature_id="example",
+        stage=Stage.DONE,
+        status=RunStatus.COMPLETED,
+        state_version=1,
+        base_commit="a" * 40,
+        created_at=now,
+        updated_at=now,
+    )
+    events = [
+        {
+            "type": "delivery.confirmed",
+            "data": {"status": "ci_unknown"},
+            "occurred_at": now.isoformat(),
+        },
+        {
+            "type": "delivery.status",
+            "data": {"status": "ci_pending"},
+            "occurred_at": now.isoformat(),
+        },
+    ]
+
+    print_run(state, events)
+
+    output = capsys.readouterr().out
+    assert "CI (dernier état enregistré) : en cours" in output
+    assert "cohorte delivery-status example-run --live --watch" in output
 
 
 def test_runs_status_filters_before_limit_and_preserves_project_and_order(
