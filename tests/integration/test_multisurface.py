@@ -13,6 +13,8 @@ from cohorte.application.durable import RunStopped, SqliteRunJournal, SqliteTask
 from cohorte.application.multisurface import MultiSurfaceRunner, plan_multisurface
 from cohorte.application.service import CohorteService
 from cohorte.application.vertical import AgentReport, AgentReview
+from cohorte.cli.run_view import print_run
+from cohorte.domain.errors import CohorteError, ErrorCode
 from cohorte.domain.evidence import ReviewVerdict
 from cohorte.domain.models import (
     AgentDefaults,
@@ -216,6 +218,78 @@ def test_multisurface_runs_dependency_wave_then_parallel_consumers(tmp_path: Pat
     assert (candidate / "backend" / "service.txt").read_text() == "uses-v1\n"
     assert (candidate / "client" / "screen.txt").read_text() == "uses-v1\n"
     assert git(candidate, "log", "--format=%B").count("Cohorte-Task:") == 3
+
+
+def test_multisurface_unavailable_check_does_not_advance_journal_to_review(
+    tmp_path: Path, capsys
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    git(repository, "init", "-b", "main")
+    git(repository, "config", "user.email", "test@example.com")
+    git(repository, "config", "user.name", "Test")
+    for directory in ("contract", "backend", "client"):
+        (repository / directory).mkdir()
+        (repository / directory / ".gitkeep").write_text("")
+    git(repository, "add", ".")
+    git(repository, "commit", "-m", "initial")
+    database = Database(tmp_path / "state.sqlite3")
+    database.register_project("multi-demo", str(repository), "profile")
+    database.create_run(
+        RunState(
+            id="missing-check",
+            project_id="multi-demo",
+            feature_id="multi-change",
+            stage=Stage.BUILD,
+            status=RunStatus.RUNNING,
+            state_version=1,
+            base_commit=git(repository, "rev-parse", "HEAD"),
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+        )
+    )
+    unavailable_profile = profile().model_copy(
+        update={
+            "checks": [
+                CheckDefinition(id="all", argv=["cohorte-missing-check-binary"], timeout_seconds=10)
+            ]
+        }
+    )
+
+    with pytest.raises(CohorteError) as error:
+        MultiSurfaceRunner(ParallelRuntime()).run(
+            repository,
+            tmp_path / "worktrees",
+            unavailable_profile,
+            spec(),
+            "missing-check",
+            observe=SqliteRunJournal(database, "missing-check"),
+        )
+
+    assert error.value.code == ErrorCode.CHECK_ENVIRONMENT
+    assert database.get_run("missing-check").stage == Stage.CHECKS
+    event_types = [event["type"] for event in database.events_after(0, run_id="missing-check")]
+    assert "phase.build.completed" in event_types
+    assert "phase.checks.completed" in event_types
+    assert "phase.review.completed" not in event_types
+    checks = database.latest_event("missing-check", "phase.checks.completed")["data"]
+    assert checks["environment_blocked"] is True
+    assert checks["passed"] is False
+    assert checks["checks"] == [
+        {
+            "check_id": "all",
+            "status": "errored",
+            "exit_code": None,
+            "environment_issue": "dependency_missing",
+        }
+    ]
+    print_run(
+        database.get_run("missing-check"),
+        database.events_after(0, run_id="missing-check"),
+        details=True,
+    )
+    assert "all · erreur" in capsys.readouterr().out
+    database.close()
 
 
 def test_multisurface_plan_maps_surface_dependencies() -> None:

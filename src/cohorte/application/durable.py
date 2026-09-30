@@ -198,7 +198,7 @@ class SqliteRunJournal:
         if phase == "build":
             stage = Stage.CHECKS
         elif phase == "checks":
-            stage = Stage.REVIEW
+            stage = Stage.CHECKS if data.get("environment_blocked") is True else Stage.REVIEW
         elif phase == "review":
             if data.get("ready") is True:
                 stage = Stage.SHIP

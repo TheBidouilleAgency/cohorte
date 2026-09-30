@@ -4,6 +4,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from cohorte.application.delivery import ShipRunner
 from cohorte.cli.main import run
 from cohorte.cli.run_view import RunProgress, print_result, print_run
 from cohorte.domain.models import RunState, RunStatus, Stage
@@ -112,6 +113,198 @@ def test_completed_run_shows_last_recorded_ci_and_refresh_command(capsys) -> Non
     output = capsys.readouterr().out
     assert "CI (dernier état enregistré) : en cours" in output
     assert "cohorte delivery-status example-run --live --watch" in output
+
+
+def test_run_details_reads_recorded_evidence_without_mutating_run_or_refreshing_delivery(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    data_dir, project_id = _saved_run(tmp_path, monkeypatch, capsys)
+    database = Database(data_dir / "cohorte.sqlite3")
+    try:
+        original = database.get_run("example-run")
+        current = original.model_copy(
+            update={
+                "candidate_tree_hash": "new",
+                "stage": Stage.DONE,
+                "status": RunStatus.COMPLETED,
+                "state_version": original.state_version + 1,
+            }
+        )
+        database.update_run(current, original.state_version, "run.resumed", {})
+        for event_type, payload in (
+            (
+                "phase.checks.completed",
+                {
+                    "candidate_tree_hash": "old",
+                    "passed": True,
+                    "checks": [{"check_id": "old", "status": "passed"}],
+                },
+            ),
+            (
+                "phase.review.completed",
+                {"candidate_tree_hash": "old", "verdict": "ready", "findings": []},
+            ),
+            (
+                "phase.fix.completed",
+                {
+                    "candidate_tree_hash": "new",
+                    "changed_files": [
+                        "src/b\nBearer private-value.py",
+                        "src/password=private-value.py",
+                    ],
+                },
+            ),
+            (
+                "phase.checks.completed",
+                {
+                    "candidate_tree_hash": "new",
+                    "passed": False,
+                    "checks": [{"check_id": "tests", "status": "failed", "exit_code": 1}],
+                },
+            ),
+            (
+                "phase.review.completed",
+                {
+                    "candidate_tree_hash": "new",
+                    "verdict": "blocked",
+                    "findings": [
+                        {
+                            "severity": "high",
+                            "path": "src/a\x1b[31m.py",
+                            "message": "token=private-value\nFix this",
+                        }
+                    ],
+                    "findings_truncated": True,
+                    "changed_files": [
+                        "src/b\nBearer private-value.py",
+                        "src/password=private-value.py",
+                    ],
+                },
+            ),
+            ("delivery.confirmed", {"pr_id": "42", "status": "ci_pending"}),
+        ):
+            database.append_event(event_type, payload, project_id=project_id, run_id="example-run")
+        before_state = database.get_run("example-run")
+        before_events = database.events_after(0, run_id="example-run")
+    finally:
+        database.close()
+
+    def unexpected_refresh(*_args, **_kwargs):
+        raise AssertionError("delivery refresh called during run show")
+
+    monkeypatch.setattr(ShipRunner, "refresh", unexpected_refresh)
+    command = ["--data-dir", str(data_dir), "run", "show", "example-run"]
+    assert run(command) == 0
+    plain = capsys.readouterr().out
+    assert run([*command, "--details"]) == 0
+    detailed = capsys.readouterr().out
+    assert "Dernier état enregistré" in detailed
+    assert "Déroulement :" in detailed
+    assert "Fichiers modifiés :" in detailed
+    assert "Vérifications :" in detailed
+    assert "Revue :" in detailed
+    assert "Livraison :" in detailed
+    assert "tests · en échec" in detailed
+    assert "old · réussi" not in detailed
+    assert "Verdict enregistré : bloquée" in detailed
+    assert "élevée · src/a [31m.py · token=[REDACTED] Fix this" in detailed
+    assert "Constats tronqués" in detailed
+    assert "CI (dernier état enregistré) : en cours" in detailed
+    assert "PR/MR 42 créée" in detailed
+    assert "private-value" not in detailed
+    assert "\x1b" not in detailed
+    assert "Fichiers modifiés :" not in plain
+
+    assert run(["--json", *command, "--details"]) == 0
+    with_details = json.loads(capsys.readouterr().out)
+    assert run(["--json", *command]) == 0
+    without_details = json.loads(capsys.readouterr().out)
+    assert with_details == without_details
+    assert set(with_details["data"]) == {"run", "events"}
+    database = Database(data_dir / "cohorte.sqlite3")
+    try:
+        assert database.get_run("example-run") == before_state
+        assert database.events_after(0, run_id="example-run") == before_events
+    finally:
+        database.close()
+
+
+def test_run_details_does_not_invent_missing_or_stale_evidence(capsys) -> None:
+    now = datetime.now(UTC)
+    state = RunState(
+        id="old-run",
+        project_id="demo",
+        feature_id="example",
+        stage=Stage.SHIP,
+        status=RunStatus.WAITING_USER,
+        state_version=1,
+        base_commit="a" * 40,
+        candidate_tree_hash="new",
+        created_at=now,
+        updated_at=now,
+    )
+    events = [
+        {
+            "type": "phase.checks.completed",
+            "data": {"candidate_tree_hash": "new", "passed": True},
+            "occurred_at": now.isoformat(),
+        },
+        {
+            "type": "phase.review.completed",
+            "data": {"candidate_tree_hash": "old", "verdict": "ready", "findings": []},
+            "occurred_at": now.isoformat(),
+        },
+    ]
+    print_run(state, events, details=True)
+    output = capsys.readouterr().out
+    assert "Résultats individuels indisponibles" in output
+    assert "Résultat global enregistré : réussies" in output
+    assert "Verdict enregistré : prête" not in output
+    assert "Détail indisponible pour le candidat actuel" in output
+    assert "Livraison en attente de votre décision" in output
+    assert "Aucun état de livraison enregistré" not in output
+
+    events[0]["data"]["candidate_tree_hash"] = "old"
+    print_run(state, events, details=True)
+    stale_output = capsys.readouterr().out
+    assert "Résultats individuels indisponibles" in stale_output
+    assert "Résultat global enregistré" not in stale_output
+
+
+def test_run_details_translates_recorded_review_values(capsys) -> None:
+    now = datetime.now(UTC)
+    state = RunState(
+        id="review-run",
+        project_id="demo",
+        feature_id="example",
+        stage=Stage.REVIEW,
+        status=RunStatus.RUNNING,
+        state_version=1,
+        base_commit="a" * 40,
+        candidate_tree_hash="current",
+        created_at=now,
+        updated_at=now,
+    )
+    events = [
+        {
+            "type": "phase.review.completed",
+            "data": {
+                "candidate_tree_hash": "current",
+                "verdict": "fix",
+                "findings": [
+                    {"severity": severity, "path": "src/a.py", "message": "à vérifier"}
+                    for severity in ("critical", "high", "medium", "low")
+                ],
+            },
+            "occurred_at": now.isoformat(),
+        }
+    ]
+
+    print_run(state, events, details=True)
+    output = capsys.readouterr().out
+    assert "Verdict enregistré : corrections nécessaires" in output
+    for severity in ("critique", "élevée", "moyenne", "faible"):
+        assert f"{severity} · src/a.py · à vérifier" in output
 
 
 def test_runs_status_filters_before_limit_and_preserves_project_and_order(

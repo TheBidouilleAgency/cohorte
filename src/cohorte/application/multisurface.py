@@ -14,6 +14,7 @@ from cohorte.application.vertical import (
     VerticalRunner,
     WorkflowRuntime,
     _artifact_ref,
+    _bounded_changed_files,
     _digest_model,
 )
 from cohorte.domain.errors import CohorteError, ErrorCode
@@ -336,14 +337,28 @@ class MultiSurfaceRunner:
         fix_cycles = initial_fix_cycles
         while True:
             checks = VerticalRunner._checks(candidate.root, profile, check_ids)
-            VerticalRunner._require_check_environment(checks)
             self._observe(
                 observe,
                 "checks",
                 candidate,
                 plan,
-                {"passed": all(item.status == "passed" for item in checks)},
+                {
+                    "passed": all(item.status == "passed" for item in checks),
+                    "environment_blocked": any(
+                        item.error_code == ErrorCode.CHECK_ENVIRONMENT for item in checks
+                    ),
+                    "checks": [
+                        {
+                            "check_id": item.check_id,
+                            "status": item.status,
+                            "exit_code": item.exit_code,
+                            "environment_issue": item.environment_issue,
+                        }
+                        for item in checks
+                    ],
+                },
             )
+            VerticalRunner._require_check_environment(checks)
             failed = [item for item in checks if item.status != "passed"]
             review = self._review_candidate(candidate, profile, spec, plan.base_commit, checks)
             blocking = VerticalRunner._blocking_findings(profile, review)
@@ -546,12 +561,17 @@ class MultiSurfaceRunner:
         data: dict[str, Any],
     ) -> None:
         if observe is not None:
+            changed_files, files_truncated = _bounded_changed_files(
+                candidate.changed_files(plan.base_commit)
+            )
             observe(
                 phase,
                 {
                     **data,
                     "base_commit": plan.base_commit,
                     "candidate_tree_hash": candidate.snapshot_digest(),
+                    "changed_files": changed_files,
+                    "changed_files_truncated": files_truncated,
                 },
             )
 

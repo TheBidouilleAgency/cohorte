@@ -84,7 +84,9 @@ class GitRepository:
         ]
 
     def changed_files(self, base_commit: str) -> list[str]:
-        tracked = self._run("diff", "--name-only", "--relative", base_commit, "--").splitlines()
+        tracked = self._run("diff", "--name-only", "-z", "--relative", base_commit, "--").split(
+            "\0"
+        )
         untracked = self._run("ls-files", "--others", "--exclude-standard", "-z").split("\0")
         visible_untracked = [path for path in untracked if path and not _is_runtime_artifact(path)]
         return sorted({path for path in [*tracked, *visible_untracked] if path})

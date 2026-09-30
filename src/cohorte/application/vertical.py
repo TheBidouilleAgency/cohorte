@@ -35,6 +35,7 @@ from cohorte.domain.models import (
     Task,
     TaskPlan,
 )
+from cohorte.domain.redaction import redact_text
 from cohorte.execution.checks import CheckExecution, CheckRunner
 
 
@@ -85,6 +86,19 @@ def _digest_model(value: StrictModel) -> str:
 
 def _artifact_ref(kind: str, identifier: str, revision: int, digest: str) -> ArtifactRef:
     return ArtifactRef(id=f"{kind}:{identifier}", revision=revision, sha256=digest)
+
+
+def _bounded_changed_files(paths: list[str]) -> tuple[list[str], bool]:
+    """Keep file evidence within a small part of the journal's 512 KiB event limit."""
+    recorded: list[str] = []
+    encoded_size = 2  # JSON list brackets
+    for path in paths:
+        item_size = len(json.dumps(redact_text(path)).encode()) + (1 if recorded else 0)
+        if encoded_size + item_size > 64 * 1024:
+            return recorded, True
+        recorded.append(path)
+        encoded_size += item_size
+    return recorded, False
 
 
 def plan_feature(profile: ProjectProfile, spec: FeatureSpec, base_commit: str) -> TaskPlan:
@@ -182,7 +196,21 @@ class VerticalRunner:
                 "checks",
                 candidate,
                 plan,
-                {"passed": all(item.status == "passed" for item in checks)},
+                {
+                    "passed": all(item.status == "passed" for item in checks),
+                    "environment_blocked": any(
+                        item.error_code == ErrorCode.CHECK_ENVIRONMENT for item in checks
+                    ),
+                    "checks": [
+                        {
+                            "check_id": item.check_id,
+                            "status": item.status,
+                            "exit_code": item.exit_code,
+                            "environment_issue": item.environment_issue,
+                        }
+                        for item in checks
+                    ],
+                },
             )
             self._require_check_environment(checks)
             failed = [item for item in checks if item.status != "passed"]
@@ -291,12 +319,17 @@ class VerticalRunner:
         data: dict[str, Any],
     ) -> None:
         if observe is not None:
+            changed_files, files_truncated = _bounded_changed_files(
+                candidate.changed_files(plan.base_commit)
+            )
             observe(
                 phase,
                 {
                     **data,
                     "base_commit": plan.base_commit,
                     "candidate_tree_hash": candidate.snapshot_digest(),
+                    "changed_files": changed_files,
+                    "changed_files_truncated": files_truncated,
                 },
             )
 

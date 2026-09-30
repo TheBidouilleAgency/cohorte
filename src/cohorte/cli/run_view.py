@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from cohorte.domain.models import RunState
-from cohorte.domain.redaction import redact
+from cohorte.domain.redaction import redact, redact_text
 from cohorte.persistence.sqlite import Database
 
 _STAGES = {
@@ -63,6 +63,10 @@ def _safe(value: str) -> str:
     return re.sub(r"[\x00-\x1f\x7f-\x9f]", " ", value)
 
 
+def _display(value: object) -> str:
+    return _safe(redact_text(str(value)))
+
+
 def event_line(event: dict[str, Any]) -> str | None:
     event_type = str(event["type"])
     label = _EVENTS.get(event_type)
@@ -102,7 +106,11 @@ def run_events(database: Database, run_id: str) -> list[dict[str, Any]]:
 
 
 def print_run(
-    state: RunState, events: list[dict[str, Any]], ship_request_id: str | None = None
+    state: RunState,
+    events: list[dict[str, Any]],
+    ship_request_id: str | None = None,
+    *,
+    details: bool = False,
 ) -> None:
     print(f"Run {state.id}")
     print(f"Projet : {state.project_id} · fonctionnalité : {state.feature_id}")
@@ -115,6 +123,8 @@ def print_run(
     if lines:
         print("Déroulement :")
         print("\n".join(lines))
+    if details:
+        _print_details(state, events)
     if state.status.value == "completed" and state.stage.value == "done":
         latest_delivery = next(
             (
@@ -145,6 +155,130 @@ def print_run(
             print("Livraison en attente ; consulter les décisions avec cohorte status")
     elif state.status.value in {"failed", "paused", "waiting_auth", "waiting_quota"}:
         print(f"Reprendre après correction : cohorte resume {state.id} --live")
+
+
+def _latest_phase(events: list[dict[str, Any]], phase: str) -> dict[str, Any] | None:
+    return next(
+        (event for event in reversed(events) if event.get("type") == f"phase.{phase}.completed"),
+        None,
+    )
+
+
+def _current_data(state: RunState, event: dict[str, Any] | None) -> dict[str, Any] | None:
+    if event is None or not state.candidate_tree_hash:
+        return None
+    data = event.get("data")
+    if not isinstance(data, dict) or data.get("candidate_tree_hash") != state.candidate_tree_hash:
+        return None
+    return data
+
+
+def _print_details(state: RunState, events: list[dict[str, Any]]) -> None:
+    latest_phase = next(
+        (event for event in reversed(events) if str(event.get("type", "")).startswith("phase.")),
+        None,
+    )
+    files_data = _current_data(state, latest_phase)
+    print("Fichiers modifiés :")
+    changed = files_data.get("changed_files") if files_data else None
+    files_truncated = files_data.get("changed_files_truncated") is True if files_data else False
+    if isinstance(changed, list):
+        if changed:
+            for path in changed:
+                print(f"  {_display(path)}")
+        elif not files_truncated:
+            print("  Aucun fichier modifié dans la preuve enregistrée.")
+        if files_truncated:
+            print("  Liste tronquée dans le journal ; d'autres fichiers ne sont pas affichés.")
+    else:
+        print("  Détail indisponible dans le journal.")
+
+    print("Vérifications :")
+    checks_data = _current_data(state, _latest_phase(events, "checks"))
+    checks = checks_data.get("checks") if checks_data else None
+    if isinstance(checks, list) and checks:
+        labels = {"passed": "réussi", "failed": "en échec", "errored": "erreur"}
+        for check in checks:
+            if not isinstance(check, dict):
+                continue
+            name = _display(check.get("check_id", "inconnu"))
+            status = str(check.get("status", "inconnu"))
+            print(f"  {name} · {_display(labels.get(status, status))}")
+    else:
+        print("  Résultats individuels indisponibles dans le journal.")
+        if checks_data and isinstance(checks_data.get("passed"), bool):
+            global_status = "réussies" if checks_data["passed"] else "à corriger"
+            print(f"  Résultat global enregistré : {global_status}.")
+
+    print("Revue :")
+    review_data = _current_data(state, _latest_phase(events, "review"))
+    if review_data is None:
+        print("  Détail indisponible pour le candidat actuel.")
+    else:
+        verdict = review_data.get("verdict")
+        if verdict is None:
+            print("  Verdict indisponible dans le journal.")
+        else:
+            label = {
+                "ready": "prête",
+                "fix": "corrections nécessaires",
+                "blocked": "bloquée",
+            }.get(str(verdict), str(verdict))
+            print(f"  Verdict enregistré : {_display(label)}")
+        findings = review_data.get("findings")
+        if isinstance(findings, list):
+            if findings:
+                for finding in findings:
+                    if not isinstance(finding, dict):
+                        continue
+                    raw_severity = str(finding.get("severity", "gravité inconnue"))
+                    severity = _display(
+                        {
+                            "critical": "critique",
+                            "high": "élevée",
+                            "medium": "moyenne",
+                            "low": "faible",
+                        }.get(raw_severity, raw_severity)
+                    )
+                    path = _display(finding.get("path", "chemin inconnu"))
+                    message = _display(finding.get("message", "message indisponible"))
+                    print(f"  {severity} · {path} · {message}")
+                print("  Messages enregistrés : 2 000 caractères maximum par constat.")
+            else:
+                print("  Aucun constat enregistré.")
+            if review_data.get("findings_truncated") is True:
+                print("  Constats tronqués : seuls les 100 premiers sont enregistrés.")
+        else:
+            print("  Constats indisponibles dans le journal.")
+
+    print("Livraison :")
+    delivery_event = next(
+        (
+            event
+            for event in reversed(events)
+            if event.get("type") in {"delivery.status", "delivery.confirmed"}
+        ),
+        None,
+    )
+    if delivery_event is not None and isinstance(delivery_event.get("data"), dict):
+        delivery = delivery_event["data"]
+        pr_id = delivery.get("pr_id")
+        if pr_id is not None:
+            print(f"  Livraison confirmée dans le journal : PR/MR {_display(pr_id)} créée.")
+        else:
+            print("  État de livraison enregistré ; référence PR/MR indisponible.")
+        status = str(delivery.get("status", "ci_unknown"))
+        ci_label = {
+            "ci_unknown": "inconnu",
+            "ci_pending": "en cours",
+            "ci_passed": "checks visibles réussis",
+            "ci_failed": "checks en échec ou annulés",
+        }.get(status, status)
+        print(f"  CI (dernier état enregistré) : {_display(ci_label)}")
+    elif state.stage.value == "ship" and state.status.value == "waiting_user":
+        print("  Livraison en attente de votre décision.")
+    else:
+        print("  Aucun état de livraison enregistré.")
 
 
 def run_summary_line(state: RunState) -> str:
