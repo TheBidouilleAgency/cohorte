@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
+from unittest.mock import create_autospec
 
 import pytest
 
+from cohorte.adapters.git import GitRepository
 from cohorte.application.durable import SqliteRunJournal
-from cohorte.application.vertical import AgentReport, AgentReview, VerticalRunner
+from cohorte.application.multisurface import MultiSurfaceRunner
+from cohorte.application.vertical import AgentReport, AgentReview, VerticalRunner, plan_feature
+from cohorte.cli.run_view import print_run
 from cohorte.domain.errors import CohorteError, ErrorCode
 from cohorte.domain.evidence import ReviewVerdict
 from cohorte.domain.models import (
@@ -321,8 +326,6 @@ def test_vertical_blocks_stagnation_and_fix_cycle_exhaustion(
 
 
 def test_vertical_resumes_after_durable_build_checkpoint(tmp_path: Path) -> None:
-    from datetime import UTC, datetime
-
     repository = tmp_path / "repository"
     repository.mkdir()
     git(repository, "init", "-b", "main")
@@ -386,4 +389,55 @@ def test_vertical_resumes_after_durable_build_checkpoint(tmp_path: Path) -> None
     recovered = database.get_run("crash-run")
     assert recovered.stage == Stage.SHIP
     assert recovered.status == RunStatus.WAITING_USER
+    build = database.latest_event("crash-run", "phase.build.completed")["data"]
+    checks = database.latest_event("crash-run", "phase.checks.completed")["data"]
+    review = database.latest_event("crash-run", "phase.review.completed")["data"]
+    assert build["changed_files"] == ["src/message.txt"]
+    assert checks["changed_files"] == ["src/message.txt"]
+    assert checks["checks"] == [
+        {"check_id": "content", "status": "passed", "exit_code": 0, "environment_issue": None}
+    ]
+    assert review["changed_files"] == ["src/message.txt"]
+    database.close()
+
+
+def test_large_file_evidence_stays_within_journal_limit_and_discloses_truncation(
+    tmp_path: Path, capsys
+) -> None:
+    database = Database(tmp_path / "state.sqlite3")
+    database.register_project("demo", str(tmp_path), "profile")
+    paths = [f"src/{index:05d}-{'a' * 240}.txt" for index in range(3000)]
+    candidate = create_autospec(GitRepository, instance=True)
+    candidate.snapshot_digest.return_value = "candidate-hash"
+    candidate.changed_files.return_value = paths
+    plan = plan_feature(profile(), spec(), "a" * 40)
+
+    for run_id, observe_phase in (
+        ("vertical-large", VerticalRunner._observe),
+        ("multi-large", MultiSurfaceRunner._observe),
+    ):
+        now = datetime.now(UTC)
+        database.create_run(
+            RunState(
+                id=run_id,
+                project_id="demo",
+                feature_id="hello",
+                stage=Stage.BUILD,
+                status=RunStatus.RUNNING,
+                state_version=1,
+                base_commit=plan.base_commit,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        observe_phase(SqliteRunJournal(database, run_id), "build", candidate, plan, {})
+        state = database.get_run(run_id)
+        assert state.stage == Stage.CHECKS
+        events = database.events_after(0, run_id=run_id)
+        data = database.latest_event(run_id, "phase.build.completed")["data"]
+        assert data["changed_files_truncated"] is True
+        assert data["changed_files"] == paths[: len(data["changed_files"])]
+        assert len(data["changed_files"]) < len(paths)
+        print_run(state, events, details=True)
+        assert "Liste tronquée dans le journal" in capsys.readouterr().out
     database.close()

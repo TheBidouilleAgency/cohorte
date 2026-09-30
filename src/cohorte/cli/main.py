@@ -96,6 +96,9 @@ def _parser() -> argparse.ArgumentParser:
     run_view = sub.add_parser("run", help="read a run and its timeline")
     run_view.add_argument("action", choices=["show"])
     run_view.add_argument("run_id")
+    run_view.add_argument(
+        "--details", action="store_true", help="afficher les preuves enregistrées"
+    )
     specs_board = sub.add_parser("specs", help="list project feature specifications")
     specs_board.add_argument("--project-id")
     specs_board.add_argument("--status")
@@ -1270,7 +1273,7 @@ def run(argv: list[str] | None = None) -> int:
             if args.json:
                 _emit({"run": state.model_dump(mode="json"), "events": redact(events)}, True)
             else:
-                print_run(state, events, ship_request_id)
+                print_run(state, events, ship_request_id, details=args.details)
         elif args.command == "specs":
             project = (
                 database.get_project(args.project_id)

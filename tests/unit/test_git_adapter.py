@@ -1,3 +1,4 @@
+import os
 import subprocess
 from pathlib import Path
 
@@ -34,6 +35,27 @@ def test_runtime_bytecode_does_not_change_candidate_snapshot(tmp_path: Path) -> 
 
     assert repository.changed_files(repository.head) == []
     assert repository.snapshot_digest() == original
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Windows forbids control characters in filenames")
+def test_changed_files_preserves_control_characters_in_paths(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    tracked = root / "tracked\nname.py"
+    untracked = root / "untracked\tname.py"
+    tracked.write_text("VALUE = 1\n")
+    git(root, "init", "-b", "main")
+    git(root, "config", "user.email", "test@example.invalid")
+    git(root, "config", "user.name", "Test")
+    git(root, "add", ".")
+    git(root, "commit", "-m", "base")
+    repository = GitRepository(root)
+    base_commit = repository.head
+
+    tracked.write_text("VALUE = 2\n")
+    untracked.write_text("VALUE = 3\n")
+
+    assert repository.changed_files(base_commit) == ["tracked\nname.py", "untracked\tname.py"]
 
 
 def test_task_commit_stages_only_validated_paths(tmp_path: Path) -> None:
