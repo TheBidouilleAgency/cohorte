@@ -15,7 +15,7 @@ Forme générale : `cohorte [--json] [--config-dir DIR] [--data-dir DIR] COMMAND
 | `profile apply FILE [--project-id ID]` | Valider et appliquer un profil révisé. |
 | `status [RUN_ID]` | Résumer le projet courant ou un run. |
 | `runs [--limit N] [--status ÉTAT]` | Lister les runs du projet courant, éventuellement filtrés par un état exact avant la limite. `--json` conserve la liste structurée. |
-| `run show RUN_ID` | Relire l'état et la chronologie d'un run, même après la fin du processus. Avec `--json`, obtenir l'état et les événements structurés. |
+| `run show RUN_ID [--details]` | Relire l'état et la chronologie d'un run. `--details` ajoute en texte les fichiers, checks, constats de revue et le dernier état de livraison enregistrés ; les preuves absentes des anciens runs sont signalées. Avec `--json`, la structure existante reste inchangée. |
 | `specs [--project-id ID] [--status ÉTAT]` | Afficher les fonctionnalités, leur état de spec et la prochaine commande utile. |
 | `check PROFILE CHECK_ID` | Exécuter un check défini dans un profil. |
 | `schemas OUTPUT` | Exporter les schémas JSON. |
