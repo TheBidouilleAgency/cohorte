@@ -7,6 +7,13 @@ with the newest version first. Describe the verified scope and known limitations
 
 _No changes recorded yet._
 
+## 1.0.0a19 — 2026-09-30
+
+- Add `cohorte run show RUN_ID --details` to display recorded changed files, individual check outcomes, review findings, and the last recorded delivery state in readable text. Older runs identify unavailable evidence; `--json` keeps its existing structure, and the command does not inspect a mutable worktree.
+- Preserve exact Git path boundaries when recording changed files, including filenames with control characters on platforms that permit them.
+- Validation: PR #84 passed documentation and Python 3.12/3.13 CI on Ubuntu, macOS, and Windows. The corrected tree passed local pytest, Ruff lint/format, mypy, and a `run show --details` smoke test. Provider-live execution of the corrected tree remains unverified.
+- Known limitation: Cohorte's Codex adapter currently inherits the global Codex model even when `agent_defaults.model` is set in the project profile. A model unavailable to the connected ChatGPT account can interrupt a run; `cohorte doctor` does not yet detect this mismatch.
+
 ## 1.0.0a18 — 2026-09-28
 
 - Show a readable CI state and the exact `cohorte delivery-status RUN_ID --live --watch` follow-up after `ship`; `run show` identifies the last recorded delivery status without claiming live process state. Structured `--json` output remains available.
