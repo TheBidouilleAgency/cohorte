@@ -1,3 +1,4 @@
+import os
 import subprocess
 from pathlib import Path
 
@@ -36,6 +37,7 @@ def test_runtime_bytecode_does_not_change_candidate_snapshot(tmp_path: Path) -> 
     assert repository.snapshot_digest() == original
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows forbids control characters in filenames")
 def test_changed_files_preserves_control_characters_in_paths(tmp_path: Path) -> None:
     root = tmp_path / "repo"
     root.mkdir()
