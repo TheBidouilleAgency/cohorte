@@ -7,6 +7,12 @@ with the newest version first. Describe the verified scope and known limitations
 
 _No changes recorded yet._
 
+## 1.0.0a21 — 2026-10-07
+
+- Add `--json spec-session` for a saved, revisable spec proposal in François: free-form feedback stays separate from explicit answers and draft acceptance.
+- Expose the exact frozen candidate and project profile for review, then require a matching request ID and both hashes before recording approval and freezing. Keep explicit ratification of standing project decisions after freeze.
+- Validate the flow with the Python integration suite, a live Codex proposal and revision on a disposable project, and the François Rust bridge against that saved state. François desktop UI interaction and the multi-platform release matrix remain release gates.
+
 ## 1.0.0a20 — 2026-10-07
 
 - Restore V2-style project memory: brainstorm automatically reads live decisions from `specs/_decisions.md`, excludes superseded entries, and offers explicit ratification of new standing decisions after spec freeze.

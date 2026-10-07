@@ -235,6 +235,23 @@ def _parser() -> argparse.ArgumentParser:
     spec_draft.add_argument("--contract", type=Path)
     spec_draft.add_argument("--accept-proposal", action="store_true")
     spec_draft.add_argument("--output", type=Path, required=True)
+    spec_session = sub.add_parser(
+        "spec-session", help="prepare and approve a spec through a JSON client"
+    )
+    spec_session.add_argument("feature_id")
+    spec_session.add_argument(
+        "action", choices=["show", "propose", "accept", "prepare", "freeze", "ratify"]
+    )
+    spec_session.add_argument("--repo", type=Path, default=Path.cwd())
+    spec_session.add_argument("--message")
+    spec_session.add_argument("--answer", action="append", default=[], metavar="N=ANSWER")
+    spec_session.add_argument("--contract", type=Path)
+    spec_session.add_argument("--expect-proposal-revision", type=int)
+    spec_session.add_argument("--expect-draft-revision", type=int)
+    spec_session.add_argument("--request-id")
+    spec_session.add_argument("--spec-hash")
+    spec_session.add_argument("--profile-hash")
+    spec_session.add_argument("--candidate-index", type=int)
     guided_start = sub.add_parser("start", help="run a guided, frozen feature")
     guided_start.add_argument("feature_id", nargs="?")
     freeze_request = sub.add_parser("spec-freeze-request")
@@ -1902,6 +1919,31 @@ def run(argv: list[str] | None = None) -> int:
             project = _project_for_path(database, Path.cwd())
             guided_spec(
                 database, args.data_dir, project, args.feature_id, args.refresh, not args.manual
+            )
+        elif args.command == "spec-session":
+            from cohorte.cli.spec_session import spec_session
+
+            if not args.json:
+                raise ValueError("spec-session requires --json")
+            project = _project_for_path(database, args.repo)
+            _emit(
+                spec_session(
+                    database,
+                    args.data_dir,
+                    project,
+                    args.feature_id,
+                    args.action,
+                    message=args.message,
+                    answers=args.answer,
+                    contract=args.contract,
+                    expect_proposal_revision=args.expect_proposal_revision,
+                    expect_draft_revision=args.expect_draft_revision,
+                    request_id=args.request_id,
+                    spec_hash=args.spec_hash,
+                    profile_hash=args.profile_hash,
+                    candidate_index=args.candidate_index,
+                ),
+                True,
             )
         elif args.command == "spec-edit":
             from cohorte.application.preparation import canonical_model_bytes
