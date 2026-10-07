@@ -184,12 +184,22 @@ def _parser() -> argparse.ArgumentParser:
     brainstorm.add_argument("--idea")
     brainstorm.add_argument("--context", default="")
     brainstorm.add_argument("--answer", action="append", default=[])
+    brainstorm.add_argument(
+        "--message", help="ask, challenge, or steer the panel without recording a decision"
+    )
     brainstorm.add_argument("--prior-decision", action="append", default=[])
     brainstorm.add_argument("--perspective", action="append")
     brainstorm.add_argument("--repo", type=Path, default=Path.cwd())
     brainstorm.add_argument("--provider", choices=["claude", "codex"])
     brainstorm.add_argument("--output", type=Path)
     brainstorm.add_argument("--live", action="store_true")
+    decisions = sub.add_parser("decisions", help="read or record standing project decisions")
+    decisions.add_argument("action", choices=["list", "add"])
+    decisions.add_argument("--repo", type=Path, default=Path.cwd())
+    decisions.add_argument("--area")
+    decisions.add_argument("--decision")
+    decisions.add_argument("--reason")
+    decisions.add_argument("--feature-id")
     guided_spec = sub.add_parser("spec", help="guide a stored brief through exact spec approval")
     guided_spec.add_argument("feature_id", nargs="?")
     guided_spec.add_argument("--refresh", action="store_true", help="replace a saved draft")
@@ -1562,9 +1572,39 @@ def run(argv: list[str] | None = None) -> int:
                 _emit(intake_result, True)
             else:
                 print_report(feature_id, intake_report_doc, intake_report_ref.revision)
+        elif args.command == "decisions":
+            from cohorte.application.decisions import add_live_decision, live_decisions
+
+            project = _project_for_path(database, args.repo)
+            repository = Path(project["root_path"]).resolve(strict=True)
+            if args.action == "add":
+                if not all((args.area, args.decision, args.reason, args.feature_id)):
+                    raise ValueError(
+                        "decisions add requires --area, --decision, --reason and --feature-id"
+                    )
+                entry = add_live_decision(
+                    repository,
+                    area=args.area,
+                    decision=args.decision,
+                    reason=args.reason,
+                    feature_id=args.feature_id,
+                )
+                _emit(
+                    {"entry": entry, "path": str(repository / "specs" / "_decisions.md")}, args.json
+                )
+            else:
+                entries = live_decisions(repository)
+                if args.json:
+                    _emit({"decisions": entries}, True)
+                else:
+                    for entry in entries:
+                        print(f"• {entry}")
+                    if not entries:
+                        print("Aucune décision durable enregistrée pour ce projet.")
         elif args.command == "brainstorm":
             if args.feature_id is not None and not _valid_brainstorm_feature_id(args.feature_id):
                 raise _InvalidBrainstormFeatureId(_BRAINSTORM_FEATURE_ID_RULE)
+            from cohorte.application.decisions import live_decisions
             from cohorte.application.preparation import (
                 BrainstormBrief,
                 BrainstormRunner,
@@ -1671,7 +1711,7 @@ def run(argv: list[str] | None = None) -> int:
                     )
                     print(f"Problème actuel : {previous_brief.synthesis.problem}")
                     print(f"Piste actuelle : {previous_brief.synthesis.recommendation}")
-                    if not args.answer:
+                    if not args.answer and not args.message:
                         args.answer = _brainstorm_followup_answers(
                             previous_brief.synthesis.blocking_questions,
                             previous_brief.synthesis.question_proposals,
@@ -1694,8 +1734,8 @@ def run(argv: list[str] | None = None) -> int:
                     _require_new_brainstorm_feature(database, project["id"], args.feature_id)
             if not args.live and not guided:
                 raise ValueError("brainstorm requires --live")
-            if previous_brief is not None and not args.answer and not guided:
-                raise ValueError("brainstorm --continue requires at least one --answer")
+            if previous_brief is not None and not args.answer and not args.message and not guided:
+                raise ValueError("brainstorm --continue requires --answer or --message")
             if not args.idea or not args.feature_id:
                 raise ValueError(
                     "brainstorm requires --feature-id and --idea; run in a terminal for guided mode"
@@ -1762,8 +1802,9 @@ def run(argv: list[str] | None = None) -> int:
                             )
                         ),
                         args.answer,
-                        args.prior_decision,
+                        [*live_decisions(repository), *args.prior_decision],
                         perspectives,
+                        user_message=args.message,
                         previous_brief=previous_brief,
                         previous_brief_ref=previous_ref,
                         intake_ref=intake_ref,
@@ -1786,6 +1827,12 @@ def run(argv: list[str] | None = None) -> int:
                     break
                 synthesis = brief.synthesis
                 print(f"\n{brief.idea}\n")
+                for contribution in brief.contributions:
+                    print(f"{contribution.perspective} : {contribution.problem}")
+                    if contribution.alternatives:
+                        print(f"  Propose : {contribution.alternatives[0]}")
+                    if contribution.disagreements:
+                        print(f"  Conteste : {contribution.disagreements[0]}")
                 print(f"Problème : {synthesis.problem}\n")
                 print(f"Piste : {synthesis.recommendation}\n")
                 if synthesis.blocking_questions:
@@ -1796,7 +1843,20 @@ def run(argv: list[str] | None = None) -> int:
                 if not synthesis.blocking_questions:
                     print(f"Prochaine étape : cohorte spec {args.feature_id}")
                     break
-                answer = _prompt("Répondre à ces questions maintenant ? [o/N]", required=False)
+                answer = _prompt(
+                    "Répondre aux questions ou discuter avec le panel ? [o/d/N]",
+                    required=False,
+                )
+                if answer.lower() in {"d", "discuter"}:
+                    message = _prompt("Question, objection ou demande au panel", required=False)
+                    if message:
+                        previous_brief = brief
+                        previous_ref = ArtifactRef.model_validate(brief_ref)
+                        args.answer = []
+                        args.message = message
+                        continue
+                    print(f"Reprendre plus tard : cohorte brainstorm --continue {args.feature_id}")
+                    break
                 if answer.lower() not in {"o", "oui", "y", "yes"}:
                     print(f"Reprendre plus tard : cohorte brainstorm --continue {args.feature_id}")
                     break
@@ -1809,6 +1869,7 @@ def run(argv: list[str] | None = None) -> int:
                 previous_brief = brief
                 previous_ref = ArtifactRef.model_validate(brief_ref)
                 args.answer = answers
+                args.message = None
         elif args.command == "brief":
             from cohorte.application.preparation import BrainstormBrief
             from cohorte.cli.brief import print_brief

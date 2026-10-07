@@ -7,6 +7,13 @@ with the newest version first. Describe the verified scope and known limitations
 
 _No changes recorded yet._
 
+## 1.0.0a20 — 2026-10-07
+
+- Restore V2-style project memory: brainstorm automatically reads live decisions from `specs/_decisions.md`, excludes superseded entries, and offers explicit ratification of new standing decisions after spec freeze.
+- Support free-form brainstorm follow-ups with `--message`; guided CLI shows named panel proposals, objections, and risks. Discussion messages do not become approved decisions.
+- Add `cohorte decisions list/add` to maintain the journal without manual Markdown editing.
+- Validation: full local Python test suite, Ruff, mypy, and two real Codex brainstorm rounds on a synthetic project. The second round revised its recommendation after a free-form objection. François Rust bridge read the live saved brief; desktop UI and multi-platform CI remain release gates.
+
 ## 1.0.0a19 — 2026-09-30
 
 - Add `cohorte run show RUN_ID --details` to display recorded changed files, individual check outcomes, review findings, and the last recorded delivery state in readable text. Older runs identify unavailable evidence; `--json` keeps its existing structure, and the command does not inspect a mutable worktree.
