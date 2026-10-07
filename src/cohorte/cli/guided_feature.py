@@ -146,6 +146,8 @@ def _propose_spec(
     profile: ProjectProfile,
     repository: Path,
     draft: FeatureSpec | None = None,
+    feedback: list[str] | None = None,
+    previous_proposal: SpecProposal | None = None,
 ) -> SpecProposal:
     from cohorte.adapters.claude import ClaudeAdapter
     from cohorte.adapters.codex import CodexAdapter
@@ -173,11 +175,19 @@ def _propose_spec(
     }
     if draft is not None:
         facts["current_draft"] = draft.model_dump(mode="json")
+    if feedback:
+        facts["spec_discussion"] = feedback
+    if previous_proposal is not None:
+        facts["previous_proposal"] = previous_proposal.model_dump(mode="json")
     prompt = (
         "Propose an implementation-ready feature specification. The user's conversation "
         "language is separate from target_product_language: use the latter for any product copy "
         "to be written into the repository. "
         "This is a read-only proposal, never a user decision. Give a concise suggested answer "
+        "Spec discussion messages are feedback on the proposal, not approved product decisions. "
+        "Respond to the latest feedback in response_to_feedback, revise the proposal where "
+        "supported, and explain in "
+        "the relevant question caveat when a choice still needs explicit confirmation. "
         "and caveat for each blocking question. Copy each blocking question verbatim into "
         "question_suggestions, in the same order and without extra questions; do not claim "
         "unresolved choices are settled. The panel synthesis is advisory: do not promote a "

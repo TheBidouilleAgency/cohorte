@@ -108,6 +108,7 @@ class SpecProposal(StrictModel):
     """Read-only agent suggestions; never an approved or frozen specification."""
 
     title: str
+    response_to_feedback: str = ""
     in_scope: list[str] = Field(min_length=1)
     out_of_scope: list[str]
     question_suggestions: list[SpecQuestionSuggestion]
