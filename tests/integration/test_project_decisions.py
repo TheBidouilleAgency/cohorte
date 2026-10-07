@@ -15,7 +15,8 @@ def test_v2_live_decisions_are_loaded_and_new_decisions_are_retained(tmp_path: P
     journal = tmp_path / "specs" / "_decisions.md"
     journal.write_text(
         "# Decisions\n\n## Live\n\n- 2026-01-01 · auth · Keep local sessions — because privacy · login\n\n"
-        "## Historical\n\n- Keep all audit notes\n\n## Superseded\n\n- Old remote sessions\n"
+        "## Historical\n\n- Keep all audit notes\n\n## Superseded\n\n- Old remote sessions\n",
+        encoding="utf-8",
     )
     entry = add_live_decision(
         tmp_path,
@@ -29,8 +30,10 @@ def test_v2_live_decisions_are_loaded_and_new_decisions_are_retained(tmp_path: P
         entry,
     ]
     assert "Old remote sessions" not in live_decisions(tmp_path)
-    assert journal.read_text().count(entry) == 1
-    assert journal.read_text().index(entry) < journal.read_text().index("## Historical")
+    assert journal.read_text(encoding="utf-8").count(entry) == 1
+    assert journal.read_text(encoding="utf-8").index(entry) < journal.read_text(
+        encoding="utf-8"
+    ).index("## Historical")
 
 
 def test_panel_uses_standing_decisions_and_does_not_promote_a_question_to_decision(
@@ -67,7 +70,8 @@ def test_panel_uses_standing_decisions_and_does_not_promote_a_question_to_decisi
 
     replacement = "2026-10-08 · export · Allow encrypted remote exports — because approved storage · next-feature"
     (tmp_path / "specs" / "_decisions.md").write_text(
-        f"## Live\n\n- {replacement}\n\n## Superseded\n\n- old local rule\n"
+        f"## Live\n\n- {replacement}\n\n## Superseded\n\n- old local rule\n",
+        encoding="utf-8",
     )
     refreshed = runner.run(
         tmp_path,
