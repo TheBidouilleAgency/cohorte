@@ -822,6 +822,27 @@ def guided_spec(
     _save(location / "profile.json", profile_bytes)
     database.set_feature_status(selected, "frozen")
     print(f"Spec gelée : {location / 'frozen.json'}")
+    from cohorte.application.decisions import add_live_decision, live_decisions
+
+    latest_brief = database.latest_artifact(f"brief:{selected}")
+    decision_brief = BrainstormBrief.model_validate_json(latest_brief["content"])
+    existing_decisions = live_decisions(repository)
+    for candidate in decision_brief.synthesis.standing_decision_candidates[:3]:
+        if candidate.source_answer not in decision_brief.user_answers:
+            continue
+        if any(candidate.decision in entry for entry in existing_decisions):
+            continue
+        print(f"Règle proposée pour les prochaines fonctionnalités : {candidate.decision}")
+        print(f"  Motif : {candidate.reason} · réponse source : {candidate.source_answer}")
+        if _yes("Conserver cette décision dans le journal du projet ?"):
+            entry = add_live_decision(
+                repository,
+                area=candidate.area,
+                decision=candidate.decision,
+                reason=candidate.reason,
+                feature_id=selected,
+            )
+            existing_decisions.append(entry)
     print(f"Prochaine étape : cohorte start {selected}")
     return {"status": "frozen", "feature_id": selected, "spec_ref": spec_ref}
 
