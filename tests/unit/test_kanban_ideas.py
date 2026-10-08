@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from cohorte.application.kanban import KanbanCard, list_ideas, plan_projection
+from cohorte.application.kanban import KanbanCard, apply_projection, list_ideas, plan_projection
 from cohorte.domain.models import KanbanConfig
 
 
@@ -41,7 +41,8 @@ def test_disabled_kanban_has_no_ideas() -> None:
 
 
 def test_read_only_ideas_do_not_project_into_board(tmp_path: Path) -> None:
-    (tmp_path / "board.md").write_text("## Ideas\n- [ ] Choisie\n")
+    board = tmp_path / "board.md"
+    board.write_text("## Ideas\n- [ ] Choisie\n")
     config = KanbanConfig(
         enabled=True,
         read_only=True,
@@ -56,3 +57,9 @@ def test_read_only_ideas_do_not_project_into_board(tmp_path: Path) -> None:
         ).status
         == "skipped"
     )
+    ready = plan_projection(
+        config.model_copy(update={"read_only": False}),
+        KanbanCard(feature_id="choisie", title="Choisie", state="draft"),
+    )
+    assert apply_projection(config, ready).status == "skipped"
+    assert board.read_text() == "## Ideas\n- [ ] Choisie\n"

@@ -166,7 +166,7 @@ def plan_projection(config: KanbanConfig, card: KanbanCard) -> KanbanProjectionP
 
 
 def apply_projection(config: KanbanConfig, plan: KanbanProjectionPlan) -> KanbanProjectionResult:
-    if plan.status == "skipped":
+    if plan.status == "skipped" or config.read_only:
         return KanbanProjectionResult(
             status="skipped", board_path=None, sha256=None, backup_path=None
         )
