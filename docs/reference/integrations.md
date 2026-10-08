@@ -14,7 +14,9 @@ Renseignez `integrations.design.source` avec une URL de fichier ou de nœud Figm
 
 ## Kanban et notes de release
 
-`kanban-project` relie un état de fonctionnalité au board configuré dans le profil. `integrations.release_notes.enabled` ajoute une section à la description de la PR/MR lors de `ship` ; le titre et le template sont configurables. Le template accepte `{title}`, `{problem}` et `{acceptance}`.
+Avec `integrations.kanban.enabled: true` et `read_only: false`, Cohorte déplace la carte Obsidian après chaque étape enregistrée : `Ideas` → `Brainstorm` → `Spec` → `Ready to build` → `Building` → `Review` → `Fix` ou `Ship` → `Shipped` après ouverture de la PR/MR. Les sous-notes suivent la carte et le numéro de PR est ajouté à la fin. Les noms de colonnes peuvent être adaptés par `columns.ideas`, `columns.brainstorm`, `columns.spec`, `columns.ready`, `columns.building`, `columns.review`, `columns.fix`, `columns.ship` et `columns.shipped`. Toutes les colonnes utilisées doivent exister dans le board. Chaque écriture vérifie que le fichier n'a pas changé depuis sa lecture et conserve une sauvegarde dans `.cohorte-backups`.
+
+Si la synchronisation échoue, l'étape Cohorte reste enregistrée. `cohorte kanban-sync FEATURE_ID` indique l'étape à retrouver ; ajoutez `--apply` après avoir corrigé le board. `kanban-project` reste disponible pour une projection explicite. `integrations.release_notes.enabled` ajoute une section à la description de la PR/MR lors de `ship` ; le titre et le template sont configurables. Le template accepte `{title}`, `{problem}` et `{acceptance}`.
 
 Pour consulter les idées sans synchroniser les états, configurez `integrations.kanban` avec `enabled: true`, `provider: obsidian`, `vault_path`, `board_path` et `read_only: true`. `cohorte brainstorm` propose alors les cartes `Idea` ou `Ideas` avec leurs notes ; `columns.ideas` permet de choisir un autre titre de colonne.
 

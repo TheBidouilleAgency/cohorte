@@ -777,6 +777,9 @@ def guided_spec(
     database.put_artifact(
         "feature-spec-draft", canonical_model_bytes(draft), artifact_id=f"draft:{selected}"
     )
+    from cohorte.application.kanban_mirror import sync_feature
+
+    sync_feature(database, selected, "spec")
     print(f"\nSpec : {draft.title}\nProblème : {draft.problem}")
     print(f"Périmètre : {', '.join(draft.in_scope)}")
     print(f"Hors périmètre : {', '.join(draft.out_of_scope) or 'aucun'}")
@@ -831,6 +834,7 @@ def guided_spec(
     _save(location / "frozen.json", spec_bytes)
     _save(location / "profile.json", profile_bytes)
     database.set_feature_status(selected, "frozen")
+    sync_feature(database, selected, "ready")
     print(f"Spec gelée : {location / 'frozen.json'}")
     from cohorte.application.decisions import add_live_decision, live_decisions
 

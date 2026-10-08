@@ -52,6 +52,9 @@ def record_run_error(database: Database, run_id: str, error: Exception) -> None:
         event_type,
         data,
     )
+    from cohorte.application.kanban_mirror import sync_run
+
+    sync_run(database, updated)
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,6 +174,9 @@ class SqliteRunJournal:
         self.run_id = run_id
         self.project_id = database.get_run(run_id).project_id
         self.agent_event = SqliteAgentEventSink(database.path, self.project_id, run_id)
+        from cohorte.application.kanban_mirror import sync_run
+
+        sync_run(database, database.get_run(run_id))
 
     def stop_requested(self) -> RunStatus | None:
         # Worker surfaces may run in threads. A short-lived read-only
@@ -227,5 +233,8 @@ class SqliteRunJournal:
             f"phase.{phase}.completed",
             data,
         )
+        from cohorte.application.kanban_mirror import sync_run
+
+        sync_run(self.database, updated)
         if requested_stop is not None:
             raise RunStopped(requested_stop.value)

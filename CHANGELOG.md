@@ -7,6 +7,12 @@ with the newest version first. Describe the verified scope and known limitations
 
 _No changes recorded yet._
 
+## 1.0.0a23 — 2026-10-08
+
+- Mirror selected Obsidian Kanban cards through the V2 pipeline after each durable milestone. Preserve card notes and board metadata, guard concurrent edits, keep backups and support reconciliation with `kanban-sync`.
+- Pass the selected board card by source ID from François to the Python engine; show a visible warning if the brief is saved but the card could not move.
+- Validation: full Python suite, Ruff, mypy, François TypeScript and Rust bridge tests, and projection on disposable copies of the Cohorte and Kervo boards.
+
 ## 1.0.0a22 — 2026-10-08
 
 - Restore the V2 brainstorm entry flow for a configured Obsidian board: list cards from `Idea` or `Ideas`, show their sub-notes, and let the user choose a card or enter a new idea. The selected notes become panel context.

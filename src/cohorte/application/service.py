@@ -193,6 +193,9 @@ class CohorteService:
             updated_at=now,
         )
         self.database.create_run(state)
+        from cohorte.application.kanban_mirror import sync_run
+
+        sync_run(self.database, state)
         return state
 
     def transition(
@@ -210,6 +213,9 @@ class CohorteService:
                 "cause": event.type.value,
             },
         )
+        from cohorte.application.kanban_mirror import sync_run
+
+        sync_run(self.database, updated)
         return updated, [intent.model_dump(mode="json") for intent in intents]
 
     def pause(self, run_id: str, reason: str = "") -> RunState:

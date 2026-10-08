@@ -179,13 +179,11 @@ def test_brainstorm_ideas_lists_configured_obsidian_cards(
         == 0
     )
     response = json.loads(capsys.readouterr().out)
-    assert response["data"]["ideas"] == [
-        {
-            "title": "Export CSV #export-csv",
-            "notes": ["Pour les clients"],
-            "feature_id": "export-csv",
-        }
-    ]
+    assert len(response["data"]["ideas"]) == 1
+    assert response["data"]["ideas"][0]["title"] == "Export CSV #export-csv"
+    assert response["data"]["ideas"][0]["notes"] == ["Pour les clients"]
+    assert response["data"]["ideas"][0]["feature_id"] == "export-csv"
+    assert response["data"]["ideas"][0]["source_id"].endswith(":2")
     assert board.read_text().startswith("## Idea")
 
 
@@ -199,7 +197,11 @@ def test_guided_brainstorm_selects_obsidian_card_and_notes(
     project = database.get_project("project")
     profile = ProjectProfile.model_validate_json(json.dumps(project["profile"]))
     profile.integrations.kanban = KanbanConfig(
-        enabled=True, provider="obsidian", vault_path=str(repository), board_path="ideas.md"
+        enabled=True,
+        read_only=True,
+        provider="obsidian",
+        vault_path=str(repository),
+        board_path="ideas.md",
     )
     database.update_project_profile(
         "project", canonical_model_bytes(profile), project["profile_ref"]["revision"]

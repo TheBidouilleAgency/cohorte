@@ -44,7 +44,7 @@ def test_disabled_kanban_has_no_ideas() -> None:
 
 def test_read_only_ideas_do_not_project_into_board(tmp_path: Path) -> None:
     board = tmp_path / "board.md"
-    board.write_text("## Ideas\n- [ ] Choisie\n")
+    board.write_text("## Ideas\n- [ ] Choisie\n## Backlog\n")
     config = KanbanConfig(
         enabled=True,
         read_only=True,
@@ -64,4 +64,4 @@ def test_read_only_ideas_do_not_project_into_board(tmp_path: Path) -> None:
         KanbanCard(feature_id="choisie", title="Choisie", state="draft"),
     )
     assert apply_projection(config, ready).status == "skipped"
-    assert board.read_text() == "## Ideas\n- [ ] Choisie\n"
+    assert board.read_text() == "## Ideas\n- [ ] Choisie\n## Backlog\n"

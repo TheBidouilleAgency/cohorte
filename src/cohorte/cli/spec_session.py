@@ -8,6 +8,7 @@ from typing import Any
 from uuid import uuid4
 
 from cohorte.application.decisions import add_live_decision, live_decisions
+from cohorte.application.kanban_mirror import sync_feature
 from cohorte.application.preparation import (
     BrainstormBrief,
     SpecFreezer,
@@ -242,6 +243,7 @@ def spec_session(
             ).encode(),
             artifact_id=f"draft-proposal-context:{feature_id}",
         )
+        sync_feature(database, feature_id, "spec")
         return {"draft": replacement.model_dump(mode="json"), "draft_ref": draft_ref}
 
     if draft is None or draft.brief_ref != ArtifactRef.model_validate(brief_ref):
@@ -297,6 +299,7 @@ def spec_session(
     _save(location / "frozen.json", spec_bytes)
     _save(location / "profile.json", profile_bytes)
     database.set_feature_status(feature_id, "frozen")
+    sync_feature(database, feature_id, "ready")
     return {
         "spec": frozen.spec.model_dump(mode="json"),
         "spec_ref": spec_ref,

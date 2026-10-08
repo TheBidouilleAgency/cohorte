@@ -19,7 +19,7 @@ cohorte profile show
 cohorte brainstorm
 ```
 
-Si le projet a une intégration Obsidian active, Cohorte liste d'abord les cartes de la colonne `Idea` ou `Ideas` (ou `columns.ideas`), avec leurs sous-notes. Choisissez un numéro ou proposez une autre idée ; les notes de la carte choisie servent de contexte au panel. La lecture ne modifie pas le tableau. `integrations.kanban.read_only: true` désactive aussi les projections automatiques. La même liste est disponible avec `cohorte --json brainstorm-ideas` et dans François.
+Si le projet a une intégration Obsidian active, Cohorte liste d'abord les cartes de la colonne `Idea` ou `Ideas` (ou `columns.ideas`), avec leurs sous-notes. Choisissez un numéro ou proposez une autre idée ; les notes de la carte choisie servent de contexte au panel. La même liste est disponible avec `cohorte --json brainstorm-ideas` et dans François. Quand `integrations.kanban.read_only` vaut `false`, Cohorte déplace ensuite la carte dans le board à chaque étape du parcours, jusqu'à `Shipped` après ouverture de la PR/MR. Avec `read_only: true`, le board reste en lecture seule.
 
 Après votre choix, le terminal lance le panel défini dans le profil, avec des extraits pertinents du dépôt. Le panel propose un brief, des objections, des questions ciblées et, pour chaque question, une piste produit et une piste code. Vous pouvez répondre librement ou taper `p` ou `c` pour reprendre une piste. Le panel ne modifie pas le code et ne transforme pas son avis en décision de votre part. Relisez le brief avec `cohorte brief show IDENTIFIANT`. Si des questions restent ouvertes, répondez dans le terminal ou revenez plus tard avec `cohorte brainstorm --continue IDENTIFIANT`.
 

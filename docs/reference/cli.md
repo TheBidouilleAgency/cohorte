@@ -47,7 +47,7 @@ Le mode `execution.mode=container` du profil n'a pas encore d'exécuteur natif :
 | `intake --continue FEATURE_ID [--answer N=RÉPONSE] [--route feature\|patch]` | Reprendre un triage du projet courant. Dans un terminal, les questions et le choix de parcours sont proposés. En JSON, fournissez les réponses ou le parcours explicitement. |
 | `brainstorm --from-intake FEATURE_ID [--live]` | Démarrer le panel depuis une demande classée « feature » en reprenant les réponses, questions ouvertes et la provenance de la source. |
 | `brainstorm-ideas [--repo CHEMIN]` | Lister en lecture seule les cartes Obsidian de `Idea` ou `Ideas` et leurs sous-notes ; `--json` sert aussi à François. |
-| `brainstorm [PROJECT_ID] [--feature-id ID] [--idea TEXTE] [--answer TEXTE] [--context TEXTE] [--provider codex|claude] [--output FILE] [--live]` | Exécuter le panel ou recueillir les réponses guidées ; `--answer` et `--perspective` sont répétables. Si le panel pose des questions bloquantes, le terminal propose d’y répondre et de relancer un tour. |
+| `brainstorm [PROJECT_ID] [--feature-id ID] [--idea TEXTE] [--obsidian-idea SOURCE_ID] [--answer TEXTE] [--context TEXTE] [--provider codex|claude] [--output FILE] [--live]` | Exécuter le panel ou recueillir les réponses guidées ; `--obsidian-idea` sélectionne exactement une carte listée par `brainstorm-ideas`. Si le panel pose des questions bloquantes, le terminal propose d’y répondre et de relancer un tour. |
 | `brainstorm --continue FEATURE_ID [--answer TEXTE] [--live]` | Reprendre le dernier brief du projet courant avec une réponse confirmée. En JSON, fournir `--answer` ou `--message` et `--live`. |
 | `brainstorm --continue FEATURE_ID --message TEXTE --live` | Poser une question, contester une piste ou demander un nouveau débat sans transformer ce message en décision. Le panel reprend le brief précédent et les décisions durables du projet. |
 | `decisions list` / `decisions add --area DOMAINE --decision RÈGLE --reason MOTIF --feature-id ID` | Lire ou consigner les règles transversales du projet dans `specs/_decisions.md` §Live. Le brainstorm les charge automatiquement. |
@@ -113,6 +113,7 @@ Lors de `spec`, le terminal rappelle des chemins sourcés du brief et du dépôt
 | `align-ds-request SELECTION` | Demander l’approbation de la sélection. |
 | `align-ds SELECTION --profile PROFILE --worktrees DIR --run-id ID --live` | Appliquer la sélection approuvée. |
 | `kanban-project --profile PROFILE --feature-id ID --title TITRE --state ÉTAT --state-version N [--plan-only]` | Planifier ou synchroniser un état Kanban. |
+| `kanban-sync FEATURE_ID [--repo DIR] [--apply]` | Vérifier l'étape Obsidian issue de l'état durable ; `--apply` réessaie le déplacement. |
 | `migrate --from-v2 DIR --plan FILE` | Préparer une migration V2 ; `--apply FILE` et `--rollback FILE` sont des actions distinctes. |
 
 Les exemples de [parcours](/guide/parcours) montrent comment assembler les commandes. Pour les formats d’artefacts et le comportement interne, consultez [l’implémentation](/IMPLEMENTATION) et les schémas exportés par `schemas`.

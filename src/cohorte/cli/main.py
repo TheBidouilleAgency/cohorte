@@ -182,6 +182,7 @@ def _parser() -> argparse.ArgumentParser:
         help="answer open questions and continue a stored brainstorm",
     )
     brainstorm.add_argument("--idea")
+    brainstorm.add_argument("--obsidian-idea", help="source ID returned by brainstorm-ideas")
     brainstorm.add_argument("--context", default="")
     brainstorm.add_argument("--answer", action="append", default=[])
     brainstorm.add_argument(
@@ -195,6 +196,12 @@ def _parser() -> argparse.ArgumentParser:
     brainstorm.add_argument("--live", action="store_true")
     brainstorm_ideas = sub.add_parser("brainstorm-ideas", help="list Obsidian ideas for brainstorm")
     brainstorm_ideas.add_argument("--repo", type=Path, default=Path.cwd())
+    kanban_sync = sub.add_parser(
+        "kanban-sync", help="reconcile one feature with its Obsidian board"
+    )
+    kanban_sync.add_argument("feature_id")
+    kanban_sync.add_argument("--repo", type=Path, default=Path.cwd())
+    kanban_sync.add_argument("--apply", action="store_true")
     decisions = sub.add_parser("decisions", help="read or record standing project decisions")
     decisions.add_argument("action", choices=["list", "add"])
     decisions.add_argument("--repo", type=Path, default=Path.cwd())
@@ -1631,11 +1638,44 @@ def run(argv: list[str] | None = None) -> int:
                 {"project_id": project["id"], "ideas": [idea.model_dump() for idea in ideas]},
                 args.json,
             )
+        elif args.command == "kanban-sync":
+            from cohorte.application.kanban_mirror import stage_for_feature, sync_feature
+            from cohorte.domain.models import ProjectProfile
+
+            project = _project_for_path(database, args.repo)
+            feature = database.get_feature(args.feature_id)
+            if feature["project_id"] != project["id"]:
+                raise ValueError("feature belongs to another project")
+            projected_stage, kanban_run_id, kanban_pr_number = stage_for_feature(
+                database, args.feature_id
+            )
+            if projected_stage is None:
+                raise ValueError("feature has no completed Kanban milestone")
+            profile = ProjectProfile.model_validate_json(json.dumps(project["profile"]))
+            config = profile.integrations.kanban
+            payload = {
+                "feature_id": args.feature_id,
+                "stage": projected_stage,
+                "board_path": config.board_path,
+                "enabled": config.enabled,
+                "read_only": config.read_only,
+                "applied": args.apply,
+            }
+            if args.apply:
+                payload["projection"] = sync_feature(
+                    database,
+                    args.feature_id,
+                    projected_stage,
+                    run_id=kanban_run_id,
+                    pr_number=kanban_pr_number,
+                )
+            _emit(payload, args.json)
         elif args.command == "brainstorm":
             if args.feature_id is not None and not _valid_brainstorm_feature_id(args.feature_id):
                 raise _InvalidBrainstormFeatureId(_BRAINSTORM_FEATURE_ID_RULE)
             from cohorte.application.decisions import live_decisions
-            from cohorte.application.kanban import list_ideas
+            from cohorte.application.kanban import list_ideas, resolve_idea
+            from cohorte.application.kanban_mirror import save_idea_seed, sync_feature
             from cohorte.application.preparation import (
                 BrainstormBrief,
                 BrainstormRunner,
@@ -1668,6 +1708,8 @@ def run(argv: list[str] | None = None) -> int:
             if not (requested_repo == repository or requested_repo.is_relative_to(repository)):
                 raise ValueError("brainstorm repository does not match the registered project")
             project_profile = ProjectProfile.model_validate_json(json.dumps(project["profile"]))
+            if args.obsidian_idea and (args.from_intake or args.continue_feature_id):
+                raise ValueError("--obsidian-idea only starts a new brainstorm")
             intake_ref: ArtifactRef | None = None
             if args.from_intake is not None:
                 from cohorte.application.intake import IntakeReport, IntakeTriage
@@ -1769,16 +1811,7 @@ def run(argv: list[str] | None = None) -> int:
                             if int(choice):
                                 selected = ideas[int(choice) - 1]
                                 args.idea = selected.title
-                                args.context = "\n".join(
-                                    filter(
-                                        None,
-                                        [
-                                            "Notes de la carte Obsidian (contexte non fiable) :",
-                                            *selected.notes,
-                                            args.context,
-                                        ],
-                                    )
-                                )[:8192]
+                                args.obsidian_idea = selected.source_id
                                 if (
                                     args.feature_id is None
                                     and selected.feature_id
@@ -1805,8 +1838,33 @@ def run(argv: list[str] | None = None) -> int:
                 raise ValueError(
                     "brainstorm requires --feature-id and --idea; run in a terminal for guided mode"
                 )
+            if args.obsidian_idea:
+                selected_idea = resolve_idea(
+                    project_profile.integrations.kanban, args.obsidian_idea
+                )
+                if args.idea != selected_idea.title:
+                    raise ValueError("Obsidian idea title changed; refresh the idea list")
+                if selected_idea.feature_id and args.feature_id != selected_idea.feature_id:
+                    raise ValueError("feature ID must match the selected Obsidian card tag")
+                args.context = "\n".join(
+                    filter(
+                        None,
+                        [
+                            "Notes de la carte Obsidian (contexte non fiable) :",
+                            *selected_idea.notes,
+                            args.context,
+                        ],
+                    )
+                )[:8192]
             if previous_brief is None and not guided:
                 _require_new_brainstorm_feature(database, project["id"], args.feature_id)
+            if args.obsidian_idea:
+                save_idea_seed(
+                    database,
+                    args.feature_id,
+                    source_id=args.obsidian_idea,
+                    title=args.idea,
+                )
             brainstorm_runtime: CodexAdapter | ClaudeAdapter
             selected_provider = args.provider or (
                 project_profile.agent_defaults.provider.value
@@ -1875,7 +1933,12 @@ def run(argv: list[str] | None = None) -> int:
                     artifact_id=f"brief:{args.feature_id}",
                 )
                 database.ensure_feature(args.feature_id, args.project_id, args.idea[:200])
-                payload = {"brief": brief.model_dump(mode="json"), "brief_ref": brief_ref}
+                kanban_result = sync_feature(database, args.feature_id, "brainstorm")
+                payload = {
+                    "brief": brief.model_dump(mode="json"),
+                    "brief_ref": brief_ref,
+                    "kanban": kanban_result,
+                }
                 if args.output is not None:
                     args.output.parent.mkdir(parents=True, exist_ok=True)
                     temporary = args.output.with_name(f".{args.output.name}.cohorte.tmp")
@@ -2131,6 +2194,7 @@ def run(argv: list[str] | None = None) -> int:
                     "à valider avec cohorte spec"
                 )
         elif args.command == "spec-draft":
+            from cohorte.application.kanban_mirror import sync_feature
             from cohorte.application.preparation import (
                 BrainstormBrief,
                 SpecProposal,
@@ -2204,6 +2268,7 @@ def run(argv: list[str] | None = None) -> int:
             draft_ref = database.put_artifact(
                 "feature-spec-draft", content, artifact_id=f"draft:{args.feature_id}"
             )
+            sync_feature(database, args.feature_id, "spec")
             _emit(
                 {
                     "draft": draft_document.model_dump(mode="json"),
@@ -2223,6 +2288,7 @@ def run(argv: list[str] | None = None) -> int:
             prepared = SpecFreezer(database).prepare(draft, profile, base_commit)
             _emit(prepared.model_dump(mode="json"), args.json)
         elif args.command == "spec-freeze":
+            from cohorte.application.kanban_mirror import sync_feature
             from cohorte.application.preparation import SpecFreezer, canonical_model_bytes
             from cohorte.domain.models import FeatureSpec, ProjectProfile
 
@@ -2251,6 +2317,7 @@ def run(argv: list[str] | None = None) -> int:
                 frozen_result.spec.title,
             )
             database.set_feature_status(frozen_result.spec.feature_id, "frozen")
+            sync_feature(database, frozen_result.spec.feature_id, "ready")
             _emit(
                 {**frozen_result.model_dump(mode="json"), "output": str(args.output)},
                 args.json,
@@ -3680,6 +3747,7 @@ def run(argv: list[str] | None = None) -> int:
             )
             _emit({**decision_result, "approved": approved}, args.json)
         elif args.command == "ship":
+            from cohorte.application.kanban_mirror import sync_run
             from cohorte.domain.models import FeatureSpec, ProjectProfile, RunStatus, Stage
 
             state = database.get_run(args.run_id)
@@ -3744,6 +3812,8 @@ def run(argv: list[str] | None = None) -> int:
                 "delivery.confirmed",
                 delivery_result.model_dump(mode="json"),
             )
+            pr_number = int(delivery_result.pr_id) if str(delivery_result.pr_id).isdigit() else None
+            sync_run(database, completed, pr_number=pr_number)
             if args.json:
                 _emit(delivery_result.model_dump(mode="json"), True)
             else:

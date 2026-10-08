@@ -15,16 +15,63 @@ from cohorte.domain.models import KanbanConfig, StrictModel
 
 
 class KanbanCard(StrictModel):
-    feature_id: str = Field(min_length=1)
-    title: str = Field(min_length=1, max_length=200)
+    feature_id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,79}$")
+    title: str = Field(min_length=1, max_length=200, pattern=r"^[^\r\n]+$")
     state: str = Field(min_length=1)
     run_id: str | None = None
+    source_id: str | None = None
+    pr_number: int | None = Field(default=None, ge=1)
 
 
 class KanbanIdea(StrictModel):
     title: str
     notes: list[str]
     feature_id: str | None = None
+    source_id: str
+
+
+_STAGE_COLUMNS = {
+    "ideas": "Ideas",
+    "brainstorm": "Brainstorm",
+    "spec": "Spec",
+    "ready": "Ready to build",
+    "building": "Building",
+    "review": "Review",
+    "fix": "Fix",
+    "ship": "Ship",
+    "shipped": "Shipped",
+}
+
+
+def _ideas(content: str, digest: str, headings: set[str]) -> list[KanbanIdea]:
+    inside = False
+    cards: list[KanbanIdea] = []
+    for line_number, line in enumerate(content.splitlines(), 1):
+        heading = re.match(r"^##\s+(.+?)\s*$", line)
+        if heading:
+            inside = heading.group(1) in headings
+            continue
+        if re.match(r"^#{1,2}\s", line):
+            inside = False
+        if not inside:
+            continue
+        card = re.match(r"^-\s+(?:\[[ xX]\]\s*)?(.+?)\s*$", line)
+        if card:
+            title = card.group(1).strip()
+            tag = re.search(r"(?:^|\s)#([a-z][a-z0-9]*(?:-[a-z0-9]+)*)\b", title)
+            cards.append(
+                KanbanIdea(
+                    title=title,
+                    notes=[],
+                    feature_id=tag.group(1) if tag else None,
+                    source_id=f"{digest}:{line_number}",
+                )
+            )
+            continue
+        note = re.match(r"^[ \t]+(?:[-*]\s+)?(.+?)\s*$", line)
+        if note and cards:
+            cards[-1].notes.append(note.group(1).strip())
+    return cards
 
 
 def list_ideas(config: KanbanConfig) -> list[KanbanIdea]:
@@ -45,29 +92,16 @@ def list_ideas(config: KanbanConfig) -> list[KanbanIdea]:
         raise ValueError("Kanban board exceeds 2 MiB")
     configured = config.columns.get("ideas")
     headings = {configured} if configured else {"Idea", "Ideas"}
-    inside = False
-    cards: list[KanbanIdea] = []
-    for line in raw.decode("utf-8").splitlines():
-        heading = re.match(r"^##\s+(.+?)\s*$", line)
-        if heading:
-            inside = heading.group(1) in headings
-            continue
-        if re.match(r"^#{1,2}\s", line):
-            inside = False
-        if not inside:
-            continue
-        card = re.match(r"^-\s+(?:\[[ xX]\]\s*)?(.+?)\s*$", line)
-        if card:
-            title = card.group(1).strip()
-            tag = re.search(r"(?:^|\s)#([a-z0-9]+(?:-[a-z0-9]+)*)\b", title)
-            cards.append(
-                KanbanIdea(title=title, notes=[], feature_id=tag.group(1) if tag else None)
-            )
-            continue
-        note = re.match(r"^\s{2,}(?:[-*]\s+)?(.+?)\s*$", line)
-        if note and cards:
-            cards[-1].notes.append(note.group(1).strip())
-    return cards
+    return _ideas(raw.decode("utf-8"), _sha(raw), headings)
+
+
+def resolve_idea(config: KanbanConfig, source_id: str) -> KanbanIdea:
+    if len(source_id) > 80:
+        raise ValueError("Obsidian idea source is invalid")
+    matches = [idea for idea in list_ideas(config) if idea.source_id == source_id]
+    if len(matches) != 1:
+        raise ValueError("Obsidian idea changed; refresh the idea list")
+    return matches[0]
 
 
 class KanbanProjectionPlan(StrictModel):
@@ -112,21 +146,107 @@ def _without_card(content: str, feature_id: str) -> str:
     return pattern.sub("\n", content)
 
 
-def _project(content: str, card: KanbanCard, column: str) -> str:
+def _card_blocks(lines: list[str]) -> list[tuple[int, int, str]]:
+    """Return the half-open span and column of each Obsidian Kanban card."""
+    blocks: list[tuple[int, int, str]] = []
+    column = ""
+    for index, line in enumerate(lines):
+        if line.startswith("%% kanban:settings"):
+            column = ""
+        elif line.startswith("## "):
+            column = line[3:].strip()
+        if not column or not re.match(r"^-\s+(?:\[[ xX]\]\s*)?\S", line):
+            continue
+        end = index + 1
+        while end < len(lines) and lines[end][:1] in {" ", "\t"}:
+            end += 1
+        blocks.append((index, end, column))
+    return blocks
+
+
+def _has_tag(line: str, feature_id: str) -> bool:
+    return bool(re.search(rf"(?<![\w#])#{re.escape(feature_id)}(?![\w-])", line))
+
+
+def _project(
+    content: str,
+    card: KanbanCard,
+    column: str,
+    source_digest: str,
+    ideas_headings: set[str],
+) -> str:
     content = _without_card(content, card.feature_id)
-    heading = f"## {column}"
-    marker = f"<!-- cohorte:feature:{card.feature_id} -->"
-    end = f"<!-- /cohorte:feature:{card.feature_id} -->"
-    run = f" · run `{card.run_id}`" if card.run_id else ""
-    block = f"{marker}\n- **{card.title}** · `{card.state}`{run}\n{end}\n"
-    match = re.search(rf"(?m)^{re.escape(heading)}\s*$", content)
-    if match is None:
-        suffix = "" if content.endswith("\n") else "\n"
-        return f"{content}{suffix}\n{heading}\n\n{block}"
-    insert_at = match.end()
-    prefix = content[:insert_at].rstrip("\n")
-    suffix = content[insert_at:].lstrip("\n")
-    return f"{prefix}\n\n{block}{suffix}"
+    lines = content.splitlines()
+    blocks = _card_blocks(lines)
+    target = column.casefold()
+    if not any(line.startswith("## ") and line[3:].strip().casefold() == target for line in lines):
+        raise ValueError(f'Kanban column "{column}" not found in configured board')
+
+    tagged = [block for block in blocks if _has_tag(lines[block[0]], card.feature_id)]
+    selected: tuple[int, int, str] | None = None
+    if card.source_id is not None:
+        digest, separator, number = card.source_id.partition(":")
+        if separator and digest == source_digest and number.isdigit():
+            selected = next((block for block in blocks if block[0] + 1 == int(number)), None)
+            if selected is None or selected[2].casefold() not in ideas_headings:
+                raise ValueError("selected Obsidian idea is no longer in Ideas")
+        elif not tagged:
+            # An unrelated board edit may move the line. Recover only when the
+            # selected title still identifies a single Ideas card.
+            matches = [
+                block
+                for block in blocks
+                if block[2].casefold() in ideas_headings
+                and re.match(r"^-\s+(?:\[[ xX]\]\s*)?(.+?)\s*$", lines[block[0]])
+                and re.sub(r"^-\s+(?:\[[ xX]\]\s*)?", "", lines[block[0]]).strip() == card.title
+            ]
+            if len(matches) != 1:
+                raise ValueError("Obsidian idea changed; refresh the idea list")
+            selected = matches[0]
+    selected = selected or (tagged[0] if tagged else None)
+    if selected is not None:
+        moved = lines[selected[0] : selected[1]]
+        if not _has_tag(moved[0], card.feature_id):
+            parsed = re.match(r"^-\s+(?:\[[ xX]\]\s*)?(.+?)\s*$", moved[0])
+            if parsed is None or parsed.group(1).strip() != card.title:
+                raise ValueError("selected Obsidian idea title changed")
+            moved[0] = f"- [ ] {parsed.group(1).strip()}  #{card.feature_id}"
+    else:
+        moved = [f"- [ ] {card.title}  #{card.feature_id}"]
+    if card.pr_number is not None and not re.search(r"\bPR #\d+\b", moved[0]):
+        moved[0] += f" — PR #{card.pr_number}"
+
+    removed = [block for block in blocks if block in tagged or block == selected]
+    if (
+        len(removed) == 1
+        and selected is not None
+        and selected[2].casefold() == target
+        and moved == lines[selected[0] : selected[1]]
+    ):
+        return content
+    skip = {index for start, end, _ in removed for index in range(start, end)}
+    remaining = [line for index, line in enumerate(lines) if index not in skip]
+    in_target = False
+    insert_at: int | None = None
+    for index, line in enumerate(remaining):
+        if line.startswith("## "):
+            if in_target:
+                insert_at = index
+                break
+            in_target = line[3:].strip().casefold() == target
+        elif in_target and line.startswith("%% kanban:settings"):
+            insert_at = index
+            break
+    if insert_at is None:
+        insert_at = len(remaining)
+    before = remaining[:insert_at]
+    after = remaining[insert_at:]
+    if before and before[-1] != "":
+        before.append("")
+    before.extend(moved)
+    if after and after[0] != "":
+        before.append("")
+    return "\n".join([*before, *after]).rstrip("\n") + "\n"
 
 
 def plan_projection(config: KanbanConfig, card: KanbanCard) -> KanbanProjectionPlan:
@@ -151,10 +271,12 @@ def plan_projection(config: KanbanConfig, card: KanbanCard) -> KanbanProjectionP
         ) from error
     if len(raw) > 2 * 1024 * 1024:
         raise ValueError("Kanban board exceeds 2 MiB")
-    column = config.columns.get(card.state)
+    column = config.columns.get(card.state) or _STAGE_COLUMNS.get(card.state)
     if column is None:
         raise ValueError(f"no Kanban column configured for state {card.state}")
-    projected = _project(raw.decode("utf-8"), card, column)
+    configured_ideas = config.columns.get("ideas")
+    ideas_headings = {configured_ideas.casefold()} if configured_ideas else {"idea", "ideas"}
+    projected = _project(raw.decode("utf-8"), card, column, _sha(raw), ideas_headings)
     return KanbanProjectionPlan(
         status="ready",
         board_path=config.board_path,
