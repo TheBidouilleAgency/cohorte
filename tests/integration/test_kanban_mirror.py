@@ -94,26 +94,28 @@ def test_changed_board_recovers_unique_selected_idea(tmp_path: Path) -> None:
     database, board, config = _setup(tmp_path)
     selected = list_ideas(config)[0]
     save_idea_seed(database, "une-idee", source_id=selected.source_id, title=selected.title)
-    board.write_text(BOARD.replace("## Ideas\n", "## Ideas\n\n- [ ] Nouvelle carte\n"))
+    board.write_text(
+        BOARD.replace("## Ideas\n", "## Ideas\n\n- [ ] Nouvelle carte\n"), encoding="utf-8"
+    )
     assert sync_feature(database, "une-idee", "brainstorm")["status"] == "applied"
-    assert board.read_text().count("#une-idee") == 1
+    assert board.read_text(encoding="utf-8").count("#une-idee") == 1
 
 
 def test_ambiguous_idea_and_missing_column_fail_without_losing_feature(tmp_path: Path) -> None:
     database, board, config = _setup(tmp_path)
     selected = list_ideas(config)[0]
     save_idea_seed(database, "une-idee", source_id=selected.source_id, title=selected.title)
-    board.write_text(BOARD.replace("- [ ] Autre idée", "- [ ] Une idée"))
+    board.write_text(BOARD.replace("- [ ] Autre idée", "- [ ] Une idée"), encoding="utf-8")
     with pytest.warns(UserWarning, match="Obsidian Kanban"):
         result = sync_feature(database, "une-idee", "brainstorm")
     assert result["status"] == "error"
     assert database.get_feature("une-idee")["title"] == "Une idée"
     assert not (tmp_path / ".cohorte-backups").exists()
 
-    board.write_text(BOARD.replace("## Spec\n", ""))
+    board.write_text(BOARD.replace("## Spec\n", ""), encoding="utf-8")
     with pytest.raises(ValueError, match="column"):
         plan_projection(config, KanbanCard(feature_id="une-idee", title="Une idée", state="spec"))
-    assert board.read_text().count("#une-idee") == 0
+    assert board.read_text(encoding="utf-8").count("#une-idee") == 0
 
 
 def test_duplicate_tagged_cards_collapse_to_one(tmp_path: Path) -> None:
@@ -121,10 +123,11 @@ def test_duplicate_tagged_cards_collapse_to_one(tmp_path: Path) -> None:
     board.write_text(
         BOARD.replace("- [ ] Une idée", "- [ ] Une idée #une-idee").replace(
             "## Spec\n", "## Spec\n\n- [ ] Copie #une-idee\n"
-        )
+        ),
+        encoding="utf-8",
     )
     card = KanbanCard(feature_id="une-idee", title="Une idée", state="review")
     apply_projection(config, plan_projection(config, card))
-    content = board.read_text()
+    content = board.read_text(encoding="utf-8")
     assert content.count("#une-idee") == 1
     assert "Décision ancienne" in content
