@@ -21,6 +21,55 @@ class KanbanCard(StrictModel):
     run_id: str | None = None
 
 
+class KanbanIdea(StrictModel):
+    title: str
+    notes: list[str]
+    feature_id: str | None = None
+
+
+def list_ideas(config: KanbanConfig) -> list[KanbanIdea]:
+    """Read V2-style cards from the configured Obsidian Ideas column."""
+    if not config.enabled:
+        return []
+    _, board, _ = _paths(config)
+    try:
+        raw = board.read_bytes()
+    except OSError as error:
+        raise CohorteError(
+            ErrorCode.PROJECTION_UNAVAILABLE,
+            str(error),
+            "Obsidian ideas could not be read",
+            remediation="restore the configured board file",
+        ) from error
+    if len(raw) > 2 * 1024 * 1024:
+        raise ValueError("Kanban board exceeds 2 MiB")
+    configured = config.columns.get("ideas")
+    headings = {configured} if configured else {"Idea", "Ideas"}
+    inside = False
+    cards: list[KanbanIdea] = []
+    for line in raw.decode("utf-8").splitlines():
+        heading = re.match(r"^##\s+(.+?)\s*$", line)
+        if heading:
+            inside = heading.group(1) in headings
+            continue
+        if re.match(r"^#{1,2}\s", line):
+            inside = False
+        if not inside:
+            continue
+        card = re.match(r"^-\s+(?:\[[ xX]\]\s*)?(.+?)\s*$", line)
+        if card:
+            title = card.group(1).strip()
+            tag = re.search(r"(?:^|\s)#([a-z0-9]+(?:-[a-z0-9]+)*)\b", title)
+            cards.append(
+                KanbanIdea(title=title, notes=[], feature_id=tag.group(1) if tag else None)
+            )
+            continue
+        note = re.match(r"^\s{2,}(?:[-*]\s+)?(.+?)\s*$", line)
+        if note and cards:
+            cards[-1].notes.append(note.group(1).strip())
+    return cards
+
+
 class KanbanProjectionPlan(StrictModel):
     schema_version: Literal[1] = 1
     status: Literal["ready", "skipped"]
@@ -81,7 +130,7 @@ def _project(content: str, card: KanbanCard, column: str) -> str:
 
 
 def plan_projection(config: KanbanConfig, card: KanbanCard) -> KanbanProjectionPlan:
-    if not config.enabled:
+    if not config.enabled or config.read_only:
         return KanbanProjectionPlan(
             status="skipped",
             board_path=None,
@@ -117,7 +166,7 @@ def plan_projection(config: KanbanConfig, card: KanbanCard) -> KanbanProjectionP
 
 
 def apply_projection(config: KanbanConfig, plan: KanbanProjectionPlan) -> KanbanProjectionResult:
-    if plan.status == "skipped":
+    if plan.status == "skipped" or config.read_only:
         return KanbanProjectionResult(
             status="skipped", board_path=None, sha256=None, backup_path=None
         )

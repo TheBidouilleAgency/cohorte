@@ -16,6 +16,8 @@ Renseignez `integrations.design.source` avec une URL de fichier ou de nœud Figm
 
 `kanban-project` relie un état de fonctionnalité au board configuré dans le profil. `integrations.release_notes.enabled` ajoute une section à la description de la PR/MR lors de `ship` ; le titre et le template sont configurables. Le template accepte `{title}`, `{problem}` et `{acceptance}`.
 
+Pour consulter les idées sans synchroniser les états, configurez `integrations.kanban` avec `enabled: true`, `provider: obsidian`, `vault_path`, `board_path` et `read_only: true`. `cohorte brainstorm` propose alors les cartes `Idea` ou `Ideas` avec leurs notes ; `columns.ideas` permet de choisir un autre titre de colonne.
+
 ## Protocole local et François
 
 `cohorte service start` démarre un service local sans port réseau. Les clients utilisent le protocole décrit dans la [référence technique](/PROTOCOL). L’existence du protocole ne prouve pas qu’une version donnée de François ait activé toutes les surfaces de l’interface.

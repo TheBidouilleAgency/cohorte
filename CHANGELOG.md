@@ -7,6 +7,12 @@ with the newest version first. Describe the verified scope and known limitations
 
 _No changes recorded yet._
 
+## 1.0.0a22 — 2026-10-08
+
+- Restore the V2 brainstorm entry flow for a configured Obsidian board: list cards from `Idea` or `Ideas`, show their sub-notes, and let the user choose a card or enter a new idea. The selected notes become panel context.
+- Add read-only `brainstorm-ideas` JSON output for François and a `kanban.read_only` setting that permits idea discovery without automatic board projections.
+- Validation: local Python unit and guided integration tests, Ruff, and François TypeScript and Rust bridge tests. The desktop UI and published package remain release gates.
+
 ## 1.0.0a21 — 2026-10-07
 
 - Add `--json spec-session` for a saved, revisable spec proposal in François: free-form feedback stays separate from explicit answers and draft acceptance.
