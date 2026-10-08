@@ -158,6 +158,7 @@ class DesignConfig(StrictModel):
 
 class KanbanConfig(StrictModel):
     enabled: bool = False
+    read_only: bool = False
     provider: Literal["none", "obsidian"] = "none"
     vault_path: str | None = None
     board_path: str | None = None
@@ -174,6 +175,8 @@ class KanbanConfig(StrictModel):
 
     @model_validator(mode="after")
     def explicit_connection(self) -> KanbanConfig:
+        if self.read_only and not self.enabled:
+            raise ValueError("read-only Kanban requires an enabled Obsidian connection")
         if self.enabled and (
             self.provider != "obsidian" or not self.vault_path or not self.board_path
         ):

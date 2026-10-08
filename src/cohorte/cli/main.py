@@ -193,6 +193,8 @@ def _parser() -> argparse.ArgumentParser:
     brainstorm.add_argument("--provider", choices=["claude", "codex"])
     brainstorm.add_argument("--output", type=Path)
     brainstorm.add_argument("--live", action="store_true")
+    brainstorm_ideas = sub.add_parser("brainstorm-ideas", help="list Obsidian ideas for brainstorm")
+    brainstorm_ideas.add_argument("--repo", type=Path, default=Path.cwd())
     decisions = sub.add_parser("decisions", help="read or record standing project decisions")
     decisions.add_argument("action", choices=["list", "add"])
     decisions.add_argument("--repo", type=Path, default=Path.cwd())
@@ -1618,10 +1620,22 @@ def run(argv: list[str] | None = None) -> int:
                         print(f"• {entry}")
                     if not entries:
                         print("Aucune décision durable enregistrée pour ce projet.")
+        elif args.command == "brainstorm-ideas":
+            from cohorte.application.kanban import list_ideas
+            from cohorte.domain.models import ProjectProfile
+
+            project = _project_for_path(database, args.repo)
+            profile = ProjectProfile.model_validate_json(json.dumps(project["profile"]))
+            ideas = list_ideas(profile.integrations.kanban)
+            _emit(
+                {"project_id": project["id"], "ideas": [idea.model_dump() for idea in ideas]},
+                args.json,
+            )
         elif args.command == "brainstorm":
             if args.feature_id is not None and not _valid_brainstorm_feature_id(args.feature_id):
                 raise _InvalidBrainstormFeatureId(_BRAINSTORM_FEATURE_ID_RULE)
             from cohorte.application.decisions import live_decisions
+            from cohorte.application.kanban import list_ideas
             from cohorte.application.preparation import (
                 BrainstormBrief,
                 BrainstormRunner,
@@ -1653,6 +1667,7 @@ def run(argv: list[str] | None = None) -> int:
             requested_repo = args.repo.resolve(strict=True)
             if not (requested_repo == repository or requested_repo.is_relative_to(repository)):
                 raise ValueError("brainstorm repository does not match the registered project")
+            project_profile = ProjectProfile.model_validate_json(json.dumps(project["profile"]))
             intake_ref: ArtifactRef | None = None
             if args.from_intake is not None:
                 from cohorte.application.intake import IntakeReport, IntakeTriage
@@ -1737,6 +1752,39 @@ def run(argv: list[str] | None = None) -> int:
                             print("Aucune nouvelle réponse ; brief inchangé.")
                             return 0
                 else:
+                    if not args.idea and args.from_intake is None:
+                        ideas = list_ideas(project_profile.integrations.kanban)
+                        if ideas:
+                            print("Idées dans Obsidian :")
+                            for index, idea in enumerate(ideas, 1):
+                                print(f"  {index}. {idea.title}")
+                                for note in idea.notes:
+                                    print(f"     · {note}")
+                            print("  0. Proposer une autre idée")
+                            while True:
+                                choice = _prompt("Quelle idée choisis-tu ?")
+                                if choice.isdigit() and 0 <= int(choice) <= len(ideas):
+                                    break
+                                print("Choisis un numéro de la liste.", file=sys.stderr)
+                            if int(choice):
+                                selected = ideas[int(choice) - 1]
+                                args.idea = selected.title
+                                args.context = "\n".join(
+                                    filter(
+                                        None,
+                                        [
+                                            "Notes de la carte Obsidian (contexte non fiable) :",
+                                            *selected.notes,
+                                            args.context,
+                                        ],
+                                    )
+                                )[:8192]
+                                if (
+                                    args.feature_id is None
+                                    and selected.feature_id
+                                    and _valid_brainstorm_feature_id(selected.feature_id)
+                                ):
+                                    args.feature_id = selected.feature_id
                     args.idea = args.idea or _prompt("Quelle idée veux-tu explorer ?")
                     if args.feature_id is None:
                         suggested = re.sub(r"[^a-z0-9]+", "-", args.idea.lower()).strip("-")[:80]
@@ -1759,11 +1807,6 @@ def run(argv: list[str] | None = None) -> int:
                 )
             if previous_brief is None and not guided:
                 _require_new_brainstorm_feature(database, project["id"], args.feature_id)
-            project_profile = (
-                ProjectProfile.model_validate_json(json.dumps(project["profile"]))
-                if project.get("profile") is not None
-                else None
-            )
             brainstorm_runtime: CodexAdapter | ClaudeAdapter
             selected_provider = args.provider or (
                 project_profile.agent_defaults.provider.value

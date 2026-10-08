@@ -29,6 +29,7 @@ from cohorte.domain.models import (
     AgentDefaults,
     CheckDefinition,
     FeatureSpec,
+    KanbanConfig,
     ProjectProfile,
     Provider,
     Scenario,
@@ -150,6 +151,87 @@ def _answers(*, blocking_answer: str | None = None, approve: str = "oui") -> lis
         "Revert the export",
         approve,
     ]
+
+
+def test_brainstorm_ideas_lists_configured_obsidian_cards(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repository, data_dir = _setup(tmp_path)
+    board = repository / "ideas.md"
+    board.write_text(
+        "## Idea\n- [ ] Export CSV #export-csv\n  - Pour les clients\n## Done\n- Ignorer\n"
+    )
+    database = Database(data_dir / "cohorte.sqlite3")
+    project = database.get_project("project")
+    profile = ProjectProfile.model_validate_json(json.dumps(project["profile"]))
+    profile.integrations.kanban = KanbanConfig(
+        enabled=True, provider="obsidian", vault_path=str(repository), board_path="ideas.md"
+    )
+    database.update_project_profile(
+        "project", canonical_model_bytes(profile), project["profile_ref"]["revision"]
+    )
+    database.close()
+
+    assert (
+        cli.run(
+            ["--json", "--data-dir", str(data_dir), "brainstorm-ideas", "--repo", str(repository)]
+        )
+        == 0
+    )
+    response = json.loads(capsys.readouterr().out)
+    assert response["data"]["ideas"] == [
+        {
+            "title": "Export CSV #export-csv",
+            "notes": ["Pour les clients"],
+            "feature_id": "export-csv",
+        }
+    ]
+    assert board.read_text().startswith("## Idea")
+
+
+def test_guided_brainstorm_selects_obsidian_card_and_notes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repository, data_dir = _setup(tmp_path)
+    board = repository / "ideas.md"
+    board.write_text("## Ideas\n- [ ] Export CSV #export-csv\n  - Pour les clients\n")
+    database = Database(data_dir / "cohorte.sqlite3")
+    project = database.get_project("project")
+    profile = ProjectProfile.model_validate_json(json.dumps(project["profile"]))
+    profile.integrations.kanban = KanbanConfig(
+        enabled=True, provider="obsidian", vault_path=str(repository), board_path="ideas.md"
+    )
+    database.update_project_profile(
+        "project", canonical_model_bytes(profile), project["profile_ref"]["revision"]
+    )
+    previous = BrainstormBrief.model_validate_json(
+        database.latest_artifact("brief:safe-export")["content"]
+    )
+    database.close()
+
+    choices = iter(["1"])
+    monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(cli, "_prompt", lambda *args, **kwargs: next(choices))
+    observed: dict[str, str] = {}
+
+    def fake_run(
+        self: object,
+        repository: Path,
+        feature_id: str,
+        idea: str,
+        context: str,
+        *args: object,
+        **kwargs: object,
+    ) -> BrainstormBrief:
+        observed.update(feature_id=feature_id, idea=idea, context=context)
+        return previous.model_copy(update={"feature_id": feature_id, "idea": idea})
+
+    monkeypatch.setattr("cohorte.application.preparation.BrainstormRunner.run", fake_run)
+    assert cli.run(["--data-dir", str(data_dir), "brainstorm", "--repo", str(repository)]) == 0
+    assert observed["feature_id"] == "export-csv"
+    assert observed["idea"] == "Export CSV #export-csv"
+    assert "Pour les clients" in observed["context"]
+    assert board.read_text().startswith("## Ideas")
 
 
 def test_structured_spec_proposal_preserves_brief_and_requires_approval(
