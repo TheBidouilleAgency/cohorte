@@ -25,7 +25,9 @@ def test_ideas_include_subnotes_and_only_idea_column(tmp_path: Path) -> None:
 
 
 def test_configured_ideas_heading_overrides_defaults(tmp_path: Path) -> None:
-    (tmp_path / "board.md").write_text("## Ideas\n- Ignorée\n## Propositions\n- Choisie\n")
+    (tmp_path / "board.md").write_text(
+        "## Ideas\n- Ignorée\n## Propositions\n- Choisie\n", encoding="utf-8"
+    )
     config = KanbanConfig(
         enabled=True,
         provider="obsidian",
