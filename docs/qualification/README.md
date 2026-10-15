@@ -4,7 +4,13 @@ The machine-readable source of truth is [`ac-matrix.json`](ac-matrix.json). A cr
 only when every behavior required by the complete specification has evidence for its stated
 boundary. Engine tests, synthetic native-client tests, and real-account evidence remain distinct.
 
-Current baseline:
+Status reviewed on 2026-10-15 against published `1.0.0a23`, source commit
+`50a123774dc87da35736cad139a90753217dcb80`. The matrix retains its historical `PR-41`
+qualification baseline; this review updates AC19 implementation context without rerunning
+provider scenarios or upgrading any criterion. Counts are not a product-completion percentage
+or certification of the a23 candidate.
+
+Recorded baseline:
 
 | Status | Count |
 | --- | ---: |
@@ -14,10 +20,13 @@ Current baseline:
 | Deferred | 0 |
 | Not started | 0 |
 
-François is back in scope. Its existing Cohorte integration was merged in François PR #154, but
-targets the earlier TypeScript 3.0.0-dev.8 CLI and is incompatible with this Python runtime's
-`cohorte/1` protocol. The external client and UI remain unqualified against the Python service;
-see `docs/evidence/g5-ac19-francois-current-integration.json`. AC14 now passes on a
+François now implements the Python `cohorte/1` transport and service projection, conversational
+brainstorm/spec bridges and selected Obsidian card forwarding. The September 23 TypeScript-only
+incompatibility report (`g5-ac19-francois-current-integration.json`) is historical, not the current
+implementation state. The source review in
+[`g5-ac19-francois-source-review-2026-10-15.json`](../evidence/g5-ac19-francois-source-review-2026-10-15.json)
+records the inspected revision and files. AC19 remains partial: actual released desktop interaction,
+real-project board progression, service controls and disconnect/replay need end-to-end evidence. AC14 now passes on a
 disposable GitLab repository: Cohorte committed and pushed a candidate, opened an MR with
 configured release notes, and refreshed its successful CI pipeline. The first diagnostic MR
 failed because GitLab required account identity verification; it was closed without merge.

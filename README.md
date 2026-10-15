@@ -33,10 +33,10 @@ Cohorte aide à **cadrer une demande, conserver les décisions et faire exécute
 
 ## Démarrer
 
-Le paquet Python s'appelle **`cohorte-engine`** ; la commande est **`cohorte`**. Il faut Python 3.12 ou plus récent. Pour installer cette préversion après sa publication :
+Le paquet Python s'appelle **`cohorte-engine`** ; la commande est **`cohorte`**. Il faut Python 3.12 ou plus récent. Pour installer cette préversion publiée :
 
 ```bash
-uv tool install 'cohorte-engine==1.0.0a19'
+uv tool install 'cohorte-engine==1.0.0a24'
 cohorte --version
 cohorte doctor
 ```
@@ -62,6 +62,12 @@ La suite dépend de votre point de départ :
 **`intake` signifie « recevoir et trier la demande ».** Cohorte peut demander des précisions avant de choisir la suite. Pour une fonctionnalité, reprenez les réponses avec `cohorte brainstorm --from-intake IDENTIFIANT`. Pour un bug, préparez un correctif avec `cohorte patch-spec --from-intake IDENTIFIANT`. Vous pouvez aussi sauter `intake` et lancer `brainstorm` directement si vous avez déjà une idée claire. [Voir le parcours détaillé](https://thebidouilleagency.github.io/cohorte/guide/parcours).
 
 Ces parcours guidés sont disponibles depuis `1.0.0a5` ; `1.0.0a6` corrige aussi l’arrêt du service avec un client connecté. Depuis `1.0.0a7`, le panel `brainstorm` reçoit des extraits pertinents du dépôt avec leurs chemins et lignes à chaque tour. `1.0.0a8` étend ces pistes au cadrage et aux agents de construction, revue et correction ; `1.0.0a9` les étend à l’intégration Fleet. `1.0.0a10` ajoute les propositions de l'agent au parcours `spec` et `1.0.0a11` les affiche même si l'agent reformule les questions. Vérifiez la commande globale avec `cohorte --version`. Depuis le dépôt, `uv run cohorte` exécute la version de développement.
+
+
+Depuis `1.0.0a20`–`1.0.0a23`, le parcours inclut les décisions projet, les échanges libres du brainstorm,
+la conversation de spec pour François et la sélection/progression des cartes Obsidian.
+La version de cette documentation est `1.0.0a24` ; ces fonctions ne constituent pas encore une qualification
+complète du parcours desktop sur un vrai projet.
 
 ## Les étapes du parcours
 

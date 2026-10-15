@@ -1,5 +1,10 @@
 # Implementation status
 
+Status reconciled on 2026-10-15 for published Python `1.0.0a23` (source commit
+`50a123774dc87da35736cad139a90753217dcb80`). This is a documentation review, not a
+new provider-live qualification. Historical evidence retains its original candidate,
+runtime and platform boundaries. See the [qualification ledger](qualification/README.md).
+
 This repository implements the local deterministic part of the Cohorte V3 specification. It is a
 pre-release foundation, not a V2-parity or provider-support claim.
 
@@ -15,7 +20,7 @@ pre-release foundation, not a V2-parity or provider-support claim.
 - DAG and coverage validation, bounded argv-only check execution, filtered environment and output.
 - JSON-RPC stdio handshake, bounded frames, structured errors, deduplication and replay.
 - Passive Codex auth inspection and an explicit bounded live probe using the pinned SDK/runtime.
-- Live Codex evidence for subscription routing, read-only enforcement, interruption and resume on
+- Bounded live Codex evidence for subscription routing, reviewer-style read-only command denial, interruption and resume on
   Darwin arm64 with SDK/runtime 0.155.1.
 - A `loop` vertical with a frozen spec, deterministic task plan, isolated Git worktree,
   path ownership enforcement, bounded checks, independent read-only review, bounded fix cycles and
@@ -103,7 +108,8 @@ pre-release foundation, not a V2-parity or provider-support claim.
 - Design/retrieval availability: absent external connections return explicit CLI errors; runtime
   port failures block design capture or trigger only an explicitly configured retrieval file
   fallback. Provider error text is redacted before it enters captures or CLI responses. No external
-  design/retrieval provider is claimed as live-qualified.
+  design/retrieval provider is claimed as generally live-qualified; bounded AC23 probes are
+  recorded below and in the qualification ledger.
 - François-facing stdio contract: capability-negotiated handshake, project/feature/request read
   models, grouped metrics, run controls, request responses and durable event replay/unsubscribe.
   Passive account status exposes no credentials. This is the Cohorte protocol surface; the external
@@ -152,13 +158,28 @@ pre-release foundation, not a V2-parity or provider-support claim.
   and not-started states. The first tranche adds a clean wheel-install verifier, multi-stack
   discovery coverage and an out-of-scope ownership rejection regression.
 
+## Recent published capabilities (a20–a23)
+
+- Brainstorm loads live project decisions from `specs/_decisions.md`, accepts free-form
+  `--message` follow-ups, and displays named contributions. Discussion is separate from approval.
+- `spec-session` exposes saved proposals, revisions, acceptance, exact candidate/profile approval
+  and freeze to François; standing project rules require explicit ratification.
+- Obsidian idea discovery includes card notes. Selected cards follow durable workflow milestones
+  with concurrency checks, backups and `kanban-sync` reconciliation. `Shipped` means PR/MR opened,
+  not merged or deployed. Read-only boards still support idea discovery.
+- These releases include local automated and bounded live evidence described in the changelog.
+  The complete released François desktop flow on a real project remains unqualified.
+
 ## Deliberately unverified or incomplete
 
 - AC14 passed on a disposable GitLab repository with a bounded SHIP fixture, configured release
   notes in the MR description, and a successful CI pipeline; see
   `docs/evidence/g5-ac14-gitlab-darwin-arm64.json`.
-- AC19 remains partial: the merged François client still targets the older TypeScript CLI and
-  needs adaptation and live validation against the Python `cohorte/1` service.
+- AC19 remains partial: François now has the Python `cohorte/1` transport and service
+  projection, conversational brainstorm/spec bridges, and selected Obsidian card forwarding.
+  The older TypeScript-only incompatibility report is historical. The real desktop path,
+  persistent-service controls and disconnect/replay behavior still need end-to-end qualification;
+  see `docs/evidence/g5-ac19-francois-source-review-2026-10-15.json`.
 - Native mid-turn session reuse and exactly-once effects after a provider crash are not established.
   AC30's read-only retry proof is bounded to the Darwin reviewer-style probe; other hosts and the
   full review workflow have not received the same live negative-tool test.

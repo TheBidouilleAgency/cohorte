@@ -70,3 +70,8 @@ Les commandes `intake --continue`, `brainstorm --from-intake`, la spec enrichie 
 :::
 
 Pour l’automatisation, placez `--json` **avant** la sous-commande et fournissez les paramètres explicitement. `--live` autorise les appels effectifs au fournisseur pour les commandes qui le demandent. La [référence CLI](/reference/cli) détaille cette forme, et `cohorte status` montre les fonctionnalités, runs et décisions en attente du projet courant.
+
+Depuis `1.0.0a20`–`1.0.0a23`, le parcours inclut les décisions projet, les échanges libres du brainstorm,
+la conversation de spec pour François et la sélection/progression des cartes Obsidian.
+La version de cette documentation est `1.0.0a24` ; ces fonctions ne constituent pas encore une qualification
+complète du parcours desktop sur un vrai projet.

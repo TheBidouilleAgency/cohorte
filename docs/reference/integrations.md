@@ -22,4 +22,4 @@ Pour consulter les idées sans synchroniser les états, configurez `integrations
 
 ## Protocole local et François
 
-`cohorte service start` démarre un service local sans port réseau. Les clients utilisent le protocole décrit dans la [référence technique](/PROTOCOL). L’existence du protocole ne prouve pas qu’une version donnée de François ait activé toutes les surfaces de l’interface.
+`cohorte service start` démarre un service local sans port réseau. Les clients utilisent le protocole décrit dans la [référence technique](/PROTOCOL). François dispose du transport Python `cohorte/1`, des ponts de conversation brainstorm/spec et de la sélection des idées Obsidian. Le parcours complet dans l’application publiée, avec un vrai projet et reconnexion au service, reste à qualifier : voir la [matrice de qualification](/qualification/README).
