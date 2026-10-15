@@ -1,0 +1,31 @@
+{
+  "gate": "G5",
+  "criterion": "AC19",
+  "scenario": "francois-python-source-review",
+  "status": "partial",
+  "checked_at": "2026-10-15",
+  "evidence_class": "source-inspection",
+  "francois": {
+    "repository": "antoine-gmnz/francois",
+    "inspected_commit": "28b4084794fac8a08a587d439e2c667cea28f754",
+    "files": {
+      "src-tauri/src/cohorte/python_rpc.rs": "Python cohorte/1 connection and capability handshake",
+      "src-tauri/src/cohorte/python_service.rs": "Project/run projections, events.subscribe, request responses and run controls",
+      "src-tauri/src/cohorte/spec_cli.rs": "JSON spec-session bridge",
+      "src-tauri/src/cohorte/actions_cli.rs": "brainstorm-ideas discovery and selected card forwarding"
+    },
+    "integration_commits": [
+      "e4ea335 (Python service, PR #159)",
+      "c0a2ef4 (brainstorm conversation, PR #178)",
+      "dc0404a (spec conversation, PR #179)",
+      "f025ba8 (selected Obsidian cards, PR #185)"
+    ]
+  },
+  "supersedes_current_state_claim_in": "docs/evidence/g5-ac19-francois-current-integration.json",
+  "conclusion": "The Python client adaptation is implemented. The September 23 TypeScript-only incompatibility is historical. AC19 remains partial pending real desktop end-to-end qualification.",
+  "limitations": [
+    "Source inspection only; no new desktop interaction, provider run or bridge test was executed for this report.",
+    "Release installation, real-project idea-to-PR progression, persistent service controls and disconnect/replay remain to qualify.",
+    "Historical protocol and test evidence keeps its original candidate and platform boundary."
+  ]
+}

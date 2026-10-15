@@ -7,6 +7,12 @@ with the newest version first. Describe the verified scope and known limitations
 
 _No changes recorded yet._
 
+## 1.0.0a24 — 2026-10-15
+
+- Reconcile status documents with the a23 implementation baseline, implemented François Python bridges and bounded AC23/AC30 evidence. Preserve historical qualification results and keep real desktop/project validation open; no runtime behavior changes.
+- Update installation examples to a24. Qualification counts retain their historical candidate and platform boundaries; this release does not certify full V2 parity or the real François desktop workflow.
+- Validation: 313 Python tests passed (1 platform-specific skip), Ruff lint/format, mypy, release metadata and documentation build passed locally; publication runs the full Python 3.12/3.13 CI matrix on Ubuntu, macOS and Windows.
+
 ## 1.0.0a23 — 2026-10-08
 
 - Mirror selected Obsidian Kanban cards through the V2 pipeline after each durable milestone. Preserve card notes and board metadata, guard concurrent edits, keep backups and support reconciliation with `kanban-sync`.
