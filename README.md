@@ -36,7 +36,7 @@ Cohorte aide à **cadrer une demande, conserver les décisions et faire exécute
 Le paquet Python s'appelle **`cohorte-engine`** ; la commande est **`cohorte`**. Il faut Python 3.12 ou plus récent. Pour installer cette préversion publiée :
 
 ```bash
-uv tool install 'cohorte-engine==1.0.0a24'
+uv tool install 'cohorte-engine==1.0.0a25'
 cohorte --version
 cohorte doctor
 ```
@@ -66,7 +66,7 @@ Ces parcours guidés sont disponibles depuis `1.0.0a5` ; `1.0.0a6` corrige aussi
 
 Depuis `1.0.0a20`–`1.0.0a23`, le parcours inclut les décisions projet, les échanges libres du brainstorm,
 la conversation de spec pour François et la sélection/progression des cartes Obsidian.
-La version de cette documentation est `1.0.0a24` ; ces fonctions ne constituent pas encore une qualification
+La version de cette documentation est `1.0.0a25` ; ces fonctions ne constituent pas encore une qualification
 complète du parcours desktop sur un vrai projet.
 
 ## Les étapes du parcours

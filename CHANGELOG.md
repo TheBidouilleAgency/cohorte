@@ -7,6 +7,12 @@ with the newest version first. Describe the verified scope and known limitations
 
 _No changes recorded yet._
 
+## 1.0.0a25 — 2026-10-15
+
+- Load Markdown notes directly linked with Obsidian wiki links in idea cards and sub-notes, including aliases, embeds and anchored links. Supply source paths and note content through the existing brainstorm/François notes contract without changing card identity.
+- Resolve board-relative, vault-relative and unique short links; surface missing, ambiguous, unsafe and truncated inputs. Bound the file index and context size, exclude hidden paths and symlinks, and avoid recursive note traversal.
+- Validation: unit and guided CLI tests cover resolution, limits, confinement, fresh reads and delivery to brainstorm context. A read-only probe loaded linked notes for all 37 Plica cards without changing vault files. Real-provider and desktop click-through remain unqualified for this change.
+
 ## 1.0.0a24 — 2026-10-15
 
 - Reconcile status documents with the a23 implementation baseline, implemented François Python bridges and bounded AC23/AC30 evidence. Preserve historical qualification results and keep real desktop/project validation open; no runtime behavior changes.

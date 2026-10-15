@@ -20,6 +20,24 @@ Si la synchronisation échoue, l'étape Cohorte reste enregistrée. `cohorte kan
 
 Pour consulter les idées sans synchroniser les états, configurez `integrations.kanban` avec `enabled: true`, `provider: obsidian`, `vault_path`, `board_path` et `read_only: true`. `cohorte brainstorm` propose alors les cartes `Idea` ou `Ideas` avec leurs notes ; `columns.ideas` permet de choisir un autre titre de colonne.
 
+### Fiches liées aux cartes (depuis a25)
+
+Les liens `[[fiche]]`, `[[dossier/fiche|libellé]]` et `![[fiche]]` présents dans le titre
+ou les sous-notes d'une carte sont lus automatiquement. Leur contenu Markdown est ajouté
+au contexte du brainstorm et à la liste JSON utilisée par François, avec le chemin de la fiche.
+Les liens avec `#section` ou `#^bloc` chargent la fiche entière dans les limites ci-dessous.
+La recherche privilégie une fiche voisine du board, puis un chemin depuis la racine du vault,
+puis un suffixe de chemin unique. Un nom ambigu demande un chemin plus précis.
+
+La lecture porte uniquement sur les liens directs de la carte, sans suivre les liens des fiches.
+Elle ignore les fichiers/dossiers cachés et les liens symboliques ; les chemins absolus,
+les traversées `..` et les fichiers non Markdown sont refusés. Un lien absent, ambigu ou
+illisible produit une indication visible dans les notes, sans empêcher de lire les autres cartes.
+L'index des noms est limité à 10 000 entrées, la lecture à 8 liens directs, 64 Kio par fiche
+et 6 000 caractères de contenu ajouté par carte ; toute limite atteinte est signalée.
+Les fiches sont relues lors de la sélection. Elles restent du contexte à examiner, pas des
+décisions approuvées. Aucun fichier du vault n'est modifié par cette lecture.
+
 ## Protocole local et François
 
 `cohorte service start` démarre un service local sans port réseau. Les clients utilisent le protocole décrit dans la [référence technique](/PROTOCOL). François dispose du transport Python `cohorte/1`, des ponts de conversation brainstorm/spec et de la sélection des idées Obsidian. Le parcours complet dans l’application publiée, avec un vrai projet et reconnexion au service, reste à qualifier : voir la [matrice de qualification](/qualification/README).

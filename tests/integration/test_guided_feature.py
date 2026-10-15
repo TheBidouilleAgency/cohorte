@@ -153,14 +153,18 @@ def _answers(*, blocking_answer: str | None = None, approve: str = "oui") -> lis
     ]
 
 
+@pytest.mark.parametrize("linked", [False, True])
 def test_brainstorm_ideas_lists_configured_obsidian_cards(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], linked: bool
 ) -> None:
     repository, data_dir = _setup(tmp_path)
     board = repository / "ideas.md"
     board.write_text(
         "## Idea\n- [ ] Export CSV #export-csv\n  - Pour les clients\n## Done\n- Ignorer\n"
     )
+    if linked:
+        board.write_text(board.read_text().replace("## Done", "  - [[export]]\n## Done"))
+        (repository / "export.md").write_text("Critères UTF-8", encoding="utf-8")
     database = Database(data_dir / "cohorte.sqlite3")
     project = database.get_project("project")
     profile = ProjectProfile.model_validate_json(json.dumps(project["profile"]))
@@ -181,7 +185,15 @@ def test_brainstorm_ideas_lists_configured_obsidian_cards(
     response = json.loads(capsys.readouterr().out)
     assert len(response["data"]["ideas"]) == 1
     assert response["data"]["ideas"][0]["title"] == "Export CSV #export-csv"
-    assert response["data"]["ideas"][0]["notes"] == ["Pour les clients"]
+    notes = response["data"]["ideas"][0]["notes"]
+    if linked:
+        assert notes == [
+            "Pour les clients",
+            "[[export]]",
+            "Fiche Obsidian : export.md\nCritères UTF-8",
+        ]
+    else:
+        assert notes == ["Pour les clients"]
     assert response["data"]["ideas"][0]["feature_id"] == "export-csv"
     assert response["data"]["ideas"][0]["source_id"].endswith(":2")
     assert board.read_text().startswith("## Idea")
@@ -192,7 +204,8 @@ def test_guided_brainstorm_selects_obsidian_card_and_notes(
 ) -> None:
     repository, data_dir = _setup(tmp_path)
     board = repository / "ideas.md"
-    board.write_text("## Ideas\n- [ ] Export CSV #export-csv\n  - Pour les clients\n")
+    board.write_text("## Ideas\n- [ ] [[export|Export CSV]] #export-csv\n  - Pour les clients\n")
+    (repository / "export.md").write_text("Critères : export UTF-8 vérifié.", encoding="utf-8")
     database = Database(data_dir / "cohorte.sqlite3")
     project = database.get_project("project")
     profile = ProjectProfile.model_validate_json(json.dumps(project["profile"]))
@@ -231,8 +244,10 @@ def test_guided_brainstorm_selects_obsidian_card_and_notes(
     monkeypatch.setattr("cohorte.application.preparation.BrainstormRunner.run", fake_run)
     assert cli.run(["--data-dir", str(data_dir), "brainstorm", "--repo", str(repository)]) == 0
     assert observed["feature_id"] == "export-csv"
-    assert observed["idea"] == "Export CSV #export-csv"
+    assert observed["idea"] == "[[export|Export CSV]] #export-csv"
     assert "Pour les clients" in observed["context"]
+    assert "Fiche Obsidian : export.md" in observed["context"]
+    assert "Critères : export UTF-8 vérifié." in observed["context"]
     assert board.read_text().startswith("## Ideas")
 
 
