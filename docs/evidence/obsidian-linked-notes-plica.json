@@ -1,0 +1,15 @@
+{
+  "checked_at": "2026-10-15",
+  "version": "1.0.0a25",
+  "scenario": "read-only-direct-linked-notes",
+  "board": "Plica/Tasks.md",
+  "cards": 37,
+  "cards_with_linked_notes": 37,
+  "mf001_source": "Plica/Tickets/micro-features/001-monorepo.md",
+  "mf001_acceptance_content_present": true,
+  "vault_markdown_hashes_unchanged": true,
+  "limitations": [
+    "Local ingestion probe only; no provider or desktop interaction.",
+    "Only direct card links are read; linked notes do not recursively expand their links."
+  ]
+}

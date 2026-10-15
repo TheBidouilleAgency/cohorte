@@ -158,6 +158,16 @@ pre-release foundation, not a V2-parity or provider-support claim.
   and not-started states. The first tranche adds a clean wheel-install verifier, multi-stack
   discovery coverage and an out-of-scope ownership rejection regression.
 
+## Linked Obsidian context (a25)
+
+- Direct wiki links in card titles and sub-notes load bounded Markdown context with source paths
+  through the existing `notes` contract, including the JSON endpoint used by François.
+- Missing/ambiguous/unsafe links and truncation are visible; hidden files and symlinks are excluded.
+  Linked notes are not traversed recursively and card projection identity is unchanged.
+- A read-only Plica probe loaded linked notes for all 37 cards, including MF-001 acceptance criteria,
+  with unchanged vault file hashes. This is ingestion evidence, not provider-live or desktop proof.
+  See `docs/evidence/obsidian-linked-notes-plica.json`.
+
 ## Recent published capabilities (a20–a23)
 
 - Brainstorm loads live project decisions from `specs/_decisions.md`, accepts free-form

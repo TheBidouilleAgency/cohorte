@@ -10,6 +10,7 @@ from typing import Literal
 
 from pydantic import Field
 
+from cohorte.application.obsidian_links import linked_context
 from cohorte.domain.errors import CohorteError, ErrorCode
 from cohorte.domain.models import KanbanConfig, StrictModel
 
@@ -78,7 +79,7 @@ def list_ideas(config: KanbanConfig) -> list[KanbanIdea]:
     """Read V2-style cards from the configured Obsidian Ideas column."""
     if not config.enabled:
         return []
-    _, board, _ = _paths(config)
+    vault, board, _ = _paths(config)
     try:
         raw = board.read_bytes()
     except OSError as error:
@@ -92,7 +93,12 @@ def list_ideas(config: KanbanConfig) -> list[KanbanIdea]:
         raise ValueError("Kanban board exceeds 2 MiB")
     configured = config.columns.get("ideas")
     headings = {configured} if configured else {"Idea", "Ideas"}
-    return _ideas(raw.decode("utf-8"), _sha(raw), headings)
+    ideas = _ideas(raw.decode("utf-8"), _sha(raw), headings)
+    additions = linked_context(vault, board, [(idea.title, idea.notes) for idea in ideas])
+    return [
+        idea.model_copy(update={"notes": [*idea.notes, *extra]})
+        for idea, extra in zip(ideas, additions, strict=True)
+    ]
 
 
 def resolve_idea(config: KanbanConfig, source_id: str) -> KanbanIdea:
