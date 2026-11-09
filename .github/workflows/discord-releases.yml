@@ -22,6 +22,8 @@ on:
       - 'CHANGELOG.md'
       - '**/package.json'
       - '**/CHANGELOG.md'
+  # Relance manuelle : notifie la version courante sans comparer au commit précédent.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -53,6 +55,7 @@ jobs:
           DISCORD_THREAD_ID: ${{ secrets.DISCORD_THREAD_ID }}
           DISCORD_THREAD_MAP: ${{ secrets.DISCORD_THREAD_MAP }}
           BEFORE: ${{ github.event.before }}
+          FORCE: ${{ github.event_name == 'workflow_dispatch' }}
           REPO_NAME: ${{ github.event.repository.name }}
         run: |
           set -euo pipefail
@@ -82,6 +85,7 @@ jobs:
             local dir="$1"
             local prefix label thread curr prev prev_json head_line head_ver section note payload
             local tmp cfg body err rc
+            prev=''
 
             if [ "$dir" = "." ]; then prefix=''; else prefix="$dir/"; fi
 
@@ -107,23 +111,25 @@ jobs:
             fi
 
             # --- 1bis. version d'avant le push --------------------------------------
-            if [ -z "${BEFORE:-}" ] || [ "$BEFORE" = "$NULL_SHA" ]; then
+            # Relance manuelle (workflow_dispatch) : on notifie la version courante.
+            if [ "${FORCE:-false}" = "true" ]; then
+              echo "$dir: relance manuelle, notification forcée pour v$curr."
+            elif [ -z "${BEFORE:-}" ] || [ "$BEFORE" = "$NULL_SHA" ]; then
               skipped+=("\`$label\` — pas de commit précédent (branche neuve)")
               echo "$dir: pas de commit précédent, rien à notifier."
               return 1
+            elif ! prev_json=$(git show "$BEFORE:${prefix}package.json" 2>/dev/null); then
+              # package.json apparu (ou réapparu) dans ce push : c'est une release.
+              echo "$dir: package.json absent à $BEFORE, v$curr traitée comme nouvelle version."
+            else
+              prev=$(printf '%s' "$prev_json" | jq -r '.version // empty' 2>/dev/null) || prev=''
+              if [ -z "$prev" ]; then
+                skipped+=("\`$label\` — version précédente illisible")
+                echo "$dir: version précédente illisible, rien à notifier."
+                return 1
+              fi
             fi
-            if ! prev_json=$(git show "$BEFORE:${prefix}package.json" 2>/dev/null); then
-              skipped+=("\`$label\` — package.json absent du commit précédent")
-              echo "$dir: pas de version précédente à $BEFORE, rien à notifier."
-              return 1
-            fi
-            prev=$(printf '%s' "$prev_json" | jq -r '.version // empty' 2>/dev/null) || prev=''
-            if [ -z "$prev" ]; then
-              skipped+=("\`$label\` — version précédente illisible")
-              echo "$dir: version précédente illisible, rien à notifier."
-              return 1
-            fi
-            if [ "$curr" = "$prev" ]; then
+            if [ -n "${prev:-}" ] && [ "$curr" = "$prev" ]; then
               skipped+=("\`$label\` — version inchangée ($curr)")
               echo "$dir: version inchangée ($curr)."
               return 1
