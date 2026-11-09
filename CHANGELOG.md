@@ -7,6 +7,15 @@ short, user-facing, most recent first. One `## <version> — <YYYY-MM-DD>` secti
 > They are history and are deliberately not rewritten — every command gained a `cohorte-` prefix
 > in 2.0.0.
 
+## 2.10.2 — 2026-11-09
+
+- **Back to the prompt-driven pipeline.** This release restores the 2.10.1 tree as is: the
+  `cohorte-*` slash commands, the gate hook and the Obsidian kanban mirror drive the pipeline
+  again. The experimental V3 line (Pi runtime, then the Python `cohorte-engine` rebuild,
+  published under the npm `dev` tag and on PyPI) is discontinued and was never `latest`.
+  Nothing changes for 2.10.x users; anyone who tried `cohorte@dev` should reinstall
+  `cohorte@latest`.
+
 ## 2.10.1 — 2026-09-14
 
 - **Codex project isolation:** surface agents stay in each repository's `.codex/agents/*.toml`
