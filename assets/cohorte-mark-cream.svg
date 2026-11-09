@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="Cohorte">
+  <title>Cohorte</title>
+  <rect x="8" y="27.75" width="17" height="8.5" rx="4.25" fill="#FAF6EF"></rect>
+  <path d="M 44.03 23.08 A 12 12 0 1 0 44.03 40.92" fill="none" stroke="#FAF6EF" stroke-width="8.5"></path>
+</svg>

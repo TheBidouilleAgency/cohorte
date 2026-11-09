@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="320" viewBox="0 0 1280 320" role="img" aria-label="Cohorte — portable multi-agent pipeline for Claude Code">
+  <title>Cohorte</title>
+  
+  <rect width="1280" height="320" fill="#191512"></rect>
+  <g transform="translate(120.8,83.2) scale(2.4)">
+    <rect x="8" y="27.75" width="17" height="8.5" rx="4.25" fill="#F5851F"></rect>
+    <path d="M 44.03 23.08 A 12 12 0 1 0 44.03 40.92" fill="none" stroke="#F5851F" stroke-width="8.5"></path>
+    <polygon points="50,26.4 55.6,32 50,37.6 44.4,32" fill="#FAF6EF"></polygon>
+  </g>
+  <text x="302" y="178" font-family="Space Grotesk, Helvetica, sans-serif" font-size="80" font-weight="600" letter-spacing="-2.6" fill="#FAF6EF">Cohorte</text>
+  <text x="305" y="214" font-family="JetBrains Mono, ui-monospace, monospace" font-size="17" letter-spacing="1.7" fill="#9A9086">portable multi-agent pipeline for Claude Code</text>
+</svg>
