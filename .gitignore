@@ -1,16 +1,16 @@
-.venv/
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-htmlcov/
-dist/
-build/
-*.egg-info/
 .DS_Store
-.cohorte/
-docs/node_modules/
+*.log
+__pycache__/
+node_modules/
+*.tgz
+
+# VitePress build output + cache (docs deploy via .github/workflows/docs.yml)
 docs/.vitepress/dist/
 docs/.vitepress/cache/
+
+# This repo dogfoods its own /cohorte-init-pipeline: these are its rendered isolation
+# scripts, with THIS repo's ports and paths baked in. The shipped artifacts are
+# the scripts/*.sh.template files beside them (see package.json `files`).
+scripts/new-feature.sh
+scripts/remove-feature.sh
+.serena/
