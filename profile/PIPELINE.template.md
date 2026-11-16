@@ -142,6 +142,7 @@ commands:
   typecheck: pnpm check-types
   test: pnpm test
   test_quiet: pnpm test --reporter=dot       # bridled variant — what the /cohorte-review preflight runs
+  security: []                               # dependency audit / feature-diff secret scan commands, run after tests (schema/preflight.md)
   # migration commands — omit / leave "" if the project has no DB migrations
   migrate: "cd apps/api && node ace migration:run"
   make_migration: "cd apps/api && node ace make:migration"

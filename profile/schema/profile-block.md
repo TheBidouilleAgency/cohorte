@@ -49,6 +49,7 @@ generic pipeline uses it, so a stateless agent can read/regenerate the profile c
 | `release_notes.guidance`             | string       | ship                              | Project policy the lead follows when picking the bump + writing the prose. |
 | `commands.*`                         | string       | all                               | Repo-wide install/dev/lint/format/typecheck/test + migrate.   |
 | `commands.test_quiet` `.lint_quiet`  | string       | review, audit, workflows          | Repo-wide bridled variants — what the `/cohorte-review` pre-flight runs. Same fallback as the per-surface ones. |
+| `commands.security`                  | list         | review, workflows (preflight)     | Dependency audits and a feature-diff secret scan, run by the `/cohorte-review` pre-flight after typecheck/lint/tests. A red scan aborts the review, and the reviewer reads the green output. Default `[]`. A single string is read as a one-item list. Recipes and rules (static paths, feature diff only): `<core>/pipeline/schema/preflight.md` §Security scans. |
 | `rbac.enabled`                       | bool         | brainstorm, review                | Toggle RBAC personas + authz audit.                           |
 | `rbac.hierarchy`                     | list         | review                            | Highest→lowest role list.                                     |
 | `design.enabled`                     | bool         | build, frontend, align-ds         | `false` ⇒ design steps are no-ops.                            |

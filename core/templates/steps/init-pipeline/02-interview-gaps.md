@@ -27,6 +27,12 @@ Ask ONLY what you couldn't confidently detect. Batch related questions. Cover:
   `test_quiet_cmd`/`lint_quiet_cmd` + `commands.test_quiet`/`lint_quiet` and are what agents and the
   `/cohorte-review` pre-flight actually run (`<core>/pipeline/schema/output-discipline.md`). If the human declines or
   the runner has no such flag, leave `""` — consumers then fall back to `<cmd> 2>&1 | tail -40`.
+- **Security scans** (only if Phase 1 found an auditor or a secret scanner). Propose the detected
+  commands from `<core>/pipeline/schema/preflight.md` §Security scans as one multi-select. Fill
+  in `--default <default_branch>`. If `CLAUDE_CONFIG_DIR` is set, use its literal value in place
+  of `~/.claude`. Note that a scan red at its threshold blocks every review, so the default branch
+  must pass it today. If it doesn't, offer a higher threshold. The accepted commands go in
+  `commands.security`. None accepted ⇒ `security: []`.
 - **Contract** — mechanism (`shared-types-zod` / `openapi` / `protobuf` / `json-schema` / `none`) and
   where feature contracts are authored. If `none`, surfaces sync by the spec prose alone.
 - **Release notes (only if Phase 1 found a versioning tool or a note-enforcing CI job)** — confirm the

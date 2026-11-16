@@ -424,6 +424,51 @@ console.log("review.js verdict contract");
     /feature-diff\.sh --base \$BASE --digest/.test(prompts["stage-report"]), prompts["stage-report"].slice(-400));
 }
 {
+  // commands.security: run by the same preflight, after the tests, behind a marker.
+  const PRE = "<core>/pipeline/scripts/preflight.sh specs/reports/feat-x.preflight.txt ";
+  const plain = await run("review.js", replier([["review:", { verdict: "SHIP", findings: [] }], ...BASE_REVIEW]));
+  check("no commands.security ⇒ the preflight call is unchanged",
+    plain.prompts.preflight.includes(PRE + '"tsc --noEmit" "lint -q" "test --dot"\n') &&
+    !/cohorte-security-scans/.test(plain.prompts.preflight), plain.prompts.preflight.slice(0, 300));
+  check("no commands.security ⇒ reviewers get no preflight-report slot",
+    !/preflight report/.test(plain.prompts["review:backend"]), plain.prompts["review:backend"].slice(-200));
+
+  const SECRET = 'P=specs/reports/security-scan.patch; ~/.claude/cohorte/pipeline/scripts/feature-diff.sh --default main --patch > "$P" || exit 2; grep \'^+\' "$P" | gitleaks stdin --redact --no-banner; s=$?; rm -f "$P"; exit $s';
+  const AUDIT = "npm audit --omit=dev --audit-level=high";
+  const withSec = { ...PROFILE, commands: { ...PROFILE.commands, security: [AUDIT, "<detected audit>", "", SECRET] } };
+  const sec = await run("review.js", replier([
+    ["review:", { verdict: "SHIP", findings: [] }], ["profile", withSec], ...BASE_REVIEW,
+  ]));
+  const line = sec.prompts.preflight.split("\n").find((l) => l.startsWith(PRE)) || "";
+  const single = `'${SECRET.replace(/'/g, "'\\''")}'`;
+  check("commands.security run after typecheck/lint/tests, behind the marker, in order",
+    line === PRE + `"tsc --noEmit" "lint -q" "test --dot" ": cohorte-security-scans" "${AUDIT}" ${single}`, line);
+  // The single-quoted form must round-trip to the exact command (no shell is used to check it).
+  const unq = single.slice(1, -1).split("'\\''").join("'");
+  check("a command with `$` is single-quoted, so the calling shell expands nothing", unq === SECRET, unq);
+  check("placeholder and empty security entries are dropped", !/detected audit/.test(line));
+  check("commands.security ⇒ each reviewer is pointed at the preflight report's security section",
+    /preflight report: specs\/reports\/feat-x\.preflight\.txt \(security section from the line `\$ : cohorte-security-scans`\)$/
+      .test(sec.prompts["review:backend"]), sec.prompts["review:backend"].slice(-200));
+
+  const asString = await run("review.js", replier([
+    ["review:", { verdict: "SHIP", findings: [] }],
+    ["profile", { ...PROFILE, commands: { ...PROFILE.commands, security: AUDIT } }], ...BASE_REVIEW,
+  ]));
+  check("commands.security given as one string is accepted",
+    asString.prompts.preflight.includes(`"test --dot" ": cohorte-security-scans" "${AUDIT}"\n`), asString.prompts.preflight.slice(0, 300));
+  const empty = await run("review.js", replier([
+    ["review:", { verdict: "SHIP", findings: [] }],
+    ["profile", { ...PROFILE, commands: { ...PROFILE.commands, security: [] } }], ...BASE_REVIEW,
+  ]));
+  check("commands.security: [] ⇒ no marker", !/cohorte-security-scans/.test(empty.prompts.preflight));
+  const red = await run("review.js", replier([
+    ["profile", withSec], ["preflight", { pass: false, tail: "leak found" }], ...BASE_REVIEW,
+  ]));
+  check("red preflight with security scans ⇒ ABORTED, reason names commands.security",
+    red.result.aborted === "preflight" && /commands\.security/.test(red.result.reason), red.result.reason);
+}
+{
   // D13: a dead reviewer is retried ONCE, byte-identical, like a dead implementer.
   const { result, calls, prompts } = await run("review.js", (prompt, opts) => {
     const label = opts.label || "";

@@ -36,8 +36,15 @@ metrics line needs it:
 
 ```
 <core>/pipeline/scripts/preflight.sh specs/reports/$ARGUMENTS.preflight.txt \
-  "<commands.typecheck>" "<commands.lint_quiet, else lint>" "<commands.test_quiet, else test>"
+  "<commands.typecheck>" "<commands.lint_quiet, else lint>" "<commands.test_quiet, else test>" \
+  [": cohorte-security-scans" '<commands.security[0]>' '<commands.security[1]>' …]
 ```
+
+The bracketed tail is passed only when `commands.security` (a list, or one string) has entries.
+The marker comes first, then each command in order. Drop empty and `<placeholder>` entries. Any
+command containing `$`, a backtick or `\` is **single-quoted** (a `'` inside becomes `'\''`). In
+double quotes this shell would expand the scan's own variables first. Scans are checks like the
+others: a red one aborts below (`<core>/pipeline/schema/preflight.md` §Security scans).
 
 - **Non-zero exit** ⇒ the script already printed the raw last-40 lines. **STOP: relay them verbatim
   and spawn NO agent** — a compiler/test failure needs `/cohorte-fix` (or the human), not a review that
@@ -48,8 +55,9 @@ metrics line needs it:
   → `specs/reports/$ARGUMENTS.verdict.json`. One `printf`, in the same Bash call.
 - **Zero exit** ⇒ it stamped `<state>/preflight.ok`, which the gate hook checks before letting
   `cohorte-review` dispatches through (`<core>/pipeline/schema/preflight.md`). Continue.
-- Script absent (older core) ⇒ run the three commands yourself, each redirected into
-  `specs/reports/$ARGUMENTS.preflight.txt`, aborting on the first failure the same way.
+- Script absent (older core) ⇒ run the same commands yourself (marker and security scans
+  included), each appended to `specs/reports/$ARGUMENTS.preflight.txt` after a `$ <cmd>` line,
+  aborting on the first failure the same way.
 
 ## 1. Gather the inputs for stateless reviewers
 
@@ -101,7 +109,10 @@ which sits at the END so every repeat hits the prompt-cache prefix:
 > every finding self-sufficient (`file:line` · severity · type · one-line concrete fix), no code
 > excerpts. — Variable slots: feature `$ARGUMENTS` · scope: the `<surface.key>` surface only · spec:
 > `specs/$ARGUMENTS.md` (source of truth) · contract: `<contract.path>/$ARGUMENTS.<ext>` (`none` on `kind: refactor`) · staged
-> diff: `specs/reports/$ARGUMENTS.<surface.key>.diff` · changed files: <list>."
+> diff: `specs/reports/$ARGUMENTS.<surface.key>.diff` · changed files: <list>[ · preflight report:
+> `specs/reports/$ARGUMENTS.preflight.txt` (security section from the line `$ : cohorte-security-scans`)]."
+
+The bracketed preflight-report slot is added only when `commands.security` has entries.
 
 ## 3. Merge & relay the verdict
 

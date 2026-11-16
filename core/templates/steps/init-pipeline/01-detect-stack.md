@@ -32,6 +32,11 @@ Gather evidence, then summarize what you found. Look for:
   `fixed`/lockstep group — that names the anchor package), `changesets` in devDependencies, or a CI job
   that fails a PR lacking a note (grep `.github/workflows/*` for `changeset`). Also note the root
   `version`: a `0.y.z` product usually forbids `major`. None of these ⇒ `release_notes.enabled: false`.
+- **Security scanners:** which dependency auditor fits each lockfile or manifest (`npm`/`pnpm`/`yarn`
+  audit, `pip-audit`, `govulncheck`, `cargo audit`), and whether each is installed (`command -v`).
+  Also check for a secret scanner on PATH (`gitleaks`, `trufflehog`). Match them against the
+  detected-defaults table in `<core>/pipeline/schema/preflight.md` §Security scans. They feed
+  `commands.security`.
 - **DB / migrations:** migration tooling (`node ace make:migration`, `knex`, `prisma`, `alembic`,
   `golang-migrate`), a `docker-compose.yml`, DB service.
 - **Design system:** an existing `design-reference/` snapshot, `components/ui`, a DesignSync MCP
@@ -45,4 +50,4 @@ Gather evidence, then summarize what you found. Look for:
   `PIPELINE.md`** — if present, this is a re-run: load it as the starting draft and only reconcile deltas.
 
 Print a compact **Detection Report**: layout, project kind, surfaces (with framework + commands),
-contract, release notes, DB, design, vcs. Mark each field `detected` / `guessed` / `unknown`.
+contract, release notes, security scanners, DB, design, vcs. Mark each field `detected` / `guessed` / `unknown`.

@@ -234,7 +234,14 @@ console.log("gate.py — false positives (G11) and the pipeline's own commands")
 {
   const feat = scratch({ config: AUDIT_CFG }); gitRepo(feat, "feat");
   const commitMsg = "git commit -m \"$(cat <<'EOF'\nfeat: don't run (git push -f) or `rm -rf /`\n\nCo-Authored-By: x\nEOF\n)\"";
+  // commands.security as review.js passes them (the profile/schema/preflight.md recipes).
+  // The script path must be static (`~/…`): a computed command name gets "ask" (deny headless).
+  const SECRET_SCAN = 'P=specs/reports/security-scan.patch; ~/.claude/cohorte/pipeline/scripts/feature-diff.sh --default main --patch > "$P" || exit 2; grep \'^+\' "$P" | gitleaks stdin --redact --no-banner; s=$?; rm -f "$P"; exit $s';
+  const sq = (c) => `'${c.replace(/'/g, "'\\''")}'`;
+  const secPreflight = '.claude/pipeline/scripts/preflight.sh specs/reports/x.preflight.txt "tsc --noEmit" ' +
+    `": cohorte-security-scans" "npm audit --omit=dev --audit-level=high" ${sq(SECRET_SCAN)}`;
   table("must allow", feat, [
+    [secPreflight, "allow"],
     ["git commit -m \"docs: explain why git push -f is banned\"", "allow"],
     ["grep -rn \"git push -f\" docs/", "allow"],
     ["grep -rn 'rm -rf' .", "allow"],

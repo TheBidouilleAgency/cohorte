@@ -199,16 +199,28 @@ if (!surfaces.length) {
   return { verdict: 'ABORTED', aborted: 'profile', reason: 'profile has no surfaces — nothing would be reviewed. the `yaml pipeline-profile` block in PIPELINE.md is empty or unparseable, or the profile-reader mis-returned; run /cohorte-doctor' }
 }
 const quiet = (q, full) => (q && !String(q).startsWith('<') ? q : full ? `${full} 2>&1 | tail -40` : '')
+// commands.security (profile/schema/preflight.md): dependency audits and a secret scan of the
+// feature's own diff, run AFTER typecheck/lint/tests by the same script, into the same report.
+// A no-op marker opens their section so a reviewer (no Bash) can Grep for it and Read from there.
+const SECURITY_MARKER = ': cohorte-security-scans'
+const security = (Array.isArray(cmds.security) ? cmds.security : [cmds.security])
+  .filter(c => typeof c === 'string' && c.trim() && !c.trim().startsWith('<'))
 const checks = [cmds.typecheck, quiet(cmds.lint_quiet, cmds.lint), quiet(cmds.test_quiet, cmds.test)]
   .filter(c => c && !String(c).startsWith('<'))
+  .concat(security.length ? [SECURITY_MARKER, ...security] : [])
+// Each check is one argument of the preflight call. Double quotes would let the CALLING shell
+// expand a `$VAR` meant for the check's own `sh -c` (the secret-scan recipe sets and reads one),
+// so a command with shell syntax in it is single-quoted instead.
+const shq = c => /[$`\\]/.test(c) ? `'${String(c).replace(/'/g, "'\\''")}'` : JSON.stringify(c)
+const preflightReport = `specs/reports/${feature}.preflight.txt`
 
 // ── Phase 1 — deterministic preflight (abort while red, zero reviewers) ─────
 phase('Preflight')
 const pre = await agent(
   `Run the cohorte deterministic pre-flight for feature ${feature} in ONE Bash call, starting it with ` +
   '`date +%s` (return that number as `epoch` — the run\'s wall-clock origin for the metrics line):\n' +
-  `<core>/pipeline/scripts/preflight.sh specs/reports/${feature}.preflight.txt ` +
-  checks.map(c => JSON.stringify(c)).join(' ') + '\n' +
+  `<core>/pipeline/scripts/preflight.sh ${preflightReport} ` +
+  checks.map(shq).join(' ') + '\n' +
   '(<core> = "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/cohorte". ' +
   'Script absent: run the quoted commands yourself, each appended to the same report file, stopping at the first failure.) ' +
   'Return pass=true only on a fully green run. On failure set pass=false, put the raw last 40 lines of the report ' +
@@ -221,7 +233,8 @@ const pre = await agent(
 if (!pre || !pre.pass) {
   return {
     verdict: 'ABORTED', aborted: 'preflight',
-    reason: 'preflight red — fix the mechanical failures (or run /cohorte-fix) before any review; no reviewer was spawned',
+    reason: 'preflight red — fix the mechanical failures (or run /cohorte-fix) before any review; no reviewer was spawned' +
+      (security.length ? ' (commands.security counts: a dependency advisory at its threshold, or a secret in the feature diff, is red too)' : ''),
     failures: (pre && pre.tail) || 'preflight agent returned nothing',
   }
 }
@@ -293,7 +306,8 @@ const reviewPrompt = s =>
   'one line each, no code excerpts). Put anything real but OUT of this feature\'s scope in `deferred` ' +
   '(max 10, each with its out-of-scope reason) per your §Deferred rules — never in `findings`. — Variable slots: ' +
   `feature ${feature} · scope: the ${s.key} surface only · spec: specs/${feature}.md · ` +
-  `staged diff: ${s.diff} · changed files: ${s.files.join(', ')}`
+  `staged diff: ${s.diff} · changed files: ${s.files.join(', ')}` +
+  (security.length ? ` · preflight report: ${preflightReport} (security section from the line \`$ ${SECURITY_MARKER}\`)` : '')
 // profile/schema/dead-agents.md, the same rule as the build: a silent reviewer is retried ONCE,
 // byte-identical (the staged diff is already on disk — the retry costs one agent); only a
 // surface silent twice is `unreviewed`.
