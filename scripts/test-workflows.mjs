@@ -14,7 +14,9 @@
 //
 //   node scripts/test-workflows.mjs
 
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -103,6 +105,9 @@ const replier = table => (prompt, opts) => {
   return "ok";
 };
 
+// audit.js reads the backlog back before merging into it; most tests start with none.
+const NO_BACKLOG = ["read-backlog", { exists: false, lineCount: 0, domains: [] }];
+
 const BASE_REVIEW = [
   ["profile", PROFILE],
   ["preflight", { pass: true }],
@@ -157,6 +162,22 @@ console.log("review.js");
     ["review:", { verdict: "SHIP", findings: [finding({ severity: "LOW" })] }], ...BASE_REVIEW,
   ]));
   check("SHIP + only LOW ⇒ next is /cohorte-ship", String(result.next).startsWith("/cohorte-ship"), result.next);
+}
+{
+  // D4 — /cohorte-ship refuses a SHIP without the freshness stamp, so the stamp IS the
+  // certification: written on a clean bill only, never over a surviving HIGH/MEDIUM.
+  const high = await run("review.js", replier([
+    ["review:", { verdict: "SHIP", findings: [finding({ severity: "MEDIUM" })] }], ...BASE_REVIEW,
+  ]));
+  check("SHIP + MEDIUM ⇒ no freshness stamp, no DoD tick in the staging prompt",
+    !/Stamp the freshness gate/.test(high.prompts["stage-report"]) && !/Tick the spec DoD/.test(high.prompts["stage-report"]));
+  check("SHIP + MEDIUM ⇒ verdict.json carries the MEDIUM count ship gates on",
+    /"MEDIUM":[1-9]/.test(high.prompts["stage-report"]), high.prompts["stage-report"].match(/"severity":\{[^}]*\}/)?.[0]);
+  const clean = await run("review.js", replier([
+    ["review:", { verdict: "SHIP", findings: [] }], ...BASE_REVIEW,
+  ]));
+  check("clean SHIP ⇒ the stamp is written",
+    /Stamp the freshness gate/.test(clean.prompts["stage-report"]));
 }
 {
   // Deferred findings are real but out of the feature's scope: they must be
@@ -258,7 +279,7 @@ const EMPTY_PROFILE = { ...PROFILE, surfaces: [] };
 }
 {
   const { result } = await run("audit.js", replier([
-    ["profile", EMPTY_PROFILE], ["gates", { failures: [] }], ["write-backlog", "done"],
+    ["profile", EMPTY_PROFILE], ["gates", { failures: [] }], NO_BACKLOG, ["write-backlog", "done"],
   ]), {});
   check("audit: no surfaces ⇒ error, not an empty backlog",
     /no surfaces/.test(result.error || ""), JSON.stringify(result));
@@ -298,7 +319,7 @@ console.log("dead-agent sweep");
   const { result } = await run("audit.js", replier([
     ["profile", PROFILE], ["gates", { failures: [] }],
     ["audit:backend", null],
-    ["audit:", { items: [] }], ["write-backlog", "done"],
+    ["audit:", { items: [] }], NO_BACKLOG, ["write-backlog", "done"],
   ]), {});
   check("audit: dead auditor ⇒ the domain is listed as NOT audited",
     (result.notAudited || []).join(",") === "backend", JSON.stringify(result.notAudited));
@@ -308,7 +329,7 @@ console.log("dead-agent sweep");
 {
   const { result } = await run("audit.js", replier([
     ["profile", PROFILE], ["gates", { failures: [] }],
-    ["audit:", { items: [] }], ["write-backlog", null],
+    ["audit:", { items: [] }], NO_BACKLOG, ["write-backlog", null],
   ]), {});
   check("audit: dead backlog writer ⇒ path not claimed",
     !/^specs\//.test(String(result.backlog)), result.backlog);
@@ -342,7 +363,7 @@ console.log("audit.js / refactor.js");
     ["profile", PROFILE],
     ["gates", { failures: [] }],
     ["audit:", { items: [{ severity: "HIGH", file: "apps/api/a.ts", line: 1, kind: "tdd", fix: "add a test" }] }],
-    ["write-backlog", "done"],
+    NO_BACKLOG, ["write-backlog", "done"],
   ]), {});
   check("audit returns a backlog path", result.backlog === "specs/refactor-backlog.md", JSON.stringify(result));
   check("audit counts every domain (surfaces + shared)",
@@ -367,14 +388,89 @@ console.log("review.js verdict contract");
     result.aborted === "preflight", JSON.stringify(result.aborted));
 }
 {
-  // The empty-diff SHIP certified nothing (no review, no stamp) — its `next` must not
-  // read as "run /cohorte-ship", which would point a driver at a gate that refuses.
+  // An empty diff reviewed NOTHING — it used to score SHIP (and an adds-only feature,
+  // before untracked files were diffed, reached /cohorte-ship on it). Now an abort whose
+  // degraded verdict.json overwrites any stale one.
+  let verdictPrompt = "";
+  const { result, calls } = await run("review.js", (prompt, opts) => {
+    if (opts.label === "stage-verdict") { verdictPrompt = prompt; return "done"; }
+    return replier([["stage-diff", { surfaces: [] }], ...BASE_REVIEW])(prompt, opts);
+  });
+  check("empty diff ⇒ ABORTED/empty-diff, never SHIP",
+    result.verdict === "ABORTED" && result.aborted === "empty-diff", JSON.stringify(result));
+  check("empty diff ⇒ next never says /cohorte-ship",
+    !/\/cohorte-ship/.test(String(result.next)), result.next);
+  check("empty diff ⇒ the aborted verdict.json is written (no stale SHIP left behind)",
+    /"aborted":"empty-diff"/.test(verdictPrompt) && !/"verdict":"SHIP"/.test(verdictPrompt), verdictPrompt);
+  check("empty diff ⇒ zero reviewers", !calls.some(c => c.startsWith("review:")), calls.join(","));
+}
+{
+  // feature-diff.sh failing (no merge-base, script absent) is not an empty diff.
   const { result } = await run("review.js", replier([
-    ["stage-diff", { surfaces: [] }], ...BASE_REVIEW,
+    ["stage-diff", { error: "feature-diff: no merge-base between HEAD and main", surfaces: [] }], ...BASE_REVIEW,
   ]));
-  check("empty-diff SHIP ⇒ next warns nothing was reviewed, never '/cohorte-ship'",
-    result.verdict === "SHIP" && !String(result.next).startsWith("/cohorte-ship") && /no review|nothing to ship/i.test(result.next),
-    result.next);
+  check("feature-diff.sh error ⇒ ABORTED/stage-diff, not empty-diff",
+    result.verdict === "ABORTED" && result.aborted === "stage-diff", JSON.stringify(result));
+}
+{
+  // Staging + self-diff go through feature-diff.sh — a bare `git diff` misses untracked files.
+  const { prompts } = await run("review.js", replier([
+    ["review:", { verdict: "SHIP", findings: [] }], ...BASE_REVIEW,
+  ]));
+  check("stage-diff uses feature-diff.sh, never a bare `git diff <base>`",
+    /feature-diff\.sh --default main --numstat/.test(prompts["stage-diff"]) && !/git diff main/.test(prompts["stage-diff"]),
+    prompts["stage-diff"].slice(0, 240));
+  check("the freshness stamp is computed by feature-diff.sh too",
+    /feature-diff\.sh --base \$BASE --digest/.test(prompts["stage-report"]), prompts["stage-report"].slice(-400));
+}
+{
+  // D13: a dead reviewer is retried ONCE, byte-identical, like a dead implementer.
+  const { result, calls, prompts } = await run("review.js", (prompt, opts) => {
+    const label = opts.label || "";
+    if (label === "review:backend") return null;            // first attempt dies
+    if (label.startsWith("review:")) return { verdict: "SHIP", findings: [] };
+    return replier(BASE_REVIEW)(prompt, opts);
+  });
+  check("dead reviewer ⇒ retried once, and the retry's report counts (SHIP, nothing unreviewed)",
+    result.verdict === "SHIP" && (result.unreviewedSurfaces || []).length === 0
+      && calls.filter(c => c === "review:backend#retry").length === 1,
+    JSON.stringify([result.verdict, result.unreviewedSurfaces, calls]));
+  check("the reviewer retry is byte-identical to the dispatch",
+    prompts["review:backend"] === prompts["review:backend#retry"]);
+  check("a surface that answered first time is never retried",
+    !calls.includes("review:frontend#retry"), calls.join(","));
+}
+{
+  // Per-surface verdicts come from the findings that SURVIVED the cross-check, by the same
+  // rule as the merged verdict — not the reviewer's own pre-cross-check verdict.
+  let stagePrompt = "";
+  const { result } = await run("review.js", (prompt, opts) => {
+    const label = opts.label || "";
+    if (label.startsWith("verify:")) return { refuted: true, reason: "a guard covers it" };
+    if (label.startsWith("review:backend")) return { verdict: "REVISE", findings: [finding({ severity: "CRITICAL" })] };
+    if (label.startsWith("review:")) return { verdict: "SHIP", findings: [] };
+    if (label === "stage-report") { stagePrompt = prompt; return "done"; }
+    return replier(BASE_REVIEW)(prompt, opts);
+  });
+  check("refuted CRITICAL ⇒ the surface's verdict in verdict.json is SHIP, not the reviewer's REVISE",
+    result.verdict === "SHIP" && /"backend":\{"verdict":"SHIP"/.test(stagePrompt), stagePrompt.match(/"surfaces":\{[^}]*\}/)?.[0]);
+  check("…and the metrics line agrees", /"backend":"SHIP:0"/.test(stagePrompt), stagePrompt.slice(-300));
+}
+{
+  // D13: `seconds` is measured in Bash from the preflight's epoch — never a hardcoded 0 —
+  // and omitted outright when no epoch came back.
+  const withEpoch = await run("review.js", replier([
+    ["preflight", { pass: true, epoch: 1700000000 }],
+    ["review:", { verdict: "SHIP", findings: [] }], ...BASE_REVIEW,
+  ]));
+  check("metrics seconds = $(date +%s) minus the preflight epoch",
+    /"seconds":\$\(\(\$\(date \+%s\)-1700000000\)\)/.test(withEpoch.prompts["stage-report"]),
+    withEpoch.prompts["stage-report"].slice(-300));
+  const noEpoch = await run("review.js", replier([
+    ["review:", { verdict: "SHIP", findings: [] }], ...BASE_REVIEW,
+  ]));
+  check("no epoch ⇒ no seconds field at all (never a fake 0)",
+    !/"seconds"/.test(noEpoch.prompts["stage-report"]), noEpoch.prompts["stage-report"].slice(-300));
 }
 {
   // blocking = CRITICAL + security counted once; blocking_items = identity, not wording:
@@ -510,6 +606,111 @@ console.log("refactor.js retry & args");
   check("gates-red + all cleared + dead re-verifier ⇒ no cleared/remaining overlap",
     result.domains.backend.cleared === 5 && result.domains.backend.remaining === 0,
     JSON.stringify(result.domains));
+}
+
+{
+  // D6 — the backlog is shared state. A scoped audit used to overwrite it with only this
+  // run's items: every other domain's section and every open `deferred:` line (parked by
+  // /cohorte-review for /cohorte-refactor) vanished.
+  const old = { exists: true, domains: [
+    { key: "backend", lines: [
+      "- [ ] HIGH · apps/api/old.ts:1 · rule · stale audit item",
+      "- [ ] MEDIUM · apps/api/legacy.ts:9 · quality · split it · deferred:feat-a",
+      "- [x] LOW · apps/api/done.ts:2 · quality · done already · deferred:feat-b",
+    ] },
+    { key: "frontend", lines: ["- [ ] LOW · apps/web/x.tsx:4 · tdd · add a test", "- [x] LOW · apps/web/y.tsx:1 · rule · fixed"] },
+    { key: "mobile", lines: ["- [ ] LOW · apps/mobile/z.ts:1 · rule · a domain the profile no longer has"] },
+  ] };
+  let writePrompt = "";
+  const { result } = await run("audit.js", (prompt, opts) => {
+    const label = opts.label || "";
+    if (label === "profile") return PROFILE;
+    if (label === "gates") return { failures: [] };
+    if (label === "read-backlog") return old;
+    if (label === "audit:backend") return { items: [{ severity: "HIGH", file: "apps/api/a.ts", line: 1, kind: "tdd", fix: "add a test" }] };
+    if (label === "write-backlog") { writePrompt = prompt; return "done"; }
+    return "ok";
+  }, { target: "backend" });
+  const section = k => (writePrompt.split(`## ${k}\n`)[1] || "").split("\n## ")[0];
+  check("scoped audit ⇒ the audited domain's section is rewritten with this run's items",
+    /apps\/api\/a\.ts:1 · tdd · add a test/.test(section("backend")) && !/stale audit item/.test(section("backend")),
+    section("backend"));
+  check("…keeping its OPEN deferred lines verbatim, dropping the ticked ones",
+    section("backend").includes(old.domains[0].lines[1]) && !section("backend").includes("done already"),
+    section("backend"));
+  check("…and every other domain's section verbatim (ticked lines included)",
+    old.domains[1].lines.every(l => section("frontend").includes(l)) && section("mobile").includes(old.domains[2].lines[0]),
+    writePrompt.slice(-400));
+  check("deferred lines carried are counted", result.deferredCarried === 1, JSON.stringify(result));
+  const dead = await run("audit.js", (prompt, opts) => {
+    const label = opts.label || "";
+    if (label === "profile") return PROFILE;
+    if (label === "gates") return { failures: [] };
+    if (label === "read-backlog") return null;
+    if (label === "audit:") return { items: [] };
+    return opts.label && opts.label.startsWith("audit:") ? { items: [] } : "done";
+  }, {});
+  // A SHORT read (the reader stopped echoing mid-file) is the same data loss as a dead
+  // one: its own `grep -c` disagrees with the lines it returned ⇒ no write.
+  const short = await run("audit.js", (prompt, opts) => {
+    const label = opts.label || "";
+    if (label === "profile") return PROFILE;
+    if (label === "gates") return { failures: [] };
+    if (label === "read-backlog") return { ...old, lineCount: 9 };   // 6 lines returned, 9 on disk
+    if (label.startsWith("audit:")) return { items: [] };
+    return "done";
+  }, { target: "backend" });
+  check("truncated backlog read (lineCount ≠ lines returned) ⇒ no write",
+    !short.calls.includes("write-backlog") && /came back short/.test(String(short.result.backlog)),
+    JSON.stringify([short.calls, short.result.backlog]));
+  const exact = await run("audit.js", (prompt, opts) => {
+    const label = opts.label || "";
+    if (label === "profile") return PROFILE;
+    if (label === "gates") return { failures: [] };
+    if (label === "read-backlog") return { ...old, lineCount: 6 };
+    if (label.startsWith("audit:")) return { items: [] };
+    return "done";
+  }, { target: "backend" });
+  check("…and a matching count writes", exact.calls.includes("write-backlog"), exact.calls.join(","));
+  check("dead backlog READER ⇒ no write at all (null is not an empty backlog)",
+    !dead.calls.includes("write-backlog") && /reader died/.test(String(dead.result.backlog)), JSON.stringify([dead.calls, dead.result.backlog]));
+}
+{
+  // The gates report is truncated first, then one header + output per command — never a
+  // previous run's output read as this one's, never one command overwriting the last.
+  const { prompts } = await run("audit.js", replier([
+    ["profile", PROFILE], ["gates", { failures: [] }], ["audit:", { items: [] }], NO_BACKLOG, ["write-backlog", "done"],
+  ]), {});
+  check("audit gates: truncate once, then append per command",
+    /: > specs\/reports\/audit-gates\.txt/.test(prompts.gates) && />> specs\/reports\/audit-gates\.txt 2>&1/.test(prompts.gates),
+    prompts.gates);
+}
+{
+  // D13 — `shared` has no surface entry, so it used to verify with NO gates and come back
+  // gatesGreen=true by default. It is what every slice imports: repo-wide commands.
+  const items = ["- [ ] a", "- [ ] b", "- [ ] c", "- [ ] d", "- [ ] e"];
+  const { result, prompts } = await run("refactor.js", (prompt, opts) => {
+    const label = opts.label || "";
+    if (label === "profile") return PROFILE;
+    if (label === "read-backlog") return { domains: [{ key: "shared", items }] };
+    if (label === "verify:shared") return { cleared: items, remaining: [], gatesGreen: true };
+    if (label === "tick-backlog") return "done";
+    return "handoff";
+  }, { domains: ["shared"] });
+  const vp = prompts["verify:shared"] || "";
+  check("shared domain is verified with the repo-wide commands",
+    /tsc --noEmit/.test(vp) && /test --dot/.test(vp) && /lint -q/.test(vp) && !/none declared/.test(vp), vp.slice(0, 300));
+  check("…and reported green only on that evidence", result.domains.shared.gatesGreen === true, JSON.stringify(result.domains));
+  const bare = await run("refactor.js", (prompt, opts) => {
+    const label = opts.label || "";
+    if (label === "profile") return { ...PROFILE, commands: {} };
+    if (label === "read-backlog") return { domains: [{ key: "shared", items }] };
+    if (label === "verify:shared") return { cleared: items, remaining: [], gatesGreen: true };
+    if (label === "tick-backlog") return "done";
+    return "handoff";
+  }, { domains: ["shared"] });
+  check("no gate commands at all ⇒ gatesGreen false (unverified), whatever the verifier claims",
+    bare.result.domains.shared.gatesGreen === false, JSON.stringify(bare.result.domains));
 }
 
 // ── loop.js — build → review → [fix → review]*, unattended ──────────────────
@@ -745,12 +946,195 @@ const SHIP_CLEAN = { verdict: "SHIP", blocking: 0, blockingItems: [], unreviewed
     /"phase":"review".*"tokens":[1-9]/.test(stagePrompt), stagePrompt.slice(-200));
 }
 {
+  // D5 — a RESUMABLE stop (here: the child's preflight went red at round 2) must leave
+  // loop.json resumable: `reason` set, NO `outcome` — and the spec `blocked`. Re-invoking
+  // then resumes at that round instead of refusing its own `blocked` stamp. Before, close()
+  // wrote `outcome` on every abort and the precondition refused `blocked`: "re-run, it
+  // resumes at round N" was a promise nothing kept.
+  const loopJsonOf = p => JSON.parse(/changing NOTHING else:\n(\{.*\})/.exec(p)[1]);
+  let n = 0;
+  const wf1 = async () => (++n === 1 ? reviewOf({ blockingItems: ["backend|apps/api/a.ts|first"] })
+    : { verdict: "ABORTED", aborted: "preflight", reason: "preflight red" });
+  const first = await run("loop.js", loopReply(loopFacts({ build: FRESH_BUILD })), { feature: "feat-x" }, wf1);
+  const saved = loopJsonOf(first.prompts.close);
+  check("resumable abort ⇒ loop.json has reason, no outcome, at the round that stopped",
+    first.result.reason === "preflight" && first.result.resumable === true
+      && saved.reason === "preflight" && !("outcome" in saved) && saved.round === 2,
+    JSON.stringify(saved));
+  check("resumable abort ⇒ spec stamped blocked", /status: blocked/.test(first.prompts.close), first.prompts.close.slice(-300));
+
+  // Re-invoke: the spec is `blocked` (our own stamp), loop.json is the one just written.
+  const facts = loopFacts({
+    spec: { exists: true, status: "blocked", kind: "", mtimeEpoch: 900, designFiles: [] },
+    build: FRESH_BUILD,
+    loop: { exists: true, mtimeEpoch: 950, raw: JSON.stringify(saved) },
+  });
+  const second = await run("loop.js", loopReply(facts), { feature: "feat-x" }, async () => SHIP_CLEAN);
+  check("blocked by a resumable stop ⇒ resumes (not a precondition abort) and ships",
+    second.result.outcome === "ship", JSON.stringify([second.result.outcome, second.result.reason, second.result.detail]));
+  check("…at the stopped round, history kept (round 1 + the resumed round 2)",
+    second.result.rounds === 2 && second.result.history[0].round === 1, JSON.stringify(second.result.history));
+  check("…and the ship closes loop.json with an outcome", loopJsonOf(second.prompts.close).outcome === "ship");
+}
+{
+  // D5 — a TERMINAL stop (treading water) records the outcome; a `blocked` spec behind it
+  // routes to a human until they re-enter through /cohorte-build (readiness rewritten after
+  // loop.json), and that re-entry starts a fresh run at round 1.
+  const loopJsonOf = p => JSON.parse(/changing NOTHING else:\n(\{.*\})/.exec(p)[1]);
+  const first = await run("loop.js", loopReply(loopFacts({ build: FRESH_BUILD })), { feature: "feat-x" }, async () => reviewOf());
+  const saved = loopJsonOf(first.prompts.close);
+  check("terminal abort ⇒ loop.json records outcome + reason, resumable false",
+    saved.outcome === "abort" && saved.reason === "treading-water" && first.result.resumable === false, JSON.stringify(saved));
+  const blockedSpec = { exists: true, status: "blocked", kind: "", mtimeEpoch: 500, designFiles: [] };
+  const refused = await run("loop.js", loopReply(loopFacts({
+    spec: blockedSpec, build: FRESH_BUILD,
+    readiness: { exists: true, mtimeEpoch: 600, verdict: "READY", gaps: [], surfaces: ["backend"] },
+    loop: { exists: true, mtimeEpoch: 700, raw: JSON.stringify(saved) },
+  })), { feature: "feat-x" }, async () => SHIP_CLEAN);
+  check("blocked by a terminal stop, no re-entry ⇒ precondition abort naming the reason",
+    refused.result.reason === "precondition" && /treading-water/.test(refused.result.detail)
+      && refused.calls.join(",") === "profile,preconditions", JSON.stringify(refused.result));
+  const reentered = await run("loop.js", loopReply(loopFacts({
+    spec: blockedSpec, build: FRESH_BUILD,
+    readiness: { exists: true, mtimeEpoch: 800, verdict: "READY", gaps: [], surfaces: ["backend"] },
+    loop: { exists: true, mtimeEpoch: 700, raw: JSON.stringify(saved) },
+  })), { feature: "feat-x" }, async () => SHIP_CLEAN);
+  check("…after /cohorte-build re-entry (readiness newer than loop.json) ⇒ a fresh run from round 1",
+    reentered.result.outcome === "ship" && reentered.result.rounds === 1, JSON.stringify([reentered.result.outcome, reentered.result.rounds]));
+}
+{
+  // The stale-readiness abort points at the cheap refresh, not a full rebuild.
+  const facts = loopFacts({ readiness: { exists: false } });
+  const { result } = await run("loop.js", loopReply(facts), { feature: "feat-x" }, async () => SHIP_CLEAN);
+  check("absent readiness ⇒ points at /cohorte-build --readiness-only",
+    /--readiness-only/.test(result.detail), result.detail);
+}
+{
+  // A child abort on the profile read is transient (the profile-reader died) — resumable.
+  const wf = async () => ({ verdict: "ABORTED", aborted: "profile", reason: "profile unreadable" });
+  const { result } = await run("loop.js", loopReply(loopFacts({ build: FRESH_BUILD })), { feature: "feat-x" }, wf);
+  check("child profile abort ⇒ a resumable stop", result.reason === "profile" && result.resumable === true,
+    JSON.stringify([result.reason, result.resumable]));
+}
+{
   // workflow() unavailable (no runtime / review.js not installed) ⇒ explicit refusal,
   // never a conversational fallback.
   const wf = async () => { throw new Error("unknown workflow: cohorte-review"); };
   const { result } = await run("loop.js", loopReply(loopFacts({ build: FRESH_BUILD })), { feature: "feat-x" }, wf);
   check("review workflow unavailable ⇒ abort/review-workflow-unavailable",
     result.reason === "review-workflow-unavailable", result.reason);
+}
+
+// ── feature-diff.sh — the diff every review, self-diff and freshness stamp reads ──
+// A real throwaway repo, because the bug is git's behaviour, not ours: `git diff <ref>`
+// never shows untracked files, and feature work stays uncommitted until /cohorte-ship —
+// a feature that only ADDED files produced an empty review diff and scored SHIP. And a
+// diff against the default branch's TIP blames the feature for every file main gained.
+console.log("feature-diff.sh");
+{
+  const git = spawnSync("git", ["--version"], { encoding: "utf8" });
+  const sh = spawnSync("sh", ["-c", "exit 0"], { encoding: "utf8" });
+  if (process.platform === "win32" || git.status !== 0 || sh.status !== 0) {
+    console.log("  - skipped (needs POSIX sh + git; not run on Windows, like the kanban suite)");
+  } else {
+    const FD = join(root, "scripts", "feature-diff.sh");
+    // The repo sits one level down so new-feature.sh's sibling worktree (../demo-<id>) lands
+    // inside the mkdtemp dir too — a leftover from a failed run can never collide.
+    const outer = mkdtempSync(join(tmpdir(), "cohorte-fd-"));
+    const dir = join(outer, "repo");
+    mkdirSync(dir);
+    // A clean environment: no inherited GIT_* (a hook or CI can export GIT_INDEX_FILE /
+    // GIT_DIR, which would point every call below at someone else's repo), no user config.
+    const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_")));
+    Object.assign(env, { GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" });
+    const g = (...a) => spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...a],
+      { cwd: dir, env, encoding: "utf8" });
+    const fd = (...a) => spawnSync("sh", [FD, ...a], { cwd: dir, env, encoding: "utf8" });
+    const put = (rel, body) => { mkdirSync(join(dir, rel, ".."), { recursive: true }); writeFileSync(join(dir, rel), body); };
+    try {
+      g("init", "-q", "-b", "main");
+      put("apps/api/a.ts", "a\n"); put("README", "x\n"); put("specs/.keep", "");
+      g("add", "-A"); g("commit", "-qm", "init");
+      g("switch", "-qc", "feat/x");
+      // main advances AFTER the branch point: its new file must not read as a deletion.
+      g("switch", "-q", "main"); put("mainonly.txt", "m\n"); g("add", "mainonly.txt");
+      g("commit", "-qm", "main2"); g("switch", "-q", "feat/x");
+
+      // An adds-only feature first: the case that used to produce an EMPTY diff.
+      put("apps/api/new.ts", "new\n"); put("apps/web/w.tsx", "w\n");
+      put("specs/feat-x.md", "spec\n"); put(".claude/preflight.ok", "1 2 3\n");
+      const snap = () => g("ls-files", "-s").stdout + "|" + g("status", "--porcelain").stdout;
+      const before = snap();
+      const num = fd("--default", "main", "--numstat");
+      const paths = num.stdout.trim().split("\n").map(l => l.split("\t")[2]).filter(Boolean);
+      check("adds-only feature ⇒ a NON-empty diff listing the new files",
+        num.status === 0 && paths.includes("apps/api/new.ts") && paths.includes("apps/web/w.tsx"),
+        JSON.stringify([num.status, num.stdout, num.stderr]));
+      check("base is the merge-base: main's new file is not a phantom deletion",
+        !paths.includes("mainonly.txt"), num.stdout);
+      check(".claude and specs never enter the diff",
+        !paths.some(p => p.startsWith(".claude") || p.startsWith("specs")), num.stdout);
+      const patch = fd("--default", "main", "--patch", "--", "apps/api");
+      check("a surface-scoped patch carries the untracked file's hunk",
+        patch.status === 0 && /\+\+\+ b\/apps\/api\/new\.ts/.test(patch.stdout) && !/apps\/web/.test(patch.stdout),
+        patch.stdout.slice(0, 200));
+      check("a surface path that does not exist yet ⇒ empty diff, exit 0 (not a failure)",
+        fd("--default", "main", "--numstat", "--", "apps/none").status === 0);
+
+      // A staged edit in the human's real index must survive the run, bit for bit.
+      put("apps/api/a.ts", "staged\n"); g("add", "apps/api/a.ts"); put("apps/api/a.ts", "staged then edited\n");
+      const before2 = snap();
+      const num2 = fd("--default", "main", "--numstat");
+      check("a modified tracked file is in the diff (working-tree content)",
+        /apps\/api\/a\.ts/.test(num2.stdout), num2.stdout);
+      check("the real index and the untracked set are untouched",
+        snap() === before2 && before !== before2, "index or status changed under feature-diff.sh");
+
+      const base = fd("--default", "main", "--base-only").stdout.trim();
+      const d1 = fd("--default", "main", "--digest").stdout.trim();
+      const d2 = fd("--base", base, "--digest").stdout.trim();
+      check("--digest is 16 hex and identical through --default and --base <merge-base>",
+        /^[0-9a-f]{16}$/.test(d1) && d1 === d2, `${d1} vs ${d2}`);
+      put("apps/api/another.ts", "x\n");
+      check("--digest moves when an untracked file appears (the freshness stamp sees new files)",
+        fd("--base", base, "--digest").stdout.trim() !== d1);
+      check("an unresolvable base ⇒ exit 3, never an empty 'clean' diff",
+        fd("--default", "no-such-branch", "--numstat").status === 3);
+      check("a usage error ⇒ exit 2", fd("--numstat").status === 2);
+
+      // A fleet worktree branches off origin/<default>, and the local default can lag it:
+      // the newer of the two merge-bases must win, or the remote's commits read as the feature's.
+      g("add", "-A"); g("commit", "-qm", "wip");
+      g("update-ref", "refs/remotes/origin/main", "main");
+      g("switch", "-qc", "feat/y", "origin/main");
+      g("branch", "-f", "main", "main~1");
+      put("apps/api/y.ts", "y\n");
+      const ny = fd("--default", "main", "--numstat");
+      check("local default behind origin/<default> ⇒ the remote merge-base wins (no phantom adds)",
+        ny.status === 0 && /apps\/api\/y\.ts/.test(ny.stdout) && !/mainonly\.txt/.test(ny.stdout), ny.stdout);
+
+      // D3 — /cohorte-fleet provisions worktrees off origin/<default>, where the frozen (but
+      // uncommitted) spec does not exist: the rendered new-feature.sh must carry it in.
+      const tpl = readFileSync(join(root, "scripts", "new-feature.sh.template"), "utf8")
+        .replace(/__PROJECT_SLUG__/g, "demo").replace(/__BRANCH_PREFIX__/g, "feat/")
+        .replace(/__DEFAULT_BRANCH__/g, "main").replace(/__API_PORT_BASE__/g, "3000")
+        .replace(/__WEB_PORT_BASE__/g, "5000").replace(/__(INSTALL|MIGRATE|DEV)_CMD__/g, "true");
+      g("switch", "-q", "main");
+      put("scripts/new-feature.sh", tpl);
+      put("specs/fleet-a.md", "---\nstatus: frozen\n---\n"); put("specs/design/fleet-a.md", "brief\n");
+      put("packages/shared/src/fleet-a.ts", "export {}\n"); put("apps/api/unrelated.ts", "x\n");
+      const nf = spawnSync("bash", [join(dir, "scripts", "new-feature.sh"), "fleet-a"], { cwd: dir, env, encoding: "utf8" });
+      const wt = join(dir, "..", `demo-fleet-a`);
+      const has = rel => { try { readFileSync(join(wt, rel)); return true; } catch { return false; } };
+      check("new-feature.sh carries the uncommitted spec, design brief and contract into the worktree",
+        nf.status === 0 && has("specs/fleet-a.md") && has("specs/design/fleet-a.md") && has("packages/shared/src/fleet-a.ts"),
+        JSON.stringify([nf.status, nf.stdout.slice(-400), nf.stderr.slice(-300)]));
+      check("…and nothing that is not named after the feature", !has("apps/api/unrelated.ts"));
+      spawnSync("git", ["worktree", "remove", "--force", wt], { cwd: dir, env });
+    } finally {
+      rmSync(outer, { recursive: true, force: true });
+    }
+  }
 }
 
 console.log("");

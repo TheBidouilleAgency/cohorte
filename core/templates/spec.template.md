@@ -1,7 +1,7 @@
 ---
 feature_id: <slug>
 title: <Feature title>
-status: draft # draft → frozen → in-progress → in-review → shipped · blocked (see SCHEMA.md §Spec status)
+status: draft # draft → frozen → in-progress → in-review → shipped → merged · blocked · abandoned (see SCHEMA.md §Spec status)
 branch: <feature_branch_prefix><slug>
 created: <YYYY-MM-DD>
 reviewed_base: # merge-base sha at the last SHIP verdict — freshness-gate anchor (written by /cohorte-review)
@@ -52,9 +52,10 @@ design_files: [] # design page links — full URLs of the form https://claude.ai
 ## 6. Surface tasks
 
 > One `###` subsection per surface in `PIPELINE.md` §surfaces (e.g. backend, frontend), each TDD.
-> Surfaces are subsections of §6, never top-level sections — §8 and §9 are referenced by number
-> across the whole pipeline (`/cohorte-build` implements "§8 flows", `/cohorte-review` checks "§9 acceptance"), so a
-> third surface must not become a §8 of its own.
+> Surfaces are subsections of §6, never top-level sections — §5, §8 and §9 are referenced by number
+> across the whole pipeline (the implementer and reviewer agents read "contract §5, acceptance §9",
+> `/cohorte-spec` writes the design brief summary into §8), so a third surface must not become a §7
+> or §8 of its own. (§7 is deliberately absent here — the patch template uses it for Out of scope.)
 
 ### <surface.key>
 
@@ -83,5 +84,5 @@ design_files: [] # design page links — full URLs of the form https://claude.ai
 
 ## Remediation
 
-> Filled by `/cohorte-spec` in review-return mode; empty otherwise. Each item:
+> Filled by `/cohorte-fix` (or `/cohorte-spec` Mode B) from a REVIEW REPORT; empty otherwise. Each item:
 > `[ ] <SEVERITY> · <file:line> · <spec-violation|quality|security> · <concrete fix>`

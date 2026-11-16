@@ -1,5 +1,5 @@
 ---
-name: profile-reader
+name: cohorte-profile-reader
 description: Reads PIPELINE.md and returns its `yaml pipeline-profile` block as compact JSON. Phase 0 of every cohorte workflow — workflow scripts have no filesystem or shell access, so this agent is how a script learns the profile (surfaces, commands, flags). Mechanical, read-only, no judgment.
 tools: Read, Grep, Glob
 model: haiku

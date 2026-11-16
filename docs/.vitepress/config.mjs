@@ -5,7 +5,7 @@ import { defineConfig } from 'vitepress'
 export default defineConfig({
   title: 'Cohorte',
   description:
-    'Portable, stack-agnostic multi-agent development pipeline for Claude Code — install the core, run /cohorte-init-pipeline, and it adapts to your project.',
+    'Portable, stack-agnostic multi-agent development pipeline for Claude Code — install it once per machine, run /cohorte-init-pipeline in a repo, and it adapts to that project.',
   base: '/cohorte/',
   lastUpdated: true,
   head: [['link', { rel: 'icon', type: 'image/png', href: '/cohorte/favicon-32.png' }]],
@@ -58,8 +58,8 @@ export default defineConfig({
             { text: 'The profile (PIPELINE.md)', link: '/reference/profile' },
             { text: 'Gate & permissions', link: '/reference/gate' },
             { text: 'Shipped scripts', link: '/reference/scripts' },
-            { text: 'Runtimes (Codex, Cursor, Gemini, OpenCode)', link: '/reference/runtimes' },
             { text: 'Installers & updates', link: '/reference/installers' },
+            { text: 'Migrating from 2.x', link: '/reference/installers#migrating-from-2-x' },
             { text: 'Troubleshooting', link: '/reference/troubleshooting' },
           ],
         },

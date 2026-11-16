@@ -7,6 +7,68 @@ short, user-facing, most recent first. One `## <version> — <YYYY-MM-DD>` secti
 > They are history and are deliberately not rewritten — every command gained a `cohorte-` prefix
 > in 2.0.0.
 
+## 3.0.0 — 2026-11-16
+
+**One install mode, Claude Code only.** The machine gets the commands and the generic core;
+everything that describes a project lives in that project and is committed with it.
+
+- **Install once per machine:** `npm i -g cohorte && cohorte install`. It writes
+  `~/.claude/commands/cohorte-*.md`, `~/.claude/agents/cohorte-*.md`,
+  `~/.claude/workflows/cohorte-*.js` and the core in `~/.claude/cohorte/` — and **no**
+  machine-wide hook. `--global` is accepted and means nothing now; the 2.x "bundled" mode (a core
+  copied into each repo) is gone.
+- **The gate lives in the repo:** `/cohorte-init-pipeline` and `/cohorte-update-pipeline` run
+  `cohorte sync`, which copies the gate to `.claude/hooks/cohorte-gate.py`, registers it in
+  `.claude/settings.json` (`Bash|Task|Agent` + `Write|Edit|MultiEdit`, fail-closed), writes the
+  `.claude/pipeline.json` pointer and the `.gitignore` entries. Commit them: a teammate who clones
+  is protected before installing anything.
+- **Surface agents always render into the project's `.claude/agents`.** In 2.x global mode they
+  went to `~/.claude/agents`, where two projects with a `frontend` surface overwrote each other.
+- **Your files are safe:** the install keeps a manifest of what it wrote, never deletes anything
+  else (2.x removed any `~/.claude/commands/review.md`, `build.md`, `spec.md`…), backs up a file of
+  ours you edited before refreshing it, never resets a `settings.json` it cannot parse (it stops
+  instead), and never removes another tool's hook.
+- **`cohorte uninstall`** (`--purge` for your config, `--project` for one repo's gate wiring).
+- **Renamed:** the fixed agents are `cohorte-review`, `cohorte-release`, `cohorte-profile-reader`;
+  the workflow files are `cohorte-*.js`. A 2.x `gate.preflight.agents: [review]` still gates.
+- **Codex, Cursor, Gemini CLI and OpenCode are no longer supported.** Stay on `cohorte@2.10.2` for
+  them; the source is on the `archive/multi-runtime` branch.
+- **Migrating from 2.x:** `npm i -g cohorte@latest && cohorte update` (removes the 2.x hook from
+  `~/.claude/settings.json` first, then moves the 2.x core to `~/.claude/cohorte/legacy-backup/`),
+  then `/cohorte-update-pipeline` in each project. Tried the discontinued Python line? Run
+  `uv tool uninstall cohorte-engine` and delete `~/.cohorte/`.
+- **A gate that parses commands.** The hook used to grep the command text: `git push origin main
+  --force`, `git push origin +main`, `git push origin feat:main` or `git -C . push -f` all got
+  through. It now reads commands like a shell (quotes, continuations, `$(…)`, `sh -c`, env/sudo
+  prefixes, git global options and aliases), judges `git push` by its flags **and its destination
+  branch**, treats a detached HEAD or a `git switch main && …` chain as the default branch, and
+  denies a force push to the default branch in every Cohorte project even without a config. It
+  **fails closed** (an error, a malformed payload or an invalid `gate-config.json` no longer let the
+  command through), protects its own files from the agent, binds the preflight stamp to the checkout
+  that earned it, and its phase gate now sees `Agent` dispatches (the tool's name since Claude Code
+  2.1.63 — the old `Bash|Task` matcher never fired). Still a guard against agent mistakes, not a
+  sandbox: keep branch protection on the remote.
+- **Review sees what the feature changed.** Every diff (review, implementer self-check, freshness
+  stamp, ship) goes through `<core>/pipeline/scripts/feature-diff.sh`: untracked files are included
+  (new modules used to escape review entirely, and a feature that only added files scored SHIP) and
+  the base is the merge-base, so commits landing on `main` no longer show up as deletions. Existing
+  freshness stamps re-review once.
+- **Ship gates on the verdict file:** `/cohorte-ship` requires `verdict.json` = SHIP with no
+  unreviewed surface and no HIGH/MEDIUM left (a missing stamp no longer reads as "legacy, skip").
+- **Fixes across the cycle:** `/cohorte-fleet` worktrees now get their spec, design brief and
+  contract (re-render `scripts/new-feature.sh` with `/cohorte-update-pipeline`); the loop workflow
+  really resumes after a resumable stop, and `/cohorte-build <id> --readiness-only` refreshes the
+  readiness verdict without a rebuild; the audit workflow no longer wipes the deferred backlog;
+  `/cohorte-review --pr` runs nothing from a non-collaborator's PR without your go-ahead and installs
+  with `--ignore-scripts`; one verdict rule; a dead reviewer is retried once; `/cohorte-build`
+  creates the feature branch when isolation is off; `feature_id` no longer drifts between
+  brainstorm and spec; the dead `design.inline` option is gone.
+- **Lifecycle:** specs gain `merged` (reconciled from `gh pr view`) and `abandoned` statuses.
+- **Requirements:** Node ≥ 20, Python ≥ 3.9 as `python3`. `doctor` no longer crashes on an
+  indentless YAML list, `- db:wipe` stays a string, and `metrics --days=abc` is an error.
+- **Releases:** publishing now waits for CI to pass on `main` and for a maintainer's approval;
+  `install.sh` / `install.ps1` install the latest release tag instead of the tip of `main`.
+
 ## 2.10.2 — 2026-11-09
 
 - **Back to the prompt-driven pipeline.** This release restores the 2.10.1 tree as is: the

@@ -3,8 +3,7 @@
 //
 // These are shipped runtime code behind `cohorte doctor` and `cohorte specs`
 // (and the Francois panels that call them): a hand-rolled YAML parser every
-// check derives from, the JS port of /cohorte-doctor, and the runtime-layout
-// resolver that decides where a given coding agent keeps its core.
+// check derives from, and the JS port of /cohorte-doctor.
 //
 //   node scripts/test-lib.mjs
 
@@ -18,7 +17,6 @@ const require = createRequire(import.meta.url);
 const root = fileURLToPath(new URL("..", import.meta.url));
 const { parse, parseProfileBlock } = require(join(root, "lib/yaml.js"));
 const { state, scanSpecs } = require(join(root, "lib/doctor.js"));
-const adapter = require(join(root, 'core/adapter/render.js'));
 
 let failures = 0;
 const check = (name, cond, detail = "") => {
@@ -31,7 +29,7 @@ const eq = (name, got, want) =>
 const tmps = [];
 const scratch = () => { const d = mkdtempSync(join(tmpdir(), "cohorte-lib-")); tmps.push(d); return d; };
 const write = (p, s) => { mkdirSync(join(p, ".."), { recursive: true }); writeFileSync(p, s); };
-// Runtime discovery must not pick up Cohorte installations from the developer's real home.
+// Doctor must not pick up a Cohorte installation from the developer's real home.
 const os = require('node:os');
 const originalHomedir = os.homedir;
 os.homedir = () => isolatedHome;
@@ -58,10 +56,22 @@ console.log("yaml.js — the profile parser");
     "cd x && node ace migration:run");
   eq("empty flow array", parse("a: []").a, []);
   check("no fenced block ⇒ null", parseProfileBlock("# just prose") === null);
+  // Shapes that crashed `cohorte doctor` or silently changed meaning before 3.0.
+  eq("indentless sequence (`key:` then `- a` at the same indent)",
+    parse("deny:\n- git push -f\n- git reset\nask:\n- y"), { deny: ["git push -f", "git reset"], ask: ["y"] });
+  eq("`- db:wipe` is a scalar, not a one-key map", parse("d:\n  - node ace db:wipe").d, ["node ace db:wipe"]);
+  eq("a URL item stays a scalar", parse("u:\n  - http://x.y/z").u, ["http://x.y/z"]);
+  eq("extra spaces after the dash keep every key of the item",
+    parse("s:\n  -   key: a\n      path: x").s, [{ key: "a", path: "x" }]);
+  eq("`|` block scalar keeps newlines (and a # inside it)", parse("n: |\n  one\n  two # x\nk: 1"), { n: "one\ntwo # x", k: 1 });
+  eq("`>` block scalar folds", parse("n: >\n  one\n  two\n").n, "one two");
+  eq("double-quoted escapes are decoded", parse('q: "a \\"b\\" \\\\ c"').q, 'a "b" \\ c');
+  eq("floats are numbers", parse("f: 1.5").f, 1.5);
+  eq("blank lines inside a map are fine", parse("a:\n  b: 1\n\n  c: 2").a, { b: 1, c: 2 });
 
   // The real thing: the shipped template must round-trip.
   const tpl = readFileSync(join(root, "profile/PIPELINE.template.md"), "utf8");
-  const p = parseProfileBlock(adapter.adaptInstructions(tpl, adapter.loadRuntime('claude')));
+  const p = parseProfileBlock(tpl);
   check("the shipped PIPELINE.template.md parses", !!p);
   eq("…surfaces are a list of 2", (p.surfaces || []).length, 2);
   eq("…surface tools survive as an array", p.surfaces[0].tools.length, 7);
@@ -97,12 +107,13 @@ console.log("doctor.js — the /cohorte-doctor port");
 }
 {
   // A fully-wired synthetic project must come back green on the checks that can
-  // be computed from disk.
+  // be computed from disk. Layout (3.x): the core in <globalDir>/cohorte, the gate in
+  // the project.
   const g = scratch();                       // stands in for ~/.claude
   const d = scratch();
   const gate = {
     deny: ["x"], ask: ["y"], ask_on_default_branch: ["git push"], default_branch: "main",
-    preflight: { enabled: true, agents: ["review"], max_age_minutes: 30 },
+    preflight: { enabled: true, agents: ["cohorte-review"], max_age_minutes: 30 },
   };
   writeFileSync(join(d, "PIPELINE.md"), [
     "```yaml pipeline-profile",
@@ -120,234 +131,127 @@ console.log("doctor.js — the /cohorte-doctor port");
     '  ask_on_default_branch: ["git push"]',
     "  preflight:",
     "    enabled: true",
-    "    agents: [review]",
+    "    agents: [cohorte-review]",
     "    max_age_minutes: 30",
     "```",
   ].join("\n"));
-  mkdirSync(join(d, ".claude", "agents"), { recursive: true });
-  mkdirSync(join(d, ".claude", "pipeline"), { recursive: true });
-  writeFileSync(join(d, ".claude", "pipeline", "VERSION"), "9.9.9\n");
-  writeFileSync(join(d, ".claude", "agents", "backend.md"), "x");
-  writeFileSync(join(d, ".claude", "gate-config.json"), JSON.stringify(gate));
-  writeFileSync(join(d, ".mcp.json"), JSON.stringify({ mcpServers: { serena: {} } }));
-  mkdirSync(join(d, ".claude", "workflows"), { recursive: true });
-  for (const w of ["review.js", "audit.js", "refactor.js", "loop.js"]) {
-    writeFileSync(join(d, ".claude", "workflows", w), "x");
+  write(join(g, "cohorte", "pipeline", "VERSION"), "9.9.9\n");
+  for (const w of ["cohorte-review.js", "cohorte-audit.js", "cohorte-refactor.js", "cohorte-loop.js"]) {
+    write(join(g, "workflows", w), "x");
   }
-  writeFileSync(join(d, ".claude", "agents", "profile-reader.md"), "x");
-  writeFileSync(join(d, ".claude", "settings.json"), JSON.stringify({
-    hooks: { PreToolUse: [{ matcher: "Bash|Task", hooks: [{ type: "command", command: 'py "C:\\x\\gate.py"' }] }] },
-  }));
+  write(join(g, "agents", "cohorte-profile-reader.md"), "x");
+  write(join(d, ".claude", "agents", "backend.md"), "x");
+  writeFileSync(join(d, ".claude", "gate-config.json"), JSON.stringify(gate));
+  writeFileSync(join(d, ".claude", "pipeline.json"), JSON.stringify({ pipeline: "cohorte", core_version: "9.9.9" }));
+  write(join(d, ".claude", "hooks", "cohorte-gate.py"), "# gate");
+  writeFileSync(join(d, ".mcp.json"), JSON.stringify({ mcpServers: { serena: {} } }));
+  const hook = { type: "command", command: 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/cohorte-gate.py"' };
+  const wired = { hooks: { PreToolUse: [
+    { matcher: "Bash|Task|Agent", hooks: [hook] }, { matcher: "Write|Edit|MultiEdit", hooks: [hook] },
+  ] } };
+  writeFileSync(join(d, ".claude", "settings.json"), JSON.stringify(wired));
 
   const by = (checks, id) => checks.find(c => c.id === id);
-  let s = await state({ projectRoot: d, globalDir: g, cliVersion: "9.9.9" });
+  let s = await state({ projectRoot: d, globalDir: g, cliVersion: "9.9.9", offline: true });
+  eq("core in <globalDir>/cohorte ⇒ ok", by(s.checks, "core").status, "ok");
   eq("profile parses ⇒ ok", by(s.checks, "profile").status, "ok");
   eq("surface agent present ⇒ ok", by(s.checks, "agents").status, "ok");
   eq("gate mirrors the profile ⇒ ok", by(s.checks, "gate").status, "ok");
-  eq("Windows-quoted hook command is recognised", by(s.checks, "hooks").status, "ok");
+  // Not a git repo here, so "committed" is unknown — never reported as a failure.
+  eq("project gate registered for Bash|Task|Agent + Write|Edit ⇒ ok", by(s.checks, "hooks").status, "ok");
   eq("retrieval wired in .mcp.json ⇒ ok", by(s.checks, "retrieval").status, "ok");
-  eq("workflows + profile-reader ⇒ ok", by(s.checks, "workflows").status, "ok");
+  eq("workflows + cohorte-profile-reader ⇒ ok", by(s.checks, "workflows").status, "ok");
+  eq("the --json shape keeps a runtimes[] for panels", s.runtimes.map(r => r.id), ["claude"]);
 
-  // Local artifacts: a versioned preflight stamp is what made the phase gate ask on
-  // every review dispatch forever, so its absence from .gitignore is a hard failure.
   check("no .gitignore ⇒ local artifacts flagged bad (the stamp is the breaking one)",
     by(s.checks, "artifacts").status === "bad"
       && /preflight\.ok/.test(by(s.checks, "artifacts").detail),
     by(s.checks, "artifacts").detail);
   writeFileSync(join(d, ".gitignore"),
     "node_modules/\n.claude/preflight.ok\n.claude/pipeline-metrics.jsonl\nspecs/reports/\n");
-  s = await state({ projectRoot: d, globalDir: g, cliVersion: "9.9.9" });
+  s = await state({ projectRoot: d, globalDir: g, cliVersion: "9.9.9", offline: true });
   eq("all local artifacts gitignored ⇒ ok", by(s.checks, "artifacts").status, "ok");
-  writeFileSync(join(d, ".gitignore"), "node_modules/\n.claude/\nspecs/reports/\n");
-  s = await state({ projectRoot: d, globalDir: g, cliVersion: "9.9.9" });
-  eq("a `.claude/` directory rule covers the files inside it",
-    by(s.checks, "artifacts").status, "ok");
 
-  // …and each check must actually FAIL when its precondition breaks.
   writeFileSync(join(d, ".claude", "gate-config.json"),
     JSON.stringify({ ...gate, preflight: { enabled: false } }));
-  s = await state({ projectRoot: d, globalDir: g, cliVersion: "9.9.9" });
+  s = await state({ projectRoot: d, globalDir: g, cliVersion: "9.9.9", offline: true });
   check("gate-config preflight drift is detected",
     by(s.checks, "gate").status === "warn" && /preflight/.test(by(s.checks, "gate").detail),
     by(s.checks, "gate").detail);
   writeFileSync(join(d, ".claude", "gate-config.json"), JSON.stringify(gate));
 
-  writeFileSync(join(d, ".claude", "settings.json"), JSON.stringify({
-    hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "python3 /x/gate.py" }] }] },
-  }));
-  s = await state({ projectRoot: d, globalDir: g, cliVersion: "9.9.9" });
-  check("a Bash-only matcher is flagged (the 1.3.0 dead phase gate)",
-    by(s.checks, "hooks").status === "warn" && /Task/.test(by(s.checks, "hooks").detail),
-    by(s.checks, "hooks").detail);
+  // The hook check must FAIL each way it can actually break.
+  const setHooks = (groups) => writeFileSync(join(d, ".claude", "settings.json"),
+    JSON.stringify({ hooks: { PreToolUse: groups } }));
+  setHooks([{ matcher: "Bash|Task", hooks: [hook] }, { matcher: "Write|Edit|MultiEdit", hooks: [hook] }]);
+  s = await state({ projectRoot: d, globalDir: g, cliVersion: "9.9.9", offline: true });
+  check("a matcher without Agent is bad (the phase gate never fires on Claude Code ≥ 2.1.63)",
+    by(s.checks, "hooks").status === "bad" && /Agent/.test(by(s.checks, "hooks").detail), by(s.checks, "hooks").detail);
+  setHooks([{ matcher: "Bash|Task|Agent", hooks: [hook] }, { matcher: "Bash", hooks: [hook] },
+    { matcher: "Write|Edit|MultiEdit", hooks: [hook] }]);
+  s = await state({ projectRoot: d, globalDir: g, cliVersion: "9.9.9", offline: true });
+  check("a duplicate Bash registration is flagged (it double-prompts)",
+    by(s.checks, "hooks").status === "warn" && /2×/.test(by(s.checks, "hooks").detail), by(s.checks, "hooks").detail);
+  writeFileSync(join(d, ".claude", "settings.json"), JSON.stringify(wired));
+  rmSync(join(d, ".claude", "hooks", "cohorte-gate.py"));
+  s = await state({ projectRoot: d, globalDir: g, cliVersion: "9.9.9", offline: true });
+  check("registered but missing gate file is bad (fail-closed hook refuses every Bash call)",
+    by(s.checks, "hooks").status === "bad" && /missing/.test(by(s.checks, "hooks").detail), by(s.checks, "hooks").detail);
+  write(join(d, ".claude", "hooks", "cohorte-gate.py"), "# gate");
+  writeFileSync(join(d, ".claude", "settings.json"), '{"hooks": {,}}');
+  s = await state({ projectRoot: d, globalDir: g, cliVersion: "9.9.9", offline: true });
+  eq("invalid settings.json is bad", by(s.checks, "hooks").status, "bad");
+  writeFileSync(join(d, ".claude", "settings.json"), JSON.stringify(wired));
+  write(join(g, "settings.json"), JSON.stringify({ hooks: { PreToolUse: [
+    { matcher: "Bash|Task", hooks: [{ type: "command", command: `python3 "${join(g, "hooks", "gate.py")}"` }] }] } }));
+  s = await state({ projectRoot: d, globalDir: g, cliVersion: "9.9.9", offline: true });
+  check("a leftover 2.x machine-wide gate is flagged",
+    by(s.checks, "hooks").status === "warn" && /2\.x/.test(by(s.checks, "hooks").detail), by(s.checks, "hooks").detail);
+  rmSync(join(g, "settings.json"));
 
-  writeFileSync(join(d, ".claude", "settings.json"), JSON.stringify({
-    hooks: { PreToolUse: [
-      { matcher: "Bash|Task", hooks: [{ type: "command", command: "python3 /x/gate.py" }] },
-      { matcher: "Bash|Task", hooks: [{ type: "command", command: 'py "/x/gate.py"' }] },
-    ] },
-  }));
-  s = await state({ projectRoot: d, globalDir: g, cliVersion: "9.9.9" });
-  check("a duplicate registration is flagged (it double-prompts)",
-    by(s.checks, "hooks").status === "warn" && /2×/.test(by(s.checks, "hooks").detail),
-    by(s.checks, "hooks").detail);
+  // 2.x layouts are named, with the migration as the fix.
+  writeFileSync(join(d, ".claude", "pipeline.json"), JSON.stringify({ pipeline: "cohorte", mode: "global", core_version: "2.10.2" }));
+  s = await state({ projectRoot: d, globalDir: g, cliVersion: "9.9.9", offline: true });
+  check("a 2.x pointer (mode:) is a warn naming the migration",
+    by(s.checks, "core").status === "warn" && /mode/.test(by(s.checks, "core").detail), by(s.checks, "core").detail);
+  writeFileSync(join(d, ".claude", "pipeline.json"), JSON.stringify({ pipeline: "cohorte", core_version: "1.0.0" }));
+  s = await state({ projectRoot: d, globalDir: g, cliVersion: "9.9.9", offline: true });
+  check("a lagging pointer is a warn fixed by cohorte sync",
+    by(s.checks, "core").status === "warn" && /sync/.test(by(s.checks, "core").fix || ""), by(s.checks, "core").detail);
+  writeFileSync(join(d, ".claude", "pipeline.json"), JSON.stringify({ pipeline: "cohorte", core_version: "9.9.9" }));
+
+  rmSync(join(d, ".claude", "agents", "backend.md"));
+  write(join(g, "agents", "backend.md"), "x");
+  s = await state({ projectRoot: d, globalDir: g, cliVersion: "9.9.9", offline: true });
+  check("a surface agent only in ~/.claude/agents (2.x global) is a warn, not ok",
+    by(s.checks, "agents").status === "warn" && /2\.x/.test(by(s.checks, "agents").detail), by(s.checks, "agents").detail);
+  rmSync(join(g, "agents", "backend.md"));
+  s = await state({ projectRoot: d, globalDir: g, cliVersion: "9.9.9", offline: true });
+  eq("a surface agent missing everywhere is bad", by(s.checks, "agents").status, "bad");
+  write(join(d, ".claude", "agents", "backend.md"), "x");
 
   rmSync(join(d, ".mcp.json"));
   writeFileSync(join(d, ".claude", "agents", "orphan.md"), "x");
-  s = await state({ projectRoot: d, globalDir: g, cliVersion: "9.9.9" });
+  write(join(d, ".claude", "agents", "cohorte-review.md"), "x");
+  s = await state({ projectRoot: d, globalDir: g, cliVersion: "9.9.9", offline: true });
   check("provider declared but never wired ⇒ warn",
     by(s.checks, "retrieval").status === "warn", by(s.checks, "retrieval").detail);
-  check("an agent file with no surface ⇒ orphan warn",
-    by(s.checks, "agents").status === "warn" && /orphan/.test(by(s.checks, "agents").detail),
+  check("an agent file with no surface ⇒ orphan warn (a shipped agent name is not an orphan)",
+    by(s.checks, "agents").status === "warn" && /orphan\b/.test(by(s.checks, "agents").detail)
+      && !/cohorte-review/.test(by(s.checks, "agents").detail),
     by(s.checks, "agents").detail);
 
   const bare = scratch();
-  s = await state({ projectRoot: bare, globalDir: g, cliVersion: "9.9.9" });
+  s = await state({ projectRoot: bare, globalDir: g, cliVersion: "9.9.9", offline: true });
   eq("no PIPELINE.md ⇒ profile bad", by(s.checks, "profile").status, "bad");
+  eq("not a cohorte project ⇒ the hook check is skipped, not failed", by(s.checks, "hooks").status, "skip");
+  s = await state({ projectRoot: bare, globalDir: scratch(), cliVersion: "9.9.9", offline: true });
   eq("no core ⇒ core bad", by(s.checks, "core").status, "bad");
-}
-
-// ── runtime.js + a non-Claude layout ────────────────────────────────────────
-// Every path-dependent check used to assume `.claude/`. On a repo driven from Cursor that
-// reported a healthy install as three ❌ and a ⚠️ — no core, no rendered agent, artifacts not
-// ignored, hook not registered — and every one was wrong. A false red is worse than no check:
-// it sends a human fixing something that is not broken.
-console.log("doctor.js — a non-Claude runtime layout");
-{
-  const d = scratch();
-  const g = join(d, "global-claude");
-  mkdirSync(g, { recursive: true });
-
-  const core = join(d, ".cohorte", "cursor");
-  mkdirSync(join(core, "pipeline"), { recursive: true });
-  writeFileSync(join(core, "pipeline", "VERSION"), "9.9.9\n");
-  writeFileSync(join(core, "pipeline", "runtimes.json"), JSON.stringify({
-    cursor: {
-      label: "Cursor", scope: "project", core_version: "9.9.9",
-      capabilities: { subagents: true, hooks: true, workflows: false, tool_restriction: true },
-      paths: {
-        core, commands: join(d, ".cursor", "commands"), agents: join(d, ".cursor", "agents"),
-        hooks_config: join(d, ".cursor", "hooks.json"), state: ".cohorte",
-      },
-    },
-  }));
-  mkdirSync(join(d, ".cursor", "agents"), { recursive: true });
-  writeFileSync(join(d, ".cursor", "agents", "api.md"), "---\nname: api\n---\n");
-  writeFileSync(join(d, ".cursor", "hooks.json"), JSON.stringify({
-    version: 1,
-    hooks: { beforeShellExecution: [{ command: `python3 ${core}/hooks/gate.py --runtime cursor` }] },
-  }));
-  mkdirSync(join(d, ".cohorte"), { recursive: true });
-  const gate = { deny: ["rm -rf /"], ask: [], ask_on_default_branch: [], default_branch: "main" };
-  writeFileSync(join(d, ".cohorte", "gate-config.json"),
-    JSON.stringify({ ...gate, preflight: { enabled: false } }));
-  writeFileSync(join(d, ".gitignore"),
-    ".cohorte/preflight.ok\n.cohorte/pipeline-metrics.jsonl\nspecs/reports/\n");
-  writeFileSync(join(d, "PIPELINE.md"), [
-    "```yaml pipeline-profile", "name: demo",
-    "surfaces:", "  - key: api", "    path: src/api", "    agent: api",
-    "gate:", "  deny:", "    - rm -rf /", "  default_branch: main",
-    "  preflight:", "    enabled: false", "```",
-  ].join("\n"));
-
-  const s = await state({ projectRoot: d, globalDir: g, cliVersion: "9.9.9" });
-  const pick = id => s.checks.find(c => c.id === id) || {};
-  const st = id => pick(id).status;
-  const dt = id => pick(id).detail;
-
-  eq("the runtime is discovered from runtimes.json", s.runtimes.map(r => r.id), ["cursor"]);
-  check("the core in .cohorte/<id>/ counts as installed", st("core") === "ok", dt("core"));
-  check("agents are looked for in .cursor/agents", st("agents") === "ok", dt("agents"));
-  check("gate-config is read from .cohorte, not .claude", st("gate") === "ok", dt("gate"));
-  check("artifact paths are named against the right state dir",
-    st("artifacts") === "ok" && !/\.claude/.test(dt("artifacts")), dt("artifacts"));
-  // Cursor's registration is a flat {command} under beforeShellExecution — read with Claude's
-  // matcher-group shape it looks absent, which is exactly the false red this guards.
-  check("the Cursor hook envelope is recognised", st("hooks") === "ok", dt("hooks"));
-  check("workflows are skipped, not reported missing",
-    st("workflows") === "skip" && /Cursor/.test(dt("workflows")), dt("workflows"));
-  check("nothing is reported broken on a healthy non-Claude install",
-    s.summary.bad === 0 && s.summary.warn === 0, JSON.stringify(s.summary));
-}
-
-// Codex's global core supplies fixed agents; each consuming repo owns its surfaces.
-{
-  const d = scratch();
-  const g = join(d, 'global');
-  write(join(g, 'pipeline/VERSION'), '9.9.9\n');
-  write(join(g, 'pipeline/runtimes.json'), JSON.stringify({ codex: {
-    label: 'Codex', scope: 'global', capabilities: { subagents: true, hooks: true, workflows: false },
-    paths: { core: g, agents: join(g, 'agents'), hooks_config: join(g, 'hooks.json'), state: '.cohorte' },
-  } }));
-  // Legacy registry intentionally has no surface_agents or agent_ext fields.
-  write(join(g, 'agents/unrelated.toml'), 'name = "unrelated"\n');
-  const hook = matcher => write(join(g, 'hooks.json'), JSON.stringify({ hooks: {
-    PreToolUse: [{ matcher, hooks: [{ command: `python3 ${g}/hooks/gate.py --runtime codex` }] }],
-  } }));
-  hook('Bash|shell');
-  const a = join(d, 'project-a'), b = join(d, 'project-b');
-  for (const repo of [a, b]) {
-    write(join(repo, 'PIPELINE.md'), '```yaml pipeline-profile\nname: example\nsurfaces:\n  - key: api\n    agent: api\nretrieval:\n  provider: serena\n```\n');
-    write(join(repo, '.codex/agents/api.toml'), 'name = "api"\ndescription = "API"\ndeveloper_instructions = "Implement"\n');
-    write(join(repo, '.codex/config.toml'), '[mcp_servers.serena]\ncommand = "serena"\n');
-  }
-  const inspect = repo => state({ projectRoot: repo, globalDir: g, cliVersion: '9.9.9' });
-  const status = (s, id) => s.checks.find(c => c.id === id)?.status;
-  let s = await inspect(a);
-  check('Codex doctor accepts project TOML agents with a legacy global registry', status(s, 'agents') === 'ok');
-  check('Codex doctor rejects a shell-only preflight hook', status(s, 'hooks') === 'warn');
-  check('Codex doctor finds native project MCP configuration', status(s, 'retrieval') === 'ok');
-  hook('Bash|spawn_agent');
-  s = await inspect(b);
-  check('a second project resolves its own agents without a launcher', status(s, 'agents') === 'ok');
-  check('Codex doctor accepts the native dispatch matcher', status(s, 'hooks') === 'ok');
-  write(join(b, '.codex/agents/stale.toml'), 'name = "stale"\n');
-  s = await inspect(b);
-  check('Codex doctor detects local orphans even with a global core', status(s, 'agents') === 'warn');
-  write(join(a, '.codex/config.toml'), '# [mcp_servers.serena]\n');
-  write(join(a, '.mcp.json'), JSON.stringify({ mcpServers: { serena: { command: 'serena' } } }));
-  s = await inspect(a);
-  check('a comment or Claude MCP config does not count as Codex registration', status(s, 'retrieval') === 'warn');
-}
-
-// ── runtime.js — stale absolute registry paths (a cloned/moved bundled core) ─
-// runtimes.json records install-time ABSOLUTE paths. A committed core cloned to
-// another machine (or a checkout simply moved) still carries the original paths;
-// taken verbatim, every check went red on a healthy install.
-console.log("runtime.js — registry paths survive a clone/move");
-{
-  const { layouts } = require(join(root, "lib/runtime.js"));
-  const d = scratch();
-  const core = join(d, ".claude");
-  mkdirSync(join(core, "pipeline"), { recursive: true });
-  const theirRoot = join("/Users", "somebody-else", "their-checkout");
-  writeFileSync(join(core, "pipeline", "runtimes.json"), JSON.stringify({
-    claude: {
-      label: "Claude Code", scope: "project", core_version: "9.9.9",
-      paths: {
-        core: join(theirRoot, ".claude"),
-        commands: join(theirRoot, ".claude", "commands"),
-        agents: join(theirRoot, ".claude", "agents"),
-        hooks_config: join(theirRoot, ".claude", "settings.json"),
-        state: ".claude",
-      },
-    },
-  }));
-  const [l] = layouts({ projectRoot: d, globalDir: join(d, "no-global") });
-  check("agents re-rooted onto the probed checkout",
-    l.agents === join(d, ".claude", "agents"), l.agents);
-  check("hooks config re-rooted too",
-    l.hooksConfig === join(d, ".claude", "settings.json"), l.hooksConfig);
-  // A path OUTSIDE the recorded project root (a genuine machine-local absolute,
-  // e.g. a global agents dir) must pass through untouched.
-  writeFileSync(join(core, "pipeline", "runtimes.json"), JSON.stringify({
-    claude: {
-      label: "Claude Code", scope: "project", core_version: "9.9.9",
-      paths: { core: join(theirRoot, ".claude"), agents: "/opt/shared-agents", state: ".claude" },
-    },
-  }));
-  const [l2] = layouts({ projectRoot: d, globalDir: join(d, "no-global") });
-  check("an absolute path outside the recorded root is untouched",
-    l2.agents === "/opt/shared-agents", l2.agents);
+  const old = scratch();
+  write(join(old, "pipeline", "VERSION"), "2.10.2\n");
+  s = await state({ projectRoot: bare, globalDir: old, cliVersion: "9.9.9", offline: true });
+  check("only a 2.x core in ~/.claude ⇒ bad, fixed by cohorte update",
+    by(s.checks, "core").status === "bad" && /update/.test(by(s.checks, "core").fix || ""), by(s.checks, "core").detail);
 }
 
 for (const d of tmps) { try { rmSync(d, { recursive: true, force: true }); } catch { /* best effort */ } }

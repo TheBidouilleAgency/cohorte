@@ -4,7 +4,7 @@ layout: home
 hero:
   name: Cohorte
   text: Multi-agent dev pipeline for Claude Code
-  tagline: Install the core, run /cohorte-init-pipeline, and a portable, stack-agnostic team of agents adapts to your project — spec-driven, TDD-first, token-frugal.
+  tagline: Install once per machine, run /cohorte-init-pipeline in a repo, and a stack-agnostic team of agents adapts to your project — spec-driven, TDD-first, token-frugal, committed with the code.
   image:
     src: /cohorte-avatar-512.png
     alt: Cohorte
@@ -31,7 +31,7 @@ features:
     details: Deterministic preflight aborts before spawning agents on red code. Quiet commands, staged diffs, capped reports, baked conventions, byte-stable prompts for cache hits, /clear-safe at every boundary.
   - icon: 🛡️
     title: Guard-railed autonomy
-    details: A profile-driven PreToolUse gate hard-denies destructive commands, confirm-gates the risky ones (branch-aware), and enforces a preflight phase gate — for every agent, including workflow subagents.
+    details: A profile-driven PreToolUse gate, committed in the repo, hard-denies destructive commands, confirm-gates the risky ones (branch-aware), and enforces a preflight phase gate — for every agent, including workflow subagents. A strong guard against agent mistakes, not a sandbox — keep branch protection on the remote.
   - icon: 🖥️
     title: Readable without an agent
     details: cohorte doctor, specs and metrics report a project's health, board and cost straight from the shell — doctor exits 1 on any bad check, so it drops into CI as-is.
@@ -70,14 +70,15 @@ Three moments of human attention per feature: the brainstorm, the spec freeze, a
 confirmation. Everything in between runs itself — and every stage hands off through files on disk,
 so `/clear` between commands is always safe.
 
-## Install in one line
+## Install
 
 ```sh
-npm i -g cohorte                # once, per machine
-cohorte install --global        # one shared core for every repo on this machine
+npm i -g cohorte                # once per machine — puts `cohorte` on PATH
+cohorte install                 # commands, agents, workflows + core → ~/.claude (idempotent)
 # then, inside your project, in Claude Code:
 /cohorte-init-pipeline
 ```
 
-See [Getting started](/guide/getting-started) for per-project installs, Windows, and what gets
-generated.
+Requires Node ≥ 20, Python ≥ 3.9 as `python3`, and Claude Code. See
+[Getting started](/guide/getting-started) for what gets generated and committed, and
+[Installers & updates](/reference/installers) for updates, uninstall and migrating from 2.x.

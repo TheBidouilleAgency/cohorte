@@ -1,7 +1,8 @@
 # Why not just ask your agent?
 
-Claude Code already writes the feature. Cursor already edits ten files. Every agent already has
-subagents and a `.md` file where you can drop your conventions. So what is a pipeline for?
+Claude Code already writes the feature. It already edits ten files at once, already has
+subagents, and already reads a `CLAUDE.md` where you can drop your conventions. So what is a
+pipeline for?
 
 The honest answer: **for the second hour.** A coding agent is excellent at the first prompt of a
 feature and progressively worse at everything after it — because what it knows lives in a
@@ -40,21 +41,33 @@ discovered after.
 The agent needed a type, so it reached into the shared package. Something else broke. Or two
 parallel agents wrote the same file and the second silently won.
 
-**What Cohorte does instead:** **one owner per tree.** Each surface owns a disjoint path and may
-touch nothing else — enforced in the rendered agent's own frontmatter, not asked for politely in a
-prompt. Shared code gets its own single-owner surface. Nothing is ever edited by two agents.
+**What Cohorte does instead:** **one owner per tree.** Each surface owns a disjoint path: its agent
+is rendered with that tree and told it owns nothing else, and the review flags any write outside
+it as a finding. Shared code gets its own single-owner surface, so no two agents are ever assigned
+the same file. Be clear about what that is — a convention the agents follow and the review
+checks, not a sandbox: an agent *can* still write outside its tree, and the review is what catches
+it.
 
 ## "It ran something it shouldn't have"
 
 `migration:fresh` on the wrong database. A `git push --force`. A `rm -rf` with an unlucky variable.
 Auto-approve is a spectrum and everyone eventually sets it too high.
 
-**What Cohorte does instead:** `gate.py` is a real **blocking PreToolUse hook** — not an
-instruction. It inspects every Bash command from every agent, subagents included, hard-denies the
-destructive ones and confirm-gates the risky ones. It is **branch-aware**, so agents move fast on a
-feature branch while your default branch stays protected. In unattended runs, confirms become
-denies, because nobody is there to answer. And it matches deny patterns across an entire chained
-command, so a hard-denied call can't ride behind a benign one that gets your single "yes".
+**What Cohorte does instead:** the gate is a real **blocking PreToolUse hook** — not an
+instruction. It is committed in the repo (`.claude/hooks/cohorte-gate.py`, registered in
+`.claude/settings.json`), so it protects a teammate who clones before they even install Cohorte.
+It parses every Bash command from every agent, subagents included, hard-denies the destructive
+ones and confirm-gates the risky ones. It is **branch-aware**, so agents move fast on a feature
+branch while your default branch stays protected. In unattended runs, confirms become denies,
+because nobody is there to answer. It matches deny patterns across an entire chained command, so
+a hard-denied call can't ride behind a benign one that gets your single "yes". And it is
+registered fail-closed: if the hook itself cannot run, Claude Code (≥ 2.1.295) blocks the call
+rather than letting it through.
+
+It is a strong guard against agent *mistakes*, not a sandbox. A pattern list cannot anticipate
+every way to spell a destructive operation, and nothing on your machine stops a process that
+wants around it. Keep **GitHub branch protection** on the default branch as the hard boundary for
+the remote.
 
 See [Gate & permissions](/reference/gate).
 
@@ -63,7 +76,8 @@ See [Gate & permissions](/reference/gate).
 You ask the agent that just wrote the code whether the code is good. It says yes. This is not
 dishonesty — it's the same context evaluating its own output against its own assumptions.
 
-**What Cohorte does instead:** review is a **different, read-only agent** (no Write, no Bash) that
+**What Cohorte does instead:** review is a **different, read-only agent** (`cohorte-review`: no
+Write, no Bash) that
 sees the frozen spec and the diff, not the conversation that produced them. CRITICAL and security
 findings are then adversarially cross-checked by a second pass. And a review can't accidentally pass:
 a reviewer that dies returns zero findings, which is byte-identical to a clean surface — so the
@@ -102,7 +116,8 @@ ownership boundaries — where they are cheap, inspectable, and don't degrade wi
 length.
 
 Which is also why it's **markdown, shell, and one Python hook**. Your app code never imports
-anything from Cohorte. Delete the directory and your repo is unchanged.
+anything from Cohorte. `cohorte uninstall --project` removes the gate wiring, and what remains
+(`PIPELINE.md`, the agent files, `specs/`) is plain text your code never reads.
 
 ## When you should *not* use it
 
@@ -113,8 +128,11 @@ anything from Cohorte. Delete the directory and your repo is unchanged.
 - **A codebase with no seams.** The pipeline's central promise is disjoint surfaces. If everything
   lives in one tree that everything else imports, there is nothing to parallelise —
   `/cohorte-audit` will tell you so honestly before you commit to it.
-- **A runtime without real subagents.** That boundary *is* the isolation guarantee, so such a
-  runtime is refused at install rather than degraded around.
+- **A coding agent other than Claude Code.** Since 3.0.0 Cohorte targets Claude Code only: its
+  hook, permission and subagent model are what the guarantees above are built on. Codex, Cursor,
+  Gemini CLI and OpenCode users can stay on `cohorte@2.10.2` (archived on the
+  [`archive/multi-runtime`](https://github.com/TheBidouilleAgency/cohorte/tree/archive/multi-runtime)
+  branch), with no further releases.
 
 Cohorte automates everything between the brainstorm, the spec freeze, and the ship confirmation —
 and deliberately not those three.

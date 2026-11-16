@@ -11,7 +11,7 @@ bounded retries are *code* — free and exact — and the lead stops paying for 
 ## Prerequisites & opt-in
 
 - **Claude Code ≥ 2.1.154** with workflows enabled. `/cohorte-doctor` check 8 reports the full wiring
-  (CLI version, scripts present, `profile-reader` agent, runtime available in-session) and which
+  (CLI version, scripts present, `cohorte-profile-reader` agent, runtime available in-session) and which
   path your session will take.
 - **The conversational commands stay the default and the fallback.** A workflow runs only when
   you explicitly ask ("run the review workflow"). If the
@@ -21,7 +21,7 @@ bounded retries are *code* — free and exact — and the lead stops paying for 
 
 Every script follows the same skeleton:
 
-- **Phase 0 is `profile-reader`.** Workflow scripts have no filesystem or shell access, so a tiny
+- **Phase 0 is `cohorte-profile-reader`.** Workflow scripts have no filesystem or shell access, so a tiny
   read-only haiku agent reads `PIPELINE.md` and returns the machine block as JSON. Every later
   phase is parameterized from that object.
 - **Model routing.** Mechanical phases (profile read, preflight, diff staging, verification,
@@ -33,7 +33,7 @@ Every script follows the same skeleton:
 - **No input mid-run.** A workflow runs to completion without questions. Decisions move to the
   edges: readiness gates refuse doomed launches up front, and everything genuinely human comes
   back in the result.
-- **The gate still applies.** `hooks/gate.py` fires on workflow subagents too (they run in
+- **The gate still applies.** the project gate (`.claude/hooks/cohorte-gate.py`) fires on workflow subagents too (they run in
   `acceptEdits`, which auto-approves Write/Edit but *not* Bash or Task). In unattended runs,
   gate confirms are escalated to hard denies — nobody is there to answer a prompt.
 - **Permissions pre-widened.** `/cohorte-init-pipeline` / `/cohorte-update-pipeline` extend the generated
@@ -41,7 +41,7 @@ Every script follows the same skeleton:
   `pipeline/scripts/*.sh`, read-only git incl. `git rev-parse`, the retrieval MCP tools) so a
   run never stalls on a permission prompt nobody is watching.
 
-## `review.js` — one review pass
+## `cohorte-review.js` — one review pass
 
 Ask: *"run the review workflow for `<id>`"*. Preflight gate (aborts while red — **zero reviewers
 spawned**) → diff staged once → one reviewer per touched surface in parallel → adversarial
@@ -52,7 +52,7 @@ and are appended to `specs/refactor-backlog.md` under their surface's domain hea
 `deferred:<id>`, exactly as the conversational `/cohorte-review` §3.5 does.
 `/cohorte-fix <id>` consumes the staged report exactly as after a conversational `/cohorte-review`.
 
-## `audit.js` — codebase audit
+## `cohorte-audit.js` — codebase audit
 
 Ask: *"run the audit workflow"* (optionally with a target path/domain). Mechanical gates staged
 to `specs/reports/audit-gates.txt` by one haiku agent → **one auditor per domain** (every surface
@@ -60,7 +60,7 @@ plus `shared`) concurrently — the runtime caps parallelism (~16), extra domain
 severity-ordered backlog written to `specs/refactor-backlog.md`, grouped by domain, each item
 `- [ ] <SEVERITY> · <file:line> · <kind> · <fix>`. Returns per-domain counts + the top 10.
 
-## `refactor.js` — big domains only
+## `cohorte-refactor.js` — big domains only
 
 Ask: *"run the refactor workflow on `<domains>`"* (or `all`). Reads the open backlog items; a
 domain with fewer than 5 open items is **skipped with a pointer to the conversational
@@ -70,11 +70,11 @@ are disjoint by construction), each followed by a per-domain verification (gates
 `file:line` check) and **one bounded retry** round. Cleared items are ticked off the backlog; the
 leftovers return.
 
-## `loop.js` — one feature, unattended
+## `cohorte-loop.js` — one feature, unattended
 
 Ask: *"run the loop workflow for `<id>`"* (args `{feature, maxRounds?: 1..10}`, default 5).
 Build → review → [fix → review]* for one feature, no human at the keyboard, resumable by
-re-invoking. Unlike the other three, `/cohorte-loop` has **no conversational command at all** —
+re-invoking. Unlike the other three, the loop workflow (`cohorte-loop.js`) has **no conversational command at all** —
 without the Workflow runtime it refuses explicitly instead of degrading to a lead re-reasoning
 the fan-out every round at session-model prices.
 
@@ -96,7 +96,7 @@ they ride to `specs/refactor-backlog.md` as always. Round history and the outcom
 `specs/reports/<id>.loop.json`.
 
 **Unattended means unattended:** workflow subagents run in `acceptEdits` regardless of your
-session mode, so for the whole run `hooks/gate.py` is the only brake on file edits — and in
+session mode, so for the whole run the project gate (`.claude/hooks/cohorte-gate.py`) is the only brake on file edits — and in
 `bypassPermissions` its asks become hard denies. Know that before you start a ten-round run
 and walk away.
 
@@ -104,7 +104,7 @@ and walk away.
 
 `/cohorte-init-pipeline`, `/cohorte-brainstorm`, and `/cohorte-spec` are interviews — their value *is* the back-and-forth,
 and a workflow cannot ask. `/cohorte-build` is already a single parallel dispatch; `/cohorte-ship` is the human
-gate. A script would add nothing to those — and `loop.js` does not change it: the loop
+gate. A script would add nothing to those — and `cohorte-loop.js` does not change it: the loop
 *consumes* build's outputs (readiness verdict, contract, `build.json`), it never authors a
 contract or reconciles a surface. The four scripts cover exactly the phases where
 deterministic fan-out, cross-checking, and looping pay.

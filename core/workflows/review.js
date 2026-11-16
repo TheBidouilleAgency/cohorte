@@ -10,7 +10,7 @@
 // per touched surface, one reviewer runs per surface in parallel, an adversarial
 // cross-check tries to refute every CRITICAL/security finding, and only the
 // merged verdict comes back — the full report is staged to specs/reports/.
-// Mechanical phases run on haiku; reviewers run the pinned `review` agent (sonnet).
+// Mechanical phases run on haiku; reviewers run the pinned `cohorte-review` agent (sonnet).
 
 export const meta = {
   name: 'cohorte-review',
@@ -19,7 +19,7 @@ export const meta = {
   phases: [
     { title: 'Profile', detail: 'PIPELINE.md → JSON via profile-reader', model: 'haiku' },
     { title: 'Preflight', detail: 'typecheck + lint + tests — abort while red', model: 'haiku' },
-    { title: 'Stage', detail: 'git diff --stat once, per-surface hunks to disk', model: 'haiku' },
+    { title: 'Stage', detail: 'feature-diff.sh: changed paths once, per-surface hunks to disk', model: 'haiku' },
     { title: 'Review', detail: 'one review agent per touched surface' },
     { title: 'Cross-check', detail: 'adversarial refutation of CRITICAL/security findings' },
     { title: 'Merge', detail: 'stage merged report + metrics; return the verdict', model: 'haiku' },
@@ -72,7 +72,7 @@ if (!isSlug(feature)) {
 // Declaring the shape gives the tool layer something to validate and the agent something to
 // aim at; unwrapProfile() salvages a wrapped return that still gets through; and the
 // zero-surface abort below makes the silent-success path impossible either way.
-// See also the structured-output section of core/agents/profile-reader.md.
+// See also the structured-output section of core/agents/cohorte-profile-reader.md.
 const PROFILE = {
   type: 'object', additionalProperties: true,
   properties: {
@@ -109,6 +109,7 @@ const PREFLIGHT = {
   type: 'object', required: ['pass'], additionalProperties: false,
   properties: {
     pass: { type: 'boolean' },
+    epoch: { type: 'integer', description: 'the `date +%s` printed at the START of the Bash call — the run\'s wall-clock origin' },
     tail: { type: 'string', description: 'on failure: the raw last lines the script printed' },
   },
 }
@@ -116,6 +117,7 @@ const PREFLIGHT = {
 const STAGE = {
   type: 'object', required: ['surfaces'], additionalProperties: false,
   properties: {
+    error: { type: 'string', description: 'set ONLY when feature-diff.sh is absent or exited non-zero: its stderr line' },
     surfaces: {
       type: 'array',
       items: {
@@ -123,7 +125,7 @@ const STAGE = {
         properties: {
           key: { type: 'string' },
           diff: { type: 'string', description: 'path of the staged .diff file' },
-          files: { type: 'array', items: { type: 'string' }, description: 'changed files (from --stat)' },
+          files: { type: 'array', items: { type: 'string' }, description: 'changed files (from --numstat)' },
         },
       },
     },
@@ -145,7 +147,7 @@ const FINDING = {
 // A DEFERRED finding is real but out of this feature's scope (pre-existing code the
 // diff never touched). It carries its own out-of-scope reason, counts in no severity
 // row, is never cross-checked, and can never move the verdict — it is routed to
-// specs/refactor-backlog.md so /cohorte-refactor owns it. See core/agents/review.md §Deferred.
+// specs/refactor-backlog.md so /cohorte-refactor owns it. See core/agents/cohorte-review.md §Deferred.
 const DEFERRED = {
   type: 'object', required: ['severity', 'file', 'line', 'kind', 'problem', 'fix', 'outOfScope'],
   additionalProperties: false,
@@ -182,7 +184,7 @@ const VERDICT = {
 phase('Profile')
 const profile = unwrapProfile(await agent(
   'Return this project\'s PIPELINE.md `yaml pipeline-profile` block as JSON, per your instructions.',
-  { agentType: 'profile-reader', label: 'profile', schema: PROFILE, effort: 'low' },
+  { agentType: 'cohorte-profile-reader', label: 'profile', schema: PROFILE, effort: 'low' },
 ))
 if (!profile || profile.error) {
   return { verdict: 'ABORTED', aborted: 'profile', reason: `profile unreadable: ${(profile && profile.error) || 'profile-reader returned nothing'}` }
@@ -203,11 +205,12 @@ const checks = [cmds.typecheck, quiet(cmds.lint_quiet, cmds.lint), quiet(cmds.te
 // ── Phase 1 — deterministic preflight (abort while red, zero reviewers) ─────
 phase('Preflight')
 const pre = await agent(
-  `Run the cohorte deterministic pre-flight for feature ${feature} in ONE Bash call:\n` +
+  `Run the cohorte deterministic pre-flight for feature ${feature} in ONE Bash call, starting it with ` +
+  '`date +%s` (return that number as `epoch` — the run\'s wall-clock origin for the metrics line):\n' +
   `<core>/pipeline/scripts/preflight.sh specs/reports/${feature}.preflight.txt ` +
   checks.map(c => JSON.stringify(c)).join(' ') + '\n' +
-  '(<core> = .claude if .claude/pipeline/scripts/preflight.sh exists, else ~/.claude — probe with test -x. ' +
-  'Script absent on both: run the quoted commands yourself, each appended to the same report file, stopping at the first failure.) ' +
+  '(<core> = "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/cohorte". ' +
+  'Script absent: run the quoted commands yourself, each appended to the same report file, stopping at the first failure.) ' +
   'Return pass=true only on a fully green run. On failure set pass=false, put the raw last 40 lines of the report ' +
   'in `tail` — verbatim, no summarizing — and in the same Bash call write the degraded machine verdict the ' +
   `conversational /cohorte-review §0 writes, so an automated driver gets a diagnosis rather than silence: ` +
@@ -226,11 +229,19 @@ if (!pre || !pre.pass) {
 // ── Phase 2 — stage the diff once ────────────────────────────────────────────
 phase('Stage')
 const surfaceList = surfaces.map(s => `${s.key} → ${s.path}`).join(' · ') || '(none declared)'
+// Every diff goes through feature-diff.sh (SCHEMA.md §Feature diff): a throwaway index so
+// UNTRACKED files are reviewed (feature work is uncommitted until ship — a bare `git diff`
+// dropped every new module, and an adds-only feature staged an empty diff that scored SHIP),
+// against the MERGE-BASE with the default branch (its tip blamed the feature for every file
+// main gained since). The human's real index is never touched.
+const FD = `<core>/pipeline/scripts/feature-diff.sh --default ${base}`
 const staged = await agent(
-  `Stage the review inputs for cohorte feature ${feature}. Diff base: ${base}. Surfaces: ${surfaceList}.\n` +
-  `1. ONE call: git diff ${base} --stat > specs/reports/${feature}.stat.txt — never print the diff.\n` +
-  '2. Group the changed paths by surface path prefix; paths under no surface are the `shared` remainder — attach them to the most relevant surface.\n' +
-  `3. Per surface that has changed paths (ONLY those): git diff ${base} -- <surface.path> [<remainder pathspecs>] > specs/reports/${feature}.<key>.diff\n` +
+  `Stage the review inputs for cohorte feature ${feature}. Surfaces: ${surfaceList}. ` +
+  '(<core> = "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/cohorte".) Never use a bare `git diff` — it misses untracked files.\n' +
+  `1. ONE call: ${FD} --numstat > specs/reports/${feature}.stat.txt — never print it. Non-zero exit or script ` +
+  'absent ⇒ return `error` with its stderr line and an empty surfaces array, and do nothing else.\n' +
+  '2. Group the changed paths (3rd tab-separated column) by surface path prefix with one awk; paths under no surface are the `shared` remainder — attach them to the most relevant surface.\n' +
+  `3. Per surface that has changed paths (ONLY those): ${FD} --patch -- <surface.path> [<remainder paths>] > specs/reports/${feature}.<key>.diff\n` +
   '4. Return the touched surfaces with their staged diff path and changed-file list. No changed paths at all ⇒ return an empty surfaces array.',
   { model: 'haiku', label: 'stage-diff', schema: STAGE, effort: 'low' },
 )
@@ -244,44 +255,58 @@ if (!staged) {
     next: `re-run the review workflow, or /cohorte-review ${feature} conversationally`,
   }
 }
+// Every abort after the preflight overwrites verdict.json too: a stale SHIP left on disk from
+// an earlier round is exactly what /cohorte-ship (and a driver) would read.
+const writeAborted = why => agent(
+  `Write EXACTLY this to specs/reports/${feature}.verdict.json (overwrite), substituting <ISO now> ` +
+  'with `date -u +%Y-%m-%dT%H:%M:%SZ`, then return the single word done:\n' +
+  JSON.stringify({ id: feature, phase: 'review', ts: '<ISO now>', aborted: why, verdict: 'BLOCK', blocking: null }),
+  { model: 'haiku', label: 'stage-verdict', effort: 'low' },
+)
+if (staged.error) {
+  await writeAborted('stage-diff')
+  return {
+    verdict: 'ABORTED', aborted: 'stage-diff',
+    reason: `feature-diff.sh failed — no diff, no reviewer: ${staged.error}`,
+    next: 'fix the cause (exit 3 = the default branch / merge-base cannot be resolved; script absent = run `cohorte update`), then re-run the review',
+  }
+}
 const touched = staged.surfaces || []
 if (!touched.length) {
-  // Nothing was reviewed, so nothing was certified: no DoD tick, no freshness stamp.
-  // `next` must say so — a driver relaying a bare "/cohorte-ship" here would point at
-  // a gate that (rightly) refuses. And verdict.json is written on EVERY run
-  // (cohorte-review.md §3) — leaving last round's REVISE on disk here would hand any
-  // driver reading the file a stale verdict.
-  await agent(
-    `Write EXACTLY this to specs/reports/${feature}.verdict.json (overwrite), substituting <ISO now> ` +
-    'with `date -u +%Y-%m-%dT%H:%M:%SZ`, then return the single word done:\n' +
-    JSON.stringify({
-      id: feature, phase: 'review', ts: '<ISO now>', verdict: 'SHIP', findings: 0, blocking: 0,
-      security: 0, deferred: 0, unreviewed: [], severity: { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 },
-      surfaces: {}, blocking_items: [], fingerprint: '',
-    }),
-    { model: 'haiku', label: 'stage-verdict', effort: 'low' },
-  )
+  // An empty diff reviewed NOTHING, so it certifies nothing. It used to score SHIP — and an
+  // adds-only feature (before untracked files were diffed) reached /cohorte-ship on it. It is
+  // an abort, and the aborted verdict overwrites any stale verdict.json a driver or ship reads.
+  await writeAborted('empty-diff')
   return {
-    verdict: 'SHIP', reason: `no diff against ${base} — nothing to review`,
-    findings: 0, blocking: 0, blockingItems: [], deferred: 0, unreviewedSurfaces: [],
-    next: `nothing to ship: the diff against ${base} is empty, so no review ran and no freshness stamp was written — check the branch/base (was the feature actually built here?)`,
+    verdict: 'ABORTED', aborted: 'empty-diff',
+    reason: `the diff against the merge-base with ${base} is empty (untracked files included) — nothing was reviewed`,
+    next: 'nothing to review: check the branch (was the feature built here, in this worktree?) — no verdict, no freshness stamp',
   }
 }
 log(`Touched surfaces: ${touched.map(s => s.key).join(', ')}`)
 
 // ── Phases 3+4 — review each surface, cross-check its hard findings ─────────
 // pipeline(): a fast surface's cross-check starts while a slow one still reviews.
+const reviewPrompt = s =>
+  'Review one feature surface against its frozen spec, per your agent instructions (read the staged ' +
+  'diff FIRST; open a full source file only when a finding demands it; capped shape — max 20 findings, ' +
+  'one line each, no code excerpts). Put anything real but OUT of this feature\'s scope in `deferred` ' +
+  '(max 10, each with its out-of-scope reason) per your §Deferred rules — never in `findings`. — Variable slots: ' +
+  `feature ${feature} · scope: the ${s.key} surface only · spec: specs/${feature}.md · ` +
+  `staged diff: ${s.diff} · changed files: ${s.files.join(', ')}`
+// SCHEMA.md §Dead agents, the same rule as the build: a silent reviewer is retried ONCE,
+// byte-identical (the staged diff is already on disk — the retry costs one agent); only a
+// surface silent twice is `unreviewed`.
+const reviewOnce = (s, label) =>
+  agent(reviewPrompt(s), { agentType: 'cohorte-review', label, phase: 'Review', schema: REPORT })
 const reviewed = await pipeline(
   touched,
-  s => agent(
-    'Review one feature surface against its frozen spec, per your agent instructions (read the staged ' +
-    'diff FIRST; open a full source file only when a finding demands it; capped shape — max 20 findings, ' +
-    'one line each, no code excerpts). Put anything real but OUT of this feature\'s scope in `deferred` ' +
-    '(max 10, each with its out-of-scope reason) per your §Deferred rules — never in `findings`. — Variable slots: ' +
-    `feature ${feature} · scope: the ${s.key} surface only · spec: specs/${feature}.md · ` +
-    `staged diff: ${s.diff} · changed files: ${s.files.join(', ')}`,
-    { agentType: 'review', label: `review:${s.key}`, phase: 'Review', schema: REPORT },
-  ),
+  async s => {
+    const r = await reviewOnce(s, `review:${s.key}`)
+    if (r != null) return r
+    log(`${s.key}: reviewer died — one byte-identical retry`)
+    return reviewOnce(s, `review:${s.key}#retry`)
+  },
   async (report, s) => {
     if (!report) return null
     const hard = report.findings.filter(f => f.severity === 'CRITICAL' || f.kind === 'security')
@@ -296,7 +321,7 @@ const reviewed = await pipeline(
       'finding does not hold. Uncertain ⇒ refuted=false (a real CRITICAL must not die on doubt). — ' +
       `Finding: [${f.severity}/${f.kind}] ${f.file}:${f.line} — ${f.problem} (proposed fix: ${f.fix}). ` +
       `Feature ${feature} · spec: specs/${feature}.md · staged diff: ${s.diff}`,
-      { agentType: 'review', label: `verify:${s.key}`, phase: 'Cross-check', schema: VERDICT },
+      { agentType: 'cohorte-review', label: `verify:${s.key}`, phase: 'Cross-check', schema: VERDICT },
     ).then(v => ({ f, refuted: !!(v && v.refuted), reason: v ? v.reason : 'verifier died — kept' }))))
     const checkedVotes = votes.filter(Boolean)
     return {
@@ -334,13 +359,15 @@ const blockingFindings = kept.filter(f => f.severity === 'CRITICAL' || f.kind ==
 const normProblem = p => String(p).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ').slice(0, 8).join(' ')
 const blockingItems = [...new Set(blockingFindings.map(f =>
   `${f.surface}|${String(f.file).replace(/:\d+$/, '')}|${normProblem(f.problem)}`))].sort()
-// Verdict from the findings that SURVIVED the cross-check (a refuted CRITICAL
-// must not force a fix loop): security ⇒ BLOCK, CRITICAL ⇒ REVISE, else SHIP —
-// but never SHIP while a surface went unreviewed (absence of evidence, not
-// evidence of absence).
-const verdict = kept.some(f => f.kind === 'security') ? 'BLOCK'
-  : kept.some(f => f.severity === 'CRITICAL') ? 'REVISE'
-    : unreviewed.length ? 'REVISE' : 'SHIP'
+// THE verdict rule (core/agents/cohorte-review.md §Severity & verdict), applied to the
+// findings that SURVIVED the cross-check — never "the worst verdict a reviewer returned"
+// (a refuted CRITICAL must not force a fix loop): any security ⇒ BLOCK, else any CRITICAL
+// ⇒ REVISE, else SHIP — and never SHIP while a surface went unreviewed (absence of
+// evidence is not evidence of absence). Per-surface verdicts use the same rule.
+const verdictOf = (fs, missing) => fs.some(f => f.kind === 'security') ? 'BLOCK'
+  : fs.some(f => f.severity === 'CRITICAL') ? 'REVISE'
+    : missing ? 'REVISE' : 'SHIP'
+const verdict = verdictOf(kept, unreviewed.length > 0)
 // Only a SHIP whose leftovers are all LOW is a clean bill of health. The
 // conversational /cohorte-review routes any surviving CRITICAL/HIGH/security to /cohorte-fix, so
 // this path must not answer "/cohorte-ship" on a SHIP that still carries HIGH findings.
@@ -375,14 +402,17 @@ const verdictJson = JSON.stringify({
   security: kept.filter(f => f.kind === 'security').length,
   deferred: deferredAll.length, unreviewed,
   severity: counts,
+  // Per-surface verdicts AFTER the cross-check, by the same rule — the reviewer's own
+  // pre-cross-check verdict once marked a surface REVISE over a refuted CRITICAL.
   surfaces: Object.fromEntries(results.map(r => [r.key, {
-    verdict: r.report.verdict, findings: r.kept.length,
+    verdict: verdictOf(r.kept, false), findings: r.kept.length,
     blocking: r.kept.filter(f => f.severity === 'CRITICAL' || f.kind === 'security').length,
   }])),
   blocking_items: blockingItems, fingerprint: '<FP>',
 })
 const staging = await agent(
-  `Stage a cohorte review report and its metrics, mechanically:\n` +
+  `Stage a cohorte review report and its metrics, mechanically ` +
+  '(<core> = "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/cohorte"):\n' +
   `1. Write EXACTLY this content to specs/reports/${feature}.md (overwrite):\n<<<REPORT\n${reportBody}\nREPORT\n` +
   `2. Write EXACTLY this to specs/reports/${feature}.verdict.json (overwrite), substituting <ISO now> with ` +
   '`date -u +%Y-%m-%dT%H:%M:%SZ` and <FP> with the fingerprint — computed in Bash, never by hand: ' +
@@ -398,15 +428,20 @@ const staging = await agent(
   // mark ALL surfaces failed), and dead reviewers logged as "dead"
   // per SCHEMA.md §Dead agents — an incomplete batch is the batch worth recording.
   `3. Append one line to $(dirname "$(git rev-parse --git-common-dir)")/.claude/pipeline-metrics.jsonl: ` +
-  `{"ts":"<ISO now>","feature":"${feature}","phase":"review","seconds":0,"tokens":${Math.max(0, spentNow() - spentStart)},"surfaces":{${
-    results.map(r => `"${r.key}":"${r.report.verdict}:${r.kept.length}"`)
+  // seconds: the clock lives in Bash (scripts have none) — elapsed since the preflight's
+  // `date +%s`. No epoch came back ⇒ the field is OMITTED, never a made-up 0.
+  `{"ts":"<ISO now>","feature":"${feature}","phase":"review",${
+    Number.isInteger(pre.epoch) && pre.epoch > 0 ? `"seconds":$(($(date +%s)-${pre.epoch})),` : ''
+  }"tokens":${Math.max(0, spentNow() - spentStart)},"surfaces":{${
+    results.map(r => `"${r.key}":"${verdictOf(r.kept, false)}:${r.kept.length}"`)
       .concat(unreviewed.map(k => `"${k}":"dead"`)).join(',')}}}\n` +
   // Deferred findings must land in the backlog on EVERY verdict — parked only on a
   // SHIP is parked nowhere the rest of the time, which is the leak this closes.
   (deferredAll.length
     ? `4. Route the deferred findings to specs/refactor-backlog.md (create it if absent): for each line below, ` +
-      `append it under the \`## <domain>\` heading named in its prefix (create that heading if absent) — with \`>>\`, ` +
-      `never by rewriting the file, and skip any whose file path + first words already appear there (grep -F first, ` +
+      `insert it directly under the \`## <domain>\` heading named in its prefix with one awk pass (heading absent ⇒ ` +
+      `append a new \`## <domain>\` block at the end with \`>>\`; a bare \`>>\` under another domain's heading files it ` +
+      `in the wrong section) — never by reading the file back and rewriting it, and skip any whose file path + first words already appear there (grep -F first, ` +
       `they may be left from a prior round or an /cohorte-audit):\n` +
       deferredAll.map(f =>
         `${f.surface}||- [ ] ${f.severity} · ${f.file}:${f.line} · ${f.kind} · ${f.fix} · deferred:${feature}`).join('\n') +
@@ -418,8 +453,8 @@ const staging = await agent(
   // reviewer already forced the verdict off SHIP, so `clean` covers that too.
   (clean
     ? `5. Stamp the freshness gate in specs/${feature}.md's front-matter, exactly as the conversational /cohorte-review §3 does ` +
-      `(so /cohorte-ship can prove the reviewed code is what ships): BASE=$(git merge-base ${base} HEAD); set reviewed_base: $BASE and ` +
-      `reviewed_digest: $(git diff $BASE -- . ':(exclude)specs/' | sha256sum | cut -c1-16) — shasum -a 256, first 16 hex, where sha256sum is absent (macOS). ` +
+      `(so /cohorte-ship can prove the reviewed code is what ships): BASE=$(${FD} --base-only); set reviewed_base: $BASE and ` +
+      'reviewed_digest: $(<core>/pipeline/scripts/feature-diff.sh --base $BASE --digest) — never a bare git diff (it misses untracked files). ' +
       '6. Tick the spec DoD boxes this run verified (spec conformance + copy language — review SHIP; tests/lint/typecheck — green preflight); leave the rest unticked.\n'
     : '') +
   'Return the single word: done.',

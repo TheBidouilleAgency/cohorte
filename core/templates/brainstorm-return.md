@@ -1,6 +1,12 @@
+---
+feature_id: <kebab-case slug> # THE id downstream: /cohorte-spec takes it from here, never re-derives it
+title: <feature title>
+---
+
 # BRAINSTORM RETURN — <feature title>
 
-> Paste this into `/cohorte-spec`.
+> Paste this into `/cohorte-spec` (or let it read this staged file). The `feature_id` above is the
+> kanban card's join key — `/cohorte-spec` reuses it as the spec's id, so the card never forks.
 
 **One-liner:** <what we're building, in one sentence>
 

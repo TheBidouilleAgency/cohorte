@@ -53,16 +53,17 @@ const CONTINUATION_MAX_CHARS = 40;
 function knownCommands() {
   const names = new Set();
   for (const dir of [path.join(HERE, '..', '..', 'core', 'commands'),
-                     path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'pipeline', 'commands')]) {
+                     path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'commands')]) {
     try {
-      for (const f of fs.readdirSync(dir)) if (f.endsWith('.md')) names.add(f.slice(0, -3));
+      for (const f of fs.readdirSync(dir)) if (/^cohorte-[\w-]+\.md$/.test(f)) names.add(f.slice(0, -3));
     } catch {}
   }
   // Fallback for a collector run outside the package (e.g. copied into a repo on its own).
   if (!names.size) {
     for (const n of ['cohorte-brainstorm', 'cohorte-spec', 'cohorte-build', 'cohorte-review',
                      'cohorte-fix', 'cohorte-ship', 'cohorte-audit', 'cohorte-refactor',
-                     'cohorte-align-ds', 'cohorte-doctor',
+                     'cohorte-align-ds', 'cohorte-doctor', 'cohorte-patch', 'cohorte-intake',
+                     'cohorte-fleet', 'cohorte-retro',
                      'cohorte-init-pipeline', 'cohorte-update-pipeline']) names.add(n);
   }
   // Retired commands. The list above is read from the shipped core, so a command that is
@@ -457,8 +458,18 @@ function main(argv) {
   };
   const root = path.resolve(args.find((a) => !a.startsWith('--')) || process.cwd());
 
-  let since = opt('since') ? Date.parse(opt('since')) : null;
-  if (opt('days')) since = Date.now() - Number(opt('days')) * 86400_000;
+  // A malformed filter must fail loudly: NaN used to skip the filter, so `--days=abc`
+  // silently reported all time.
+  let since = null;
+  if (opt('since') !== null) {
+    since = Date.parse(opt('since'));
+    if (Number.isNaN(since)) { console.error(`error: --since=${opt('since')} is not a date (use ISO 8601, e.g. 2026-11-01)`); process.exit(2); }
+  }
+  if (opt('days') !== null) {
+    const days = Number(opt('days'));
+    if (!Number.isFinite(days) || days <= 0) { console.error(`error: --days=${opt('days')} must be a positive number`); process.exit(2); }
+    since = Date.now() - days * 86400_000;
+  }
 
   const checkouts = repoCheckouts(root);
   const sessions = findSessions(checkouts);

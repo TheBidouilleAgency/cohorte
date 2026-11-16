@@ -18,7 +18,7 @@ export const meta = {
     { title: 'Profile', detail: 'PIPELINE.md → JSON via profile-reader', model: 'haiku' },
     { title: 'Gates', detail: 'format/lint/typecheck/tests → specs/reports/audit-gates.txt', model: 'haiku' },
     { title: 'Audit', detail: 'one review-in-audit-mode agent per domain (concurrent, runtime-capped 20)' },
-    { title: 'Backlog', detail: 'merge + write specs/refactor-backlog.md', model: 'haiku' },
+    { title: 'Backlog', detail: 'merge into specs/refactor-backlog.md (audited domains only)', model: 'haiku' },
   ],
 }
 
@@ -51,7 +51,7 @@ const target = ARGS.target || ''
 // Declaring the shape gives the tool layer something to validate and the agent something to
 // aim at; unwrapProfile() salvages a wrapped return that still gets through; and the
 // zero-surface abort below makes the silent-success path impossible either way.
-// See also the structured-output section of core/agents/profile-reader.md.
+// See also the structured-output section of core/agents/cohorte-profile-reader.md.
 const PROFILE = {
   type: 'object', additionalProperties: true,
   properties: {
@@ -102,6 +102,26 @@ const GATES = {
   },
 }
 
+// The backlog as it stands, read back STRUCTURALLY so the merge happens here, in script
+// code a test can pin — not in a prompt. Lines are verbatim, in file order.
+const EXISTING = {
+  type: 'object', required: ['exists', 'domains'], additionalProperties: false,
+  properties: {
+    exists: { type: 'boolean' },
+    lineCount: { type: 'integer', description: "the output of `grep -c '^- \\[' specs/refactor-backlog.md` (0 when absent)" },
+    domains: {
+      type: 'array',
+      items: {
+        type: 'object', required: ['key', 'lines'], additionalProperties: false,
+        properties: {
+          key: { type: 'string', description: 'the `## <domain>` heading text' },
+          lines: { type: 'array', items: { type: 'string', description: 'one `- [ ] …` / `- [x] …` line, verbatim' } },
+        },
+      },
+    },
+  },
+}
+
 const BACKLOG = {
   type: 'object', required: ['items'], additionalProperties: false,
   properties: {
@@ -125,7 +145,7 @@ const BACKLOG = {
 phase('Profile')
 const profile = unwrapProfile(await agent(
   'Return this project\'s PIPELINE.md `yaml pipeline-profile` block as JSON, per your instructions.',
-  { agentType: 'profile-reader', label: 'profile', schema: PROFILE, effort: 'low' },
+  { agentType: 'cohorte-profile-reader', label: 'profile', schema: PROFILE, effort: 'low' },
 ))
 if (!profile || profile.error) {
   return { error: `profile unreadable: ${(profile && profile.error) || 'profile-reader returned nothing'}` }
@@ -152,7 +172,9 @@ const gateCmds = [
 const gates = await agent(
   `Run the cohorte audit's mechanical gates, scoped to ${scope}. Commands (adapt the format one to the ` +
   `project's check mode if --check is wrong): ${gateCmds.map(c => JSON.stringify(c)).join(' · ')}.\n` +
-  'Redirect EVERY command\'s output into specs/reports/audit-gates.txt (append, `cmd >> file 2>&1`) — ' +
+  'FIRST truncate the report (`mkdir -p specs/reports && : > specs/reports/audit-gates.txt`) — a previous run\'s ' +
+  'output must not be read as this one\'s — then for each command append a header and its output ' +
+  '(`printf \'\\n$ %s\\n\' "<cmd>" >> specs/reports/audit-gates.txt; <cmd> >> specs/reports/audit-gates.txt 2>&1`) — ' +
   'never print it — and keep going after failures (this is an inventory, not a gate to pass). Then grep ' +
   'the file and return each failure as file/line/kind/one-line summary, capped at 40 (set overflow for the rest).',
   { model: 'haiku', label: 'gates', schema: GATES, effort: 'low' },
@@ -173,8 +195,9 @@ log(gatesCovered
 // queue. Raising CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS raises the ceiling, it does not
 // change this script — the queue is the runtime's, and a queued domain is not a lost one.
 phase('Audit')
-const domains = surfaces.map(s => ({ key: s.key, path: s.path }))
+const domainsAll = surfaces.map(s => ({ key: s.key, path: s.path }))
   .concat([{ key: 'shared', path: (profile.contract && profile.contract.path) || '(everything outside the surface trees)' }])
+const domains = domainsAll
   .filter(d => !target || target === d.key || String(d.path).startsWith(target) || target.startsWith(String(d.path)))
 if (!domains.length) return { error: `target "${target}" matches no surface/domain` }
 
@@ -185,7 +208,7 @@ const audited = await parallel(domains.map(d => () => agent(
   'read specs/reports/audit-gates.txt and fold the ones in your domain in. Return the prioritized items, ' +
   'capped at 30, one line each, no code excerpts. — Variable slots: domain: ' +
   `${d.key} · tree: ${d.path}${target ? ` · human-requested target: ${target}` : ''}`,
-  { agentType: 'review', label: `audit:${d.key}`, schema: BACKLOG },
+  { agentType: 'cohorte-review', label: `audit:${d.key}`, schema: BACKLOG },
 ).then(r => r && { key: d.key, items: r.items, overflow: r.overflow || 0 })))
 const perDomain = audited.filter(Boolean)
 // A dead auditor returns null, and a domain with no result is indistinguishable
@@ -194,27 +217,66 @@ const perDomain = audited.filter(Boolean)
 const deadDomains = domains.filter(d => !perDomain.some(p => p.key === d.key)).map(d => d.key)
 if (deadDomains.length) log(`Auditor died on: ${deadDomains.join(', ')} — those domains are NOT audited`)
 
-// ── Phase 3 — merge + write the backlog ──────────────────────────────────────
+// ── Phase 3 — merge into the backlog: ONLY the audited domains are rewritten ──
+// The backlog is shared state, not this run's report. It holds other domains' items (a
+// scoped audit looked at one domain), and open `deferred:<feature>` lines /cohorte-review
+// parked there — a real finding a feature deliberately did not own. Overwriting the file
+// with this run's items erased both. So: read it back, replace the sections of the domains
+// this run actually audited (keeping their open deferred lines), keep every other section
+// verbatim, write the result in one exact write.
 phase('Backlog')
+const existing = await agent(
+  'Read specs/refactor-backlog.md (mechanical — no judgment). Return exists; lineCount = the output of ' +
+  "`grep -c '^- \\[' specs/refactor-backlog.md`; and per `## <domain>` heading (in file order) every list " +
+  'line under it VERBATIM — both `- [ ]` and `- [x]` lines, nothing else. ' +
+  'File missing ⇒ exists=false, lineCount=0 and an empty domains array.',
+  { model: 'haiku', label: 'read-backlog', schema: EXISTING, effort: 'low' },
+)
 const SEV = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 }
-const body = ['# Refactor backlog', '', `> Generated by the cohorte-audit workflow (scope: ${scope}).`]
+const auditedKeys = new Set(perDomain.map(d => d.key))
+const oldDomains = (existing && Array.isArray(existing.domains) ? existing.domains : [])
+  .filter(d => d && d.key).map(d => ({ key: String(d.key).trim(), lines: Array.isArray(d.lines) ? d.lines : [] }))
+const oldByKey = Object.fromEntries(oldDomains.map(d => [d.key, d.lines]))
+const isOpenDeferred = l => /^- \[ \]/.test(l) && /deferred:\S/.test(l)
+let total = 0
+let carried = 0
+const sections = []
+// Profile order first (surfaces, then shared), then any domain only the old file knows.
+const order = [...domainsAll.map(d => d.key), ...oldDomains.map(d => d.key)].filter((k, i, a) => a.indexOf(k) === i)
+for (const key of order) {
+  const d = perDomain.find(p => p.key === key)
+  if (d) {
+    const items = [...d.items].sort((a, b) => SEV[a.severity] - SEV[b.severity])
+    total += items.length
+    const lines = items.map(it => `- [ ] ${it.severity} · ${it.file}:${it.line} · ${it.kind} · ${it.fix}`)
+    if (d.overflow) lines.push(`- [ ] (+${d.overflow} more beyond the cap — re-audit ${d.key} after this pass)`)
+    const keep = (oldByKey[key] || []).filter(isOpenDeferred).filter(l => !lines.includes(l))
+    carried += keep.length
+    sections.push({ key, lines: lines.concat(keep) })
+  } else if (oldByKey[key] && oldByKey[key].length) {
+    sections.push({ key, lines: oldByKey[key] })   // not audited this run — untouched
+  }
+}
+const body = ['# Refactor backlog', '',
+  `> Last merged by the cohorte-audit workflow (scope: ${scope}) — only the audited domains' sections were rewritten.`]
 if (deadDomains.length) {
-  body.push('', `> ⚠ NOT audited (the auditor died): ${deadDomains.join(', ')} — absence of items below`,
-    '> for those domains means "not looked at", not "clean". Re-run the audit for them.')
+  body.push('', `> ⚠ NOT audited (the auditor died): ${deadDomains.join(', ')} — their sections below are the`,
+    '> PREVIOUS run\'s, or absent; absence of items means "not looked at", not "clean". Re-run the audit for them.')
 }
 if (!gatesCovered) {
   body.push('', '> ⚠ Mechanical gates NOT run (the gates agent died) — lint/typecheck/test failures',
     '> are uncounted below. Re-run the audit for the mechanical sweep.')
 }
-let total = 0
-for (const d of perDomain) {
-  const items = [...d.items].sort((a, b) => SEV[a.severity] - SEV[b.severity])
-  total += items.length
-  body.push('', `## ${d.key}`, '')
-  for (const it of items) body.push(`- [ ] ${it.severity} · ${it.file}:${it.line} · ${it.kind} · ${it.fix}`)
-  if (d.overflow) body.push(`- [ ] (+${d.overflow} more beyond the cap — re-audit ${d.key} after this pass)`)
-}
-const written = await agent(
+for (const s of sections) body.push('', `## ${s.key}`, '', ...s.lines)
+// A dead READER is not an empty backlog — writing on top of it would erase exactly what
+// this phase exists to keep. Nor is a SHORT read: the reader echoes the file verbatim, and a
+// truncated echo would silently drop other domains' lines. Its line count must match the
+// lines it returned (grep -c, computed in its Bash), or the write is skipped like a dead read.
+const readLines = oldDomains.reduce((n, d) => n + d.lines.filter(l => /^- \[/.test(l)).length, 0)
+const readOk = existing != null && typeof existing === 'object'
+  && (typeof existing.lineCount !== 'number' || existing.lineCount === readLines)
+if (existing != null && !readOk) log(`backlog read looks truncated (${readLines} lines returned, ${existing.lineCount} on disk) — not writing`)
+const written = !readOk ? null : await agent(
   `Write EXACTLY this content to specs/refactor-backlog.md (overwrite), then return the single word done:\n<<<BACKLOG\n${body.join('\n')}\nBACKLOG`,
   { model: 'haiku', label: 'write-backlog', effort: 'low' },
 )
@@ -223,7 +285,11 @@ const written = await agent(
 const backlogOk = written != null && /done/i.test(String(written))
 
 return {
-  backlog: backlogOk ? 'specs/refactor-backlog.md' : '(NOT written — the backlog writer died)',
+  backlog: backlogOk ? 'specs/refactor-backlog.md'
+    : existing == null ? '(NOT written — the backlog reader died; the file on disk is untouched)'
+      : !readOk ? '(NOT written — the backlog read came back short (reader died mid-echo); the file on disk is untouched)'
+        : '(NOT written — the backlog writer died)',
+  deferredCarried: carried,  // open deferred:<feature> lines kept in the rewritten sections
   notAudited: deadDomains,   // absence of findings here means "not looked at"
   mechanicalFailures: gatesCovered ? mech.length : null,  // null = gates agent died, NOT zero
   gatesCovered,
@@ -233,7 +299,7 @@ return {
     .sort((a, b) => SEV[a.severity] - SEV[b.severity]).slice(0, 10)
     .map(it => `[${it.severity}] ${it.domain} · ${it.file}:${it.line} — ${it.fix}`),
   next: !backlogOk
-    ? 'the backlog was NEVER written (writer died) — the counts above are real but nothing is on disk; re-run the audit'
+    ? `the backlog was NEVER written (${!readOk ? 'reader' : 'writer'} died or came back short) — the counts above are real but nothing is on disk; re-run the audit`
     : deadDomains.length
       ? `re-audit ${deadDomains.join(', ')} (auditor died — not covered), then /cohorte-refactor <domain>`
       : 'refactor a domain with /cohorte-refactor <domain> (or the refactor workflow for big domains)',

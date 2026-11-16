@@ -27,7 +27,11 @@ Detect the mode from the pasted content:
 1. If empty, look for a staged brainstorm return first — `specs/reports/*-brainstorm.md` (where
    `/cohorte-brainstorm` stages its output); one match ⇒ read it and confirm, several ⇒ ask which. None ⇒
    ask the human to paste the return (or describe the feature) and wait.
-2. Derive a `feature_id` (kebab-case slug). Confirm it.
+2. **Take the `feature_id` from the return's front-matter** (or its staged filename,
+   `<feature_id>-brainstorm.md`) — **never re-derive it**: the brainstorm (or `/cohorte-intake`
+   before it) already created the kanban card `#<feature_id>`, and a new slug forks a second card
+   and strands the first. Only when there is no return (a described feature, or a return predating
+   the front-matter) derive a kebab-case slug, and confirm it.
 2b. **Size budget — a spec is a contract, not a novel.** Target ≤ ~300 lines; hard-think at 500.
    Every implementer re-reads the whole spec on every first build, so each extra line is paid
    `surfaces × dispatches` times. If the feature genuinely needs more, that's the signal it is TWO

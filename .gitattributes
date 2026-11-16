@@ -1,0 +1,6 @@
+# LF everywhere: the shipped shell scripts break with CRLF, and the validators parse frontmatter
+# with \n. Windows checkouts (core.autocrlf=true on CI runners) would otherwise rewrite them.
+* text=auto eol=lf
+*.png binary
+*.gif binary
+*.ps1 text eol=crlf

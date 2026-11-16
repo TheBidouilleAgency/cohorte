@@ -5,8 +5,6 @@
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
-const { applyConditionals, loadRuntime } = createRequire(import.meta.url)('../core/adapter/render.js');
 
 // fileURLToPath, not .pathname — on Windows the latter yields "/C:/…", which
 // join() then resolves against the cwd drive ("C:\C:\…") and every read ENOENTs.
@@ -59,17 +57,12 @@ for (const f of readdirSync(join(root, "core/commands"))) {
 }
 
 // ── fixed agents ────────────────────────────────────────────────────────────
-// Every non-template agent needs name/tools/model, and every one must be
-// ASSERTED by the ci.yml install dry-run (a new agent the CLI's copy rules miss
-// would otherwise never reach an install and nothing would notice — the exact
-// bug that motivated this check). The old form grepped install.sh/install.ps1
-// for copy commands, but those scripts have been thin delegators to bin/cli.js
-// since 2.2.0 — the text being matched was unreachable dead code, so the check
-// passed vacuously. CI postconditions test the copy that actually runs.
-const AGENT_MODEL = { review: "sonnet", release: "haiku",
-  "profile-reader": "haiku" };
-const ciYmlText = existsSync(join(root, ".github/workflows/ci.yml"))
-  ? read(".github/workflows/ci.yml") : "";
+// Every non-template agent needs name/tools/model and the `cohorte-` prefix: they are
+// installed into the user's shared ~/.claude/agents, where a bare `review.md` would
+// collide with (and, in 2.x, overwrite) the user's own agent of that name.
+// scripts/test-install.mjs asserts each one actually reaches an install.
+const AGENT_MODEL = { "cohorte-review": "sonnet", "cohorte-release": "haiku",
+  "cohorte-profile-reader": "haiku" };
 
 for (const f of readdirSync(join(root, "core/agents"))) {
   const path = `core/agents/${f}`;
@@ -84,38 +77,116 @@ for (const f of readdirSync(join(root, "core/agents"))) {
     continue;
   }
   const name = f.replace(/\.md$/, "");
-  if (!/^name:\s*\S/m.test(fm)) fail(path, "frontmatter lacks name");
+  if (!name.startsWith(PREFIX)) fail(path, `fixed agent lacks the \`${PREFIX}\` prefix — it would collide with a user agent in ~/.claude/agents`);
+  if (!new RegExp(`^name:\\s*${name}\\s*$`, "m").test(fm)) fail(path, `frontmatter name must equal the file name (${name})`);
   if (!/^tools:\s*\S/m.test(fm)) fail(path, "frontmatter lacks tools");
   const want = AGENT_MODEL[name];
   if (want && !new RegExp(`^model:\\s*${want}\\s*$`, "m").test(fm))
     fail(path, `frontmatter must pin \`model: ${want}\``);
   if (text.includes("<SURFACE_"))
     fail(path, "unrendered <SURFACE_*> placeholder in a non-template agent");
-  if (ciYmlText && !ciYmlText.includes(`agents/${f}`))
-    fail(".github/workflows/ci.yml", `install dry-run never asserts .claude/agents/${f} — a fixed agent the CLI's copy rules miss would ship silently`);
 }
 
 // ── cross-references ────────────────────────────────────────────────────────
-// Any `.claude/templates/<x>.md` referenced by a command or agent must exist
-// in core/templates (they resolve to the installed copy of exactly that file).
-const allDocs = [];
-for (const dir of ["core/commands", "core/agents", "core/templates"])
-  for (const f of readdirSync(join(root, dir)))
-    if (f.endsWith(".md")) allDocs.push(`${dir}/${f}`);
+// Any `<core>/templates/<x>.md` referenced by a command or agent must exist in
+// core/templates (it resolves to the installed copy of exactly that file).
+// Recursive: the step files under core/templates/steps/** are prompts too (loaded by a
+// router command), and a reference inside one rots exactly like one in a command.
+const mdUnder = (dir) => readdirSync(join(root, dir), { withFileTypes: true }).flatMap((e) =>
+  e.isDirectory() ? mdUnder(`${dir}/${e.name}`) : e.name.endsWith(".md") ? [`${dir}/${e.name}`] : []);
+const allDocs = ["core/commands", "core/agents", "core/templates"].flatMap(mdUnder);
+// A dispatch names either a shipped agent or the one placeholder the lead resolves from the
+// profile (`<surface.agent>`). Anything else — a typo, a pre-3.0 name like `review` — reaches
+// the Agent tool as an unknown type and the dispatch fails (or worse, falls back to a default).
+const SUBAGENT_PLACEHOLDERS = ["<surface.agent>"];
+const shippedScripts = new Set(readdirSync(join(root, "scripts"))
+  .filter((f) => /\.sh(\.template)?$/.test(f)).map((f) => f.replace(/\.template$/, "")));
 
 for (const path of allDocs) {
   const text = read(path);
-  for (const m of text.matchAll(/\.claude\/templates\/([a-z0-9.-]+\.md)/g)) {
+  for (const m of text.matchAll(/<core>\/templates\/([a-z0-9./-]+\.md)/g)) {
     if (!existsSync(join(root, "core/templates", m[1])))
-      fail(path, `references .claude/templates/${m[1]} which is not in core/templates/`);
+      fail(path, `references <core>/templates/${m[1]} which is not in core/templates/`);
   }
-  for (const m of text.matchAll(/subagent_type:\s*(?:`|)([a-z-]+)(?:`|)/g)) {
+  for (const m of text.matchAll(/subagent_type:\s*`?(<[^>`\s]+>|[A-Za-z][\w.-]*)/g)) {
     const t = m[1];
-    if (["review", "release", "profile-reader"].includes(t)) continue;
-    if (t.startsWith("<")) continue; // <surface.agent> placeholder
+    if (t.startsWith("<")) {
+      if (!SUBAGENT_PLACEHOLDERS.includes(t))
+        fail(path, `dispatches subagent_type ${t} — the only placeholder the lead resolves is ${SUBAGENT_PLACEHOLDERS.join(", ")}`);
+      continue;
+    }
     if (!existsSync(join(root, "core/agents", `${t}.md`)))
       fail(path, `dispatches subagent_type ${t} with no core/agents/${t}.md`);
   }
+  // `<core>/pipeline/scripts/<x>.sh` resolves to the installed copy of scripts/<x>.sh — it
+  // must ship (lib/install.js copies every scripts/*.sh and *.sh.template).
+  for (const m of text.matchAll(/<core>\/pipeline\/scripts\/([a-z0-9-]+\.sh)\b/g)) {
+    if (!shippedScripts.has(m[1]))
+      fail(path, `references <core>/pipeline/scripts/${m[1]} which is not in scripts/`);
+  }
+}
+
+// Workflow scripts dispatch by `agentType: '<literal>'` (or a surface's `.agent` from the
+// profile, which is not a literal). Every literal must be a shipped agent.
+for (const f of readdirSync(join(root, "core/workflows")).filter((f) => f.endsWith(".js"))) {
+  const text = read(`core/workflows/${f}`);
+  for (const m of text.matchAll(/agentType:\s*'([^']+)'/g))
+    if (!existsSync(join(root, "core/agents", `${m[1]}.md`)))
+      fail(`core/workflows/${f}`, `agentType '${m[1]}' has no core/agents/${m[1]}.md`);
+  for (const m of text.matchAll(/<core>\/pipeline\/scripts\/([a-z0-9-]+\.sh)\b/g))
+    if (!shippedScripts.has(m[1]))
+      fail(`core/workflows/${f}`, `references <core>/pipeline/scripts/${m[1]} which is not in scripts/`);
+}
+
+// ── the review report shape, three copies ────────────────────────────────────
+// The authoritative REVIEW REPORT shape is the fenced template in the review agent; the
+// human reference copy (templates/review-feedback.md) and the workflow's merged report
+// (review.js) must carry the same sections in the same order — `## Deferred` once went
+// missing from the reference copy while the agent and the workflow both emitted it.
+{
+  const agentText = read("core/agents/cohorte-review.md");
+  const fence = (agentText.split("## Your return")[1] || "").match(/```\n([\s\S]*?)```/);
+  const heads = (t) => [...t.matchAll(/^## ([A-Z][\w ]*)$/gm)].map((m) => m[1].trim());
+  if (!fence) fail("core/agents/cohorte-review.md", "no fenced REVIEW REPORT template under §Your return");
+  else {
+    const want = heads(fence[1]);
+    const ref = heads(read("core/templates/review-feedback.md"));
+    if (want.join("|") !== ref.join("|"))
+      fail("core/templates/review-feedback.md", `sections [${ref.join(", ")}] differ from the review agent's template [${want.join(", ")}]`);
+    for (const marker of ["| Severity | Count |", "Verdict: <SHIP | REVISE | BLOCK>", "feature_id: <feature_id> · scope: <surface.key>"])
+      if (fence[1].includes(marker) && !read("core/templates/review-feedback.md").includes(marker))
+        fail("core/templates/review-feedback.md", `missing the agent template's \`${marker}\` line`);
+    const wf = read("core/workflows/review.js");
+    for (const h of want.filter((h) => h !== "Notes"))   // Notes is optional by the agent's own rule
+      if (!wf.includes(`'## ${h}'`))
+        fail("core/workflows/review.js", `the merged report lacks the agent template's \`## ${h}\` section`);
+  }
+}
+
+// ── every pipeline diff goes through feature-diff.sh ─────────────────────────
+// A bare `git diff <default_branch>` (or `${base}` / `$BASE`) misses every untracked file —
+// and feature work is uncommitted until ship — and diffs against the branch TIP rather than
+// the merge-base. That reviewed adds-only features as an empty diff and scored them SHIP.
+// The one legitimate bare diff is PR mode's three-dot diff of committed PR history.
+for (const path of [...allDocs, ...readdirSync(join(root, "core/workflows")).map((f) => `core/workflows/${f}`)]) {
+  const flat = read(path).replace(/\s+/g, " ");
+  const m = flat.match(/git diff (?:--stat )?(?:<default_branch>|\$\{base\}|\$BASE\b|<reviewed_base>)/);
+  if (m) fail(path, `\`${m[0]}\` — pipeline diffs must use <core>/pipeline/scripts/feature-diff.sh (untracked files, merge-base)`);
+}
+
+// ── /cohorte-ship gates on the machine verdict, not on prose ─────────────────
+// ship used to read "the latest review returned SHIP" from the conversation and treat a
+// missing freshness stamp as "legacy spec ⇒ skip" — which shipped known HIGH/MEDIUMs (the
+// review withholds the stamp exactly then) and an empty-diff "SHIP".
+{
+  const ship = read("core/commands/cohorte-ship.md").replace(/\s+/g, " ");
+  for (const [needle, why] of [
+    ["verdict.json", "must read specs/reports/<id>.verdict.json"],
+    ["`unreviewed` is `[]`", "must require unreviewed == []"],
+    ["severity.MEDIUM", "must refuse surviving HIGH/MEDIUM"],
+    ["feature-diff.sh --base <reviewed_base> --digest", "must recompute the digest with feature-diff.sh"],
+    ["verdict.json` is absent", "may treat a missing stamp as legacy ONLY when verdict.json is absent"],
+  ]) if (!ship.includes(needle)) fail("core/commands/cohorte-ship.md", why);
 }
 
 // ── profile ─────────────────────────────────────────────────────────────────
@@ -123,14 +194,27 @@ for (const p of ["profile/PIPELINE.template.md", "profile/SCHEMA.md",
   "profile/cohorte.config.template.yaml"])
   if (!existsSync(join(root, p))) fail(p, "missing");
 
-const tpl = applyConditionals(read("profile/PIPELINE.template.md"), loadRuntime('claude'));
+const tpl = read("profile/PIPELINE.template.md");
 if (/^\s*model:\s*inherit\b/m.test(tpl))
   fail("profile/PIPELINE.template.md",
     "a surfaces[] example pins `model: inherit` — examples must default to sonnet " +
     "(inherit bills at the lead session's model)");
-const codexTpl = applyConditionals(read('profile/PIPELINE.template.md'), loadRuntime('codex'));
-if (/^\s*model:\s*(sonnet|haiku|opus)\b/m.test(codexTpl))
-  fail('profile/PIPELINE.template.md', 'Codex examples must not pin Anthropic model aliases');
+
+// ── Claude Code only (3.0.0) ────────────────────────────────────────────────
+// The multi-runtime adapter and its `<!-- cohorte:if … -->` conditionals were removed
+// (archived on the archive/multi-runtime branch). A conditional left in a prompt reaches
+// the model as noise, and a runtime-specific path tells it to write where nothing reads.
+const walkAll = (dir) => readdirSync(join(root, dir), { withFileTypes: true }).flatMap((e) =>
+  e.isDirectory() ? walkAll(`${dir}/${e.name}`) : [`${dir}/${e.name}`]);
+const shipped = [...walkAll("core"), ...walkAll("profile"), ...walkAll("lib"),
+  ...readdirSync(join(root, "scripts")).filter((f) => /\.(sh|template)$/.test(f)).map((f) => `scripts/${f}`)]
+  .filter((p) => /\.(md|js|py|sh|yaml|template)$/.test(p));
+for (const rel of shipped) {
+  const text = read(rel);
+  if (text.includes("cohorte:if")) fail(rel, "carries a `cohorte:if` conditional — there is one runtime now; resolve it");
+  if (/\b(codex|cursor|gemini|opencode)\b/i.test(text.replace(/\s+/g, " ")) || text.includes("~/.cohorte") || text.includes("'.cohorte'"))
+    fail(rel, "mentions a dropped runtime (Codex/Cursor/Gemini/OpenCode/.cohorte) — 3.x is Claude Code only");
+}
 
 // ── init-pipeline router steps ──────────────────────────────────────────────
 const steps = join(root, "core/templates/steps/init-pipeline");
@@ -183,17 +267,7 @@ for (const c of KANBAN_STAGES) {
     fail(path, "no instruction to run the resolver before concluding there is no board");
 }
 
-// ── shipped scripts + thin installers ───────────────────────────────────────
-// Every shipped scripts/*.sh must be asserted by the ci.yml install dry-run —
-// bin/cli.js copies by rule rather than by name, so only a postcondition on the
-// copy that actually runs can catch a rule that misses a new script. Callers
-// chain these with `|| true`, so a missing one is a silent no-op forever.
-// A `<name>.sh` with a `<name>.sh.template` sibling is a locally-rendered artifact
-// (this repo dogfoods its own /cohorte-init-pipeline), not a core asset — skip those.
-const shipped = readdirSync(join(root, "scripts"));
-for (const f of shipped.filter((f) => f.endsWith(".sh") && !shipped.includes(`${f}.template`)))
-  if (ciYmlText && !ciYmlText.includes(`pipeline/scripts/${f}`))
-    fail(".github/workflows/ci.yml", `install dry-run never asserts pipeline/scripts/${f} (a copy rule that misses it is a silent no-op at runtime)`);
+// ── thin installers ─────────────────────────────────────────────────────────
 // The shell installers are THIN DELEGATORS to bin/cli.js — their legacy copy-verbatim
 // path was unreachable dead code from 2.2.0 (removed in 2.7.0), and its text was what
 // this file's copy checks used to vacuously match. Pin the shape: both must hand off
@@ -205,6 +279,11 @@ for (const [name, marker] of [["install.sh", "cp -R \"$src/core"], ["install.ps1
   if (text.includes(marker))
     fail(name, "carries its own core-copy logic again — installs must go through bin/cli.js (no shell renderer exists)");
 }
+
+// install.ps1 must stay pure ASCII: Windows PowerShell 5.1 reads a BOM-less .ps1 in the ANSI code
+// page, and one em dash inside a string literal breaks the parser (CI caught it on 3.0).
+if (/[^\x00-\x7F]/.test(read("install.ps1")))
+  fail("install.ps1", "contains non-ASCII characters — Windows PowerShell 5.1 mis-parses BOM-less scripts");
 
 // ── workflow scripts ────────────────────────────────────────────────────────
 // core/workflows/*.js run inside the Claude Code Workflow runtime: an async
@@ -223,7 +302,7 @@ else for (const f of readdirSync(workflowsDir)) {
   const text = read(path);
   if (!/^export const meta = \{/m.test(text))
     fail(path, "missing the `export const meta = {…}` literal");
-  if (!text.includes("agentType: 'profile-reader'"))
+  if (!text.includes("agentType: 'cohorte-profile-reader'"))
     fail(path, "phase 0 must read the profile via the profile-reader agent");
   if (/\bDate\.now\(\)|\bMath\.random\(\)|new Date\(\)/.test(text))
     fail(path, "Date.now()/Math.random()/new Date() are unavailable in workflow scripts");
@@ -267,8 +346,6 @@ if (existsSync(join(root, "core/commands/cohorte-loop.md")))
   fail("core/commands/cohorte-loop.md", "must not exist — /cohorte-loop is workflow-only " +
     "(no conversational fallback, by decision; see core/workflows/loop.js header)");
 
-// The workflows dir reaching installs is covered per-file by the ci.yml dry-run
-// assertions checked just below (the shell installers delegate to bin/cli.js).
 
 // A new workflow script must also be KNOWN to the things that check for it, or it
 // ships and nothing notices when an installer stops copying it. This check exists
@@ -280,10 +357,8 @@ const workflowNames = existsSync(workflowsDir)
 const ci = existsSync(join(root, ".github/workflows/ci.yml")) ? read(".github/workflows/ci.yml") : "";
 const libDoctor = read("lib/doctor.js");
 for (const f of workflowNames) {
-  if (!ci.includes(`workflows/${f}`))
-    fail(".github/workflows/ci.yml", `install dry-run never asserts .claude/workflows/${f}`);
-  if (!libDoctor.includes(`'${f}'`))
-    fail("lib/doctor.js", `checkWorkflows() does not list ${f}`);
+  if (!libDoctor.includes(`'cohorte-${f}'`))
+    fail("lib/doctor.js", `checkWorkflows() does not list cohorte-${f}`);
 }
 
 // ── every test suite must run in BOTH workflows ──────────────────────────────
@@ -311,10 +386,8 @@ const pkg = JSON.parse(read("package.json"));
 for (const negation of ["!core/hooks/__pycache__", "!**/*.pyc"])
   if (!(pkg.files || []).includes(negation))
     fail("package.json", `\`files\` must carry the ${negation} negation (.npmignore cannot do this)`);
-if (!read("bin/cli.js").includes("__pycache__"))
-  fail("bin/cli.js", "copyCore() never excludes __pycache__ from the hooks copy");
-if (ciYmlText && !ciYmlText.includes("hooks/__pycache__"))
-  fail(".github/workflows/ci.yml", "install dry-run never asserts hooks/__pycache__ is absent — a compiled cache would ride into the user's .claude unnoticed");
+if (!read("lib/install.js").includes("__pycache__"))
+  fail("lib/install.js", "the core copy never excludes __pycache__");
 
 // ── report ──────────────────────────────────────────────────────────────────
 if (errors.length) {

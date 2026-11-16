@@ -28,9 +28,11 @@
 #   - duplicates ⇒ keeps the first, drops the rest
 #   - never touches the front-matter or the trailing `%% kanban:settings %%` block
 #
-# Exit codes: 0 ok (incl. "kanban not configured") · 2 usage · 3 board/column
-# not found. A configured board that cannot be moved is loud; an unconfigured
-# one is quiet — the pipeline never blocks on the board.
+# Exit codes: 0 ok (incl. "kanban not configured" — and, under `auto`, a configured
+# board file that is gone: `kanban: board file not found`) · 2 usage · 3 unknown
+# column, or an EXPLICIT <board.md> path that does not exist. A board that resolved
+# but cannot be moved is loud; an unconfigured one is quiet — the pipeline never
+# blocks on the board. (SCHEMA.md §Kanban states the same contract.)
 set -eu
 
 usage='usage: kanban-move.sh <board.md|auto> <feature-id> <column|stage> [--pr <num>] [--title <title>] [--project <name>] [--profile <path>]
@@ -60,17 +62,9 @@ while [ $# -gt 0 ]; do
 done
 
 TAB=$(printf '\t')
-# One config per human, wherever the runtime that installed it put it: `~/.claude` for a
-# Claude Code install (historical, still authoritative), `~/.cohorte` for every other coding
-# agent. Probe both — a repo driven from two agents must resolve ONE board, not two.
-CONFIG="${COHORTE_CONFIG:-}"
-if [ -z "$CONFIG" ]; then
-  for c in "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/cohorte.config.yaml" \
-           "$HOME/.cohorte/cohorte.config.yaml"; do
-    [ -f "$c" ] && { CONFIG="$c"; break; }
-  done
-  CONFIG="${CONFIG:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/cohorte.config.yaml}"
-fi
+# One config per human: `${CLAUDE_CONFIG_DIR:-~/.claude}/cohorte.config.yaml`. COHORTE_CONFIG
+# overrides it (tests, or a second board set).
+CONFIG="${COHORTE_CONFIG:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/cohorte.config.yaml}"
 
 # The nine pipeline stages and their default headings. A stage key given as the
 # target column is mapped through the config (per-board `columns` first, then the

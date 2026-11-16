@@ -2,7 +2,7 @@
 feature_id: patch-<slug>
 kind: patch # a bug fix, not a feature — /cohorte-build skips contract authoring, /cohorte-ship commits `fix(…)`
 title: <one line: the bug, from the user's side>
-status: draft # draft → frozen → in-progress → in-review → shipped · blocked (see SCHEMA.md §Spec status)
+status: draft # draft → frozen → in-progress → in-review → shipped → merged · blocked · abandoned (see SCHEMA.md §Spec status)
 severity: <critical | major | minor> # drives nothing mechanical; it is what the human triages on
 branch: <patch_branch_prefix><feature_id>
 created: <YYYY-MM-DD>
@@ -69,7 +69,7 @@ design_files: [] # omit unless the fix is itself visual
 
 ## 9. Acceptance criteria / DoD
 
-> §9, not §8 — the number is load-bearing, so don't renumber it. `review.md` and
+> §9, not §8 — the number is load-bearing, so don't renumber it. `cohorte-review.md` and
 > `implementer.template.md` both name "contract §5, acceptance §9" verbatim, so a patch spec pins
 > those two sections to the feature spec's numbers and just has no §8 (the feature spec has no §7 —
 > a gap in the sequence is normal here).

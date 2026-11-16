@@ -63,6 +63,30 @@ if git -C "$repo_root" rev-parse --verify -q "origin/__DEFAULT_BRANCH__" >/dev/n
 fi
 git -C "$repo_root" worktree add -b "$branch" "$worktree_dir" "$base"
 
+# --- carry the feature's UNCOMMITTED files into the new worktree --------------
+# The worktree starts from the remote default branch, but a frozen spec is not committed
+# until /cohorte-ship: specs/<id>.md, specs/design/<id>.md and (once /cohorte-build has
+# authored it) the contract file <contract.path>/<id>.<ext> exist only in THIS checkout, and
+# /cohorte-build in the worktree then refused ("no frozen spec"). Copy every untracked or
+# modified, non-ignored file whose name is `<id>.<anything>` — no profile parsing needed, and
+# the worktree is brand new (the script refuses an existing one), so nothing of its own is
+# overwritten. Gitignored buffers (specs/reports/) stay behind: they describe this checkout.
+carried=0
+while IFS= read -r rel; do
+  [[ -n "$rel" && -f "$repo_root/$rel" ]] || continue
+  case "${rel##*/}" in "$id".*) ;; *) continue ;; esac
+  mkdir -p "$(dirname "$worktree_dir/$rel")"
+  cp -p "$repo_root/$rel" "$worktree_dir/$rel"
+  echo "→ carried $rel into the worktree"
+  carried=$((carried + 1))
+done < <(git -C "$repo_root" ls-files --others --modified --exclude-standard)
+if [[ "$carried" -gt 0 ]]; then
+  echo "   the worktree's copies are now the ones that evolve; delete the main checkout's once you"
+  echo "   are working there (git pull refuses to overwrite an untracked file when the PR merges)"
+else
+  echo "   ! no uncommitted specs/${id}.md found to carry — /cohorte-build in the worktree needs a frozen spec" >&2
+fi
+
 # Replace (or append) KEY=VALUE in a dotenv file — one definitive line per key.
 set_env() {
   local file="$1" key="$2" value="$3" tmp
@@ -92,7 +116,7 @@ Fully isolated — run its dev + migrations alongside other worktrees:
   cd $worktree_dir
   __MIGRATE_CMD__
   cd $worktree_dir && __DEV_CMD__
-  /cohorte-brainstorm → /cohorte-spec → (design) → /cohorte-build $id → test → /cohorte-review → /cohorte-ship
+  /cohorte-build $id → test → /cohorte-review $id → /cohorte-ship $id   (spec carried in: $carried file(s))
 
 Tear down when merged:  scripts/remove-feature.sh $id
 EOF

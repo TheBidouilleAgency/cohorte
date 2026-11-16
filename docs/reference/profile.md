@@ -165,10 +165,10 @@ gate:
   deny:  ["node ace migration:fresh", "node ace db:wipe", …]   # hard-blocked, any branch
   ask:   ["node ace migration:run", "psql", …]                 # confirm, any branch
   ask_on_default_branch: ["git commit", "git push", "git merge", "git rebase", "git reset", "docker compose"]
-  preflight: { enabled: true, agents: [review], max_age_minutes: 30 }
+  preflight: { enabled: true, agents: [cohorte-review], max_age_minutes: 30 }
 ```
 
-See [Gate & permissions](/reference/gate) for how `hooks/gate.py` enforces this.
+See [Gate & permissions](/reference/gate) for how the project gate (`.claude/hooks/cohorte-gate.py`) enforces this.
 
 ## Prose sections
 
