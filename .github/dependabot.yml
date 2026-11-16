@@ -1,11 +1,18 @@
-# Actions are pinned to commit SHAs (validate-core enforces it) — Dependabot keeps those pins
-# current, one PR per week, with the tag in the PR title so a reviewer sees what moved.
+# Actions are pinned to commit SHAs (validate-core enforces it), so nothing moves on its own.
+# Dependabot keeps those pins from going stale — GitHub retires old action runtimes, and a stale
+# pin would break CI (or the publish job) on the day it happens — but quietly: at most one grouped
+# PR a month, minor/patch only. Major versions change behaviour (the publish and nightly jobs
+# can't be exercised from a PR), so they are bumped by hand when GitHub requires it.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
+    open-pull-requests-limit: 1
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       actions:
         patterns: ["*"]
@@ -14,6 +21,10 @@ updates:
     directory: /docs
     schedule:
       interval: monthly
+    open-pull-requests-limit: 1
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       docs:
         patterns: ["*"]
