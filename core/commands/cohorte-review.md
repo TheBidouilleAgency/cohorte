@@ -226,9 +226,9 @@ surviving severity** — exactly one row applies:
     for the criteria the pipeline actually verified — spec conformance + `ui_language` copy (this
     review), tests · lint · typecheck (a green `/cohorte-build`), mobile-first as far as the code
     shows it. On `kind: refactor`: behaviour preserved + items cleared (this review), tests · lint ·
-    typecheck green (§0's preflight — no `/cohorte-build` ran). **Leave `- [ ]` (and say which) any item no stage verified** — nothing in the pipeline
-    *runs* the feature, so a criterion that needs the app up stays open unless the human says they
-    exercised it by hand. Ticking is the lead's job (the reviewer is read-only).
+    typecheck green (§0's preflight — no `/cohorte-build` ran). **Leave `- [ ]` (and say which) any item no stage verified** — review never *runs* the
+    feature: a criterion tagged `· runtime` stays open for `/cohorte-verify` (which ticks it on a
+    passing check) or for the human who exercised it by hand. Ticking is the lead's job (the reviewer is read-only).
   - **Stamp the freshness gate** so `/cohorte-ship` can refuse code edited after this verdict:
     `BASE=$(<core>/pipeline/scripts/feature-diff.sh --default <default_branch> --base-only)`, then
     write into the spec front-matter `reviewed_base: $BASE` and

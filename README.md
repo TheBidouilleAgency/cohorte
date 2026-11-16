@@ -42,7 +42,7 @@ that degradation. Each one is a failure you have already had:
 | --- | --- |
 | *"It forgot what we decided."* | The spec is **frozen to disk** and re-read by every stateless agent. Nothing is remembered, so nothing is forgotten — and `/clear` between stages is always safe. |
 | *"The API and the UI don't fit."* | The **contract is authored before any implementer is dispatched**. Surfaces import it read-only and never talk to each other — which is what makes building them in parallel safe. |
-| *"It edited a file I didn't want it to."* | **One owner per tree**: each surface agent is rendered with its own tree and told it owns nothing else, and the review flags any write outside it. (A convention the agents follow and the review checks — not a sandbox.) |
+| *"It edited a file I didn't want it to."* | **One owner per tree, enforced**: the gate denies a surface agent's Write/Edit outside its own tree (and its writes to the contract); its Bash writes are checked best effort, and the review flags anything that slipped through. |
 | *"It ran something it shouldn't have."* | The **gate** is a real blocking hook committed in the repo, branch-aware, parsing commands (not grepping them) to deny force-pushes, pushes to the default branch and the project's destructive commands — subagents included. It fails closed. It is a strong guard against agent mistakes, not a sandbox: keep GitHub branch protection as the hard boundary for the remote. |
 | *"The review said it was fine."* | Review is a **separate read-only agent** that sees the spec and the diff, never the conversation that produced them. A dead reviewer's zero findings can't read as ship. |
 | *"Four agents just told me it doesn't compile."* | A **deterministic preflight** runs typecheck/lint/tests first. Red ⇒ **zero agents spawned**. |
@@ -229,9 +229,11 @@ suite locally.
 | `/cohorte-review <id>`       | Read-only review agents (one per touched surface, parallel) audit the diff vs the spec; out-of-scope findings go to the refactor backlog. `--pr <num>` reviews an **incoming** GitHub PR in a throwaway worktree and offers to post the report as a comment. |
 | `/cohorte-fix <id>`          | Apply a review report: remediation into the spec, re-dispatch only the surfaces with findings. |
 | `/cohorte-fleet plan\|status\|sync` | Fly several features in parallel: overlap matrix + merge order, one worktree per feature, live status, post-merge rebase sweep. Coordination only — never headless execution. |
+| `/cohorte-verify <id>`       | Start the app, run smoke/e2e (and migrations down-then-up on a dev DB), tick the runtime DoD items with evidence. Ship blocks on a FAIL. |
 | `/cohorte-ship <id>`         | Release agent commits, pushes, opens the PR; watches CI; proposes worktree teardown.  |
+| `/cohorte-revert <id>`       | Revert a shipped feature through a PR (never pushed to the default branch), running its `## Rollback` down migration on a dev DB. |
 | `/cohorte-audit [path]`      | Prioritized refactor backlog for existing code.                                       |
-| `/cohorte-refactor <domain>` | Apply the backlog for one surface, TDD-first.                                         |
+| `/cohorte-refactor <domain>` | Apply the backlog for one surface, TDD-first, then freeze the round as a `kind: refactor` spec that goes review → ship. |
 | `/cohorte-retro [last n]`    | Mine the accumulated review findings for patterns; ratified ones become §Conventions rules and the surface agents are re-rendered — the next build never produces the finding. |
 | `/cohorte-align-ds`          | Align the code UI kit to the design system (no-op if none configured).                |
 | `/cohorte-update-pipeline`   | Refresh the machine install, re-wire this repo (`cohorte sync`) and reconcile its generated files. |

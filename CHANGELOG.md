@@ -94,6 +94,18 @@ short, user-facing, most recent first. One `## <version> — <YYYY-MM-DD>` secti
   commit found via `gh`, the down migration run on a dev database while its files still exist, the
   spec kept as history, `## Rollback` in the PR body. Never pushes to the default branch.
 
+- **Kanban moves no longer get lost in parallel.** Worktrees moving cards on one board at the same
+  time could overwrite each other (2 of 8 concurrent moves vanished in a test); each move now takes a
+  lock on the board (a crashed writer's lock is broken after about a minute; exit 4 if the board
+  stays locked).
+- **The gate judges what `verify-run.sh` is asked to run**, and now also guards `NotebookEdit`.
+- **An end-to-end test of the deterministic pipeline runs in CI** (install → sync → feature diff
+  with a new file → preflight → gate → kanban → uninstall), so a change on either side of a
+  prompt/script hand-off fails in CI rather than in a session.
+- **Upgrading:** run `/cohorte-update-pipeline` in each project. It asks the three new questions
+  (security scans, runtime verification, project kind), writes `.claude/profile.json` — commit it —
+  and from then on the ownership check is active.
+
 ## 3.0.0 — 2026-11-16
 
 **One install mode, Claude Code only.** The machine gets the commands and the generic core;

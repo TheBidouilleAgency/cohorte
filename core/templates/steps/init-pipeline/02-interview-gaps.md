@@ -33,6 +33,12 @@ Ask ONLY what you couldn't confidently detect. Batch related questions. Cover:
   of `~/.claude`. Note that a scan red at its threshold blocks every review, so the default branch
   must pass it today. If it doesn't, offer a higher threshold. The accepted commands go in
   `commands.security`. None accepted ⇒ `security: []`.
+- **Runtime verification** (`/cohorte-verify`, `<core>/pipeline/schema/verify.md`) — only if Phase 1
+  found a dev server, an e2e runner or migrations. Propose `commands.dev` + `commands.dev_ready` (a URL
+  such as `http://localhost:5173` or a probe command), `commands.smoke` / `commands.e2e` when they
+  exist, and `commands.migrate_down` when migrations do; ask `verify.db`: `local` (the dev DB is the
+  human's own) or `shared` (others use it — migrations are then refused unless isolation gives each
+  worktree its own DB). Declined ⇒ leave `dev_ready` empty: verify stays off and ship never asks.
 - **Contract** — mechanism (`shared-types-zod` / `openapi` / `protobuf` / `json-schema` / `none`) and
   where feature contracts are authored. If `none`, surfaces sync by the spec prose alone.
 - **Release notes (only if Phase 1 found a versioning tool or a note-enforcing CI job)** — confirm the

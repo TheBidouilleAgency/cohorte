@@ -127,6 +127,30 @@ commands:
   make_migration: "cd apps/api && node ace make:migration"
 ```
 
+### Runtime verification, security scans, ownership (3.1)
+
+```yaml
+commands:
+  dev: pnpm dev
+  dev_ready: http://localhost:5173     # or a probe command — empty ⇒ /cohorte-verify stays off
+  smoke: pnpm test:smoke
+  e2e: pnpm exec playwright test
+  migrate_down: "cd apps/api && node ace migration:rollback"
+  security:                            # run by the review preflight, after typecheck/lint/tests
+    - pnpm audit --prod --audit-level=high
+verify:
+  db: local                            # shared ⇒ migrations refused unless each worktree has its own DB
+ownership:
+  enforce: true                        # the gate denies a surface agent's writes outside its tree
+  shared_writable: [pnpm-lock.yaml]    # files any surface may write
+surfaces:
+  - key: api
+    owns_also: [packages/api-client]   # extra paths this surface may write
+```
+
+See `profile/schema/verify.md`, `profile/schema/preflight.md` §Security scans and
+[Gate & permissions](/reference/gate) §Surface ownership.
+
 ### Project kind
 
 ```yaml

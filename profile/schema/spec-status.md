@@ -35,7 +35,7 @@ External drivers may write these states too. Every reader routes on
 them either way, and a stamp on a spec with no front-matter stays a silent no-op — no driver
 dies over a status line.
 
-**`kind` — feature (default) or `patch`.** Orthogonal to `status`, and — with `migrations`
+**`kind` — feature (default), `patch` or `refactor`.** Orthogonal to `status`, and — with `migrations`
 (below) — the only other front-matter field commands route on. `/cohorte-patch` freezes `specs/patch-<slug>.md` with `kind: patch` from
 `templates/patch.template.md`: a ~60-line bug spec whose §4 **regression test** replaces §5 CONTRACT
 as the thing the diff is checked against. It moves through the same states and the same commands —
@@ -47,6 +47,11 @@ a patch is a spec, so nothing downstream is special-cased beyond three lines.
 | `/cohorte-build` §1.6 | judges §1 repro + §4 regression test instead of contract completeness; gap check `repro` |
 | `/cohorte-build` §2 | authors no contract when §5 Contract delta is `none` (the usual case) |
 | `/cohorte-ship` §1/§2b/§3 | branches off `vcs.patch_branch_prefix`; a `patch` bump by default; `fix(<scope>)` commit |
+
+`/cohorte-refactor` §4 freezes `specs/refactor-<domains>-<date>.md` with `kind: refactor`: no
+contract, §6 = the cleared backlog items, §9 = public behaviour preserved + tests green. It enters at
+`/cohorte-review` (behaviour preservation + items landed + scope instead of contract conformance),
+then `/cohorte-ship` (`refactor(<scope>)` commit) — never `/cohorte-build` or the loop workflow.
 
 A patch may span **several surfaces** — one bug, one repro, one spec. What it may never do is add
 **new** contract surface area: two surfaces agreeing on a shape that doesn't exist yet is what §5 is

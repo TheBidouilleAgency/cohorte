@@ -40,6 +40,8 @@ builds itself. Say which mode you ran in your last line.
   on `<default_branch>` run `git switch <prefix>$ARGUMENTS 2>/dev/null || git switch -c <prefix>$ARGUMENTS`
   (uncommitted work carries over). `<prefix>` = `vcs.patch_branch_prefix` (else `fix/`) for
   `kind: patch`, `vcs.feature_branch_prefix` otherwise. On some *other* branch ⇒ say which and ask.
+- **`kind: refactor` ⇒ stop.** `/cohorte-refactor` already built it; it has no contract to author
+  and no implementer to dispatch. Say so and route to `/cohorte-review $ARGUMENTS`.
 - **`kind: patch` in the front-matter ⇒ this is a bug fix** frozen by `/cohorte-patch`, and it is
   built by this command like any other spec, with two differences called out where they apply: §1.6
   judges it against its regression test instead of a contract, and §2 authors no contract unless §5

@@ -13,6 +13,11 @@ files automatically. It works because every generated artifact is a **determinis
    such decision and must not be defaulted blind: detect a versioning tool / note-enforcing CI job per
    `/cohorte-init-pipeline` Phase 1, and if there is one, ask Phase 2's release-notes question (anchor
    package, language, bump policy, forbidden levels). No tool found ⇒ top up with `enabled: false`.
+   Same for the 3.1 decisions: `commands.security` (ask init Phase 2's security question when a
+   scanner is detected, else `[]`), `commands.dev_ready` / `smoke` / `e2e` / `migrate_down` +
+   `verify.db` (ask the runtime-verification question when a dev server or e2e runner is detected,
+   else leave `dev_ready` empty), and `project.kind` (top up as `web`; ask only if Phase 1 detection
+   disagrees).
 2. **Re-render agent frontmatter + body.** For each `surfaces[]` entry, re-render
    `<agents>/<agent>.md` from the current `implementer.template.md` per §Rendering (`<core>/pipeline/schema/rendering.md`). Safe by
    doctrine: rendered agents are regenerable artifacts — hand-written rules belong in `PIPELINE.md`
