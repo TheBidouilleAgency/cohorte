@@ -8,7 +8,7 @@ You are the **lead**. Run the fix loop for feature **$ARGUMENTS** — the scoped
 `REVISE`/`BLOCK` verdict. The full `/cohorte-spec` (Mode B) + `/cohorte-build` path still exists for review returns
 that change the *contract*; `/cohorte-fix` is for everything else.
 
-> Read `PIPELINE.md` §`pipeline-profile` first: `surfaces` (paths + agent names) and `contract`.
+> Read `.claude/profile.json` first (the parsed `pipeline-profile` block; absent ⇒ read that block in `PIPELINE.md`): `surfaces` (paths + agent names) and `contract`.
 > _Skip the re-read if it's already in your context this session and unmodified since._
 >
 > **Kanban** (`<core>/pipeline/schema/kanban.md`): on ingest, run

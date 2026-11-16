@@ -7,7 +7,7 @@ allowed-tools: Read, Write, Edit, Bash, Grep, Glob, DesignSync
 Bring the code UI kit back in line with the **design system** — the source of truth. Direction is
 **design → code**.
 
-> Read `PIPELINE.md` §`design` first. **If `design.enabled` is false, stop immediately** and tell the
+> Read `.claude/profile.json` §`design` first (the parsed `pipeline-profile` block; absent ⇒ read that block in `PIPELINE.md`). **If `design.enabled` is false, stop immediately** and tell the
 > human this project has no design system configured (nothing to align). Otherwise proceed with the
 > profile's `provider`, `design_system_project`, `snapshot_dir`, `ui_kit_path`, `tokens_path`.
 

@@ -6,7 +6,7 @@ argument-hint: <feature_id>
 
 You are the **lead**. Ship feature **$ARGUMENTS**. This is the outward-facing gate.
 
-> Read `PIPELINE.md` §`vcs` (host, remote, default_branch, feature_branch_prefix) **and
+> Read `.claude/profile.json` `vcs` (host, remote, default_branch, feature_branch_prefix) (the parsed `pipeline-profile` block; absent ⇒ read that block in `PIPELINE.md`) **and
 > §`release_notes`** — §2b below is skipped or required based on it, and skipping it when it is
 > required opens a PR that CI fails on arrival.
 >
@@ -122,7 +122,7 @@ See `<core>/pipeline/schema/release-notes.md`.
 
 Spawn one agent (`subagent_type: cohorte-release`):
 "Release feature `$ARGUMENTS` on branch
-`<the branch §1 resolved>`. Read `PIPELINE.md` §vcs first. Spec: `specs/$ARGUMENTS.md` (already
+`<the branch §1 resolved>`. Read `.claude/profile.json` `vcs` first. Spec: `specs/$ARGUMENTS.md` (already
 `status: shipped` — stage it). Write conventional commit(s), push (no force), open the PR (use `gh` if
 `host: github` + available; else emit the compare URL + drafted PR body from `<core>/templates/pr-body.md`).
 Stage **all** the feature's changes including `specs/$ARGUMENTS.md` and, if `release_notes.enabled`, the
@@ -162,6 +162,11 @@ under the `shipped` heading — never re-read the whole board into context.
   `scripts/remove-feature.sh $ARGUMENTS` (add `--drop-db` to also drop the feature db; kept by
   default). It removes the worktree, deletes the merged branch, frees the slot. Never run it before
   the merge is confirmed, and only with the human's go-ahead (the gate will ask anyway).
+- **Clear the report buffer** once the merge is confirmed (never before — `/cohorte-fix` and a
+  re-review read it): in the main checkout, one Bash call —
+  `rm -f specs/reports/$ARGUMENTS.verify/* 2>/dev/null; rmdir specs/reports/$ARGUMENTS.verify 2>/dev/null; rm -f specs/reports/$ARGUMENTS.* specs/reports/$ARGUMENTS-brainstorm.md`
+  (plain `rm -f` + `rmdir`, never `rm -rf`, which many profiles' gate denies).
+  These are gitignored, derived files: the spec, its `## Remediation` history and the merged code keep
+  everything worth keeping. Say how many files went.
 - Feature closed — **recommend a `/clear`** before starting the next one; nothing from this session
-  is needed again (spec `merged`, board updated). `specs/reports/$ARGUMENTS.*` is a gitignored
-  buffer and can be deleted now.
+  is needed again (spec `merged`, board updated, buffer cleared).

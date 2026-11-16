@@ -8,7 +8,7 @@ client email, a support thread, a stack trace, a half-idea — and today a human
 hand before anything can start. Your job is that distillation: read the raw material, decide
 which door it enters through, and stage a handoff the next command can consume verbatim.
 
-> Read `PIPELINE.md` §`pipeline-profile` first — `name`, `one_liner`, `surfaces` (to guess which
+> Read `.claude/profile.json` first (the parsed `pipeline-profile` block; absent ⇒ read that block in `PIPELINE.md`) — `name`, `one_liner`, `surfaces` (to guess which
 > surface a symptom lives in) and `ui_language`. _Skip the re-read if it's already in your
 > context this session and unmodified since._ Read `specs/_decisions.md` §Live if it exists —
 > an incoming request that contradicts a settled decision must be flagged as such, not triaged

@@ -1309,6 +1309,17 @@ console.log("feature-diff.sh");
         JSON.stringify([nf.status, nf.stdout.slice(-400), nf.stderr.slice(-300)]));
       check("…and nothing that is not named after the feature", !has("apps/api/unrelated.ts"));
       spawnSync("git", ["worktree", "remove", "--force", wt], { cwd: dir, env });
+      // The id becomes a branch, a directory, a DB name: anything but kebab-case is refused up front.
+      for (const bad of ["Fleet_B", "../escape", "a b", "-x"]) {
+        const r = spawnSync("bash", [join(dir, "scripts", "new-feature.sh"), bad], { cwd: dir, env, encoding: "utf8" });
+        check(`new-feature.sh refuses the id ${JSON.stringify(bad)}`, r.status === 2 && /kebab-case/.test(r.stderr), `${r.status} ${r.stderr}`);
+      }
+      const rmTpl = readFileSync(join(root, "scripts", "remove-feature.sh.template"), "utf8")
+        .replace(/__[A-Z_]+__/g, "x");
+      put("scripts/remove-feature.sh", rmTpl);
+      const rf = spawnSync("bash", [join(dir, "scripts", "remove-feature.sh"), "fleet-a", "--force"], { cwd: dir, env, encoding: "utf8" });
+      check("remove-feature.sh refuses an unknown flag instead of ignoring it",
+        rf.status === 1 && /unknown option "--force"/.test(rf.stderr), `${rf.status} ${rf.stderr}`);
     } finally {
       rmSync(outer, { recursive: true, force: true });
     }

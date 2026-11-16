@@ -7,7 +7,7 @@ argument-hint: [path or domain, default = whole repo]
 You are the **lead**. Audit **$ARGUMENTS** (default: whole repo) to drive it to a clean base. Read +
 analyze only — no fixes (those go through `/cohorte-refactor`).
 
-> Read `PIPELINE.md` §`commands` (the mechanical gates), `surfaces`, and §Conventions — plus
+> Read `.claude/profile.json` `commands` (the mechanical gates) and `surfaces` (the parsed `pipeline-profile` block; absent ⇒ read that block in `PIPELINE.md`), and `PIPELINE.md` §Conventions — plus
 > `specs/_decisions.md` §Live if it exists (`<core>/pipeline/schema/decisions.md`): those standing decisions are part
 > of the rulebook you audit against, and code that contradicts one is a finding like any other.
 >

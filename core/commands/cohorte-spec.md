@@ -7,8 +7,8 @@ You run the **spec** step in the main thread — interactive, with the human. Pa
 
 **$ARGUMENTS**
 
-> Read `PIPELINE.md` first: `contract` (mechanism/path — so §5 names the right schema types),
-> `design.enabled` (whether §8 matters), and §Conventions. Use `specs/_template.md` as the section list.
+> Read `.claude/profile.json` first (the parsed `pipeline-profile` block; absent ⇒ read that block in `PIPELINE.md`): `contract` (mechanism/path — so §5 names the right schema types),
+> `design.enabled` (whether §8 matters); then `PIPELINE.md` §Conventions. Use `specs/_template.md` as the section list.
 >
 > **Decision journal** (`<core>/pipeline/schema/decisions.md`): read `specs/_decisions.md` §Live if it exists — one
 > line per standing decision, so it is cheap. It is the ONLY place the project's transverse rules

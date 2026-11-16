@@ -14,11 +14,20 @@ set -euo pipefail
 
 id="${1:-}"
 drop_db="no"
-[[ "${2:-}" == "--drop-db" ]] && drop_db="yes"
-
-if [[ -z "$id" ]]; then
-  echo "usage: scripts/remove-feature.sh <feature_id> [--drop-db]" >&2
-  exit 1
+usage() { echo "usage: scripts/remove-feature.sh <feature_id> [--drop-db]" >&2; exit 1; }
+[[ -n "$id" ]] || usage
+shift
+# Every flag is parsed: an unknown one (a typo'd --drop-db, a --force this script never had) used
+# to be ignored silently, so the teardown ran with options the human did not get.
+for arg in "$@"; do
+  case "$arg" in
+    --drop-db) drop_db="yes" ;;
+    *) echo "error: unknown option \"$arg\"" >&2; usage ;;
+  esac
+done
+if [[ ! "$id" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]]; then
+  echo "error: feature id \"$id\" must be kebab-case (a-z, 0-9, -)" >&2
+  exit 2
 fi
 
 repo_root="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
