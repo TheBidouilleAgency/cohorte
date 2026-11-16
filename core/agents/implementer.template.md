@@ -21,9 +21,14 @@ shared surface is the frozen contract and the spec.
 
 ## You own
 
-`<SURFACE_PATH>/**` only. Everything under it — and nothing outside it. Nothing mechanical enforces
-this (your `tools:` grant Write/Edit/Bash on the whole repo, and no hook checks paths): the boundary
-holds because you keep it, and the reviewer flags any file of yours outside it.
+`<SURFACE_PATH>/**` only. Everything under it, and nothing outside it, except the paths the profile
+lists in your surface's `owns_also` and in `ownership.shared_writable`. The gate hook enforces this
+(unless `ownership.enforce` is `false`). A Write/Edit outside those paths is **denied**, and so is
+any write to the contract (`contract.path`). Your Bash writes get the same check on a best-effort
+basis: redirections, `cp`/`mv`/`rm` and `sed -i` are checked, but files a tool or script writes on
+its own are not. Don't look for a way around a denial. If you need a change outside your tree,
+put it in your handoff and the lead routes it. The reviewer still flags any file of yours that
+lands outside your tree. Redirect logs outside the repo (`$TMPDIR`) or inside your own tree.
 
 ## Your conventions (baked from `PIPELINE.md` at render time)
 

@@ -619,6 +619,177 @@ console.log("gate.py — preflight phase gate");
   check("no preflight block ⇒ never gated", run(dispatch("cohorte-review", noblock), { projectDir: noblock }).raw === "");
 }
 
+// ── surface ownership (profile.json surfaces[], subagent payloads) ───────────
+console.log("gate.py — surface ownership");
+{
+  const OWN_PROFILE = {
+    name: "p",
+    contract: { enabled: true, path: "packages/shared/src", index: "packages/shared/src/index.ts" },
+    ownership: { shared_writable: ["pnpm-lock.yaml", "packages/*/package.json"] },
+    surfaces: [
+      { key: "backend", path: "apps/api", agent: "backend", owns_also: ["db/migrations"] },
+      { key: "frontend", path: "apps/web", agent: "frontend" },
+      { key: "docs", path: "<path>", agent: "docs" },
+    ],
+  };
+  const fixture = (profile) => {
+    const d = scratch(); gitRepo(d, "feat");
+    for (const p of ["apps/api/src", "apps/web/src", "apps/api-v2", "packages/shared/src", "db/migrations"])
+      mkdirSync(join(d, p), { recursive: true });
+    writeFileSync(join(d, "apps", "api", "src", "f.ts"), "a\n");
+    writeFileSync(join(d, "apps", "web", "src", "f.tsx"), "a\n");
+    if (profile !== undefined)
+      writeFileSync(join(d, ".claude", "profile.json"), typeof profile === "string" ? profile : JSON.stringify(profile));
+    return d;
+  };
+  const as = (agent_type, agent_id = "agent-1") => (agent_type ? { agent_id, agent_type } : {});
+  const edit = (tool, file, cwd, who, extra = {}) => {
+    const tool_input = tool === "NotebookEdit" ? { notebook_path: file, new_source: "x" }
+      : tool === "MultiEdit" ? { file_path: file, edits: [{ old_string: "a", new_string: "b" }] }
+      : tool === "Edit" ? { file_path: file, old_string: "a", new_string: "b" }
+      : { file_path: file, content: "x" };
+    return { tool_name: tool, tool_input, cwd, ...who, ...extra };
+  };
+  const d = fixture(OWN_PROFILE);
+  const at = { projectDir: d };
+  const W = (rel, who, extra) => run(edit("Write", join(d, rel), d, who, extra), at);
+
+  const rows = [
+    ["apps/api/src/new.ts", "backend", "allow", "in-tree Write"],
+    ["apps/web/src/x.tsx", "backend", "deny", "another surface's tree", /surface `frontend` \(agent `frontend`\)/],
+    ["packages/shared/src/feat.ts", "backend", "deny", "the contract", /frozen contract/],
+    ["packages/shared/src/index.ts", "backend", "deny", "the contract barrel", /frozen contract/],
+    ["db/migrations/001.sql", "backend", "allow", "owns_also"],
+    ["pnpm-lock.yaml", "backend", "allow", "shared_writable file"],
+    ["packages/shared/package.json", "backend", "allow", "shared_writable glob"],
+    ["apps/api-v2/x.ts", "backend", "deny", "a sibling dir sharing the prefix (apps/api-v2)"],
+    ["apps/api/../web/x.ts", "backend", "deny", "a `..` escape (apps/api/../web)"],
+    ["README.md", "backend", "deny", "a file no surface owns", /no surface owns it/],
+    [".claude/profile.json", "backend", "deny", "the profile itself"],
+    ["db/migrations/001.sql", "frontend", "deny", "another surface's owns_also"],
+    ["apps/web/src/x.tsx", "frontend", "allow", "the frontend agent in its own tree"],
+    ["apps/web/src/x.tsx", null, "allow", "the lead (no agent_id)"],
+    ["apps/web/src/x.tsx", "cohorte-review", "allow", "a fixed cohorte-* agent"],
+    ["apps/web/src/x.tsx", "general-purpose", "allow", "an unknown agent type"],
+    ["apps/web/src/x.tsx", "docs", "allow", "a surface whose path is a <placeholder> (inert)"],
+  ];
+  for (const [rel, who, want, why, re] of rows) {
+    const r = W(rel, as(who));
+    check(`${who || "lead"} Write ${rel} ⇒ ${want} (${why})`,
+      r.decision === want && (!re || re.test(r.reason || "")), `got ${r.decision}: ${r.reason || r.stderr}`);
+  }
+  const typeOnly = run(edit("Write", join(d, "apps/web/x.tsx"), d, { agent_type: "backend" }), at);
+  check("agent_type without agent_id (a --agent main session) ⇒ unrestricted", typeOnly.raw === "", typeOnly.reason);
+  for (const tool of ["Edit", "MultiEdit", "NotebookEdit"]) {
+    const r = run(edit(tool, join(d, "apps/web/src/f.tsx"), d, as("backend")), at);
+    check(`${tool} out of tree by backend ⇒ deny`, r.decision === "deny", `${r.decision}: ${r.reason}`);
+    const ok = run(edit(tool, join(d, "apps/api/src/f.ts"), d, as("backend")), at);
+    check(`${tool} in tree by backend ⇒ allow`, ok.raw === "", ok.reason);
+  }
+  const multiInner = run({ tool_name: "MultiEdit", cwd: d, ...as("backend"),
+    tool_input: { file_path: join(d, "apps/api/src/f.ts"), edits: [{ file_path: join(d, "apps/web/src/f.tsx"), old_string: "a", new_string: "b" }] } }, at);
+  check("MultiEdit with an out-of-tree per-edit file_path ⇒ deny", multiInner.decision === "deny", multiInner.reason);
+  const noPath = run({ tool_name: "NotebookEdit", tool_input: { new_source: "x" }, cwd: d, ...as("backend") }, at);
+  check("an edit tool with no path, by a surface agent ⇒ deny (fail closed)", noPath.decision === "deny", noPath.reason);
+  const noPathLead = run({ tool_name: "NotebookEdit", tool_input: { new_source: "x" }, cwd: d }, at);
+  check("…and by the lead ⇒ allow", noPathLead.raw === "", noPathLead.reason);
+  const relW = run(edit("Write", "apps/web/src/x.tsx", d, as("backend")), at);
+  check("a relative file_path resolves against the payload cwd ⇒ deny", relW.decision === "deny", relW.reason);
+  const outside = run(edit("Write", join(tmpdir(), "cohorte-gate-scratch.log"), d, as("backend")), at);
+  check("a target outside every project checkout ($TMPDIR) ⇒ not judged", outside.raw === "", outside.reason);
+  const unattended = W("apps/web/src/x.tsx", as("backend"), { permission_mode: "bypassPermissions" });
+  check("bypassPermissions ⇒ still deny", unattended.decision === "deny", unattended.decision);
+  const prot = W(".claude/settings.json", as("backend"));
+  check("ownership deny outranks the self-protection ask", prot.decision === "deny", prot.decision);
+
+  // Bash writes by a surface agent — best effort, through the self-protection target analysis.
+  const B = (command, who, extra = {}) => run({ ...bash(command, d, extra), ...as(who) }, at);
+  for (const [cmd, who, want] of [
+    ["echo x > apps/web/src/x.tsx", "backend", "deny"],
+    ["echo x > apps/api/src/x.ts", "backend", "allow"],
+    ["cp apps/api/src/f.ts apps/web/src/", "backend", "deny"],
+    ["mv apps/web/src/f.tsx apps/api/src/", "backend", "deny"],
+    ["rm apps/web/src/f.tsx", "backend", "deny"],
+    ["tee apps/web/src/x.tsx < /dev/null", "backend", "deny"],
+    ["sed -i 's/a/b/' apps/api/src/f.ts", "backend", "allow"],
+    ["sed -i '' 's/a/b/' apps/api/src/f.ts", "backend", "allow"],
+    ["sed -i 's/a/b/' apps/web/src/f.tsx", "backend", "deny"],
+    ["cd apps/web && echo x > src/y.tsx", "backend", "deny"],
+    ["cd apps/api && echo x > src/y.ts", "backend", "allow"],
+    ["bash -c 'echo x > apps/web/src/y.tsx'", "backend", "deny"],
+    ["echo x > packages/shared/src/feat.ts", "backend", "deny"],
+    ["npm test > /dev/null 2>&1", "backend", "allow"],
+    [`npm test > ${sh(join(tmpdir(), "cohorte-gate-log.txt"))}`, "backend", "allow"],
+    ['echo x > "$OUT/y.tsx"', "backend", "allow"],
+    ["cat apps/web/src/f.tsx", "backend", "allow"],
+    ["echo x > apps/web/src/x.tsx", null, "allow"],
+    ["echo x > apps/web/src/x.tsx", "cohorte-release", "allow"],
+  ]) {
+    const r = B(cmd, who);
+    check(`${who || "lead"} Bash ${JSON.stringify(cmd)} ⇒ ${want}`, r.decision === want,
+      `got ${r.decision}: ${r.reason || r.stderr}`);
+  }
+
+  // Inert cases.
+  const none = fixture(undefined);
+  check("no profile.json ⇒ ownership inert",
+    run(edit("Write", join(none, "apps/web/src/x.tsx"), none, as("backend")), { projectDir: none }).raw === "");
+  const off = fixture({ ...OWN_PROFILE, ownership: { enforce: false } });
+  check("ownership.enforce: false ⇒ inert",
+    run(edit("Write", join(off, "apps/web/src/x.tsx"), off, as("backend")), { projectDir: off }).raw === "");
+  check("ownership.enforce: false ⇒ Bash inert too",
+    run({ ...bash("echo x > apps/web/src/x.tsx", off), ...as("backend") }, { projectDir: off }).raw === "");
+  const bad = fixture("{ not json");
+  const badW = run(edit("Write", join(bad, "apps/web/src/x.tsx"), bad, as("backend")), { projectDir: bad });
+  check("malformed profile.json ⇒ inert, with a warning", badW.raw === "" && /unreadable/.test(badW.stderr || ""), badW.stderr);
+  const badB = run({ ...bash("echo x > apps/web/src/x.tsx && ls", bad), ...as("backend") }, { projectDir: bad });
+  check("malformed profile.json ⇒ Bash still evaluated normally (no fail-closed deny)", badB.raw === "", badB.reason);
+  const odd = fixture({ surfaces: "nope", ownership: [], contract: 3 });
+  check("wrong-typed profile fields ⇒ inert, never a crash",
+    run({ ...bash("echo x > apps/web/src/x.tsx", odd), ...as("backend") }, { projectDir: odd }).raw === "");
+
+  // The contract wins over the surface's own path — unless contract.enabled is false.
+  const inner = { ...OWN_PROFILE, contract: { enabled: true, path: "apps/api/contract" } };
+  const ci = fixture(inner);
+  const ciW = run(edit("Write", join(ci, "apps/api/contract/feat.ts"), ci, as("backend")), { projectDir: ci });
+  check("a contract inside the surface's own tree is still read-only", ciW.decision === "deny" && /contract/.test(ciW.reason || ""), ciW.reason);
+  const cOff = fixture({ ...inner, contract: { enabled: false, path: "apps/api/contract" } });
+  check("contract.enabled: false ⇒ its path is ordinary surface code",
+    run(edit("Write", join(cOff, "apps/api/contract/feat.ts"), cOff, as("backend")), { projectDir: cOff }).raw === "");
+
+  // A surface path of "." (single-app repo) owns everything but the contract.
+  const single = fixture({ contract: { path: "src/contract" }, surfaces: [{ key: "app", path: ".", agent: "app" }] });
+  check("surface path `.` ⇒ the whole repo",
+    run(edit("Write", join(single, "anything/x.ts"), single, as("app")), { projectDir: single }).raw === "");
+  check("surface path `.` ⇒ the contract still denied",
+    run(edit("Write", join(single, "src/contract/x.ts"), single, as("app")), { projectDir: single }).decision === "deny");
+
+  // Linked worktrees: surface paths resolve against the target's own checkout.
+  const wt = join(d, "..", `${d.split("/").pop()}-own-wt`);
+  const nested = join(d, ".worktrees", "n");
+  let ok = false;
+  try {
+    execFileSync("git", ["worktree", "add", "-q", "-b", "feature/o", wt], { cwd: d, stdio: "ignore" });
+    tmps.push(wt);
+    execFileSync("git", ["worktree", "add", "-q", "-b", "feature/n", nested], { cwd: d, stdio: "ignore" });
+    ok = true;
+  } catch { /* worktree unsupported */ }
+  if (ok) {
+    for (const [base, label] of [[wt, "sibling worktree"], [nested, "worktree nested under the main checkout"]]) {
+      const inW = run(edit("Write", join(base, "apps/api/src/n.ts"), d, as("backend")), at);
+      check(`${label}, lead session in main: its apps/api ⇒ allow`, inW.raw === "", inW.reason);
+      const outW = run(edit("Write", join(base, "apps/web/src/n.tsx"), d, as("backend")), at);
+      check(`${label}: its apps/web ⇒ deny`, outW.decision === "deny", outW.reason);
+    }
+    const fromWt = run(edit("Write", join(wt, "apps/api/src/n.ts"), wt, as("backend")), { projectDir: wt });
+    check("session opened in the worktree (profile.json only in main) ⇒ still enforced, in-tree allow", fromWt.raw === "", fromWt.reason);
+    const fromWtOut = run(edit("Write", join(wt, "apps/web/src/n.tsx"), wt, as("backend")), { projectDir: wt });
+    check("…and out-of-tree deny", fromWtOut.decision === "deny", fromWtOut.reason);
+  } else {
+    console.log("  – skipped (git worktree unavailable)");
+  }
+}
+
 // ── stamps are bound to the dispatch checkout (G8 cross-worktree) ────────────
 console.log("gate.py — cross-worktree stamps");
 {

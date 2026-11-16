@@ -104,6 +104,14 @@ contract:
   index: packages/shared-types/src/index.ts   # barrel to export from, or "" if none
   authored_by: lead                           # NEVER the implementer agents
 
+# ── surface ownership (enforced by the gate hook) ──────────────────────────
+# A surface agent may write only under its surfaces[].path (+ an optional per-surface
+# `owns_also: [db/migrations]`, + shared_writable below); contract.path is read-only to it.
+# Write/Edit outside ⇒ denied; Bash writes ⇒ best effort. The lead is never restricted.
+ownership:
+  enforce: true                               # false ⇒ back to convention + review only
+  shared_writable: []                         # e.g. [pnpm-lock.yaml] — files every surface may touch
+
 # ── release notes (optional) ────────────────────────────────────────────────
 # A per-feature release note the project's versioning tool consumes. When
 # enabled, /cohorte-ship authors it BEFORE dispatching the release agent, so it

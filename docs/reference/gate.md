@@ -12,16 +12,19 @@ The installer copies `core/hooks/gate.py` into each project as `.claude/hooks/co
 and registers it in the project's `.claude/settings.json`:
 
 ```json
-{ "hooks": { "PreToolUse": [ { "matcher": "Bash|Task|Agent", "hooks": [
-  { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/cohorte-gate.py\"" }
-] } ] } }
+{ "hooks": { "PreToolUse": [
+  { "matcher": "Bash|Task|Agent", "hooks": [
+    { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/cohorte-gate.py\"", "onFailure": "block" } ] },
+  { "matcher": "Write|Edit|MultiEdit", "hooks": [
+    { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/cohorte-gate.py\"", "onFailure": "block" } ] }
+] } }
 ```
 
 It reads the PreToolUse payload on stdin and answers with Claude Code's
 `hookSpecificOutput.permissionDecision` (`ask` or `deny`, exit 0), or stays silent (allow). It
-handles `Bash`, the subagent tool under either name (`Task` or `Agent`), and, if they are ever
-routed to it, `Write`/`Edit`/`MultiEdit`/`NotebookEdit`. It uses only the standard library and
-needs Python ≥ 3.8.
+handles `Bash`, the subagent tool under either name (`Task` or `Agent`), and
+`Write`/`Edit`/`MultiEdit` (it also understands `NotebookEdit`, which `cohorte sync` does not
+register). It uses only the standard library and needs Python ≥ 3.8.
 
 ### When it acts
 
@@ -30,6 +33,7 @@ needs Python ≥ 3.8.
 | No `.claude/pipeline.json` pointer and no `gate-config.json` | **Inert.** Every call is allowed silently, so the hook is harmless in a non-Cohorte repo. |
 | Pointer present, no `gate-config.json` | The **hard floor** and **self-protection** apply. |
 | `gate-config.json` present | Floor + self-protection + the project's `deny` / `ask` / `ask_on_default_branch` rules + the preflight phase gate. |
+| `.claude/profile.json` present (any of the above) | Also **surface ownership** for surface subagents (below). |
 | `gate-config.json` invalid (bad JSON, wrong types) | Floor and self-protection still **deny**. Every other Bash command and every subagent dispatch gets **ask** until the file is fixed. The reason quotes the problem. |
 
 The project is found from `$CLAUDE_PROJECT_DIR`, from the git toplevel of the payload's `cwd`
@@ -90,6 +94,54 @@ these files gets **ask**, which becomes **deny** in unattended modes (see below)
 `/cohorte-init-pipeline` and `/cohorte-update-pipeline` if the hook is ever registered for those
 tools: run them interactively. Rules change through PIPELINE.md and
 `/cohorte-update-pipeline`, never by editing the generated file from inside a run.
+
+### Surface ownership
+
+Each surface's implementer owns one tree, `surfaces[].path`. The gate enforces this for edits;
+it no longer relies on the agent and the reviewer to keep the boundary. The rules come from
+`.claude/profile.json`, the parsed profile block that `cohorte sync` writes.
+
+**Who is restricted.** A call made inside a subagent carries `agent_id` and `agent_type` in its
+PreToolUse payload. `agent_type` is the agent's frontmatter `name`. When it equals a surface's
+`agent` (or its `key` if `agent` is missing), that agent is restricted. Nobody else is:
+
+- the lead (no `agent_id`, including a session started with `--agent`)
+- the fixed `cohorte-review`, `cohorte-release` and `cohorte-profile-reader` agents
+- any agent type that isn't a surface agent
+
+**What it may write.** A surface agent may write, edit, move or delete files only under:
+
+- its own `surfaces[].path`
+- the entries of its optional `surfaces[].owns_also: []`
+- the entries of the global `ownership.shared_writable: []` (lockfiles, for example)
+
+Entries are relative to the checkout root. Each one is a file or directory, or a glob in which
+`*` also matches `/` (`packages/*/package.json`).
+
+The contract is **read-only** for every surface agent: `contract.path` and `contract.index`.
+This holds even when the contract sits inside the agent's own tree or is listed in
+`owns_also`. A profile with `contract.enabled: false` has no contract to protect.
+
+| Tool | Enforcement |
+| --- | --- |
+| `Write`, `Edit`, `MultiEdit`, `NotebookEdit` | **Enforced.** A target outside the allowed paths is **denied**. The reason names the surface that owns it, or says the lead owns it. Paths are resolved with symlinks and `..` normalized, so `apps/api/../web` and `apps/api-v2` are not inside `apps/api`. `file_path`, `notebook_path` and per-edit `file_path`s are all checked. An edit call with no path the gate can find is denied. |
+| `Bash` | **Best effort.** It reuses the self-protection target analysis: redirections, `tee`, `cp`/`mv`/`ln`/`install`/`rsync`, `rm`/`unlink`, `truncate`, `dd of=`, `curl -o`, `sed -i`/`perl -pi` on existing files, `git rm`/`git mv`, followed through `cd`, `sh -c`, `eval` and `$(…)`. A target it can't resolve statically is **allowed**, not asked about (`> "$OUT/x"`, a path after an unresolvable `cd`). So is everything a tool writes by itself: formatters, code generators, `npm install`, scripts. |
+
+The surface path is resolved against the checkout the target lives in. A linked worktree (a
+sibling directory, or one nested under the main checkout) is judged against its own root, as long
+as it belongs to this project. Targets outside every project checkout are not judged at all:
+`/dev/null`, `$TMPDIR`, files under `~`.
+
+**Inert when:**
+
+- `.claude/profile.json` is absent (a project that has never run `cohorte sync` since 3.1)
+- it is unreadable, which also prints a warning on stderr
+- `ownership.enforce: false` is set in the profile
+- the agent's surface has no usable `path`
+
+A deny stays a deny in every permission mode. The rule exists so that cross-surface work goes
+through the lead: an implementer that needs a change in another tree, or in the contract, says
+so in its handoff.
 
 ### Project rules — `gate-config.json`
 
@@ -257,6 +309,11 @@ A legacy `--runtime claude` argument is accepted and ignored.
 - **The stamp can be faked.** `preflight.sh r.txt true` produces a valid stamp without
   running a real check, and so does computing the digest by hand. The phase gate enforces
   ordering, not honesty.
+- **Surface ownership depends on the payload.** It works only when Claude Code includes
+  `agent_id`/`agent_type` in a subagent's hook payload. That is documented for subagents
+  dispatched with the Agent tool. For Workflow-runtime subagents (`agent({agentType})`) it is
+  assumed but not verified. Without those fields, the call is treated as the lead's and is not
+  restricted.
 - **It is static analysis**, deliberately conservative where it can't decide. Expect an
   occasional confirmation prompt on an exotic but legitimate command.
 
@@ -317,7 +374,8 @@ gate block and `gate-config.json`, as well as double hook registrations.
 Beyond the mechanical gate, the agent instructions carry hard rules the pipeline depends on:
 
 - Implementers never edit the frozen **contract** (a mismatch is reported, never fixed) and
-  never touch another surface's tree.
+  never touch another surface's tree. For edits the gate now enforces this (see
+  [Surface ownership](#surface-ownership)); for Bash it is best effort.
 - Migrations are **append-only** everywhere. `gate.deny` commands are never run, even if the
   hook were absent.
 - The `cohorte-release` agent never edits source, never force-pushes, and refuses staged

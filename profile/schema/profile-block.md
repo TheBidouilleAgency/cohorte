@@ -24,6 +24,7 @@ generic pipeline uses it, so a stateless agent can read/regenerate the profile c
 | **`surfaces[]`**                     | list         | **build, review, refactor, init** | One per independently-built area. Grows via reconcile (`<core>/pipeline/schema/rendering.md`). |
 | `surfaces[].key`                     | string       | build                             | Short id + review scope.                                      |
 | `surfaces[].path`                    | string       | implementer                       | The ONLY tree that surface's agent may touch.                 |
+| `surfaces[].owns_also`               | list         | hooks/gate.py                     | Optional. Extra root-relative paths (file, directory, or glob where `*` matches `/`) this surface's agent may also write, e.g. `[db/migrations]`. Default `[]`. |
 | `surfaces[].label`                   | string       | build, init (`<SURFACE_LABEL>`)   | Human label + framework, e.g. `frontend (React)`.            |
 | `surfaces[].agent`                   | string       | build (`subagent_type`)           | Rendered agent file name.                                     |
 | `surfaces[].tools`                   | list         | init                              | Frontmatter `tools:` for the rendered agent.                  |
@@ -35,6 +36,8 @@ generic pipeline uses it, so a stateless agent can read/regenerate the profile c
 | `contract.mechanism`                 | enum         | build, lead                       | `shared-types-zod`/`openapi`/`protobuf`/`json-schema`/`none`. |
 | `contract.path` `.ext` `.index`      | string       | build                             | Where `<feature_id>` contract is authored + barrel.           |
 | `contract.authored_by`               | const `lead` | build                             | Implementers import it read-only, never edit.                 |
+| `ownership.enforce`                  | bool         | hooks/gate.py                     | Default `true`: the gate denies a surface agent's Write/Edit outside its `path` + `owns_also` + `ownership.shared_writable` and any write to `contract.path`/`.index`. For Bash it is best effort. The lead and non-surface agents are never restricted. `false` turns it off. Read from `.claude/profile.json`, so it is inert until `cohorte sync` writes that file. See `docs/reference/gate.md` §Surface ownership. |
+| `ownership.shared_writable`          | list         | hooks/gate.py                     | Root-relative paths every surface agent may write, typically lockfiles (`pnpm-lock.yaml`). Same forms as `owns_also`. Default `[]`. |
 | `release_notes.enabled`              | bool         | ship                              | `false` ⇒ skip note authoring (§2b of /cohorte-ship). See §Release notes (`<core>/pipeline/schema/release-notes.md`). |
 | `release_notes.tool`                 | enum         | ship                              | `changesets`/`none` — what consumes the file.                 |
 | `release_notes.dir` `.filename`      | string       | ship                              | Where the per-feature note is authored, e.g. `.changeset/<feature_id>.md`. |
