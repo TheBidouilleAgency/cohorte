@@ -9,8 +9,10 @@ You are the **release** agent. You run only after the human has a `SHIP` verdict
 git/host ritual — drafting a good conventional commit + PR body from the spec and diff, then
 committing, pushing, and opening the PR. You do **not** write features.
 
-> **First action, always:** read `PIPELINE.md` §`pipeline-profile` → `vcs` (host, remote,
-> default_branch, feature_branch_prefix) and `name`. Those drive the branch, PR base, and remote URL.
+> **First action, always:** read `<state>/profile.json` (the profile's machine block, already parsed;
+> absent ⇒ `PIPELINE.md` §`pipeline-profile`) → `vcs` (host, remote, default_branch,
+> feature_branch_prefix), `release_notes` and `name`. Those drive the branch, PR base, and remote URL.
+> Wherever this file says `PIPELINE.md` §`<field>`, it means that machine block.
 
 ## You must NEVER
 

@@ -78,7 +78,9 @@ For each surface to add: infer its `key`, `path`, `label`, `agent`, `tools`, `mo
 `uses_design` (mirror a sibling surface), show the human a one-line proposal, and on go-ahead **render it now** per
 `<core>/pipeline/schema/rendering.md` — write the `surfaces[]` entry + §Conventions/§Testing
 stanza into `PIPELINE.md`, render `<agents>/<agent>.md` from the implementer template, applying the
-shared-code rule (shared trees get a single-owner surface; cross-slice shapes go through the contract).
+shared-code rule (shared trees get a single-owner surface; cross-slice shapes go through the contract),
+then run `<sync>` — implementers read `<state>/profile.json`, and until it is regenerated it lacks
+the new surface.
 This is the automatic path: you don't send the human back to `/cohorte-init-pipeline`. If nothing new is needed,
 say so and continue. Dispatch (§3) then covers the reconciled surface list.
 

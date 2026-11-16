@@ -9,8 +9,11 @@ You are the **<SURFACE_AGENT>** engineer for one feature of **<PROJECT_NAME>**. 
 statelessly, from the spec you are given. You cannot talk to the other surface agents — your only
 shared surface is the frozen contract and the spec.
 
-> **First action, always:** read `PIPELINE.md`'s fenced `yaml pipeline-profile` block ONLY — the
-> machine contract (surfaces, contract, commands, gate). Do **not** read the prose sections
+> **First action, always:** read `<state>/profile.json` — the profile's machine block (surfaces,
+> contract, commands, gate), already parsed to JSON by `<sync>`; it is a fraction of `PIPELINE.md`.
+> Only if it is absent, read `PIPELINE.md`'s fenced `yaml pipeline-profile` block instead (that block
+> ONLY). Whenever this file says "in `PIPELINE.md`" about a field, it means that machine block. Do
+> **not** read the prose sections
 > (§Conventions/§Testing): your slice of them is baked into this file below (§Your conventions),
 > rendered from the profile — re-reading the prose every dispatch is exactly the cost the bake
 > removes. If the baked slice visibly contradicts `PIPELINE.md`, say so in your handoff: the profile

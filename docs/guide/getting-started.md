@@ -61,7 +61,7 @@ irm https://raw.githubusercontent.com/TheBidouilleAgency/cohorte/main/install.ps
 ~/.claude/workflows/cohorte-*.js       review · audit · refactor · loop
 ~/.claude/cohorte/                     the generic core: pipeline/ (SCHEMA.md + schema/, templates,
                                        implementer.template.md, scripts/, VERSION, CHANGELOG.md),
-                                       templates/, hooks/gate.py, lib/project.js, manifest.json
+                                       templates/, hooks/gate.py, lib/{project,yaml}.js, manifest.json
 ~/.claude/cohorte.config.yaml          YOUR config (kanban boards, shared vault) — seeded once,
                                        never overwritten, not in the manifest
 ```
@@ -102,8 +102,8 @@ One-time per project, interactive, in five steps:
    on prompts), wires the retrieval provider (committed `.mcp.json`), renders the isolation
    scripts, then runs **`cohorte sync`** — which copies the gate to
    `.claude/hooks/cohorte-gate.py`, registers it in `.claude/settings.json`, writes the
-   `.claude/pipeline.json` pointer, adds the local-only artifacts to `.gitignore` and seeds
-   `specs/_template.md` — and (optionally) a CI workflow.
+   `.claude/pipeline.json` pointer and `.claude/profile.json` (the parsed machine block agents read),
+   adds the local-only artifacts to `.gitignore` and seeds `specs/_template.md` — and (optionally) a CI workflow.
 5. **Report** — core version, the `sync` output, files written, surface → agent mapping.
 
 Then commit what it lists:

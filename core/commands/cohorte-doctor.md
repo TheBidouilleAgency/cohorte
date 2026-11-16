@@ -33,7 +33,10 @@ fix only with the human's go-ahead (or hand them the command).
    no-op (no card moves, no error anywhere) — this check is the only thing that sees it;
    an absent `feature-diff.sh` stops every review and ship (they refuse to fall back to a
    bare `git diff`, which misses untracked files).
-2. **Profile.** `PIPELINE.md` exists and its `yaml pipeline-profile` block parses. Every
+2. **Profile.** `PIPELINE.md` exists and its `yaml pipeline-profile` block parses.
+   `<state>/profile.json` (the parsed block agents read instead of `PIPELINE.md`) is present and
+   matches it (`cohorte doctor`'s `profile-json` row compares them byte for byte); ⚠️
+   missing/stale/uncommitted ⇒ fix: `<sync>`, then commit `<state>/profile.json`. Every
    `surfaces[].agent` has its `<agents>/<agent>.md` and every agent file has its `surfaces[]`
    entry — **no orphans either way** (`<core>/pipeline/schema/rendering.md` rule). Each rendered agent's frontmatter `tools`
    matches its surface's `tools` (incl. `DesignSync` iff `uses_design`, retrieval MCP tools iff

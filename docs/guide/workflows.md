@@ -22,7 +22,8 @@ bounded retries are *code* — free and exact — and the lead stops paying for 
 Every script follows the same skeleton:
 
 - **Phase 0 is `cohorte-profile-reader`.** Workflow scripts have no filesystem or shell access, so a tiny
-  read-only haiku agent reads `PIPELINE.md` and returns the machine block as JSON. Every later
+  read-only haiku agent returns the machine block as JSON — one Read of `.claude/profile.json`, which
+  `cohorte sync` already parsed (it falls back to `PIPELINE.md` when the file is absent). Every later
   phase is parameterized from that object.
 - **Model routing.** Mechanical phases (profile read, preflight, diff staging, verification,
   report writing) run on **haiku**; judgment phases dispatch the same pinned agents the commands

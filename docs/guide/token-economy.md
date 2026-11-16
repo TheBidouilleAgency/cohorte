@@ -48,7 +48,8 @@ when a finding demands it — instead of N agents each re-running git and re-rea
 
 Rendered surface agents carry their slice of `PIPELINE.md` §Conventions (`### Shared` + their own
 `### Surface:` stanza + their §Testing lines) **baked into the agent file** at render. At runtime
-an implementer reads only the profile's fenced machine block — never the prose. The trade: edit
+an implementer reads only the profile's machine block — `.claude/profile.json`, the block
+already parsed to JSON by `cohorte sync` (a fraction of `PIPELINE.md`) — never the prose. The trade: edit
 conventions in `PIPELINE.md`, then let `/cohorte-update-pipeline` re-render (hand-editing the prose
 without re-rendering leaves the baked copy stale — `/cohorte-doctor` and the agents themselves flag the
 contradiction).

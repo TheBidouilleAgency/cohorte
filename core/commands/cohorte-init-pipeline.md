@@ -12,8 +12,8 @@ agents. Interactive — confirm inferences with the human.
 > **One mode.** The commands and the generic core are installed once per machine (`<core>`).
 > **Everything you GENERATE is written into THIS repo and committed with it** — `PIPELINE.md` at the
 > root, the surface agents under `<agents>/`, `<state>/gate-config.json` — and the gate hook, its
-> registration, the `<state>/pipeline.json` pointer and the `.gitignore` entries are written by
-> `<sync>`, never by hand. Nothing project-specific ever goes under `~/.claude`.
+> registration, the `<state>/pipeline.json` pointer, `<state>/profile.json` (the parsed machine block,
+> committed) and the `.gitignore` entries are written by `<sync>` — after `PIPELINE.md`, never by hand. Nothing project-specific ever goes under `~/.claude`.
 >
 > Work in phases. Do not write any file until Phase 4.
 

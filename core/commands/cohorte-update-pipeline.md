@@ -29,8 +29,9 @@ nothing if `~/.claude/settings.json` is not valid JSON: show the error and stop.
 ## 2b. Re-wire this repo — run `<sync>`
 
 Always, from the repo root (one Bash call), and show its output. It refreshes the committed gate
-(`.claude/hooks/cohorte-gate.py`) and its registration, bumps the `<state>/pipeline.json` pointer, and
-keeps the `.gitignore` entries. On a **2.x repo** it also removes the vendored core (`.claude/pipeline/`,
+(`.claude/hooks/cohorte-gate.py`) and its registration, bumps the `<state>/pipeline.json` pointer,
+writes `<state>/profile.json` from the current `PIPELINE.md`, and keeps the `.gitignore` entries.
+On a **2.x repo** it also removes the vendored core (`.claude/pipeline/`,
 `.claude/templates/`, `.claude/workflows/`, `.claude/commands/cohorte-*.md`, `.claude/agents/{review,release,profile-reader}.md`,
 `.claude/hooks/gate.py`): files git tracks unmodified are deleted (git keeps them), anything else is moved
 to `.claude/cohorte-legacy-backup/`. Tell the human to commit the result.
@@ -66,7 +67,9 @@ Verify the refreshed core actually carries `<workflows>/cohorte-review.js` + `<f
 health check** (`<core>/pipeline/schema/retrieval.md`: CLI resolvable from PATH, `.mcp.json` entry present —
 upgrading a bare `serena` entry to the PATH-proof launcher form, `.serena/` gitignored, server
 actually connected) and repair whatever fails — wiring that worked at
-init can rot (PATH changes, uninstalls, hand-edits). Report what was reconciled; if nothing was
+init can rot (PATH changes, uninstalls, hand-edits). **Then run `<sync>` once more** — §2b ran it
+before the top-up, so `<state>/profile.json` (the parsed machine block the agents read) still
+describes the old profile; this second run regenerates it. Report what was reconciled; if nothing was
 missing, say so. This is why `/cohorte-init-pipeline` never needs re-running for a core upgrade.
 
 Four of the §Reconcile steps matter specifically here:
@@ -109,7 +112,8 @@ Four of the §Reconcile steps matter specifically here:
   newly-registered MCP server.
 - **Other repos using the global core:** their core is already fresh, but reconcile is per-repo — run
   `/cohorte-update-pipeline` inside each (it will skip the already-done core update and just reconcile).
-- **Commit** the reconciled files (`PIPELINE.md`, `.claude/`, `.mcp.json` if added) so teammates get them.
+- **Commit** the reconciled files (`PIPELINE.md`, `.claude/` — including `.claude/profile.json` —,
+  `.mcp.json` if added) so teammates get them.
 - The kanban config is global and user-scoped
   (`<config>`) — never committed. The core update never touches it; only the
   reconcile above seeds the file and writes kanban board links (into that global file, not the repo).

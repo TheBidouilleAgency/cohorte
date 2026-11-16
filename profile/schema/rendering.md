@@ -10,7 +10,8 @@ this exact procedure so a surface is always defined the same way. To add surface
    contract, which Sonnet does well at a fraction of the Opus-lead cost; `haiku` for purely mechanical
    scaffolding; `inherit` only when the surface makes real design decisions worth the lead's model),
    the five `*_cmd`s (derive from the surface's `package.json` / workspace
-   filter, mirroring a sibling surface), and `uses_design`.
+   filter, mirroring a sibling surface), and `uses_design`. Then run `<sync>`: it regenerates
+   `<state>/profile.json` (the parsed machine block agents read), which otherwise lacks `S`.
 2. **Render the agent file** `<agents>/<agent>.md` from `<core>/pipeline/implementer.template.md`
    — the template is already rendered for this runtime, so only the placeholders are yours to fill —
    substituting `<SURFACE_AGENT>`, `<SURFACE_LABEL>`,
@@ -44,4 +45,4 @@ this exact procedure so a surface is always defined the same way. To add surface
    consume, never redefine."
 
 Removing/merging a surface is the reverse: drop the `surfaces[]` entry, delete its agent file, fold its
-conventions. Never leave an agent file with no matching `surfaces[]` entry (orphan) or vice-versa.
+conventions, run `<sync>`. Never leave an agent file with no matching `surfaces[]` entry (orphan) or vice-versa.

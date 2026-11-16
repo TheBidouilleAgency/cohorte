@@ -185,10 +185,11 @@ Already-wired projects: run  /cohorte-update-pipeline  inside each to pick up th
       const r = sync(project);
       console.log(`cohorte sync — ${r.root} (core ${r.version})`);
       if (r.changes.length) printList(r.changes); else console.log('  · already in sync');
+      if (r.notes && r.notes.length) printList(r.notes, '!');
       if (!fs.existsSync(path.join(globalDir, 'cohorte', 'pipeline', 'VERSION'))) {
         console.log('  ! cohorte is not installed on this machine — run `cohorte install` for the commands.');
       }
-      if (r.changes.length) console.log('  Commit .claude/settings.json, .claude/hooks/cohorte-gate.py, .claude/pipeline.json and .gitignore.');
+      if (r.changes.length) console.log(`  Commit ${require('../lib/project.js').COMMIT_LIST}.`);
     } else if (mode === 'uninstall') {
       if (projectScope) {
         const { unsync } = require('../lib/project.js');

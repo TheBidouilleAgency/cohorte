@@ -23,3 +23,6 @@ exact file it needs (`<core>/pipeline/schema/<file>.md`); this index is for find
 | `reconcile.md` | bringing a repo's generated files up to the current core | `/cohorte-update-pipeline` |
 | `workflows.md` | the opt-in Workflow scripts (review / audit / refactor / loop) | running, checking or editing a workflow |
 | `kanban.md` | the Obsidian board mirror: config, card format, `kanban-move.sh` | moving a card; linking or backfilling a board |
+
+The parsed machine block itself lives in `<state>/profile.json` (written by `<sync>`, committed): an
+agent that needs only the `yaml pipeline-profile` block reads that file, not `PIPELINE.md`.

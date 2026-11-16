@@ -15,6 +15,16 @@ short, user-facing, most recent first. One `## <version> — <YYYY-MM-DD>` secti
   (`profile-block`, `spec-status`, `kanban`, `dead-agents`, `reconcile`, `workflows`, …), and
   every command, agent, template and workflow cites the exact file. `SCHEMA.md` stays as a short
   index. `validate-core` fails on a citation that resolves nowhere and on any bare `SCHEMA.md §…`.
+- **`.claude/profile.json` — the profile's machine block, parsed once.** `cohorte sync` (and so
+  `/cohorte-init-pipeline` and `/cohorte-update-pipeline`) now writes the `yaml pipeline-profile`
+  block of `PIPELINE.md` to `.claude/profile.json`. **Commit it**; every sync regenerates it, and the
+  commands that edit the machine block (`/cohorte-build` adding a surface, the update's top-up) re-run
+  sync afterwards. No `PIPELINE.md`, or no parseable block ⇒ nothing is written and sync says so.
+  The implementers, `cohorte-review` and `cohorte-release` read it instead of the whole profile
+  (falling back to the fenced block when it is absent), and the workflows' `cohorte-profile-reader`
+  phase 0 is now a single Read of it. `cohorte doctor` gains a `profile-json` row: missing, stale or
+  hand-edited (compared byte for byte with a fresh parse) or uncommitted ⇒ warn, fix `cohorte sync`.
+  The installer ships `lib/yaml.js` next to `lib/project.js` so sync and doctor share one parser.
 
 ## 3.0.0 — 2026-11-16
 

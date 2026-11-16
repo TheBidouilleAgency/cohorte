@@ -19,8 +19,9 @@ script that cannot ask.
 Shared design, all four scripts:
 
 - **Phase 0 is always `cohorte-profile-reader`** — workflow scripts have no filesystem or shell access, so a
-  dedicated agent (`core/agents/cohorte-profile-reader.md`, haiku, read-only) reads `PIPELINE.md` and returns
-  the `yaml pipeline-profile` block as JSON. Every later phase is parameterized from that object.
+  dedicated agent (`core/agents/cohorte-profile-reader.md`, haiku, read-only) returns the
+  `yaml pipeline-profile` block as JSON — one Read of `<state>/profile.json` (already parsed by
+  `<sync>`), falling back to parsing `PIPELINE.md` when that file is absent. Every later phase is parameterized from that object.
 - **Mechanical phases run on haiku** (profile read, preflight, diff staging, report merging/writing);
   judgment phases dispatch the same pinned agents the commands use (`review` at sonnet, the surface
   implementers at their `surfaces[].model` tier) — the per-surface `model:` routing carries over.
