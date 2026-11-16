@@ -9,11 +9,13 @@ short, user-facing, most recent first. One `## <version> — <YYYY-MM-DD>` secti
 
 ## 3.1.3 — unreleased
 
-- **Kanban moves no longer get lost after a crashed move (macOS).** Without `flock` (stock macOS),
-  a move killed while holding the board lock leaves a stale lock; the waiters that all saw it each
-  removed "the" lock, the second one removing the fresh lock a third had just taken — two writers
-  at once, one move lost (about half the runs with a dozen parallel moves, on macOS and Linux).
-  Breaking a stale lock is now serialized. The lock is also keyed by the board's physical path.
+- **Kanban moves on macOS use a kernel lock.** macOS has no `flock(1)`, so parallel moves on one
+  board fell back to a hand-made `mkdir` lock — and a move killed while holding it left a stale
+  lock that the waiters broke all at once, letting two writers in: about half the runs with a
+  dozen parallel moves lost one. The lock is now a real `flock` taken by `python3` (which the gate
+  already requires) on the shell's own file descriptor: the kernel releases it if the move dies, so
+  there is nothing stale to break. The `mkdir` lock stays as a last resort (no flock, no python3),
+  with stale-lock breaking serialized; all locks are keyed by the board's physical path.
 - **`cohorte doctor` reports folder trust.** Claude Code ignores a project's `permissions.allow`
   until its folder has been trusted (the dialog an interactive `claude` shows once); under
   `claude -p` — CI, francois — every pipeline script then asks or is refused. Doctor now warns and
