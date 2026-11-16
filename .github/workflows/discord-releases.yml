@@ -15,13 +15,12 @@ name: Discord release notification
 #   DISCORD_THREAD_MAP     (optionnel) JSON {"<dir>": "<thread_id>"} pour un repo multi-packages
 
 on:
-  push:
+  # Après la publication npm réussie, jamais au simple merge : un push sur main déclenchait la
+  # notif même quand la publication échouait ensuite (ou attendait encore son approbation).
+  workflow_run:
+    workflows: ["Publish to npm"]
+    types: [completed]
     branches: [main]
-    paths:
-      - 'package.json'
-      - 'CHANGELOG.md'
-      - '**/package.json'
-      - '**/CHANGELOG.md'
   # Relance manuelle : notifie la version courante sans comparer au commit précédent.
   workflow_dispatch:
 
@@ -35,11 +34,14 @@ concurrency:
 jobs:
   notify:
     name: Notify Discord forum
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
+          # Le commit publié (workflow_run), pas la tête de main au moment où ce job démarre.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           # Nécessaire pour `git show <before>:...`.
           fetch-depth: 0
 
@@ -54,7 +56,8 @@ jobs:
           DISCORD_FORUM_WEBHOOK: ${{ secrets.DISCORD_FORUM_WEBHOOK }}
           DISCORD_THREAD_ID: ${{ secrets.DISCORD_THREAD_ID }}
           DISCORD_THREAD_MAP: ${{ secrets.DISCORD_THREAD_MAP }}
-          BEFORE: ${{ github.event.before }}
+          # Le parent du commit publié : la version d'avant, pour ne notifier qu'un vrai bump.
+          BEFORE: ${{ github.event.workflow_run.head_sha && format('{0}~1', github.event.workflow_run.head_sha) || github.event.before }}
           FORCE: ${{ github.event_name == 'workflow_dispatch' }}
           REPO_NAME: ${{ github.event.repository.name }}
         run: |
