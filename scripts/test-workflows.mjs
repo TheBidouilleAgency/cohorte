@@ -105,6 +105,9 @@ const replier = table => (prompt, opts) => {
   return "ok";
 };
 
+// audit.js reads the backlog back before merging into it; most tests start with none.
+const NO_BACKLOG = ["read-backlog", { exists: false, lineCount: 0, domains: [] }];
+
 const BASE_REVIEW = [
   ["profile", PROFILE],
   ["preflight", { pass: true }],
@@ -276,7 +279,7 @@ const EMPTY_PROFILE = { ...PROFILE, surfaces: [] };
 }
 {
   const { result } = await run("audit.js", replier([
-    ["profile", EMPTY_PROFILE], ["gates", { failures: [] }], ["write-backlog", "done"],
+    ["profile", EMPTY_PROFILE], ["gates", { failures: [] }], NO_BACKLOG, ["write-backlog", "done"],
   ]), {});
   check("audit: no surfaces ⇒ error, not an empty backlog",
     /no surfaces/.test(result.error || ""), JSON.stringify(result));
@@ -316,7 +319,7 @@ console.log("dead-agent sweep");
   const { result } = await run("audit.js", replier([
     ["profile", PROFILE], ["gates", { failures: [] }],
     ["audit:backend", null],
-    ["audit:", { items: [] }], ["write-backlog", "done"],
+    ["audit:", { items: [] }], NO_BACKLOG, ["write-backlog", "done"],
   ]), {});
   check("audit: dead auditor ⇒ the domain is listed as NOT audited",
     (result.notAudited || []).join(",") === "backend", JSON.stringify(result.notAudited));
@@ -326,7 +329,7 @@ console.log("dead-agent sweep");
 {
   const { result } = await run("audit.js", replier([
     ["profile", PROFILE], ["gates", { failures: [] }],
-    ["audit:", { items: [] }], ["write-backlog", null],
+    ["audit:", { items: [] }], NO_BACKLOG, ["write-backlog", null],
   ]), {});
   check("audit: dead backlog writer ⇒ path not claimed",
     !/^specs\//.test(String(result.backlog)), result.backlog);
@@ -360,7 +363,7 @@ console.log("audit.js / refactor.js");
     ["profile", PROFILE],
     ["gates", { failures: [] }],
     ["audit:", { items: [{ severity: "HIGH", file: "apps/api/a.ts", line: 1, kind: "tdd", fix: "add a test" }] }],
-    ["write-backlog", "done"],
+    NO_BACKLOG, ["write-backlog", "done"],
   ]), {});
   check("audit returns a backlog path", result.backlog === "specs/refactor-backlog.md", JSON.stringify(result));
   check("audit counts every domain (surfaces + shared)",
@@ -647,6 +650,28 @@ console.log("refactor.js retry & args");
     if (label === "audit:") return { items: [] };
     return opts.label && opts.label.startsWith("audit:") ? { items: [] } : "done";
   }, {});
+  // A SHORT read (the reader stopped echoing mid-file) is the same data loss as a dead
+  // one: its own `grep -c` disagrees with the lines it returned ⇒ no write.
+  const short = await run("audit.js", (prompt, opts) => {
+    const label = opts.label || "";
+    if (label === "profile") return PROFILE;
+    if (label === "gates") return { failures: [] };
+    if (label === "read-backlog") return { ...old, lineCount: 9 };   // 6 lines returned, 9 on disk
+    if (label.startsWith("audit:")) return { items: [] };
+    return "done";
+  }, { target: "backend" });
+  check("truncated backlog read (lineCount ≠ lines returned) ⇒ no write",
+    !short.calls.includes("write-backlog") && /came back short/.test(String(short.result.backlog)),
+    JSON.stringify([short.calls, short.result.backlog]));
+  const exact = await run("audit.js", (prompt, opts) => {
+    const label = opts.label || "";
+    if (label === "profile") return PROFILE;
+    if (label === "gates") return { failures: [] };
+    if (label === "read-backlog") return { ...old, lineCount: 6 };
+    if (label.startsWith("audit:")) return { items: [] };
+    return "done";
+  }, { target: "backend" });
+  check("…and a matching count writes", exact.calls.includes("write-backlog"), exact.calls.join(","));
   check("dead backlog READER ⇒ no write at all (null is not an empty backlog)",
     !dead.calls.includes("write-backlog") && /reader died/.test(String(dead.result.backlog)), JSON.stringify([dead.calls, dead.result.backlog]));
 }
@@ -654,7 +679,7 @@ console.log("refactor.js retry & args");
   // The gates report is truncated first, then one header + output per command — never a
   // previous run's output read as this one's, never one command overwriting the last.
   const { prompts } = await run("audit.js", replier([
-    ["profile", PROFILE], ["gates", { failures: [] }], ["audit:", { items: [] }], ["write-backlog", "done"],
+    ["profile", PROFILE], ["gates", { failures: [] }], ["audit:", { items: [] }], NO_BACKLOG, ["write-backlog", "done"],
   ]), {});
   check("audit gates: truncate once, then append per command",
     /: > specs\/reports\/audit-gates\.txt/.test(prompts.gates) && />> specs\/reports\/audit-gates\.txt 2>&1/.test(prompts.gates),
@@ -985,6 +1010,13 @@ const SHIP_CLEAN = { verdict: "SHIP", blocking: 0, blockingItems: [], unreviewed
     /--readiness-only/.test(result.detail), result.detail);
 }
 {
+  // A child abort on the profile read is transient (the profile-reader died) — resumable.
+  const wf = async () => ({ verdict: "ABORTED", aborted: "profile", reason: "profile unreadable" });
+  const { result } = await run("loop.js", loopReply(loopFacts({ build: FRESH_BUILD })), { feature: "feat-x" }, wf);
+  check("child profile abort ⇒ a resumable stop", result.reason === "profile" && result.resumable === true,
+    JSON.stringify([result.reason, result.resumable]));
+}
+{
   // workflow() unavailable (no runtime / review.js not installed) ⇒ explicit refusal,
   // never a conversational fallback.
   const wf = async () => { throw new Error("unknown workflow: cohorte-review"); };
@@ -1006,7 +1038,11 @@ console.log("feature-diff.sh");
     console.log("  - skipped (needs POSIX sh + git; not run on Windows, like the kanban suite)");
   } else {
     const FD = join(root, "scripts", "feature-diff.sh");
-    const dir = mkdtempSync(join(tmpdir(), "cohorte-fd-"));
+    // The repo sits one level down so new-feature.sh's sibling worktree (../demo-<id>) lands
+    // inside the mkdtemp dir too — a leftover from a failed run can never collide.
+    const outer = mkdtempSync(join(tmpdir(), "cohorte-fd-"));
+    const dir = join(outer, "repo");
+    mkdirSync(dir);
     // A clean environment: no inherited GIT_* (a hook or CI can export GIT_INDEX_FILE /
     // GIT_DIR, which would point every call below at someone else's repo), no user config.
     const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_")));
@@ -1095,9 +1131,8 @@ console.log("feature-diff.sh");
         JSON.stringify([nf.status, nf.stdout.slice(-400), nf.stderr.slice(-300)]));
       check("…and nothing that is not named after the feature", !has("apps/api/unrelated.ts"));
       spawnSync("git", ["worktree", "remove", "--force", wt], { cwd: dir, env });
-      rmSync(wt, { recursive: true, force: true });
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmSync(outer, { recursive: true, force: true });
     }
   }
 }

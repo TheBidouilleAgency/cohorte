@@ -108,6 +108,7 @@ const EXISTING = {
   type: 'object', required: ['exists', 'domains'], additionalProperties: false,
   properties: {
     exists: { type: 'boolean' },
+    lineCount: { type: 'integer', description: "the output of `grep -c '^- \\[' specs/refactor-backlog.md` (0 when absent)" },
     domains: {
       type: 'array',
       items: {
@@ -225,9 +226,10 @@ if (deadDomains.length) log(`Auditor died on: ${deadDomains.join(', ')} — thos
 // verbatim, write the result in one exact write.
 phase('Backlog')
 const existing = await agent(
-  'Read specs/refactor-backlog.md (mechanical — no judgment). Return exists, and per `## <domain>` heading ' +
-  '(in file order) every list line under it VERBATIM — both `- [ ]` and `- [x]` lines, nothing else. ' +
-  'File missing ⇒ exists=false and an empty domains array.',
+  'Read specs/refactor-backlog.md (mechanical — no judgment). Return exists; lineCount = the output of ' +
+  "`grep -c '^- \\[' specs/refactor-backlog.md`; and per `## <domain>` heading (in file order) every list " +
+  'line under it VERBATIM — both `- [ ]` and `- [x]` lines, nothing else. ' +
+  'File missing ⇒ exists=false, lineCount=0 and an empty domains array.',
   { model: 'haiku', label: 'read-backlog', schema: EXISTING, effort: 'low' },
 )
 const SEV = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 }
@@ -267,8 +269,14 @@ if (!gatesCovered) {
 }
 for (const s of sections) body.push('', `## ${s.key}`, '', ...s.lines)
 // A dead READER is not an empty backlog — writing on top of it would erase exactly what
-// this phase exists to keep. Skip the write and say so.
-const written = existing == null ? null : await agent(
+// this phase exists to keep. Nor is a SHORT read: the reader echoes the file verbatim, and a
+// truncated echo would silently drop other domains' lines. Its line count must match the
+// lines it returned (grep -c, computed in its Bash), or the write is skipped like a dead read.
+const readLines = oldDomains.reduce((n, d) => n + d.lines.filter(l => /^- \[/.test(l)).length, 0)
+const readOk = existing != null && typeof existing === 'object'
+  && (typeof existing.lineCount !== 'number' || existing.lineCount === readLines)
+if (existing != null && !readOk) log(`backlog read looks truncated (${readLines} lines returned, ${existing.lineCount} on disk) — not writing`)
+const written = !readOk ? null : await agent(
   `Write EXACTLY this content to specs/refactor-backlog.md (overwrite), then return the single word done:\n<<<BACKLOG\n${body.join('\n')}\nBACKLOG`,
   { model: 'haiku', label: 'write-backlog', effort: 'low' },
 )
@@ -279,7 +287,8 @@ const backlogOk = written != null && /done/i.test(String(written))
 return {
   backlog: backlogOk ? 'specs/refactor-backlog.md'
     : existing == null ? '(NOT written — the backlog reader died; the file on disk is untouched)'
-      : '(NOT written — the backlog writer died)',
+      : !readOk ? '(NOT written — the backlog read came back short (reader died mid-echo); the file on disk is untouched)'
+        : '(NOT written — the backlog writer died)',
   deferredCarried: carried,  // open deferred:<feature> lines kept in the rewritten sections
   notAudited: deadDomains,   // absence of findings here means "not looked at"
   mechanicalFailures: gatesCovered ? mech.length : null,  // null = gates agent died, NOT zero
@@ -290,7 +299,7 @@ return {
     .sort((a, b) => SEV[a.severity] - SEV[b.severity]).slice(0, 10)
     .map(it => `[${it.severity}] ${it.domain} · ${it.file}:${it.line} — ${it.fix}`),
   next: !backlogOk
-    ? `the backlog was NEVER written (${existing == null ? 'reader' : 'writer'} died) — the counts above are real but nothing is on disk; re-run the audit`
+    ? `the backlog was NEVER written (${!readOk ? 'reader' : 'writer'} died or came back short) — the counts above are real but nothing is on disk; re-run the audit`
     : deadDomains.length
       ? `re-audit ${deadDomains.join(', ')} (auditor died — not covered), then /cohorte-refactor <domain>`
       : 'refactor a domain with /cohorte-refactor <domain> (or the refactor workflow for big domains)',

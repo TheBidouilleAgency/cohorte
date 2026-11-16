@@ -19,7 +19,7 @@ export const meta = {
   phases: [
     { title: 'Profile', detail: 'PIPELINE.md → JSON via profile-reader', model: 'haiku' },
     { title: 'Preflight', detail: 'typecheck + lint + tests — abort while red', model: 'haiku' },
-    { title: 'Stage', detail: 'git diff --stat once, per-surface hunks to disk', model: 'haiku' },
+    { title: 'Stage', detail: 'feature-diff.sh: changed paths once, per-surface hunks to disk', model: 'haiku' },
     { title: 'Review', detail: 'one review agent per touched surface' },
     { title: 'Cross-check', detail: 'adversarial refutation of CRITICAL/security findings' },
     { title: 'Merge', detail: 'stage merged report + metrics; return the verdict', model: 'haiku' },
@@ -125,7 +125,7 @@ const STAGE = {
         properties: {
           key: { type: 'string' },
           diff: { type: 'string', description: 'path of the staged .diff file' },
-          files: { type: 'array', items: { type: 'string' }, description: 'changed files (from --stat)' },
+          files: { type: 'array', items: { type: 'string' }, description: 'changed files (from --numstat)' },
         },
       },
     },

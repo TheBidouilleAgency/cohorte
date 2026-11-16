@@ -26,6 +26,10 @@ not github ⇒ ask the human what happened to the PR):
 - `OPEN` ⇒ nothing to ship again: go to §5's CI watch (a red check routes per §5).
 - `CLOSED` (not merged) ⇒ ask the human: reopen and continue (`/cohorte-fix` on what killed it), or
   drop it — then set `status: abandoned`. Never decide that alone.
+- **No PR for the branch** — §2 flipped the status but the release never completed (the release
+  agent died, or the human stopped it): go to **§3** (the review gate passed before the flip, and
+  the §2b release note is now in the tree, so re-running §1's freshness check would call the
+  verdict stale for a file this command wrote). Confirm with the human first.
 
 `merged` / `abandoned` ⇒ done already: say so and stop. Anything else ⇒ §1.
 

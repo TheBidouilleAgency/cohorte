@@ -80,7 +80,7 @@ const maxRounds = Math.max(1, Math.min(10, Number(ARGS.maxRounds) || 5))
 // re-enters through /cohorte-fix or /cohorte-build, and the next run starts at round 1.
 // A resumable stop writes loop.json with `reason` and NO `outcome`; a terminal one writes both.
 const RESUMABLE = new Set([
-  'review-died', 'review-aborted', 'no-verdict', 'unreviewed', 'preflight', 'stage-diff', 'empty-diff',
+  'review-died', 'review-aborted', 'no-verdict', 'unreviewed', 'preflight', 'stage-diff', 'empty-diff', 'profile',
   'report-not-staged', 'ingest-died', 'no-fix-items', 'dead-implementers', 'review-workflow-unavailable',
 ])
 const TERMINAL = new Set(['treading-water', 'max-rounds', 'contract-change'])

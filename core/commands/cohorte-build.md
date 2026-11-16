@@ -29,8 +29,8 @@ builds itself. Say which mode you ran in your last line.
   limit) — before any full read. Buildable statuses are `frozen`, `in-review` and `in-progress`
   (SCHEMA.md §Spec status). `blocked` means a loop round gave up here: say so with the `reason` from
   `specs/reports/$ARGUMENTS.loop.json` (a reason with no `outcome` is a resumable stop — re-running the
-  loop workflow resumes it), and route by the spec's `## Remediation` — open items ⇒ `/cohorte-fix`,
-  none ⇒ continue this build. `shipped` / `merged` / `abandoned` ⇒ done, say so and stop. Anything
+  loop workflow resumes it), and route by the spec's `## Remediation` — open items ⇒ `/cohorte-fix`
+  (or `--readiness-only`, to hand them back to the loop), none ⇒ continue this build. `shipped` / `merged` / `abandoned` ⇒ done, say so and stop. Anything
   else (`draft`, missing) ⇒ stop and tell the human to run `/cohorte-spec` first. Only then read the body, selectively: front-matter, §5 contract, the surface
   task sections, and `## Remediation` (fall back to a full read if the spec doesn't follow the
   template's headings).
@@ -45,7 +45,8 @@ builds itself. Say which mode you ran in your last line.
   judges it against its regression test instead of a contract, and §2 authors no contract unless §5
   carries a delta. Everything else — surface mapping, parallel dispatch, roll call, metrics — is
   identical, and `kind` absent means feature, so nothing changes for existing specs.
-- **Route check** — if `## Remediation` has open `- [ ]` items and none requires a contract change,
+- **Route check** (skipped under `--readiness-only`, which dispatches nothing — the loop workflow
+  then routes those items through its own fix rounds) — if `## Remediation` has open `- [ ]` items and none requires a contract change,
   stop and tell the human to run `/cohorte-fix $ARGUMENTS` instead: it re-dispatches only the surfaces with
   findings. A full build with open items is only right when the contract change ripples into clean
   surfaces (the case `/cohorte-fix` §1 falls back here for).
