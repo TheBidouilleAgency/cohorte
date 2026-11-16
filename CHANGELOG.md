@@ -100,8 +100,8 @@ short, user-facing, most recent first. One `## <version> — <YYYY-MM-DD>` secti
 
 - **Kanban moves no longer get lost in parallel.** Worktrees moving cards on one board at the same
   time could overwrite each other (2 of 8 concurrent moves vanished in a test); each move now takes a
-  lock on the board (a crashed writer's lock is broken after about a minute; exit 4 if the board
-  stays locked for ~30 s).
+  lock on the board holding the writer's PID (a crashed writer's lock is broken as soon as its
+  process is gone; exit 4 if a live move keeps the board locked for ~30 s).
 - **The gate judges what `verify-run.sh` is asked to run**, and now also guards `NotebookEdit`.
 - **An end-to-end test of the deterministic pipeline runs in CI** (install → sync → feature diff
   with a new file → preflight → gate → kanban → uninstall), so a change on either side of a

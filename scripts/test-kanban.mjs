@@ -12,7 +12,7 @@
 //   node scripts/test-kanban.mjs
 
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, utimesSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -317,10 +317,13 @@ if (process.platform !== "win32") {
     moved.length === ids.length,
     `${moved.length}/8 in Building · exits ${JSON.stringify(results.filter((r) => r.code !== 0))}\n${readFileSync(b, "utf8")}`);
   check("…and the lock is released", !existsSync(b + ".lock"));
+  // A crashed writer: its lock holds a PID that no longer exists.
+  const dead = spawnSync(process.execPath, ["-e", "process.stdout.write(String(process.pid))"], { encoding: "utf8" }).stdout;
   mkdirSync(b + ".lock");
-  utimesSync(b + ".lock", new Date(Date.now() - 5 * 60_000), new Date(Date.now() - 5 * 60_000));
+  writeFileSync(join(b + ".lock", "pid"), dead + "\n");
   const r = run([b, "par-0", "Review"]);
-  check("a stale lock (a crashed writer's) is broken, not waited on", r.status === 0 && columnOf(b, "par-0") === "Review", r.err);
+  check("a stale lock (its holder is dead) is broken, not waited on", r.status === 0 && columnOf(b, "par-0") === "Review", r.err);
+  check("…and our own lock is released after the move", !existsSync(b + ".lock"));
 }
 
 for (const d of tmps) rmSync(d, { recursive: true, force: true });

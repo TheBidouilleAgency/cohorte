@@ -230,24 +230,33 @@ fi
 
 # Serialize the read-modify-write: parallel worktrees (/cohorte-fleet, the loop workflow) move
 # cards on ONE board, and two concurrent rewrites used to lose one of the moves. `mkdir` is
-# atomic on every filesystem, so it is the lock. A lock older than ~1 min is a crashed writer's.
+# atomic on every filesystem, so it is the lock; the holder writes its PID inside. A lock is
+# stale only when that PID is gone (a crashed writer) — never by age: an mtime test (`find
+# -mmin`) misfired on CI runners and broke live locks, letting two writers in at once.
 lock="${board}.lock"
 waited=0
 until mkdir "$lock" 2>/dev/null; do
-  # The stale check forks `find`: once a second, not on every 0.1 s poll — seven waiters forking
-  # ten times a second slowed a 2-core CI runner enough for the last move to give up.
-  if [ $((waited % 10)) -eq 0 ] && [ -n "$(find "$lock" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then
-    rmdir "$lock" 2>/dev/null || true
+  holder=$(cat "$lock/pid" 2>/dev/null || true)
+  if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; then
+    # Dead holder. Remove only if it is still THAT lock (another waiter may have replaced it).
+    if [ "$(cat "$lock/pid" 2>/dev/null || true)" = "$holder" ]; then
+      rm -f "$lock/pid"; rmdir "$lock" 2>/dev/null || true
+    fi
     continue
   fi
   waited=$((waited + 1))
   if [ "$waited" -gt 300 ]; then
-    echo "error: board is locked by another move ($lock) — retry, or remove the lock if no move is running" >&2
+    echo "error: board is locked by another move ($lock, pid ${holder:-?}) — retry, or remove the lock if no move is running" >&2
     exit 4
   fi
   sleep 0.1 2>/dev/null || sleep 1
 done
-trap 'rmdir "$lock" 2>/dev/null' EXIT INT TERM
+echo $$ > "$lock/pid"
+# Release only our own lock, and never let the release change the exit status.
+release() { [ "$(cat "$lock/pid" 2>/dev/null || true)" = "$$" ] && { rm -f "$lock/pid"; rmdir "$lock" 2>/dev/null; }; return 0; }
+trap release EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 tmp="${board}.kanban-move.$$"
 ID="$id" COL="$col" PR="$pr" TITLE="${title:-$id}" awk '
