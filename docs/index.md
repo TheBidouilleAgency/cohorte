@@ -79,6 +79,6 @@ cohorte install                 # commands, agents, workflows + core → ~/.clau
 /cohorte-init-pipeline
 ```
 
-Requires Node ≥ 20, Python ≥ 3.8 as `python3`, and Claude Code. See
+Requires Node ≥ 20, Python ≥ 3.9 as `python3`, and Claude Code. See
 [Getting started](/guide/getting-started) for what gets generated and committed, and
 [Installers & updates](/reference/installers) for updates, uninstall and migrating from 2.x.

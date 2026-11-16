@@ -37,7 +37,7 @@ everything that describes a project lives in that project and is committed with 
   `~/.claude/settings.json` first, then moves the 2.x core to `~/.claude/cohorte/legacy-backup/`),
   then `/cohorte-update-pipeline` in each project. Tried the discontinued Python line? Run
   `uv tool uninstall cohorte-engine` and delete `~/.cohorte/`.
-- **Requirements:** Node ≥ 20, Python ≥ 3.8 as `python3`. `doctor` no longer crashes on an
+- **Requirements:** Node ≥ 20, Python ≥ 3.9 as `python3`. `doctor` no longer crashes on an
   indentless YAML list, `- db:wipe` stays a string, and `metrics --days=abc` is an error.
 - **Releases:** publishing now waits for CI to pass on `main` and for a maintainer's approval;
   `install.sh` / `install.ps1` install the latest release tag instead of the tip of `main`.

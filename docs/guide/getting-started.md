@@ -8,7 +8,7 @@
   it, so a broken hook fails open there).
 - **Node ≥ 20 + npm** — for the `cohorte` CLI. Every install route needs it, the shell scripts
   included.
-- **Python ≥ 3.8 as `python3`** — the gate hook every project commits runs on it. The hook is
+- **Python ≥ 3.9 as `python3`** — the gate hook every project commits runs on it. The hook is
   registered fail-closed: without a working `python3`, Claude Code refuses every Bash call in a
   Cohorte project.
 - Optional: [`uv`](https://docs.astral.sh/uv/) to install **Serena** (the default code-retrieval

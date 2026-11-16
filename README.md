@@ -83,7 +83,7 @@ The core never hardcodes stack facts. Two mechanisms keep it generic:
 ## Prerequisites
 
 - **Node ≥ 20 + npm** — for the `cohorte` CLI.
-- **Python ≥ 3.8** as `python3` — the gate hook every project commits runs on it. The hook is
+- **Python ≥ 3.9** as `python3` — the gate hook every project commits runs on it. The hook is
   fail-closed: without Python, Claude Code refuses every Bash call in a Cohorte project.
 - **Claude Code** — workflows (the opt-in deterministic runs) need ≥ 2.1.154; the hook's
   fail-closed `onFailure` setting is honoured from 2.1.295 (older clients ignore it and fail open).
@@ -318,7 +318,7 @@ Cohorte sends nothing, anywhere. There is no telemetry, no usage pings, no colle
 opt-in stats that shipped through 2.2.0 were removed in 2.3.0, sender included. Everything the
 pipeline records (`pipeline-metrics.jsonl`, `specs/reports/`) stays in your repo. The network calls
 are the ones you can see — `git`, `gh`, whatever MCP providers you wired — plus one read-only lookup
-of the latest published version on `registry.npmjs.org` by `cohorte install/update/doctor`
+of the latest published version on `registry.npmjs.org` by `cohorte install/update/sync/doctor`
 (`COHORTE_NO_VERSION_CHECK=1` turns it off).
 
 ## License

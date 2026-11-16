@@ -141,8 +141,9 @@ function ask(question) {
 
 function printList(lines, bullet = '·') { for (const l of lines) console.log(`  ${bullet} ${l}`); }
 
+// The committed project hook runs `python3 …` on every platform, so that is the name to probe.
 function python3Present() {
-  const r = spawnSync(process.platform === 'win32' ? 'py' : 'python3', ['-c', 'import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)'], { stdio: 'ignore' });
+  const r = spawnSync('python3', ['-c', 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)'], { stdio: 'ignore' });
   return r.status === 0;
 }
 
@@ -168,7 +169,7 @@ async function staleVersionNotice() {
       printList(r.report);
       if (r.warnings.length) { console.log('\n  Heads-up:'); printList(r.warnings, '!'); }
       if (!python3Present()) {
-        console.log('\n  ! python3 ≥ 3.8 was not found. The gate hook each project runs needs it — without it,'
+        console.log('\n  ! python3 ≥ 3.9 was not found. The gate hook each project runs needs it — without it,'
           + '\n    every Bash call in a cohorte project is refused (the hook is fail-closed).');
       }
       console.log(`
