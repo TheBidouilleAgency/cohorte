@@ -31,7 +31,7 @@ never paste a diff — the agent computes its own, scoped to its tree:
 > `PIPELINE.md` first. **Add the missing tests FIRST** (pin current behavior / cover the entry
 > points), watch them pass, **then** refactor to clear each item. Preserve current public behavior
 > unless an item marks it a bug. Migrations stay additive. Need the current state of your tree?
-> Compute it yourself: `git diff <default_branch> -- <surface.path>`. Lint + format before handoff;
+> Compute it yourself: `<core>/pipeline/scripts/feature-diff.sh --default <default_branch> --patch -- <surface.path>`. Lint + format before handoff;
 > return the handoff in the format your agent instructions define. Backlog items for YOUR surface
 > (self-contained — clear exactly these, reading only the files they name): <the domain's open
 > `- [ ]` lines verbatim, with exact file paths>."

@@ -1,10 +1,17 @@
 ---
 model: sonnet
 description: Author the contract from the frozen spec, then dispatch one implementer agent per surface in parallel.
-argument-hint: <feature_id>
+argument-hint: <feature_id> [--readiness-only]
 ---
 
 You are the **lead**. Build feature **$ARGUMENTS** from its frozen spec.
+
+**Arguments: `<feature_id> [--readiness-only]`.** Strip the flag first — every `$ARGUMENTS` below
+means the **bare feature id** (in paths, kanban calls, JSON). `--readiness-only` runs §1 → §2 (checks,
+reconcile, readiness verdict, contract) and **stops before §3**: no dispatch, no `build.json`, no
+metrics line, no kanban move. It exists to refresh what the loop workflow's preconditions read
+(`readiness.json` newer than the spec, the contract on disk) without a full build — the loop then
+builds itself. Say which mode you ran in your last line.
 
 > Read `PIPELINE.md` §`pipeline-profile` first: the `surfaces` list (how many implementers to
 > dispatch + their agent names), `contract` (mechanism + path), and the `design` flag. _Skip the
@@ -20,12 +27,19 @@ You are the **lead**. Build feature **$ARGUMENTS** from its frozen spec.
 
 - Check the spec front-matter FIRST — `grep '^status:' specs/$ARGUMENTS.md` (or Read with a ~15-line
   limit) — before any full read. Buildable statuses are `frozen`, `in-review` and `in-progress`
-  (SCHEMA.md §Spec status). `blocked` means a previous round gave up here: say so, and route by the
-  spec's `## Remediation` — open items ⇒ `/cohorte-fix`, none ⇒
-  continue this build. Anything else (`draft`, missing, `shipped`) ⇒ stop and tell the human to run
-  `/cohorte-spec` first. Only then read the body, selectively: front-matter, §5 contract, the surface
+  (SCHEMA.md §Spec status). `blocked` means a loop round gave up here: say so with the `reason` from
+  `specs/reports/$ARGUMENTS.loop.json` (a reason with no `outcome` is a resumable stop — re-running the
+  loop workflow resumes it), and route by the spec's `## Remediation` — open items ⇒ `/cohorte-fix`,
+  none ⇒ continue this build. `shipped` / `merged` / `abandoned` ⇒ done, say so and stop. Anything
+  else (`draft`, missing) ⇒ stop and tell the human to run `/cohorte-spec` first. Only then read the body, selectively: front-matter, §5 contract, the surface
   task sections, and `## Remediation` (fall back to a full read if the spec doesn't follow the
   template's headings).
+- **Feature branch — when nothing else made it.** With `isolation.enabled`, `new-feature.sh` already
+  created `<prefix>$ARGUMENTS` with its worktree: confirm you are in it. With isolation **off**,
+  nothing does, yet `/cohorte-ship` refuses any other branch: `git rev-parse --abbrev-ref HEAD`, and
+  on `<default_branch>` run `git switch <prefix>$ARGUMENTS 2>/dev/null || git switch -c <prefix>$ARGUMENTS`
+  (uncommitted work carries over). `<prefix>` = `vcs.patch_branch_prefix` (else `fix/`) for
+  `kind: patch`, `vcs.feature_branch_prefix` otherwise. On some *other* branch ⇒ say which and ask.
 - **`kind: patch` in the front-matter ⇒ this is a bug fix** frozen by `/cohorte-patch`, and it is
   built by this command like any other spec, with two differences called out where they apply: §1.6
   judges it against its regression test instead of a contract, and §2 authors no contract unless §5
@@ -128,6 +142,10 @@ this gate and any automated driver, which parses no prose:
   and relay the list to the human in one line each.
 - **`READY` ⇒ continue silently** — one line, no restatement.
 
+A `blocked` spec (§1) re-entered here is unblocked by the run itself: once the readiness verdict is
+written (and is not `NOT-READY`), set `status: in-review` — the loop workflow and `/cohorte-doctor`
+read a `blocked` spec whose readiness is newer than its `loop.json` as "a human re-entered".
+
 ## 2. Author the contract (lead-only — the single sync channel)
 
 _Skipped entirely on a `kind: patch` spec whose §5 Contract delta is `none`_ — which is the usual
@@ -150,6 +168,9 @@ line with no duration). **Postcondition (if `contract.enabled`):**
 you dispatch §3, or the stateless agents have nothing to build against (the epoch output is §4's
 wall-clock start — no separate timing call).
 
+**`--readiness-only` stops here** — print the readiness verdict + contract path and point at the
+loop workflow (`{feature: "$ARGUMENTS"}`) or a plain `/cohorte-build $ARGUMENTS`.
+
 ## 3. Dispatch one implementer per surface — IN PARALLEL
 
 Spawn every surface's agent in a **single message** (one dispatch each) so they run concurrently —
@@ -164,7 +185,7 @@ tree. For each surface in `surfaces`:
 > `subagent_type: <surface.agent>` — "Implement the **<surface.key>** surface for feature `$ARGUMENTS`.
 > Read `PIPELINE.md` first. Spec: `specs/$ARGUMENTS.md`. Contract: `<contract.path>/$ARGUMENTS.<ext>`
 > (import read-only). Work test-first. Touch only `<surface.path>`. Need the current state of your
-> tree? Compute it yourself: `git diff <default_branch> -- <surface.path>`. Return the handoff in the
+> tree? Compute it yourself: `<core>/pipeline/scripts/feature-diff.sh --default <default_branch> --patch -- <surface.path>`. Return the handoff in the
 > format your agent instructions define. Design files: <the spec's `design_files` links — each
 > `https://claude.ai/design/p/<projectId>?file=<file>` carries its own project + page, fetch read-only
 > via `DesignSync get_file`, build mobile-first · or `none` (non-design surface, or a fix loop whose

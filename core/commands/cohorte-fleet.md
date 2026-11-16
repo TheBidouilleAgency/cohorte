@@ -41,8 +41,14 @@ multi-*feature* flight plan).
    show the matrix + order in a compact table, and get the human's go-ahead — the order is a
    plan they will live with for days.
 4. **Provision worktrees** — for each feature without one: `scripts/new-feature.sh <id>` (the
-   rendered isolation script: worktree + branch + DB + port slot). Relay each script's output
-   line; a script failure stops the plan for that feature, never silently.
+   rendered isolation script: worktree + branch + DB + port slot). The frozen spec is uncommitted
+   here and the worktree branches off `origin/<default_branch>`, so the script **carries** every
+   uncommitted file named `<id>.*` into it (`specs/<id>.md`, `specs/design/<id>.md`, the contract
+   file once authored) — check its `→ carried specs/<id>.md` line: no such line ⇒ the worktree
+   has no spec and `/cohorte-build` there will refuse; stop for that feature. A script rendered
+   before this step existed does not carry anything — re-render it (`/cohorte-update-pipeline`)
+   or copy the spec in by hand. Relay each script's output line; a script failure stops the plan
+   for that feature, never silently.
 5. **Write `specs/reports/fleet.json`** (overwrite): `{"ts":"<ISO>","order":[...ids in merge
    order...],"features":{"<id>":{"worktree":"<path>","branch":"<branch>","dependsOn":[...]}}}`.
 6. **Print the launch plan** — one line per feature, in order: the worktree path to open a

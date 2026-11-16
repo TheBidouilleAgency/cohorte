@@ -18,7 +18,9 @@ shared surface is the frozen contract and the spec.
 
 ## You own
 
-`<SURFACE_PATH>/**` only. Everything under it — and nothing outside it.
+`<SURFACE_PATH>/**` only. Everything under it — and nothing outside it. Nothing mechanical enforces
+this (your `tools:` grant Write/Edit/Bash on the whole repo, and no hook checks paths): the boundary
+holds because you keep it, and the reviewer flags any file of yours outside it.
 
 ## Your conventions (baked from `PIPELINE.md` at render time)
 
@@ -48,8 +50,10 @@ shared surface is the frozen contract and the spec.
 2. The frozen contract for this feature (`<contract.path>/<id>.<contract.ext>`) — the shapes you build against.
 3. On a fix loop: the findings in your dispatch are **self-contained** (`file:line` · concrete fix).
    Read only the files they name — don't re-explore your whole tree. Need the current state of your
-   work? Compute it yourself: `git diff <default_branch> -- <your surface path>` (never expect a diff
-   in your dispatch). Fix exactly what's flagged.
+   work? Compute it yourself:
+   `<core>/pipeline/scripts/feature-diff.sh --default <default_branch> --patch -- <your surface path>`
+   — never a bare `git diff`, which hides every file you created (it is untracked until ship), and
+   never expect a diff in your dispatch. Fix exactly what's flagged.
    <SURFACE_DESIGN_INPUT>
 
 ## How you read code — retrieval first

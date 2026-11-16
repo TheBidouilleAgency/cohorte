@@ -144,6 +144,17 @@ const contractPath = (profile.contract && profile.contract.path) || ''
 const base = (profile.vcs && profile.vcs.default_branch) || 'main'
 const quiet = s => (s.test_quiet_cmd && !String(s.test_quiet_cmd).startsWith('<'))
   ? s.test_quiet_cmd : s.test_cmd ? `${s.test_cmd} 2>&1 | tail -40` : ''
+const real = c => c && !String(c).startsWith('<')
+// The `shared` domain (contract package / everything outside the surface trees) has no
+// surface entry, so no per-surface commands — it used to verify with NO gates and report
+// gatesGreen=true by default. Every slice imports it, so it is verified with the REPO-WIDE
+// commands (profile.commands), which is what a change there can actually break.
+const cmds = profile.commands || {}
+const repoGates = [
+  real(cmds.test_quiet) ? cmds.test_quiet : real(cmds.test) ? `${cmds.test} 2>&1 | tail -40` : '',
+  real(cmds.lint_quiet) ? cmds.lint_quiet : real(cmds.lint) ? `${cmds.lint} 2>&1 | tail -40` : '',
+  cmds.typecheck,
+].filter(real)
 
 // ── Phase 1 — read the open backlog ──────────────────────────────────────────
 phase('Backlog')
@@ -168,7 +179,8 @@ const implementPrompt = d =>
   'Refactor pass on your surface (no feature spec). Read PIPELINE.md first. Add the missing tests ' +
   'FIRST (pin current behavior / cover the entry points), watch them pass, THEN refactor to clear each ' +
   'item. Preserve current public behavior unless an item marks it a bug. Migrations stay additive. ' +
-  `Need the current state of your tree? Compute it yourself: git diff ${base} -- <your surface path>. ` +
+  `Need the current state of your tree? Compute it yourself: <core>/pipeline/scripts/feature-diff.sh --default ${base} --patch -- <your surface path> ` +
+  '(<core> = "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/cohorte"; never a bare git diff — it hides files you created). ' +
   'Lint + format before handoff; return the handoff in the format your agent instructions define. ' +
   'Backlog items for YOUR surface (self-contained — clear exactly these, reading only the files they name):\n' +
   d.items.join('\n')
@@ -177,21 +189,24 @@ const verifyDomain = async (d, implHandoff) => {
   if (implHandoff == null) return { key: d.key, cleared: [], remaining: d.items, gatesGreen: false, failures: 'implementer died' }
   const s = byKey[d.key]
   const gateCmds = s ? [quiet(s), s.lint_quiet_cmd || (s.lint_cmd ? `${s.lint_cmd} 2>&1 | tail -40` : ''), s.typecheck_cmd]
-    .filter(c => c && !String(c).startsWith('<')) : []
+    .filter(real) : d.key === 'shared' ? repoGates : []
+  // No gates at all is not green: it is unverified. Say so instead of defaulting to true.
+  const noGates = gateCmds.length === 0
   let v = await agent(
     `Verify a cohorte refactor round for domain ${d.key}. 1. Run these gates, each redirected to ` +
     `specs/reports/refactor-verify.${d.key}.txt (append) — never print their output: ` +
-    `${gateCmds.map(c => JSON.stringify(c)).join(' · ') || '(none declared — skip gates, gatesGreen=true)'}. ` +
+    `${noGates ? '(none declared — skip the gates; return gatesGreen=false and failures="no gate commands declared")' : gateCmds.map(c => JSON.stringify(c)).join(' · ')}. ` +
     '2. For EACH backlog item below, open its file:line and check the prescribed fix actually landed. ' +
     'Return the item lines split into cleared / remaining (verbatim), gatesGreen, and one line per gate failure.\n' +
     'Items:\n' + d.items.join('\n'),
     { model: 'haiku', label: `verify:${d.key}`, phase: 'Verify', schema: VERIFY, effort: 'low' },
   )
+  if (v && noGates) v = { ...v, gatesGreen: false, failures: 'no gate commands declared for this domain — gates unverified' }
   // One bounded retry: re-dispatch the implementer on what verification rejected.
   // The re-verify covers ONLY the retried items, so round 1's cleared list is carried
   // forward — overwriting it un-ticked every item the first pass verified, and the
   // next /cohorte-refactor re-dispatched finished work.
-  if (v && (v.remaining.length || !v.gatesGreen) && byKey[d.key]) {
+  if (v && (v.remaining.length || (!v.gatesGreen && !noGates)) && byKey[d.key]) {
     const cleared1 = v.cleared || []
     // Never retry items round 1 already verified cleared: on a gates-red round with
     // nothing remaining, retrying ALL items put the same lines in both `cleared` and

@@ -51,7 +51,7 @@ be precise and self-contained.
    through. Genuinely-good-but-out-of-scope work is a **deferred** finding, exactly as elsewhere.
 2. **Correctness.** Logic bugs, unhandled errors, validation gaps, auth holes, data exposure.
 3. **Security.** Authz on every entry point, input validation, no secret/PII leakage, no injection.
-   A security vulnerability ⇒ verdict **BLOCK**.
+   (A security vulnerability blocks — §Severity & verdict.)
 4. **Conventions (`PIPELINE.md` §Conventions).** Enforce the per-surface rules the profile lists.
 5. **RBAC** — _only if `rbac.enabled`_: no cross-role/cross-tenant exposure; least privilege on every route.
 6. **Mobile-first / responsive** — _only if a surface has `uses_design: true`_: base styles small-screen,
@@ -107,12 +107,14 @@ say it rather than inventing cuts).
 
 ## Severity & verdict
 
-- **CRITICAL** — spec violation or correctness bug that must be fixed ⇒ verdict **REVISE**.
+- **CRITICAL** — spec violation or correctness bug that must be fixed.
 - **HIGH / MEDIUM / LOW** — quality/convention issues; note them.
 - **Over-engineering (§8) caps at MEDIUM** and never drives the verdict — a diff whose only findings
   are `complexity` ships. It is a cleanup signal, not a gate.
-- Any **security vulnerability** ⇒ verdict **BLOCK**.
-- No CRITICAL and no security issue ⇒ verdict **SHIP**.
+- **The verdict rule — the only statement of it; the lead and the review workflow recompute it from
+  the merged counts, so it must be a pure function of your findings:** any `security` finding ⇒
+  **BLOCK**; else any CRITICAL ⇒ **REVISE**; else **SHIP**. (HIGH/MEDIUM never change the verdict —
+  they decide whether a SHIP is a *clean* one, which is the lead's routing, not your verdict.)
 
 ## Deferred — real, but not this feature's problem
 

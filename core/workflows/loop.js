@@ -18,9 +18,17 @@
 //
 // State is a reducer over files on disk — readiness.json + build.json (build's),
 // verdict.json (review's), and loop.json (this script's own) — nothing lives in script
-// memory between rounds. Re-invoking on the same feature resumes from loop.json; every
-// file older than the spec's mtime is treated as absent (v2's killer was reading a missing
-// file as an empty one; the mirror-image bug is reading an old file as a current one).
+// memory between rounds. Re-invoking on the same feature resumes from loop.json when the
+// last run stopped for a RESUMABLE reason (see RESUMABLE below: loop.json then carries a
+// `reason` and no `outcome`); every file older than the spec's mtime is treated as absent
+// (v2's killer was reading a missing file as an empty one; the mirror-image bug is reading
+// an old file as a current one).
+//
+// The review runs as a CHILD workflow — `workflow('cohorte-review', {feature})`, the
+// runtime's documented nesting call (one level deep; it throws on an unknown name). The
+// name resolves to <workflows>/cohorte-review.js. A throw is caught and closes the run as
+// `review-workflow-unavailable` (resumable); the loop never falls back to a conversational
+// review. scripts/test-workflows.mjs stubs workflow() to pin both paths.
 //
 // NOTE for unattended runs: workflow subagents run in acceptEdits whatever the session
 // mode, so hooks/gate.py is the only brake on file edits for the whole run (SCHEMA.md
@@ -61,6 +69,19 @@ if (!isSlug(feature)) {
     'Pass args as a real object, e.g. {feature: "titlebar-project-switcher"} — not a JSON string.')
 }
 const maxRounds = Math.max(1, Math.min(10, Number(ARGS.maxRounds) || 5))
+
+// Why a run stops decides whether re-invoking it RESUMES (same round, same history) or
+// starts fresh. Resumable = a transient or mechanical failure: nothing about the code or
+// the spec says more rounds are pointless, so re-running — after fixing the cause — picks
+// up where it died. Terminal = the loop's own judgment that more rounds will not help
+// (treading water, max rounds) or a lead-only decision (a contract change): a human acts,
+// re-enters through /cohorte-fix or /cohorte-build, and the next run starts at round 1.
+// A resumable stop writes loop.json with `reason` and NO `outcome`; a terminal one writes both.
+const RESUMABLE = new Set([
+  'review-died', 'review-aborted', 'no-verdict', 'unreviewed', 'preflight', 'stage-diff', 'empty-diff',
+  'report-not-staged', 'ingest-died', 'no-fix-items', 'dead-implementers', 'review-workflow-unavailable',
+])
+const TERMINAL = new Set(['treading-water', 'max-rounds', 'contract-change'])
 
 // ── The reducer — the whole design, as one pure function ─────────────────────
 // Evaluated in this order; the first match wins, and the order is load-bearing:
@@ -280,10 +301,16 @@ const specMtime = (facts.spec && facts.spec.mtimeEpoch) || 0
 // spec mid-run without re-entering through /cohorte-build is outside what mtimes can
 // distinguish — delete specs/reports/<id>.loop.json to force a fresh run.
 let resumed = null
+let prevStop = null   // the last run's stop reason, resumable or not — routes a `blocked` spec
 if (facts.loop && facts.loop.exists && facts.loop.raw) {
   try {
     const prev = JSON.parse(facts.loop.raw)
-    if (prev && prev.id === feature && !prev.outcome) resumed = prev
+    if (prev && prev.id === feature) {
+      prevStop = prev.reason || null
+      // Unfinished (no outcome): a crash mid-round, or a resumable stop. A reason that is
+      // not in RESUMABLE (an older script's give-up) is not resumed.
+      if (!prev.outcome && (!prev.reason || RESUMABLE.has(prev.reason))) resumed = prev
+    }
   } catch { /* unparseable loop.json = no resume; a fresh run overwrites it */ }
 }
 const baselineMtime = (resumed && typeof resumed.specMtime === 'number') ? resumed.specMtime : specMtime
@@ -296,18 +323,28 @@ const fresh = f => !!(f && f.exists && typeof f.mtimeEpoch === 'number' && f.mti
 const abortPre = detail => ({ id: feature, outcome: 'abort', reason: 'precondition', rounds: 0, detail })
 
 // 1. The spec, in a buildable state. `in-progress` is accepted because THIS script
-//    stamps it — a resumed loop must not refuse its own footprint.
+//    stamps it — a resumed loop must not refuse its own footprint. `blocked` is accepted
+//    when it is this script's own resumable stop (loop.json carries a RESUMABLE reason and
+//    no outcome), or when a human re-entered through /cohorte-build after a terminal stop
+//    (readiness.json rewritten after loop.json) — otherwise it routes to a human.
 if (!facts.spec.exists) return abortPre(`specs/${feature}.md does not exist — /cohorte-spec first`)
 const status = facts.spec.status || ''
-if (!['frozen', 'in-review', 'in-progress'].includes(status)) {
-  return abortPre(`spec status is '${status || '(none)'}' — the loop needs frozen | in-review | in-progress ` +
-    `(SCHEMA.md §Spec status). draft ⇒ /cohorte-spec; blocked ⇒ route by the spec's ## Remediation first; shipped ⇒ done already`)
+const reEntered = !!(facts.readiness && facts.readiness.exists && facts.loop && facts.loop.exists
+  && typeof facts.readiness.mtimeEpoch === 'number' && typeof facts.loop.mtimeEpoch === 'number'
+  && facts.readiness.mtimeEpoch > facts.loop.mtimeEpoch)
+const blockedOk = status === 'blocked' && (resumed != null || reEntered)
+if (!['frozen', 'in-review', 'in-progress'].includes(status) && !blockedOk) {
+  return abortPre(status === 'blocked'
+    ? `spec is blocked by a finished loop run (reason: ${prevStop || 'unknown'}) — that stop needs a human: ` +
+      `/cohorte-fix ${feature} for open Remediation items, or /cohorte-build ${feature} [--readiness-only] to re-enter; then re-run the loop`
+    : `spec status is '${status || '(none)'}' — the loop needs frozen | in-review | in-progress ` +
+      `(SCHEMA.md §Spec status). draft ⇒ /cohorte-spec; shipped/merged ⇒ done already`)
 }
 // 2. A fresh readiness verdict — the gate /cohorte-build §1.6 wrote. NOT-READY is the one
 //    outcome more passes cannot fix; stale-or-absent means nobody has judged THIS spec.
 if (!fresh(facts.readiness)) {
   return abortPre(`specs/reports/${feature}.readiness.json is ${facts.readiness.exists ? 'older than the spec' : 'absent'} — ` +
-    `run /cohorte-build ${feature} once (its §1.6 writes the readiness verdict), then re-run the loop`)
+    `run /cohorte-build ${feature} --readiness-only (§1–§2: readiness verdict + contract, no dispatch), then re-run the loop`)
 }
 if (facts.readiness.verdict === 'NOT-READY') {
   return { ...abortPre(`readiness verdict is NOT-READY — /cohorte-spec ${feature} must close these gaps first`), gaps: facts.readiness.gaps || [] }
@@ -343,7 +380,7 @@ if (resumed) {
   round = Math.max(1, Number(resumed.round) || 1)
   lastKey = Array.isArray(resumed.lastItems) ? resumed.lastItems.join('\n') : null
   history = (Array.isArray(resumed.history) ? resumed.history : []).filter(h => h && h.round < round)
-  log(`Resuming ${feature} at round ${round} (unfinished loop.json)`)
+  log(`Resuming ${feature} at round ${round} (${resumed.reason ? `stopped on ${resumed.reason}` : 'unfinished loop.json'})`)
 }
 
 // Readiness gaps (RESERVATIONS) inline into the dispatch of the surface they affect —
@@ -364,7 +401,7 @@ const dispatchPrompt = j =>
   `Implement the **${j.s.key}** surface for feature \`${feature}\`. Read \`PIPELINE.md\` first. ` +
   `Spec: \`specs/${feature}.md\`. Contract: ${contractSlot} (import read-only). Work test-first. ` +
   `Touch only \`${j.s.path}\`. Need the current state of your tree? Compute it yourself: ` +
-  `git diff ${base} -- ${j.s.path}. Return the handoff in the format your agent instructions define. ` +
+  `<core>/pipeline/scripts/feature-diff.sh --default ${base} --patch -- ${j.s.path}. Return the handoff in the format your agent instructions define. ` +
   `Design files: ${j.design}. ` +
   'Open Remediation items for YOUR surface (self-contained — fix exactly these, reading only the files ' +
   `they name; \`none\` ⇒ first build, implement the spec's tasks for your surface): ${j.items}. ` +
@@ -396,11 +433,11 @@ const designSlot = s => (s.uses_design && (facts.spec.designFiles || []).length)
 // the agent only substitutes <ISO> and never invents fields), plus the optional spec
 // status stamp, kanban move and metrics line. Returns `done <epoch>` so wall-clock
 // threads through the agents' own `date +%s` (scripts have no clock of their own).
-const writeState = async ({ label, phaseName, outcome, reason, status: st, kanban, metrics }) => {
+const writeState = async ({ label, phaseName, outcome, reason, status: st, kanban, metrics, closing }) => {
   const loopJson = JSON.stringify({
     id: feature, round, maxRounds, phase: phaseName, startedAt, specMtime: baselineMtime, ts: '<ISO>',
     lastItems: lastKey == null ? null : lastKey.split('\n').filter(Boolean),
-    history, ...(outcome ? { outcome, reason } : {}),
+    history, ...(reason ? { reason } : {}), ...(outcome ? { outcome } : {}),
   })
   const steps = [
     `1. mkdir -p specs/reports; write EXACTLY this to specs/reports/${feature}.loop.json (overwrite), ` +
@@ -423,7 +460,7 @@ const writeState = async ({ label, phaseName, outcome, reason, status: st, kanba
   const r = await agent(
     `Mechanical state write for the cohorte loop, feature ${feature} — do ALL steps, then return exactly: done <epoch> ` +
     '(<epoch> = date +%s).\n' + steps.join('\n'),
-    { model: 'haiku', label, phase: outcome ? 'Close' : undefined, effort: 'low' },
+    { model: 'haiku', label, phase: closing ? 'Close' : undefined, effort: 'low' },
   )
   const m = /done\s+(\d+)/.exec(String(r || ''))
   if (m) clock = Number(m[1])
@@ -431,21 +468,27 @@ const writeState = async ({ label, phaseName, outcome, reason, status: st, kanba
 }
 
 // Close the run: final loop.json + status + kanban, then the return object. Status
-// doctrine (SCHEMA.md §Spec status): `blocked` = a round gave up (resumable, reason
-// named); `in-review` = zero blocking, awaiting /cohorte-ship; precondition aborts
-// never stamped anything, so they change nothing here either.
+// doctrine (SCHEMA.md §Spec status): `blocked` = a round gave up, reason named in
+// loop.json; `in-review` = zero blocking, awaiting /cohorte-ship; precondition aborts
+// never stamped anything, so they change nothing here either. A RESUMABLE abort leaves
+// loop.json without `outcome` (phase kept, reason set), so the next invocation resumes at
+// this round; a terminal one (and a ship) records the outcome, so the next run is fresh.
 const close = async (outcome, reason, extra = {}) => {
   // Every abort that reaches close() is a round giving up — preconditions abort via
   // abortPre() before anything was stamped and never come through here. An abort left
   // outside this list once stranded the spec at `in-progress` forever.
   const gaveUp = outcome === 'abort'
+  const resumable = gaveUp && RESUMABLE.has(reason)
+  if (gaveUp && !resumable && !TERMINAL.has(reason)) log(`abort reason '${reason}' is in neither RESUMABLE nor TERMINAL — recorded as terminal`)
   const closed = await writeState({
-    label: 'close', phaseName: 'done', outcome, reason,
+    label: 'close', phaseName: resumable ? 'stopped' : 'done', outcome: resumable ? undefined : outcome, reason,
     status: outcome === 'ship' ? 'in-review' : gaveUp ? 'blocked' : undefined,
     kanban: outcome === 'ship' ? 'review' : gaveUp ? 'fix' : undefined,
+    closing: true,
   })
   return {
     id: feature, outcome, reason, rounds: history.length,
+    ...(gaveUp ? { resumable } : {}),
     blocking: history.length ? history[history.length - 1].blocking : null,
     tokens: spent(),   // approx output tokens for the whole run (runtime counter)
     history, report: `specs/reports/${feature}.md`,
@@ -455,11 +498,11 @@ const close = async (outcome, reason, extra = {}) => {
 }
 
 // ── Phase 2 — build, unless build's own work is already fresh on disk ────────
-// /cohorte-build has no stop-after-§1.6 mode: when the human ran it through, the
-// implementers' work and build.json are on disk and re-building would be waste; when
-// build.json is stale, absent, or carries dead[], the loop builds (a full re-dispatch —
-// implementers are idempotent against a frozen contract, the same property fix rounds
-// already rely on).
+// When the human ran /cohorte-build through, the implementers' work and build.json are on
+// disk and re-building would be waste. `/cohorte-build <id> --readiness-only` stops after
+// §2 (readiness + contract) and writes no build.json — so the loop builds, as it does when
+// build.json is stale, absent, or carries dead[] (a full re-dispatch — implementers are
+// idempotent against a frozen contract, the same property fix rounds already rely on).
 let mark = spent()
 if (fresh(facts.build) && !(facts.build.dead || []).length) {
   log('build.json is fresh with no dead surfaces — skipping the build phase, entering at review')
@@ -501,7 +544,8 @@ while (true) {
   } catch (e) {
     return close('abort', 'review-workflow-unavailable', {
       detail: `workflow('cohorte-review') failed: ${e.message} — the review workflow must be installed ` +
-        '(~/.claude/workflows/cohorte-review.js; /cohorte-doctor check 8); the loop never falls back to a conversational review',
+        '(~/.claude/workflows/cohorte-review.js; /cohorte-doctor §Workflows); the loop never falls back to a conversational review — ' +
+        `install it, then re-run the loop (it resumes at round ${round})`,
     })
   }
 

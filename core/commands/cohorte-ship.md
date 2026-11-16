@@ -17,22 +17,48 @@ You are the **lead**. Ship feature **$ARGUMENTS**. This is the outward-facing ga
 > it** — a ship session that inferred that, having opened neither the config nor `PIPELINE.md`, is
 > exactly how a merged feature's card stayed in "Ready to build". Do not skip §4's move either.
 
+## 0. Re-entry — a spec already past this command
+
+`grep '^status:' specs/$ARGUMENTS.md` first. `shipped` means a PR is (or was) open — reconcile it
+instead of shipping twice: `gh pr view <the branch §1 resolves> --json state,mergedAt,url` (no `gh` /
+not github ⇒ ask the human what happened to the PR):
+- `MERGED` ⇒ set `status: merged` (SCHEMA.md §Spec status) and say so; go straight to §5's teardown.
+- `OPEN` ⇒ nothing to ship again: go to §5's CI watch (a red check routes per §5).
+- `CLOSED` (not merged) ⇒ ask the human: reopen and continue (`/cohorte-fix` on what killed it), or
+  drop it — then set `status: abandoned`. Never decide that alone.
+
+`merged` / `abandoned` ⇒ done already: say so and stop. Anything else ⇒ §1.
+
 ## 1. Pre-flight (confirm before doing anything irreversible)
 
-- Confirm the latest `/cohorte-review` returned **SHIP** (no CRITICAL, no security). If not reviewed, or the
-  verdict was REVISE/BLOCK, stop and say so.
-- **Freshness gate** — the reviewed code must be exactly what ships. If the spec front-matter carries
-  `reviewed_base` + `reviewed_digest`, recompute
-  `git diff <reviewed_base> -- . ':(exclude)specs/' | sha256sum | cut -c1-16` (`shasum -a 256`
-  then the first 16 hex chars where there is no `sha256sum` — macOS) and compare to
-  `reviewed_digest`. **Match** ⇒ source unchanged since the SHIP verdict, proceed. **Mismatch** ⇒ source
-  (or the contract) was edited after review — the verdict is **stale**: stop and tell the human to re-run
-  `/cohorte-review $ARGUMENTS` before shipping. Missing fields (spec predates the gate) ⇒ skip, don't block.
+- **The review gate — read `specs/reports/$ARGUMENTS.verdict.json`, never the chat.** It is the review's
+  machine contract (`/cohorte-review` §3). Ship only when ALL hold, and name the first that fails:
+  - `verdict` is `SHIP` and there is no `aborted` key (a preflight-red or empty-diff run certifies
+    nothing);
+  - `unreviewed` is `[]` (a dead reviewer read nothing);
+  - `severity.HIGH` and `severity.MEDIUM` are both `0` — a SHIP that still carries them is not a
+    clean bill (route: `/cohorte-fix $ARGUMENTS`, or the human explicitly parks MEDIUMs through
+    `/cohorte-review`'s park step, which rewrites this file);
+  - the spec front-matter carries `reviewed_base` **and** `reviewed_digest` — the review writes the
+    stamp only on a clean bill, so a SHIP without it is a review that did not certify this code.
+  File absent ⇒ no review ran on this checkout: stop, `/cohorte-review $ARGUMENTS`. **Only when
+  `verdict.json` is absent AND the spec carries no stamp AND predates the gate** (a legacy spec from
+  before the verdict file existed) may the human confirm shipping on their own word — ask, and say
+  that nothing certified it.
+- **Freshness gate** — the reviewed code must be exactly what ships. Recompute
+  `<core>/pipeline/scripts/feature-diff.sh --base <reviewed_base> --digest` (the same script that
+  wrote the stamp — untracked files included, `specs/` + `.claude/` excluded; a bare `git diff`
+  would miss every new file) and compare to `reviewed_digest`. **Match** ⇒ source unchanged since
+  the SHIP verdict, proceed. **Mismatch** (or a non-zero exit) ⇒ source (or the contract) was edited
+  after review — the verdict is **stale**: stop and tell the human to re-run
+  `/cohorte-review $ARGUMENTS`. A stamp written before `feature-diff.sh` existed was computed without
+  untracked files and will mismatch once — the re-review re-stamps it.
 - **DoD gate (verify, don't tick — `/cohorte-review` owns the ticking).** Read `specs/$ARGUMENTS.md`
   §`Acceptance criteria / DoD`; if any item is still `- [ ]`, list the open ones and ask the human to
   confirm shipping anyway (they may be deferred on purpose — e.g. a UI item on a backend-only feature).
   All `- [x]` ⇒ proceed silently.
-- Show `git status` + `git diff --stat`; confirm the branch is `<prefix>$ARGUMENTS`, where `<prefix>`
+- Show `git status` + `<core>/pipeline/scripts/feature-diff.sh --default <default_branch> --numstat`
+  (what ships, new files included); confirm the branch is `<prefix>$ARGUMENTS`, where `<prefix>`
   is `vcs.patch_branch_prefix` (falling back to `fix/` on a profile that predates the key) when the
   spec front-matter carries `kind: patch`, and `vcs.feature_branch_prefix` otherwise. Resolve it once
   here and pass the **literal** branch to §3's dispatch — the release agent must not re-derive it.
@@ -114,9 +140,12 @@ under the `shipped` heading — never re-read the whole board into context.
   report the result — the human merges only on green. A red check ⇒ back to `/cohorte-fix $ARGUMENTS`,
   **except** a red `release_notes.ci_job`: that one is this command's own miss, not a code finding —
   write the note per §2b, commit, push, and re-watch. Never send a missing release note through `/cohorte-fix`.
-- Once the human confirms the PR is **merged**: if `isolation.enabled`, propose the teardown —
+- Once the PR is **merged** (the human says so, or §0's `gh pr view` shows `MERGED`): set the spec's
+  `status: merged` and commit that one line on the default branch when the human next commits there
+  (or leave it to `/cohorte-doctor`'s reconcile — it does the same check). If `isolation.enabled`, propose the teardown —
   `scripts/remove-feature.sh $ARGUMENTS` (add `--drop-db` to also drop the feature db; kept by
   default). It removes the worktree, deletes the merged branch, frees the slot. Never run it before
   the merge is confirmed, and only with the human's go-ahead (the gate will ask anyway).
 - Feature closed — **recommend a `/clear`** before starting the next one; nothing from this session
-  is needed again (spec `shipped`, PR merged, board updated).
+  is needed again (spec `merged`, board updated). `specs/reports/$ARGUMENTS.*` is a gitignored
+  buffer and can be deleted now.

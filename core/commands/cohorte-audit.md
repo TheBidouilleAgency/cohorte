@@ -20,9 +20,12 @@ analyze only — no fixes (those go through `/cohorte-refactor`).
 Run the profile's checks **scoped to `$ARGUMENTS`** when a path/domain is given (lint/format/typecheck
 on that path, tests via that surface's `test_cmd`); repo-wide only for the default whole-repo audit.
 Use the quiet variants (`commands.lint_quiet`/`test_quiet`, else the `2>&1 | tail -40` fallback —
-SCHEMA.md §Output discipline) and redirect each command's output into
-`specs/reports/audit-gates.txt` in the same call (`cmd > specs/reports/audit-gates.txt 2>&1`) so the
-bulk never sits in your history, then grep it for the `file:line` of every failure:
+SCHEMA.md §Output discipline) and redirect every command's output into
+`specs/reports/audit-gates.txt` in ONE call — truncate it first (`: > specs/reports/audit-gates.txt`,
+so a previous run's output is never read as this one's), then per command
+`printf '\n$ %s\n' "<cmd>" >> specs/reports/audit-gates.txt; <cmd> >> specs/reports/audit-gates.txt 2>&1`
+(a `>` per command would keep only the last one) — so the bulk never sits in your history, then grep
+it for the `file:line` of every failure:
 `commands.format` in check mode (e.g. `prettier --check .` / `ruff format --check`),
 `commands.lint`, `commands.typecheck`, `commands.test`.
 
@@ -37,20 +40,28 @@ profile enables them — mobile-first + design-system usage. Mechanical findings
 from your instructions), grouped by domain (one group per surface + shared). — Target: `$ARGUMENTS`
 (default: whole repo)."
 
-## 3. Write the backlog
+## 3. Write the backlog — only the audited domains' sections
 
-Merge mechanical + convention findings into one prioritized backlog and **write
-`specs/refactor-backlog.md`**, grouped by domain, each item:
+Merge mechanical + convention findings into one prioritized list per domain, each item:
 `- [ ] <SEVERITY> · <file:line> · <rule|tdd|lint|format|type|security|complexity> · <concrete fix>`
+
+`specs/refactor-backlog.md` is **shared state**, not this run's report: it holds other domains' items
+and the `deferred:` lines `/cohorte-review` §3.5 parked there. So **rewrite only the `## <domain>`
+sections this audit covered** — a scoped audit (`$ARGUMENTS` = one domain or path) touches that
+domain's section and leaves every other section byte-for-byte as it is (ticked lines included); a
+whole-repo audit rewrites every surface's section plus `shared`, and still keeps a section for a
+domain the profile no longer has. Locate sections with `grep -n '^## '` and edit them in place (Edit
+per section, or one `awk` that swaps the audited sections) — never regenerate the whole file from
+this run's findings.
 
 `complexity` items are the over-engineering cuts, ranked biggest first inside their domain — they are
 the cheapest wins in the backlog (deleting code needs no new tests) but they never outrank a
 security, correctness or `tdd` item.
 
-**Carry over the deferred items** before overwriting: `grep -n 'deferred:' specs/refactor-backlog.md`
-and re-emit every **open** (`- [ ]`) match verbatim under its domain, tag included. Those lines were
+**Carry over the deferred items** of every section you rewrite: `grep -n 'deferred:' specs/refactor-backlog.md`
+and re-emit every **open** (`- [ ]`) match of that domain verbatim, tag included. Those lines were
 put there by `/cohorte-review` §3.5 — a real finding a feature deliberately did not own — and an audit that
-blindly overwrites the file is the one way they silently disappear. Already-ticked (`- [x]`) ones are
-done: drop them.
+blindly overwrites a section is the one way they silently disappear. Already-ticked (`- [x]`) ones in a
+rewritten section are done: drop them.
 Print a short summary (counts per domain + top items). Tell the human: refactor a domain with
 `/cohorte-refactor <domain>`.
