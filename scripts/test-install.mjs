@@ -520,9 +520,12 @@ console.log("sync — migrates a 2.x bundled repo");
   const s = JSON.parse(read(join(d, ".claude/settings.json")));
   const cmds = s.hooks.PreToolUse.flatMap((g) => g.hooks.map((h) => h.command));
   check("the 2.x registration is replaced, not duplicated", cmds.length === 2 && cmds.every((c) => c.includes("cohorte-gate.py")), JSON.stringify(cmds));
-  check("pipeline-script permissions follow the new core",
-    JSON.stringify(s.permissions.allow) === JSON.stringify(["Bash(~/.claude/cohorte/pipeline/scripts/:*)", "Bash(git status:*)"]),
-    JSON.stringify(s.permissions.allow));
+  const allow = s.permissions.allow;
+  check("pipeline-script permissions follow the new core (old paths gone, no duplicates)",
+    allow.includes("Bash(~/.claude/cohorte/pipeline/scripts/:*)") && !allow.some((r) => /\.claude\/pipeline\/scripts/.test(r))
+      && new Set(allow).size === allow.length, JSON.stringify(allow));
+  check("sync writes the pipeline's own allow rules (no command has to Edit settings.json for them)",
+    ["Bash(git switch:*)", "Bash(date:*)", "Bash(git rev-parse:*)"].every((r) => allow.includes(r)), JSON.stringify(allow));
   check("the pointer loses its 2.x mode", !("mode" in JSON.parse(read(join(d, ".claude/pipeline.json")))));
 
   // ── I. uninstall --project ──

@@ -24,13 +24,10 @@
    `allow` list of the project's read-only / verification commands** so agents don't stall on
    permission prompts — including mid-workflow, where nobody is watching a prompt: the detected
    per-surface `test_cmd`/`lint_cmd`/`typecheck_cmd`/`build_cmd` **and their `*_quiet_cmd`
-   variants** and repo-wide `commands.*` equivalents as `Bash(<cmd>:*)` rules, plus read-only git —
-   `Bash(git status:*)`, `Bash(git diff:*)`, `Bash(git log:*)`, `Bash(git rev-parse:*)`, plus
-   `Bash(git switch:*)` and `Bash(date:*)` (the refactor workflow cuts its branch and dates its spec) — plus the
-   shipped pipeline scripts (`Bash(<core>/pipeline/scripts/:*)` — preflight, kanban-move;
-   a prefix rule matches a command *starting* with that path, so a `bash <path>`
-   invocation would need its own entry), and the
-   retrieval provider's MCP tools when wired (e.g. `mcp__serena`). Never allowlist anything matching
+   variants** and repo-wide `commands.*` equivalents as `Bash(<cmd>:*)` rules, and the
+   retrieval provider's MCP tools when wired (e.g. `mcp__serena`). The pipeline's own rules — its
+   scripts (`Bash(<core>/pipeline/scripts/:*)`), read-only git, `git switch`, `date` — are written by
+   `<sync>` (step 8), never by hand: the gate asks before any edit of `settings.json`. Never allowlist anything matching
    a `gate.ask`/`gate.deny` pattern. Mention the human can widen it later with
    `/fewer-permission-prompts`) + the PostToolUse formatter hook (detected formatter). Do **not**
    write the gate hook here — step 8 (`<sync>`) registers it.

@@ -17,6 +17,10 @@ short, user-facing, most recent first. One `## <version> — <YYYY-MM-DD>` secti
   the new real-model end-to-end run.
 - **A nightly real-model end-to-end run** (`/cohorte-build` then `/cohorte-review` on a toy repo,
   asserting on the files they write) runs when the `ANTHROPIC_API_KEY` repository secret is set.
+- **`cohorte sync` writes the pipeline's own permissions** (its scripts, read-only git, `git switch`,
+  `date`) into `.claude/settings.json`. `/cohorte-update-pipeline` used to Edit that file for them,
+  which the gate (rightly) asks about — a hard stop in a headless run. Found by running the update
+  on a real 2.x project.
 - **`gate.hook_form: exec`** registers the gate without a shell (`python3` + an argument list), for
   Windows teams without Git Bash. Opt-in: every teammate needs a recent Claude Code.
 - **Ownership covers the workflows too — verified.** A subagent dispatched by a workflow

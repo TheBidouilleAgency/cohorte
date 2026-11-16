@@ -22,7 +22,7 @@ files automatically. It works because every generated artifact is a **determinis
    `<agents>/<agent>.md` from the current `implementer.template.md` per §Rendering (`<core>/pipeline/schema/rendering.md`). Safe by
    doctrine: rendered agents are regenerable artifacts — hand-written rules belong in `PIPELINE.md`
    §Conventions (which reconcile never touches), NOT in agent files, where they'd be clobbered here.
-3. **Additive settings patch.** Run `<sync>` (it owns the gate hook, the pointer,
+3. **Additive settings patch.** Run `<sync>` (it owns the gate hook, the pipeline's own `allow` rules, the pointer,
    `<state>/profile.json` and the `.gitignore` entries — so it runs AFTER step 1's top-up, and again
    if anything later edits the machine block), then bring `<state>/gate-config.json` and the `settings.json` permissions up
    to the current init spec (missing `allow` entries): add what's missing, never remove or rewrite
