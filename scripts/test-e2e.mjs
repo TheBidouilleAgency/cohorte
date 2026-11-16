@@ -70,11 +70,13 @@ write(join(repo, "apps/api/sum.js"), "module.exports = (a, b) => a + b;\n");
 write(join(repo, "apps/api/sum.test.js"), "const t=require('node:test');const a=require('node:assert');const s=require('./sum');t.test('sum',()=>a.strictEqual(s(1,2),3));\n");
 write(join(repo, "PIPELINE.md"), [
   "# e2e", "", "```yaml pipeline-profile", "name: e2e", "surfaces:", "  - key: api", "    path: apps/api",
-  "    agent: api", "    label: API", "gate:", "  default_branch: main", "  deny:", "    - git push --force",
+  "    agent: api", "    label: API", "  - key: web", "    path: apps/web", "    agent: web", "    label: Web",
+  "contract:", "  enabled: true", "  path: packages/contract", "gate:", "  default_branch: main", "  deny:", "    - git push --force",
   "  ask: []", "  ask_on_default_branch:", "    - git commit", "  preflight:", "    enabled: true",
   "    agents: [cohorte-review]", "    max_age_minutes: 30", "```", "",
 ].join("\n"));
 write(join(repo, ".claude/agents/api.md"), "---\nname: api\ndescription: e2e surface\ntools: Read, Write, Edit, Bash\nmodel: sonnet\n---\nImplements apps/api.\n");
+write(join(repo, ".claude/agents/web.md"), "---\nname: web\ndescription: e2e surface\ntools: Read, Write, Edit, Bash\nmodel: sonnet\n---\nImplements apps/web.\n");
 write(join(repo, ".claude/gate-config.json"), JSON.stringify({
   deny: ["git push --force"], ask: [], ask_on_default_branch: ["git commit"], default_branch: "main",
   preflight: { enabled: true, agents: ["cohorte-review"], max_age_minutes: 30 },
@@ -130,6 +132,24 @@ check("the agent cannot rewrite the gate config from the shell",
 check("an Edit of the gate config needs the human",
   hook("Write|Edit|MultiEdit|NotebookEdit", "Edit", { file_path: join(repo, ".claude/gate-config.json"), old_string: "a", new_string: "b" }) === "ask");
 check("an ordinary Write passes", hook("Write|Edit|MultiEdit|NotebookEdit", "Write", { file_path: join(repo, "apps/api/x.js"), content: "x" }) === "allow");
+// Ownership, through the whole chain: PIPELINE.md → `cohorte sync` → .claude/profile.json → the
+// registered hook. A field-name or path-resolution mismatch anywhere would only show in a session.
+check("sync wrote .claude/profile.json with the surfaces", existsSync(join(repo, ".claude/profile.json"))
+  && JSON.parse(read(join(repo, ".claude/profile.json"))).surfaces.map((s) => s.agent).join() === "api,web");
+const asAgent = (agent_type, file) => {
+  const r = spawnSync("sh", ["-c", reg["Write|Edit|MultiEdit|NotebookEdit"]], {
+    input: JSON.stringify({ tool_name: "Write", tool_input: { file_path: join(repo, file), content: "x" }, cwd: repo,
+      hook_event_name: "PreToolUse", permission_mode: "default", agent_id: "a-1", agent_type }),
+    env: { ...env, CLAUDE_PROJECT_DIR: repo }, encoding: "utf8",
+  });
+  const o = (r.stdout || "").trim();
+  return o ? JSON.parse(o).hookSpecificOutput.permissionDecision : "allow";
+};
+check("the api surface agent writes in apps/api", asAgent("api", "apps/api/x.js") === "allow");
+check("…is denied in apps/web (owned by the web surface)", asAgent("api", "apps/web/x.js") === "deny");
+check("…and denied on the contract", asAgent("api", "packages/contract/mul.ts") === "deny");
+check("the lead (no agent_id) is never restricted",
+  hook("Write|Edit|MultiEdit|NotebookEdit", "Write", { file_path: join(repo, "apps/web/x.js"), content: "x" }) === "allow");
 
 // ── 6. kanban ─────────────────────────────────────────────────────────────────
 console.log("6. kanban");

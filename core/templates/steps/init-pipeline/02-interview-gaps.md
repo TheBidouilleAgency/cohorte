@@ -15,6 +15,12 @@ Ask ONLY what you couldn't confidently detect. Batch related questions. Cover:
   implementers mostly apply a frozen contract, which Sonnet handles at a fraction of the Opus-lead
   cost), `haiku` for purely mechanical surfaces (scaffolding), `inherit` only for surfaces with real
   design decisions worth running on the lead's model.
+  **Ownership is enforced** (the gate denies a surface agent's Write/Edit outside its `path`), so
+  check what each surface legitimately writes elsewhere: tests or fixtures in a root folder (`tests/`,
+  `e2e/`, `__tests__/` outside the surface path), a generated client, a shared i18n file. Propose them
+  as that surface's `owns_also: [...]`, and files every surface may touch (root lockfile, root
+  `package.json` workspaces list) as `ownership.shared_writable: [...]`. Unsure ⇒ propose, never skip:
+  a missing entry shows up as a denied write in the first build.
 - **Specialization (only if Phase 1 flagged a large + cleanly-separable surface)** — offer to split it
   into specialized sub-surfaces (e.g. `web-checkout`, `web-billing`) so `/cohorte-build` runs them in parallel,
   per `<core>/pipeline/schema/specialization.md`. If the human accepts, apply the rules: **shared code (routing, global

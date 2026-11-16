@@ -56,8 +56,12 @@ short, user-facing, most recent first. One `## <version> — <YYYY-MM-DD>` secti
   `profile.json`, or with `ownership.enforce: false`, nothing changes. Targets in a linked
   worktree resolve against that worktree, and paths outside the project (`/dev/null`, `$TMPDIR`)
   are not judged. It is **on by default** from the first `cohorte sync` after upgrading (that sync
-  also registers the hook for `NotebookEdit`). Not verified yet: whether implementers dispatched by
-  the *workflows* carry `agent_id` — if they don't, their writes are judged as the lead's.
+  also registers the hook for `NotebookEdit`). Verified on Claude Code 2.1.325: a subagent's
+  `Write` reaches the hook with its `agent_id` and `agent_type`. Not verified yet for implementers
+  dispatched by the *workflows* — if they lack those fields, their writes are judged as the lead's.
+  Before upgrading, check what each surface writes outside its tree (root `tests/`, a generated
+  client, the root lockfile): `/cohorte-update-pipeline` proposes them as `owns_also` /
+  `ownership.shared_writable`, and `ownership.enforce: false` turns the check off.
 - **Dependency and secret scans in the review preflight: `commands.security: []`.** The commands
   run after typecheck, lint and tests, in the same `preflight.sh` call and report, behind a
   `: cohorte-security-scans` marker. A red scan aborts the review before any agent is spawned,

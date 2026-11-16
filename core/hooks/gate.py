@@ -1433,7 +1433,9 @@ class Ctx(object):
         for r in self.roots:
             for rel in ((".claude", "gate-config.json"), (".claude", "preflight.ok"),
                         (".claude", "settings.json"), (".claude", "settings.local.json"),
-                        (".claude", "hooks", "cohorte-gate.py"), (".cohorte", "gate-config.json")):
+                        (".claude", "hooks", "cohorte-gate.py"), (".cohorte", "gate-config.json"),
+                        # profile.json drives ownership enforcement: as protected as the config.
+                        (".claude", "profile.json")):
                 add(write, os.path.join(r, *rel))
             add(delete, os.path.join(r, ".claude", "pipeline.json"))
         home = os.path.expanduser("~")
@@ -1766,7 +1768,7 @@ PROTECTED_HINT_RE = re.compile(r"(^|/)\.claude(/|$)|gate-config\.json|preflight\
                                r"settings(\.local)?\.json|cohorte-gate\.py|pipeline\.json|"
                                r"(^|/)\.cohorte(/|$)")
 PROTECTED_NAME_RE = re.compile(r"gate-config\.json|preflight\.ok|\.claude/settings(\.local)?\.json|"
-                               r"cohorte-gate\.py")
+                               r"cohorte-gate\.py|\.claude/profile\.json")
 SPAWN_RE = {
     "py": re.compile(r"\bos\.(system|popen|exec\w*|spawn\w*)|\bsubprocess\b|\bpty\.spawn|"
                      r"\bcommands\.getoutput|\bpexpect\b|\bsh\.\w+\("),
@@ -1776,7 +1778,7 @@ SPAWN_RE = {
                      r"\bshell_exec\b|\bpassthru\b|\bproc_open\b"),
 }
 STRING_LIT_RE = re.compile(r"'((?:[^'\\]|\\.)*)'|\"((?:[^\"\\]|\\.)*)\"")
-PROTECTED_BASENAMES = {"gate-config.json", "preflight.ok", "settings.json", "settings.local.json",
+PROTECTED_BASENAMES = {"gate-config.json", "preflight.ok", "settings.json", "settings.local.json", "profile.json",
                       "cohorte-gate.py", "pipeline.json", ".claude", ".cohorte", "hooks", "~", "",
                       ".", ".."}
 
