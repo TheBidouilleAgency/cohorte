@@ -56,6 +56,18 @@ console.log("yaml.js — the profile parser");
     "cd x && node ace migration:run");
   eq("empty flow array", parse("a: []").a, []);
   check("no fenced block ⇒ null", parseProfileBlock("# just prose") === null);
+  // Shapes that crashed `cohorte doctor` or silently changed meaning before 3.0.
+  eq("indentless sequence (`key:` then `- a` at the same indent)",
+    parse("deny:\n- git push -f\n- git reset\nask:\n- y"), { deny: ["git push -f", "git reset"], ask: ["y"] });
+  eq("`- db:wipe` is a scalar, not a one-key map", parse("d:\n  - node ace db:wipe").d, ["node ace db:wipe"]);
+  eq("a URL item stays a scalar", parse("u:\n  - http://x.y/z").u, ["http://x.y/z"]);
+  eq("extra spaces after the dash keep every key of the item",
+    parse("s:\n  -   key: a\n      path: x").s, [{ key: "a", path: "x" }]);
+  eq("`|` block scalar keeps newlines (and a # inside it)", parse("n: |\n  one\n  two # x\nk: 1"), { n: "one\ntwo # x", k: 1 });
+  eq("`>` block scalar folds", parse("n: >\n  one\n  two\n").n, "one two");
+  eq("double-quoted escapes are decoded", parse('q: "a \\"b\\" \\\\ c"').q, 'a "b" \\ c');
+  eq("floats are numbers", parse("f: 1.5").f, 1.5);
+  eq("blank lines inside a map are fine", parse("a:\n  b: 1\n\n  c: 2").a, { b: 1, c: 2 });
 
   // The real thing: the shipped template must round-trip.
   const tpl = readFileSync(join(root, "profile/PIPELINE.template.md"), "utf8");

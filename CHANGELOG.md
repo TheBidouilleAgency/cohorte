@@ -7,6 +7,41 @@ short, user-facing, most recent first. One `## <version> — <YYYY-MM-DD>` secti
 > They are history and are deliberately not rewritten — every command gained a `cohorte-` prefix
 > in 2.0.0.
 
+## 3.0.0 — 2026-11-16
+
+**One install mode, Claude Code only.** The machine gets the commands and the generic core;
+everything that describes a project lives in that project and is committed with it.
+
+- **Install once per machine:** `npm i -g cohorte && cohorte install`. It writes
+  `~/.claude/commands/cohorte-*.md`, `~/.claude/agents/cohorte-*.md`,
+  `~/.claude/workflows/cohorte-*.js` and the core in `~/.claude/cohorte/` — and **no**
+  machine-wide hook. `--global` is accepted and means nothing now; the 2.x "bundled" mode (a core
+  copied into each repo) is gone.
+- **The gate lives in the repo:** `/cohorte-init-pipeline` and `/cohorte-update-pipeline` run
+  `cohorte sync`, which copies the gate to `.claude/hooks/cohorte-gate.py`, registers it in
+  `.claude/settings.json` (`Bash|Task|Agent` + `Write|Edit|MultiEdit`, fail-closed), writes the
+  `.claude/pipeline.json` pointer and the `.gitignore` entries. Commit them: a teammate who clones
+  is protected before installing anything.
+- **Surface agents always render into the project's `.claude/agents`.** In 2.x global mode they
+  went to `~/.claude/agents`, where two projects with a `frontend` surface overwrote each other.
+- **Your files are safe:** the install keeps a manifest of what it wrote, never deletes anything
+  else (2.x removed any `~/.claude/commands/review.md`, `build.md`, `spec.md`…), backs up a file of
+  ours you edited before refreshing it, never resets a `settings.json` it cannot parse (it stops
+  instead), and never removes another tool's hook.
+- **`cohorte uninstall`** (`--purge` for your config, `--project` for one repo's gate wiring).
+- **Renamed:** the fixed agents are `cohorte-review`, `cohorte-release`, `cohorte-profile-reader`;
+  the workflow files are `cohorte-*.js`. A 2.x `gate.preflight.agents: [review]` still gates.
+- **Codex, Cursor, Gemini CLI and OpenCode are no longer supported.** Stay on `cohorte@2.10.2` for
+  them; the source is on the `archive/multi-runtime` branch.
+- **Migrating from 2.x:** `npm i -g cohorte@latest && cohorte update` (removes the 2.x hook from
+  `~/.claude/settings.json` first, then moves the 2.x core to `~/.claude/cohorte/legacy-backup/`),
+  then `/cohorte-update-pipeline` in each project. Tried the discontinued Python line? Run
+  `uv tool uninstall cohorte-engine` and delete `~/.cohorte/`.
+- **Requirements:** Node ≥ 20, Python ≥ 3.8 as `python3`. `doctor` no longer crashes on an
+  indentless YAML list, `- db:wipe` stays a string, and `metrics --days=abc` is an error.
+- **Releases:** publishing now waits for CI to pass on `main` and for a maintainer's approval;
+  `install.sh` / `install.ps1` install the latest release tag instead of the tip of `main`.
+
 ## 2.10.2 — 2026-11-09
 
 - **Back to the prompt-driven pipeline.** This release restores the 2.10.1 tree as is: the
