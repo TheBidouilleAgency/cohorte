@@ -235,9 +235,12 @@ anything went wrong. In the same call write the machine-readable batch result to
 never sees your chat:
 `{"id":"$ARGUMENTS","phase":"build","ts":"<ISO>","surfaces":{"<key>":"ok|error|dead",…},"dead":["<key>",…]}`
 — this is the evidence `<core>/pipeline/schema/specialization.md` asks for before splitting a surface.
-Then tell the human: exercise the feature by hand if it's worth it, then run `/cohorte-review $ARGUMENTS` —
+Then tell the human: run `/cohorte-review $ARGUMENTS`, and after its SHIP `/cohorte-verify $ARGUMENTS`
+(when the profile has runtime commands — it runs the app and its migrations; until then exercise it
+by hand if it's worth it) —
 unless a surface is dead, in which case say so first and let them decide whether to re-run `/cohorte-build`
 (a dead surface has no findings, so `/cohorte-fix` has nothing to re-dispatch).
-Do not run the app or migrations yourself here — building is not running.
+Do not run the app or migrations yourself here — building is not running; that is `/cohorte-verify`'s
+job, through its script.
 **Recommend a `/clear` now** — the spec, contract and diff are all on
 disk, and the lead's history is re-sent at input price on every turn it survives.

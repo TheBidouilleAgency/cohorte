@@ -6,8 +6,8 @@ enabled, the middle of this loop — build → review → fix → review — can
 the [loop workflow](/guide/workflows); the conversational path below is the default everywhere.)
 
 ```
-/cohorte-brainstorm → /cohorte-spec → /cohorte-build → /cohorte-review → (/cohorte-fix → /cohorte-review)* → /cohorte-ship
-     ↑ human      ↑ human                          ↑ human
+/cohorte-brainstorm → /cohorte-spec → /cohorte-build → /cohorte-review → (/cohorte-fix → /cohorte-review)* → /cohorte-verify → /cohorte-ship
+     ↑ human      ↑ human                                                                                     ↑ human
 ```
 
 Between every two commands: **`/clear`**. Every handoff is on disk; clearing sheds the lead's
@@ -116,9 +116,9 @@ checkbox). See [`profile/schema/dead-agents.md`](https://github.com/TheBidouille
 
 ## 4. `/cohorte-review` — audit the diff against the spec
 
-Nothing in the pipeline *runs* the app: the preflight gate (**typecheck + lint + tests via
+The review does not *run* the app (that is `/cohorte-verify`, next): the preflight gate (**typecheck + lint + tests via
 `preflight.sh`; red aborts with the raw failure, zero agents spawned**) is the mechanical proof,
-and anything that needs the app up is yours to exercise by hand before or after this step. Then:
+and anything that needs the app up is `/cohorte-verify`'s, or yours by hand. Then:
 
 1. The lead computes the diff **once**: one `git diff --stat`, grouped by surface path, then a
    full patch staged per touched surface to `specs/reports/<id>.<surface>.diff`. Reviewers are
@@ -160,6 +160,16 @@ files they name. If a finding implies the **contract** must change, the lead re-
 When agents return, the lead ticks `- [x]` what each handoff reports fixed, collapses fully-fixed
 rounds to one summary line (the spec stays bounded), and sends you back to `/cohorte-review` for the
 re-verdict. Kanban → **Fix**, then back to **Review**.
+
+## 5b. `/cohorte-verify` — does it actually work
+
+After the `SHIP` verdict, when the profile has runtime commands (`commands.smoke`, `commands.e2e`,
+or `commands.dev` with a `commands.dev_ready` probe). One script run: the spec's migrations applied
+and rolled back down-then-up on the **dev** database (never a shared one), the app started, probed,
+smoke- and e2e-tested, screenshotted when Playwright is installed, and **always stopped**. It ticks
+only the DoD lines tagged `· runtime: <check>` whose check passed, and writes
+`specs/reports/<id>.verify.json`, which `/cohorte-ship` reads: `FAIL` blocks, no run asks you.
+See [`profile/schema/verify.md`](https://github.com/TheBidouilleAgency/cohorte/blob/main/profile/schema/verify.md).
 
 ## 6. `/cohorte-ship` — the human gate
 
@@ -241,6 +251,7 @@ artifacts `cohorte sync` gitignores ([Installers](/reference/installers)).
 | `specs/reports/<id>.preflight.txt` | `preflight.sh` | you, on abort |
 | `specs/reports/<id>.verdict.json` | `/cohorte-review` §3, every run | you; an external driver — the only machine contract |
 | `specs/reports/<id>.readiness.json` | `/cohorte-build` §1.6, every build | you on a `NOT-READY`; an external driver |
+| `specs/reports/<id>.verify.json` | `verify-run.sh` (`/cohorte-verify`), every run | `/cohorte-ship`'s runtime gate; you |
 | `specs/reports/<id>.build.json` | `/cohorte-build` §4, every batch | you; an external driver (dead implementers) |
 | `<state>/pipeline-metrics.jsonl` | `/cohorte-build` `/cohorte-review` `/cohorte-fix` (gitignored) | surface-split decisions, `cohorte metrics` |
 | `specs/refactor-backlog.md` | `/cohorte-audit` + `/cohorte-review`'s deferred findings | `/cohorte-refactor` |

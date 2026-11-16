@@ -16,7 +16,9 @@ model — their value is the conversation.
 | `/cohorte-review <id>` | sonnet | Preflight, staged diff, one reviewer per touched surface, merged verdict. |
 | `/cohorte-fix <id>` | sonnet | Apply a report; re-dispatch only the surfaces with findings. |
 | `/cohorte-fleet plan\|status\|sync` | sonnet | Several features in parallel: overlap matrix, merge order, one worktree each, post-merge rebase sweep. |
+| `/cohorte-verify <id>` | sonnet | Run the app: migrations (+ down-then-up), dev server + ready probe, smoke/e2e, screenshots; ticks only evidenced `· runtime` DoD items; `verify.json`. |
 | `/cohorte-ship <id>` | sonnet | Verdict-file + freshness + DoD gates, human confirm, release agent, CI watch, `merged` reconcile, teardown. |
+| `/cohorte-revert <id>` | sonnet | Revert a merged feature as a branch + PR; its down migration only on a dev DB. Never pushes the default branch. |
 | `/cohorte-audit [target]` | sonnet | Mechanical gates + convention/TDD audit → prioritized backlog. |
 | `/cohorte-refactor <domain…>` | sonnet | Apply the backlog per domain via the surface implementers, TDD-first; freeze the round as a `kind: refactor` spec for review → ship. |
 | `/cohorte-retro [last <n> \| all]` | inherit | Turn repeated review findings into ratified §Conventions rules, re-render the agents. |
@@ -178,16 +180,45 @@ worktree (conflicts reported verbatim, left to their owner), with the reminder t
 invalidates `reviewed_digest` — re-review before ship. Requires `isolation.enabled`.
 See the [parallel features guide](../guide/parallel-features.md).
 
+## `/cohorte-verify <id>`
+
+The "does it actually work" step between a `SHIP` verdict and `/cohorte-ship` — the only phase that
+runs the app. One call to `verify-run.sh run`, which owns every process: applies `commands.migrate`
+when the spec says `migrations: true` and checks `commands.migrate_down` down-then-up (dev DB only —
+`verify.db: shared` is refused unless a registered feature worktree has its own DB), starts `commands.dev` in its own
+process group, waits for `commands.dev_ready`, runs `commands.smoke` / `verify.surfaces.<key>.smoke`
+/ `commands.e2e` under timeouts, takes screenshots when a local Playwright CLI exists, and **always
+stops the server**. It asks the project gate about each command first (`deny` ⇒ skipped, `ask` ⇒
+your confirmation). Writes `specs/reports/<id>.verify.json` (`PASS`/`FAIL`/`SKIPPED`, checks,
+evidence, the tree digest) and `.verify.md`; ticks a DoD line only when it carries
+`· runtime: <check>` and that check passed. No kanban move. Not configured (no
+`smoke`/`e2e`/`dev`+`dev_ready`) ⇒ says so and stops. See
+[`profile/schema/verify.md`](https://github.com/TheBidouilleAgency/cohorte/blob/main/profile/schema/verify.md).
+
 ## `/cohorte-ship <id>`
 
 Pre-flight: `specs/reports/<id>.verdict.json` must say `SHIP` with no unreviewed surface and no
 HIGH/MEDIUM left; **freshness gate** (recompute the digest — mismatch ⇒
-refuse, re-review); DoD verification (open boxes need explicit human override); human
+refuse, re-review); a `migrations: true` spec with an empty `## Rollback` is refused; the
+**runtime gate** — a `FAIL` `verify.json` blocks, an absent / `SKIPPED` / stale one asks "not
+verified at runtime — ship anyway?" (silent when the profile has no runtime commands); DoD
+verification (open boxes need explicit human override); human
 confirmation. Then: spec → `status: shipped` *before* dispatch, the **release note** when
 `release_notes.enabled` (the lead writes it — bump level is project policy — so it lands in the
 release commit, not a follow-up), `cohorte-release` agent (conventional commits, plain push, PR via `gh` or
 compare URL + drafted body), kanban → Shipped with the PR number,
 CI watch, and — after the confirmed merge — the worktree teardown proposal.
+
+## `/cohorte-revert <id>`
+
+For a `merged` feature: finds the merge or squash commit from the spec's `pr:` / `branch:` via `gh`
+(a rebase-merge's range is the human's to name), reads `## Rollback` before the revert deletes the
+spec, branches off the default branch (`new-feature.sh revert-<id>` under isolation, else
+`revert/<id>`), runs the down step through `verify-run.sh run --phase revert` **while the migration
+files still exist** — dev DB only, same gate consult — then `git revert --no-commit`, keeps the spec
+as history, commits, and on your confirmation pushes the revert branch and opens a PR whose body
+carries `## Rollback` for whoever rolls back production. Never pushes or merges the default branch.
+No kanban move.
 
 ## `/cohorte-audit [target]`
 

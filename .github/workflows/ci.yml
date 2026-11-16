@@ -87,6 +87,10 @@ jobs:
       - name: Metrics collector
         run: node scripts/test-metrics.mjs
 
+      - name: Verify runner (dev server lifecycle, migrations, rollback)
+        if: runner.os != 'Windows'
+        run: node scripts/test-verify.mjs
+
       - name: End-to-end (install → sync → feature diff → preflight → gate → kanban → uninstall)
         run: node scripts/test-e2e.mjs
 

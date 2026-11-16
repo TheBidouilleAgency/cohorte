@@ -146,6 +146,29 @@ commands:
   # migration commands — omit / leave "" if the project has no DB migrations
   migrate: "cd apps/api && node ace migration:run"
   make_migration: "cd apps/api && node ace make:migration"
+  # undo the last migration on the DEV db — /cohorte-verify checks down-then-up, /cohorte-revert
+  # runs it. A command in gate.deny is never run (e.g. migration:rollback below): move it to
+  # gate.ask to let the pipeline verify rollbacks. "" ⇒ rollback is not verified.
+  migrate_down: ""
+  # runtime verification (/cohorte-verify, <core>/pipeline/schema/verify.md) — `dev` counts only
+  # with a `dev_ready` probe; all "" ⇒ verify is skipped silently
+  dev_ready: ""                              # URL answering 2xx/3xx once `dev` is up, or a shell probe exiting 0 — e.g. "http://localhost:3333/health"
+  smoke: ""                                  # quick checks against the running app, e.g. "curl -sf http://localhost:3333/health"
+  e2e: ""                                    # e.g. "pnpm exec playwright test --reporter=line"
+
+# ── runtime verification (optional — /cohorte-verify) ───────────────────────
+# Runs the app between /cohorte-review and /cohorte-ship, through
+# pipeline/scripts/verify-run.sh. See `<core>/pipeline/schema/verify.md`.
+verify:
+  enabled: true                               # false ⇒ /cohorte-verify is a no-op and /cohorte-ship never asks
+  db: local                                   # local = the dev DB is yours to migrate and roll back;
+                                              #   shared = others use it ⇒ migrations refused unless
+                                              #   isolation.db_per_worktree and run in a feature worktree
+  ready_timeout_seconds: 90
+  check_timeout_seconds: 600
+  screenshots: auto                           # auto = with a local Playwright CLI (node_modules/.bin/playwright) · off
+  surfaces: {}                                # per-surface hints, keyed by surfaces[].key, e.g.
+                                              #   frontend: { base_url: "http://localhost:5173", paths: [/, /settings], smoke: "" }
 
 # ── rbac (optional) ─────────────────────────────────────────────────────────
 rbac:

@@ -35,8 +35,8 @@ External drivers may write these states too. Every reader routes on
 them either way, and a stamp on a spec with no front-matter stays a silent no-op — no driver
 dies over a status line.
 
-**`kind` — feature (default) or `patch`.** Orthogonal to `status`, and the only other front-matter
-field commands route on. `/cohorte-patch` freezes `specs/patch-<slug>.md` with `kind: patch` from
+**`kind` — feature (default) or `patch`.** Orthogonal to `status`, and — with `migrations`
+(below) — the only other front-matter field commands route on. `/cohorte-patch` freezes `specs/patch-<slug>.md` with `kind: patch` from
 `templates/patch.template.md`: a ~60-line bug spec whose §4 **regression test** replaces §5 CONTRACT
 as the thing the diff is checked against. It moves through the same states and the same commands —
 `/cohorte-build` → `/cohorte-review` → `/cohorte-fix`* → `/cohorte-ship` — which is the whole design:
@@ -53,6 +53,14 @@ A patch may span **several surfaces** — one bug, one repro, one spec. What it 
 for, so `/cohorte-patch` routes that to `/cohorte-spec` instead. Changing an *existing* contract entry
 is a legitimate delta. The patch template keeps contract on **§5** and acceptance on **§9** — the two
 numbers `review.md` and `implementer.template.md` name verbatim — and simply has no §8.
+
+**`migrations` — `true` when the spec changes the database.** The third routed field. `/cohorte-spec`
+sets it when §4 adds or alters a migration (or the contract changes what is persisted); absent
+means `false`. It makes `## Rollback` mandatory — `/cohorte-ship` refuses the spec while
+`verify-run.sh rollback-check` calls it empty — and makes `/cohorte-verify` run the migration (and its
+down-then-up) on the dev database. See `<core>/pipeline/schema/verify.md`. `/cohorte-revert` reads
+`## Rollback` for a `merged` spec and, on the human's word, sets `status: abandoned` inside the revert
+commit — so the spec says so only if the revert actually merges.
 
 Corollaries worth knowing:
 

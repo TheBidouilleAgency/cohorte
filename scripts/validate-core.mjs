@@ -2,7 +2,7 @@
 // Validates the structural invariants of the cohorte core — the things a
 // prose refactor can silently break. Run by CI on every push/PR; run it
 // locally with `node scripts/validate-core.mjs`.
-import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -24,7 +24,7 @@ const frontmatter = (text) => {
 // Interactive commands must stay unpinned (they inherit on purpose).
 const PINNED = ["cohorte-build", "cohorte-review", "cohorte-fix", "cohorte-ship",
   "cohorte-audit", "cohorte-refactor", "cohorte-doctor", "cohorte-align-ds",
-  "cohorte-update-pipeline", "cohorte-fleet"];
+  "cohorte-update-pipeline", "cohorte-fleet", "cohorte-verify", "cohorte-revert"];
 const UNPINNED = ["cohorte-brainstorm", "cohorte-spec", "cohorte-init-pipeline", "cohorte-patch",
   "cohorte-intake", "cohorte-retro"];
 
@@ -186,7 +186,39 @@ for (const path of [...allDocs, ...readdirSync(join(root, "core/workflows")).map
     ["severity.MEDIUM", "must refuse surviving HIGH/MEDIUM"],
     ["feature-diff.sh --base <reviewed_base> --digest", "must recompute the digest with feature-diff.sh"],
     ["verdict.json` is absent", "may treat a missing stamp as legacy ONLY when verdict.json is absent"],
+    ["verify.json", "must read specs/reports/<id>.verify.json (the runtime gate)"],
+    ["`FAIL` ⇒ **refuse**", "must block on a FAIL verify verdict"],
+    ["not verified at runtime", "must ask the human when verify is absent/SKIPPED/stale"],
+    ["verify-run.sh rollback-check", "must refuse a `migrations: true` spec whose ## Rollback is empty"],
   ]) if (!ship.includes(needle)) fail("core/commands/cohorte-ship.md", why);
+}
+
+// ── /cohorte-verify and /cohorte-revert: the script owns processes and databases (3.1.0) ──
+// verify is the one phase that runs the app, and revert the one that runs a down migration. Both
+// are only safe because verify-run.sh owns the server lifecycle (process group, timeouts, stop on
+// every exit), the shared-DB refusal and the gate consult — a prompt that starts `pnpm dev &` itself
+// leaves a stray server whose port answers the NEXT verify's probe. Neither moves a kanban card
+// (no column for it), so neither is in KANBAN_STAGES; say so rather than drift into one.
+{
+  const exec = (p) => process.platform === "win32" || (statSync(join(root, p)).mode & 0o111) !== 0;
+  if (!existsSync(join(root, "scripts/verify-run.sh"))) fail("scripts/verify-run.sh", "missing");
+  else if (!exec("scripts/verify-run.sh")) fail("scripts/verify-run.sh", "not executable (commit it with the exec bit)");
+  for (const [file, needles] of [
+    ["core/commands/cohorte-verify.md", ["<core>/pipeline/scripts/verify-run.sh run", "--digest-base", "verify.json",
+      "· runtime: <check>", "600000", "--confirmed", "<core>/pipeline/schema/verify.md", "No kanban move"]],
+    ["core/commands/cohorte-revert.md", ["--phase revert", "git revert --no-commit", "Never push to the default branch",
+      "never force-push", "## Rollback", "<core>/pipeline/schema/verify.md", "No kanban move", "Never guess"]],
+  ]) {
+    const flat = read(file).replace(/\s+/g, " ");
+    for (const n of needles) if (!flat.includes(n)) fail(file, `lost \`${n}\``);
+    if (/kanban-move\.sh\s+auto/.test(flat)) fail(file, "moves a kanban card — there is no column for this phase");
+  }
+  for (const t of ["core/templates/spec.template.md", "core/templates/patch.template.md"]) {
+    const text = read(t);
+    if (!/^migrations: false\b/m.test(text)) fail(t, "front-matter lacks `migrations: false` (/cohorte-ship and /cohorte-verify route on it)");
+    if (!/^## Rollback$/m.test(text)) fail(t, "lacks the `## Rollback` section verify-run.sh rollback-check reads");
+    if (!/· runtime\b/.test(text)) fail(t, "no `· runtime` DoD tag — /cohorte-verify ticks only tagged items");
+  }
 }
 
 // ── profile ─────────────────────────────────────────────────────────────────

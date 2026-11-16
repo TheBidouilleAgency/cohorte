@@ -70,6 +70,30 @@ short, user-facing, most recent first. One `## <version> — <YYYY-MM-DD>` secti
   contains `$`, so the calling shell no longer expands a check's own variables. The release
   agent's `.env` check is unchanged.
 
+- **`/cohorte-verify <id>` — the pipeline finally runs the app.** Between the `SHIP` verdict and
+  `/cohorte-ship`: migrations applied (and rolled back down-then-up) on the dev database, the dev
+  server started and probed, `smoke` / `e2e` run, screenshots taken when a local Playwright CLI
+  exists — all through the new shipped `verify-run.sh`, which owns the process group, the timeouts,
+  the shared-DB refusal and the gate consult, and stops the server on every exit path. It writes
+  `specs/reports/<id>.verify.json` and ticks only DoD lines tagged `· runtime: <check>` whose check
+  passed. New profile fields: `commands.dev_ready`, `commands.smoke`, `commands.e2e`,
+  `commands.migrate_down`, and a `verify:` block (`enabled`, `db`, timeouts, `screenshots`,
+  per-surface hints). See `profile/schema/verify.md`.
+- **`/cohorte-ship` gains a runtime gate:** a `FAIL` verify blocks; no run, a `SKIPPED` one or one
+  older than the reviewed code asks "not verified at runtime — ship anyway?". A profile with no
+  runtime commands is not asked — and `commands.dev` alone does not count (it needs a
+  `commands.dev_ready` probe), so upgrading changes nothing until you fill those fields (neither
+  `/cohorte-init-pipeline` nor the reconcile asks for them yet). New specs' DoD carries
+  `· runtime` lines; `/cohorte-spec` drops the ones the project cannot check.
+- **Migrations need a way back.** Specs gain `migrations:` in the front-matter and a `## Rollback`
+  section (revert · data · migration down); `/cohorte-spec` fills it when §4 touches the database,
+  and `/cohorte-ship` refuses a `migrations: true` spec whose Rollback is still the template stub
+  (`verify-run.sh rollback-check`). A rollback command your `gate.deny` blocks is never run — move it
+  to `gate.ask` to let the pipeline check it.
+- **`/cohorte-revert <id>`** turns a merged feature into a revert branch + PR: the merge or squash
+  commit found via `gh`, the down migration run on a dev database while its files still exist, the
+  spec kept as history, `## Rollback` in the PR body. Never pushes to the default branch.
+
 ## 3.0.0 — 2026-11-16
 
 **One install mode, Claude Code only.** The machine gets the commands and the generic core;

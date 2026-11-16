@@ -51,6 +51,7 @@ jobs:
           node scripts/test-workflows.mjs
           node scripts/test-kanban.mjs
           node scripts/test-metrics.mjs
+          node scripts/test-verify.mjs
           node scripts/test-e2e.mjs
           python3 -B -m py_compile core/hooks/gate.py
 

@@ -57,7 +57,19 @@ not github ⇒ ask the human what happened to the PR):
   after review — the verdict is **stale**: stop and tell the human to re-run
   `/cohorte-review $ARGUMENTS`. A stamp written before `feature-diff.sh` existed was computed without
   untracked files and will mismatch once — the re-review re-stamps it.
-- **DoD gate (verify, don't tick — `/cohorte-review` owns the ticking).** Read `specs/$ARGUMENTS.md`
+- **Migrations need a way back.** `<core>/pipeline/scripts/verify-run.sh rollback-check specs/$ARGUMENTS.md`
+  — exit 1 (`migrations: true` with an empty `## Rollback`) ⇒ **refuse**: back to `/cohorte-spec` to
+  fill it. No human override: a migration nobody can undo is decided before ship, not at it.
+- **Runtime gate** (`<core>/pipeline/schema/verify.md` §Ship). Not configured — `verify.enabled: false`, or
+  none of `commands.smoke`/`commands.e2e`/`commands.dev`+`commands.dev_ready` (and no `migrations: true`
+  with a `commands.migrate`) ⇒ skip silently. Otherwise read `specs/reports/$ARGUMENTS.verify.json`:
+  - `verdict` `FAIL` ⇒ **refuse**, stale or not, naming the failing checks: `/cohorte-fix`, then
+    `/cohorte-review` and `/cohorte-verify` again. Only a newer run clears it.
+  - `PASS` and its `digest` equals the spec's `reviewed_digest` ⇒ proceed silently.
+  - Absent, `SKIPPED`, or a `PASS` whose `digest` differs ⇒ ask: **"not verified at runtime — ship
+    anyway?"** (say which case, and that `/cohorte-verify $ARGUMENTS` would settle it). Ship only on yes.
+- **DoD gate (verify, don't tick — `/cohorte-review` owns the ticking, `/cohorte-verify` the
+  `· runtime` items).** Read `specs/$ARGUMENTS.md`
   §`Acceptance criteria / DoD`; if any item is still `- [ ]`, list the open ones and ask the human to
   confirm shipping anyway (they may be deferred on purpose — e.g. a UI item on a backend-only feature).
   All `- [x]` ⇒ proceed silently.
@@ -145,7 +157,7 @@ under the `shipped` heading — never re-read the whole board into context.
   **except** a red `release_notes.ci_job`: that one is this command's own miss, not a code finding —
   write the note per §2b, commit, push, and re-watch. Never send a missing release note through `/cohorte-fix`.
 - Once the PR is **merged** (the human says so, or §0's `gh pr view` shows `MERGED`): set the spec's
-  `status: merged` and commit that one line on the default branch when the human next commits there
+  `status: merged` (and `pr: <num>` — `/cohorte-revert` finds the merge commit from it) and commit that one line on the default branch when the human next commits there
   (or leave it to `/cohorte-doctor`'s reconcile — it does the same check). If `isolation.enabled`, propose the teardown —
   `scripts/remove-feature.sh $ARGUMENTS` (add `--drop-db` to also drop the feature db; kept by
   default). It removes the worktree, deletes the merged branch, frees the slot. Never run it before
