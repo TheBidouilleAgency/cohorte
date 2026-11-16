@@ -23,7 +23,7 @@ Gather evidence, then summarize what you found. Look for:
   `package.json` scripts + the workspace filter syntax (e.g. `pnpm --filter <pkg> test`).
 - **Project kind (`project.kind`):** match the evidence against the detection table of
   `<core>/pipeline/schema/project-kinds.md` (read only its `### Detection` table) — first matching row
-  wins: UI deps ⇒ `web`; react-native/expo/Swift/Kotlin app ⇒ `mobile`; dbt/Airflow/notebooks ⇒
+  wins: react-native/expo/Swift/Kotlin app ⇒ `mobile`; browser UI deps ⇒ `web`; dbt/Airflow/notebooks ⇒
   `data`; `bin` entries and no UI deps ⇒ `cli`; a published package with exports and no app ⇒
   `library`; server-only ⇒ `api`; else `other`. Note the signal that decided it.
 - **Contract mechanism:** a shared types/schema package (`packages/shared-types`, Zod/`z.`),

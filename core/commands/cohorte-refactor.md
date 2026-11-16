@@ -59,8 +59,9 @@ After each agent returns: its surface's `test_quiet_cmd`/`lint_quiet_cmd` (else 
 fallback — `<core>/pipeline/schema/output-discipline.md`), `commands.typecheck`, `commands.format --check` (redirect
 output to a file and grep it — don't print gate output into your context). Then verify each backlog item cleared by checking its `file:line` directly — do NOT re-run
 `/cohorte-audit` per round (that repeats the repo-wide gates + a review dispatch you don't need); one optional
-final `/cohorte-audit` once ALL dispatched domains are clean is enough. Loop until each dispatched domain
-is clean. Verification is per-domain even when the dispatch was parallel — one failing surface loops
+final `/cohorte-audit` once ALL dispatched domains are clean is enough. Check cleared items off in
+`specs/refactor-backlog.md` (`- [ ]` → `- [x]`) as they verify — whatever happens next. Loop until
+each dispatched domain is clean. Verification is per-domain even when the dispatch was parallel — one failing surface loops
 alone, the others don't redo work.
 
 ## 4. Deliver — freeze a `kind: refactor` spec, then review → ship
@@ -70,9 +71,12 @@ the gates are green and ≥ 1 item cleared (red gates ⇒ no spec — `/cohorte-
 abort it anyway), write **one spec for the whole round** — review's diff, the freshness digest and
 the release commit all cover the whole tree, so per-domain specs would each claim the others' code.
 
-- **Id** `refactor-<domains>-<YYYY-MM-DD>` (`date +%F`): `<domains>` = the cleared domains' keys
-  joined by `-`, or `all` past three. An **unshipped** spec (`status: frozen`/`in-review`) for the same
-  id ⇒ append this round's items to its §6; a shipped one ⇒ suffix `-2`, `-3`…
+- **One open refactor spec per branch.** Already on `<feature_branch_prefix>refactor-…` with that
+  spec unshipped (`status: frozen`/`in-review`) ⇒ append this round's items to its §6 (new
+  `### <domain>` as needed) and skip to linking the ticks — whatever the domains.
+- **Id** otherwise `refactor-<domains>-<YYYY-MM-DD>` (`date +%F`): `<domains>` = the cleared domains'
+  keys lowercased, every run of non-`[a-z0-9]` turned into `-`, joined by `-` — or `all` past three.
+  A spec of that id already shipped ⇒ suffix `-2`, `-3`…
 - **Branch** — `/cohorte-ship` refuses any branch but `<vcs.feature_branch_prefix><id>`: on
   `<default_branch>`, `git switch -c <prefix><id>` (uncommitted work carries over); already on it ⇒
   fine; on some other branch ⇒ say which and ask.
@@ -109,8 +113,8 @@ the release commit all cover the whole tree, so per-domain specs would each clai
   ## Remediation
   ```
 
-- **Tick the backlog** — flip each cleared line `- [ ]` → `- [x]` and append ` · refactor:<id>`, so
-  the backlog says where the item went (and `/cohorte-audit` keeps it until that spec merges).
+- **Link the ticks** — append ` · refactor:<id>` to each line §3 ticked this round, so the backlog
+  says where the item went (and `/cohorte-audit` keeps it until that spec merges).
 - `grep -q '^kind: refactor' specs/<id>.md` (the postcondition), then the kanban move above, in the
   same Bash call — report what it printed: `moved #…` or `kanban: <reason>`, never a guess.
 - **Hand off:** `/cohorte-review <id>` → (`/cohorte-fix <id>` → `/cohorte-review <id>`)* →

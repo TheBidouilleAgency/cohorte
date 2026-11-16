@@ -820,6 +820,31 @@ const GATED = { ...PROFILE, surfaces: PROFILE.surfaces.map(x => ({ ...x, test_cm
   check("spec on the wrong branch ⇒ next says ship will refuse it",
     /checked-out branch is main/.test(result.next), result.next);
 }
+{
+  // Surface keys are free text; the id is a file name + branch. A raw `Web_Checkout` in the id
+  // failed SPEC_ID, so a spec that WAS written was reported unwritten and the ticks lost their link.
+  const items = ["- [ ] a", "- [ ] b", "- [ ] c", "- [ ] d", "- [ ] e"];
+  let specPrompt = "";
+  const prof = { ...GATED, surfaces: [{ key: "Web_Checkout", path: "apps/web", agent: "web", test_cmd: "t" }] };
+  const { result } = await run("refactor.js", (prompt, opts) => {
+    const label = opts.label || "";
+    if (label === "profile") return prof;
+    if (label === "read-backlog") return { domains: [{ key: "Web_Checkout", items }] };
+    if (label.startsWith("verify:")) return { cleared: items, remaining: [], gatesGreen: true };
+    if (label === "write-spec") {
+      specPrompt = prompt;
+      const id = (prompt.match(/ID = (refactor-[a-z0-9-]+)-DATE/) || [])[1] + "-2026-11-16";
+      return { id, branch: `feature/${id}` };
+    }
+    if (label === "tick-backlog") return "done";
+    return "handoff";
+  }, { domains: ["Web_Checkout"] });
+  check("surface key normalized into the id (web-checkout), and the spec is claimed",
+    /ID = refactor-web-checkout-DATE/.test(specPrompt) && result.refactorSpec === "specs/refactor-web-checkout-2026-11-16.md",
+    `${specPrompt.slice(0, 160)} → ${result.refactorSpec}`);
+  check("…an open refactor spec on the current branch is appended to, not duplicated",
+    /ONE open refactor spec per branch/.test(specPrompt), specPrompt.slice(0, 200));
+}
 
 // ── loop.js — build → review → [fix → review]*, unattended ──────────────────
 // The reducer's facts come from stubs, but the DECISIONS under test (freshness,

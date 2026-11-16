@@ -287,7 +287,10 @@ const clearedAll = results.flatMap(r => r.cleared)
 const remainingAll = results.flatMap(r => r.remaining)
 const gatesAllGreen = results.length > 0 && results.every(r => r.gatesGreen)
 const clearedDomains = results.filter(r => r.cleared.length)
-const slug = clearedDomains.length > 3 ? 'all' : clearedDomains.map(r => r.key).join('-')
+// Surface keys are free text (`web_checkout`, `API`); an id is a file name and a branch,
+// and SPEC_ID below rejects anything else — so normalize here, not in the writer.
+const idPart = k => String(k).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'domain'
+const slug = clearedDomains.length > 3 ? 'all' : clearedDomains.map(r => idPart(r.key)).join('-')
 const prefix = (profile.vcs && profile.vcs.feature_branch_prefix) || 'feature/'
 const bare = l => String(l).replace(/^- \[[ x]\] /, '- ')
 const specTitle = `Refactor ${slug} — ${clearedAll.length} backlog item(s)`
@@ -338,6 +341,9 @@ if (wantSpec) {
   phase('Spec')
   const w = await agent(
     'Freeze this cohorte refactor round as a spec (mechanical — no judgment). ' +
+    `0. ONE open refactor spec per branch: if \`git rev-parse --abbrev-ref HEAD\` is ${prefix}refactor-<x> and ` +
+    'specs/refactor-<x>.md exists with `status:` frozen or in-review, then ID = refactor-<x>: append the §6 item ' +
+    "lines below under their `### <domain>` headings there (add a heading if missing), skip to step 4. " +
     `1. Run \`date +%F\` ⇒ DATE; ID = refactor-${slug}-DATE. If specs/ID.md exists and its \`status:\` is ` +
     'shipped/merged/abandoned, suffix -2, -3… until the name is free. If it exists UNSHIPPED (frozen/in-review), ' +
     "do not overwrite it: append this round's §6 item lines under their `### <domain>` headings there and skip step 2. " +

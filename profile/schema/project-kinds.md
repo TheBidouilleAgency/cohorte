@@ -13,8 +13,8 @@ here and Read the one `## <kind>` range. On `web` the review agent does not open
 
 | signal | kind |
 | --- | --- |
-| a UI framework (react, vue, svelte, angular, next, nuxt…) in any app surface — even beside a `bin` or a server | `web` |
 | `react-native`, `expo`, `*.xcodeproj` / `Package.swift` app target, Android `build.gradle` app, `flutter` | `mobile` |
+| a browser UI framework (`react-dom`, next, vue, nuxt, svelte, angular…) in any app surface — even beside a `bin` or a server | `web` |
 | `dbt_project.yml`, Airflow/Dagster/Prefect DAGs, a notebooks-first tree, warehouse SQL as the product | `data` |
 | a `bin` entry (`package.json` `bin`, `[project.scripts]`, `cmd/*`, `[[bin]]`) and no UI deps | `cli` |
 | a published package (`exports`/`main` + no `private: true`, a PyPI/crates manifest) with no app entry | `library` |
@@ -22,7 +22,8 @@ here and Read the one `## <kind>` range. On `web` the review agent does not open
 | none of the above | `other` |
 
 A mixed monorepo resolves to the **first row it matches** (an app with a UI is `web` even when it also
-ships a CLI). The kind also decides two init defaults: where the design row below says **no**, init
+ships a CLI; web + mobile apps ⇒ `mobile`, whose checks include web's). Mobile comes first because
+every react-native app also depends on `react`. The kind also decides two init defaults: where the design row below says **no**, init
 sets `design.enabled: false` and every `uses_design: false`, and skips the design question; where
 RBAC is **no**, it defaults `rbac.enabled: false`. The build gate, `/cohorte-align-ds` and spec §8
 already key off those flags — nothing else reads the kind for design.
