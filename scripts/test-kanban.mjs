@@ -330,21 +330,28 @@ if (process.platform !== "win32") {
   // writers ran at once (about half the runs lost a move). Breaking is now serialized.
   {
     const deadPid = spawnSync(process.execPath, ["-e", "process.stdout.write(String(process.pid))"], { encoding: "utf8" }).stdout;
-    let lost = 0, leftovers = "";
+    let lost = 0, leftovers = "", detail = "";
     for (let round = 0; round < 8; round++) {
       const d = scratch();
       const ids = Array.from({ length: 12 }, (_, i) => `st-${i}`);
       const b = board(d, { Ideas: ids.map((id) => `- [ ] ${id} #${id}`) });
       mkdirSync(b + ".lock");
       writeFileSync(join(b + ".lock", "pid"), deadPid + "\n");
-      await Promise.all(ids.map((id) => new Promise((res) => {
-        spawn("sh", [SCRIPT, b, id, "Building"], { stdio: "ignore", env: { ...process.env, COHORTE_KANBAN_NO_FLOCK: "1" } }).on("close", res);
+      const runs = await Promise.all(ids.map((id) => new Promise((res) => {
+        const c = spawn("sh", [SCRIPT, b, id, "Building"], { stdio: ["ignore", "ignore", "pipe"], env: { ...process.env, COHORTE_KANBAN_NO_FLOCK: "1" } });
+        let err = "";
+        c.stderr.on("data", (x) => { err += x; });
+        c.on("close", (code) => res({ id, code, err: err.trim() }));
       })));
-      if (ids.filter((id) => columnOf(b, id) === "Building").length !== ids.length) lost++;
+      const missing = ids.filter((id) => columnOf(b, id) !== "Building");
+      if (missing.length) {
+        lost++;
+        if (!detail) detail = `missing ${missing.join(",")} · failed runs ${JSON.stringify(runs.filter((r) => r.code !== 0 || r.err))}\n${readFileSync(b, "utf8")}`;
+      }
       const extra = readdirSync(d).filter((f) => f !== "Tasks.md");
       if (extra.length) leftovers = extra.join(", ");
     }
-    check("fallback: a stale lock with 12 concurrent waiters loses no move (8 rounds)", lost === 0, `${lost}/8 rounds lost a move`);
+    check("fallback: a stale lock with 12 concurrent waiters loses no move (8 rounds)", lost === 0, `${lost}/8 rounds lost a move — first: ${detail}`);
     check("fallback: …and leaves no lock or breaker behind", !leftovers, leftovers);
   }
   // The fallback's crashed writer: its lock holds a PID that no longer exists.
