@@ -455,6 +455,39 @@ console.log("sync — writes .claude/profile.json (the installed <sync>)");
   git("status");
 }
 
+// ── H1b. sync — exec-form registration (gate.hook_form: exec, for Windows teams) ──
+console.log("sync — exec-form hook registration");
+{
+  const sb = sandbox();
+  cli(sb, "install");
+  const { d } = gitRepo();
+  write(join(d, "PIPELINE.md"), "```yaml pipeline-profile\nname: x\ngate:\n  hook_form: exec\n```\n");
+  check("sync exits 0", cli(sb, "sync", d).status === 0);
+  const groups = () => JSON.parse(read(join(d, ".claude/settings.json"))).hooks.PreToolUse
+    .filter((g) => g.hooks.some((h) => (h.args || []).join(" ").includes("cohorte-gate.py") || String(h.command).includes("cohorte-gate.py")));
+  const h = groups()[0].hooks[0];
+  check("exec form: python3 + args with ${CLAUDE_PROJECT_DIR}, fail-closed",
+    h.command === "python3" && h.args[0] === "${CLAUDE_PROJECT_DIR}/.claude/hooks/cohorte-gate.py" && h.onFailure === "block", JSON.stringify(h));
+  cli(sb, "sync", d);
+  check("a second sync keeps exactly two groups (no duplicate)", groups().length === 2, groups().length);
+  write(join(d, "PIPELINE.md"), "```yaml pipeline-profile\nname: x\n```\n");
+  cli(sb, "sync", d);
+  check("back to the default ⇒ the exec entries are replaced by shell ones, not added to",
+    groups().length === 2 && groups().every((g) => !g.hooks[0].args), JSON.stringify(groups()));
+  write(join(d, "PIPELINE.md"), "```yaml pipeline-profile\nname: x\ngate:\n  hook_form: exec\n```\n");
+  cli(sb, "sync", d);
+  const doc = cli(sb, "doctor", d);
+  const gateLine = (doc.out.split("\n").find((l) => /Gate hook/.test(l)) || "");
+  check("doctor recognizes the exec-form registration (only 'not committed' left in a fresh repo)",
+    /Gate hook/.test(gateLine) && !/not registered|does not cover|2\.x/.test(gateLine), gateLine);
+  // As Claude Code runs it: substitute the placeholder, no shell.
+  const e = groups()[0].hooks[0];
+  const r = spawnSync(e.command === "python3" && WIN ? "py" : e.command, e.args.map((a) => a.replace("${CLAUDE_PROJECT_DIR}", d)), {
+    input: JSON.stringify({ tool_name: "Bash", tool_input: { command: "ls" }, cwd: d, hook_event_name: "PreToolUse" }),
+    env: { ...process.env, CLAUDE_PROJECT_DIR: d }, encoding: "utf8" });
+  check("the exec-form command runs the committed gate", r.status === 0, r.stderr);
+}
+
 // ── H2. sync — a 2.x bundled repo ─────────────────────────────────────────────
 console.log("sync — migrates a 2.x bundled repo");
 {

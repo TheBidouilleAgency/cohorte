@@ -6,12 +6,12 @@
 # (non-zero = red, 0 = green). Needs network (advisory databases) and the scanners on PATH —
 # so it runs in .github/workflows/scanners.yml, not in `npm test`.
 #
-#   scripts/check-scanner-recipes.sh            # every scanner found on PATH
+#   scripts/ci/check-scanner-recipes.sh            # every scanner found on PATH
 #
 # A scanner that is not installed is reported SKIP; CI installs all of them.
 
 set -uo pipefail
-root=$(cd "$(dirname "$0")/.." && pwd)
+root=$(cd "$(dirname "$0")/../.." && pwd)
 FD="$root/scripts/feature-diff.sh"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT

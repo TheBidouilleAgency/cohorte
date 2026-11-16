@@ -1,7 +1,7 @@
 name: Scanner recipes
 
 # Runs the `commands.security` recipes of profile/schema/preflight.md against the real scanners
-# (scripts/check-scanner-recipes.sh). Network-bound and slow to set up, so it is not part of CI:
+# (scripts/ci/check-scanner-recipes.sh). Network-bound and slow to set up, so it is not part of CI:
 # weekly (scanners change their flags and exit codes), and on any change to the recipes.
 
 on:
@@ -10,7 +10,7 @@ on:
   pull_request:
     paths:
       - 'profile/schema/preflight.md'
-      - 'scripts/check-scanner-recipes.sh'
+      - 'scripts/ci/check-scanner-recipes.sh'
       - 'scripts/feature-diff.sh'
       - '.github/workflows/scanners.yml'
   workflow_dispatch:
@@ -53,4 +53,4 @@ jobs:
           corepack enable pnpm
 
       - name: Run every recipe
-        run: bash scripts/check-scanner-recipes.sh
+        run: bash scripts/ci/check-scanner-recipes.sh
