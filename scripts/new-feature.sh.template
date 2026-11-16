@@ -19,9 +19,15 @@
 set -euo pipefail
 
 id="${1:-}"
-if [[ -z "$id" ]]; then
+if [[ -z "$id" || $# -gt 1 ]]; then
   echo "usage: scripts/new-feature.sh <feature_id>" >&2
   exit 1
+fi
+# The id becomes a branch name, a directory, a database name and a slot key: kebab-case only
+# (what /cohorte-spec assigns), so nothing downstream has to quote or escape it.
+if [[ ! "$id" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]]; then
+  echo "error: feature id \"$id\" must be kebab-case (a-z, 0-9, -; at most 63 chars), as /cohorte-spec assigns it" >&2
+  exit 2
 fi
 
 repo_root="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"

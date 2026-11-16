@@ -6,7 +6,7 @@ argument-hint: <feature_id> | --pr <num>
 
 You are the **lead**. Dispatch the review for feature **$ARGUMENTS**.
 
-> Read `PIPELINE.md` §`vcs.default_branch` (diff base) and the `surfaces`/`contract`/`commands` fields.
+> Read `.claude/profile.json` `vcs.default_branch` (diff base) and the `surfaces`/`contract`/`commands` fields (the parsed `pipeline-profile` block; absent ⇒ read that block in `PIPELINE.md`).
 > _Skip the re-read if it's already in your context this session and unmodified since._
 >
 > **Kanban** (`<core>/pipeline/schema/kanban.md`): run
@@ -101,8 +101,8 @@ reviewed surface:
 Keep the dispatch prompt **byte-identical across features and rounds** except the variable block,
 which sits at the END so every repeat hits the prompt-cache prefix:
 
-> `subagent_type: cohorte-review` — "Review one feature surface against its frozen spec. Read `PIPELINE.md`
-> first (flags + the §Conventions/§Testing slice for your scope). Check spec conformance first, then
+> `subagent_type: cohorte-review` — "Review one feature surface against its frozen spec. Read `.claude/profile.json`
+> first (flags), then `PIPELINE.md`'s §Conventions/§Testing slice for your scope. Check spec conformance first, then
 > correctness, security, conventions, RBAC/mobile-first _if the profile enables them_, and TDD
 > coverage. Your dispatch names a staged diff file — read it FIRST; open a full source file only when
 > a finding demands it. Emit the REVIEW REPORT in the capped format your agent instructions define —

@@ -11,7 +11,7 @@ each surface agent at render time. This command closes that loop: findings → p
 ratified rules → re-rendered agents. The next build then never produces the finding again —
 which is cheaper than any number of review rounds catching it.
 
-> Read `PIPELINE.md` §`pipeline-profile` (`surfaces`, and skim the existing §Conventions
+> Read `.claude/profile.json` `surfaces` (the parsed `pipeline-profile` block; absent ⇒ read that block in `PIPELINE.md`), and skim `PIPELINE.md`'s existing §Conventions
 > stanzas — a rule that already exists is a finding about *enforcement*, not a missing rule)
 > and `specs/_decisions.md` §Live. _Skip the re-read if already in context and unmodified._
 

@@ -184,6 +184,28 @@ console.log("install — refuses to run on a settings.json it cannot parse");
   check("nothing was installed", !existsSync(join(sb.g, "cohorte")) && !existsSync(join(sb.g, "commands")));
 }
 
+// ── D2. an install that fails half-way is rolled back ─────────────────────────
+console.log("install — a failure half-way is rolled back");
+{
+  const sb = sandbox();
+  check("first install exits 0", cli(sb, "install").status === 0);
+  // An earlier file the update will rewrite (an edit of ours), then a path that cannot be
+  // written later in the same run (a directory where cohorte-spec.md goes).
+  const build = join(sb.g, "commands/cohorte-build.md");
+  writeFileSync(build, "edited\n");
+  const spec = join(sb.g, "commands/cohorte-spec.md");
+  rmSync(spec);
+  mkdirSync(spec);
+  const r = cli(sb, "update");
+  check("the failing update exits 1 and says it rolled back", r.status === 1 && /rolled back/.test(r.out), r.out);
+  check("the file it had already rewritten is back as it was", read(build) === "edited\n");
+  rmSync(spec, { recursive: true });
+  const ok = cli(sb, "update");
+  check("once the obstacle is gone, the update completes", ok.status === 0 && !read(build).startsWith("edited"), ok.out);
+  check("…and the edited copy was backed up first",
+    walk(join(sb.g, "cohorte/backup")).some((f) => f.endsWith("cohorte-build.md") && read(f) === "edited\n"));
+}
+
 // ── E. 2.x global install → 3.x ───────────────────────────────────────────────
 console.log("update — migrates a 2.x global install");
 {

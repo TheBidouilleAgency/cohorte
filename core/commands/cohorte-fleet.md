@@ -17,7 +17,7 @@ worktree's session**, supervised like any other; the fleet plans, watches and re
 lives in `specs/reports/fleet.json` (the main checkout's gitignored buffer — this repo's
 multi-*feature* flight plan).
 
-> Read `PIPELINE.md` §`pipeline-profile` first: `surfaces` (paths — the overlap analysis keys
+> Read `.claude/profile.json` first (the parsed `pipeline-profile` block; absent ⇒ read that block in `PIPELINE.md`): `surfaces` (paths — the overlap analysis keys
 > on them), `contract`, `vcs.default_branch`, and the `isolation` block. _Skip the re-read if
 > already in context and unmodified since._ **`isolation.enabled: false` ⇒ stop at `plan`**:
 > N features in one checkout is a merge-conflict generator with extra steps — name the fix

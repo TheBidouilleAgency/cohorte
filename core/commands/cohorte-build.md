@@ -13,7 +13,7 @@ metrics line, no kanban move. It exists to refresh what the loop workflow's prec
 (`readiness.json` newer than the spec, the contract on disk) without a full build — the loop then
 builds itself. Say which mode you ran in your last line.
 
-> Read `PIPELINE.md` §`pipeline-profile` first: the `surfaces` list (how many implementers to
+> Read `.claude/profile.json` first (the parsed `pipeline-profile` block; absent ⇒ read that block in `PIPELINE.md`): the `surfaces` list (how many implementers to
 > dispatch + their agent names), `contract` (mechanism + path), and the `design` flag. _Skip the
 > re-read if it's already in your context this session and unmodified since._
 >
@@ -188,7 +188,7 @@ the prompt-cache prefix. Never paste a diff into a dispatch — the agent comput
 tree. For each surface in `surfaces`:
 
 > `subagent_type: <surface.agent>` — "Implement the **<surface.key>** surface for feature `$ARGUMENTS`.
-> Read `PIPELINE.md` first. Spec: `specs/$ARGUMENTS.md`. Contract: `<contract.path>/$ARGUMENTS.<ext>`
+> Read `.claude/profile.json` first (your surface's commands and flags). Spec: `specs/$ARGUMENTS.md`. Contract: `<contract.path>/$ARGUMENTS.<ext>`
 > (import read-only). Work test-first. Touch only `<surface.path>`. Need the current state of your
 > tree? Compute it yourself: `<core>/pipeline/scripts/feature-diff.sh --default <default_branch> --patch -- <surface.path>`. Return the handoff in the
 > format your agent instructions define. Design files: <the spec's `design_files` links — each

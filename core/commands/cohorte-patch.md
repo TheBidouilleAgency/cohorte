@@ -12,7 +12,7 @@ cycle at input price on every turn.
 
 Bug (may be empty): **$ARGUMENTS**
 
-> Read `PIPELINE.md` §`pipeline-profile` first: `surfaces` (paths — this is what you map the bug onto)
+> Read `.claude/profile.json` first (the parsed `pipeline-profile` block; absent ⇒ read that block in `PIPELINE.md`): `surfaces` (paths — this is what you map the bug onto)
 > and `vcs`. _Skip the re-read if it's already in your context this session and unmodified since._
 > Do NOT read `specs/_decisions.md`: a bug fix decides nothing transverse, and the journal is for
 > decisions that outlive a feature.

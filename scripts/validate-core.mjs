@@ -509,6 +509,16 @@ for (const negation of ["!core/hooks/__pycache__", "!**/*.pyc"])
 if (!read("lib/install.js").includes("__pycache__"))
   fail("lib/install.js", "the core copy never excludes __pycache__");
 
+// ── workflow supply chain: every action pinned to a commit ─────────────────────
+// A tag (`@v5`) can be moved by whoever controls the action's repo; publish.yml runs with a
+// token that can publish to npm. Pin the 40-hex commit, keep the tag as a comment.
+for (const f of readdirSync(join(root, ".github/workflows")).filter((f) => /\.ya?ml$/.test(f))) {
+  for (const m of read(`.github/workflows/${f}`).matchAll(/^\s*-?\s*uses:\s*([^\s#]+)/gm)) {
+    if (!/@[0-9a-f]{40}$/.test(m[1]) && !m[1].startsWith("./"))
+      fail(`.github/workflows/${f}`, `\`uses: ${m[1]}\` is not pinned to a commit SHA`);
+  }
+}
+
 // ── report ──────────────────────────────────────────────────────────────────
 if (errors.length) {
   console.error(`validate-core: ${errors.length} error(s)\n`);

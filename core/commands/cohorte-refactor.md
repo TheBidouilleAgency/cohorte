@@ -6,8 +6,8 @@ argument-hint: <domain…> (one or more surface keys, "shared", or "all")
 
 You are the **lead**. Refactor domain **$ARGUMENTS** to match `PIPELINE.md`, using the `/cohorte-audit` backlog.
 
-> Read `PIPELINE.md` §`surfaces` (map the domain → a surface + its agent + commands), §`contract`
-> and §`vcs` (§4's branch).
+> Read `.claude/profile.json` `surfaces` (map the domain → a surface + its agent + commands), `contract`
+> and `vcs` (§4's branch) (the parsed `pipeline-profile` block; absent ⇒ read that block in `PIPELINE.md`).
 >
 > **Kanban** (`<core>/pipeline/schema/kanban.md`): §4 runs
 > `<core>/pipeline/scripts/kanban-move.sh auto <spec id> ready --title "[refactor] <domains>"`. `auto`

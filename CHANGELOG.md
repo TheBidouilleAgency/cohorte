@@ -7,6 +7,23 @@ short, user-facing, most recent first. One `## <version> — <YYYY-MM-DD>` secti
 > They are history and are deliberately not rewritten — every command gained a `cohorte-` prefix
 > in 2.0.0.
 
+## 3.1.1 — 2026-11-16
+
+- **An install that fails half-way is rolled back.** `cohorte install` / `update` journal every file
+  they write or retire and put the tree back as it was if anything fails mid-run (a full disk, a
+  path that is a directory, a permission). Empty folders of yours under `~/.claude/commands` or
+  `~/.claude/agents` are never pruned.
+- **The lead commands read `.claude/profile.json`** (16 of 18 commands), falling back to the
+  `PIPELINE.md` block when it is absent; prose sections (§Conventions, §Personas) are still read
+  from `PIPELINE.md`.
+- **`/cohorte-ship` clears the feature's report buffer after the merge** (`specs/reports/<id>.*`,
+  the brainstorm return, the verify evidence) — with `rm -f`/`rmdir`, which every gate allows.
+- **`new-feature.sh` / `remove-feature.sh` validate their input:** the feature id must be kebab-case,
+  and an unknown option is an error instead of being ignored. Re-render them with
+  `/cohorte-update-pipeline`.
+- **Releases:** every GitHub Action is pinned to a commit SHA, the Discord notification fires only
+  after a successful npm publish, and the docs site builds on pull requests.
+
 ## 3.1.0 — 2026-11-16
 
 - **The schema is split: one file per topic, each command loads only what it cites.**
