@@ -110,6 +110,11 @@ const AUDIT_CFG = {
   preflight: { enabled: true, agents: ["cohorte-review", "review"], max_age_minutes: 30 },
 };
 
+// The profile/schema/preflight.md secret-scan recipe; `scanner` reads the added lines on stdin.
+const secretScan = (scanner = "gitleaks stdin --redact --no-banner", branch = "main") =>
+  `P=specs/reports/security-scan.patch; ~/.claude/cohorte/pipeline/scripts/feature-diff.sh --default ${branch} ` +
+  `--patch > "$P" || exit 2; grep '^+' "$P" > "$P.added"; ${scanner} < "$P.added" && rm -f "$P" "$P.added"`;
+
 // ── inert outside Cohorte projects ───────────────────────────────────────────
 console.log("gate.py — inert without a pointer or a config");
 {
@@ -236,10 +241,9 @@ console.log("gate.py — false positives (G11) and the pipeline's own commands")
   const commitMsg = "git commit -m \"$(cat <<'EOF'\nfeat: don't run (git push -f) or `rm -rf /`\n\nCo-Authored-By: x\nEOF\n)\"";
   // commands.security as review.js passes them (the profile/schema/preflight.md recipes).
   // The script path must be static (`~/…`): a computed command name gets "ask" (deny headless).
-  const SECRET_SCAN = 'P=specs/reports/security-scan.patch; ~/.claude/cohorte/pipeline/scripts/feature-diff.sh --default main --patch > "$P" || exit 2; grep \'^+\' "$P" | gitleaks stdin --redact --no-banner; s=$?; rm -f "$P"; exit $s';
   const sq = (c) => `'${c.replace(/'/g, "'\\''")}'`;
   const secPreflight = '.claude/pipeline/scripts/preflight.sh specs/reports/x.preflight.txt "tsc --noEmit" ' +
-    `": cohorte-security-scans" "npm audit --omit=dev --audit-level=high" ${sq(SECRET_SCAN)}`;
+    `": cohorte-security-scans" "npm audit --omit=dev --audit-level=high" ${sq(secretScan())}`;
   table("must allow", feat, [
     [secPreflight, "allow"],
     ["git commit -m \"docs: explain why git push -f is banned\"", "allow"],
@@ -624,6 +628,60 @@ console.log("gate.py — preflight phase gate");
   check("preflight disabled ⇒ never gated", run(dispatch("cohorte-review", off), { projectDir: off }).raw === "");
   const noblock = scratch({ config: { deny: [] } }); gitRepo(noblock, "feat");
   check("no preflight block ⇒ never gated", run(dispatch("cohorte-review", noblock), { projectDir: noblock }).raw === "");
+}
+
+// ── commands.security through the real preflight.sh + feature-diff.sh ────────
+// Argument arrays only (no shell string is built here); the scanner is a stub on PATH and
+// `~` is a throwaway HOME holding the shipped feature-diff.sh, so nothing real is touched.
+console.log("preflight.sh — commands.security secret-scan recipe (stub scanner)");
+{
+  const home = realpathSync(mkdtempSync(join(tmpdir(), "gate-home-")));
+  tmps.push(home);
+  const scripts = join(home, ".claude", "cohorte", "pipeline", "scripts");
+  mkdirSync(scripts, { recursive: true });
+  writeFileSync(join(scripts, "feature-diff.sh"), readFileSync(join(root, "scripts", "feature-diff.sh")), { mode: 0o755 });
+  mkdirSync(join(home, "bin"));
+  writeFileSync(join(home, "bin", "fake-scan"),
+    "#!/bin/sh\nif grep -q 'SECRET_TOKEN='; then echo 'fake-scan: leak SECRET_TOKEN'; exit 1; fi\nexit 0\n", { mode: 0o755 });
+  const env = { ...process.env, HOME: home, PATH: `${join(home, "bin")}:${process.env.PATH}` };
+  delete env.CLAUDE_PROJECT_DIR; delete env.CLAUDE_CONFIG_DIR;
+  const pre = (dir, scan) => {
+    mkdirSync(join(dir, "specs", "reports"), { recursive: true });
+    const report = join(dir, "specs", "reports", "f.preflight.txt");
+    const r = spawnSync("sh", [PREFLIGHT, report, "true", ": cohorte-security-scans", scan], { cwd: dir, env, encoding: "utf8" });
+    return { status: r.status, report: existsSync(report) ? readFileSync(report, "utf8") : "", stderr: r.stderr };
+  };
+  const leftovers = (dir) => ["security-scan.patch", "security-scan.patch.added"]
+    .filter((f) => existsSync(join(dir, "specs", "reports", f)));
+
+  const clean = scratch(); gitRepo(clean, "feat");
+  writeFileSync(join(clean, "new.ts"), "export const x = 1\n");             // untracked feature work
+  let r = pre(clean, secretScan("fake-scan"));
+  check("clean feature diff ⇒ green", r.status === 0, r.stderr);
+  check("the report opens the security section with `$ : cohorte-security-scans`",
+    r.report.split("\n").includes("$ : cohorte-security-scans"), r.report.slice(0, 300));
+  check("green ⇒ the stamp is written", existsSync(join(clean, ".claude", "preflight.ok")));
+  check("green ⇒ the scanned patch files are removed", leftovers(clean).length === 0, leftovers(clean).join(","));
+
+  const leak = scratch(); gitRepo(leak, "feat");
+  writeFileSync(join(leak, "config.ts"), "const k = 'x'\nSECRET_TOKEN=abc123\n");  // untracked: history scans miss it
+  r = pre(leak, secretScan("fake-scan"));
+  check("a secret in an untracked feature file ⇒ red", r.status === 1 && /leak SECRET_TOKEN/.test(r.stderr), r.stderr);
+  check("red ⇒ no stamp", !existsSync(join(leak, ".claude", "preflight.ok")));
+  check("red ⇒ the scanned files stay (gitignored) so the hit can be located", leftovers(leak).length === 2, leftovers(leak).join(","));
+
+  const removal = scratch(); gitRepo(removal, "main");
+  writeFileSync(join(removal, "old.env.ts"), "SECRET_TOKEN=legacy\n");
+  git(removal, "add", "-A"); git(removal, "commit", "-qm", "legacy secret");
+  git(removal, "update-ref", "refs/remotes/origin/main", "HEAD");
+  git(removal, "checkout", "-qb", "feat");
+  writeFileSync(join(removal, "old.env.ts"), "// secret moved to the vault\n");
+  r = pre(removal, secretScan("fake-scan"));
+  check("a feature that REMOVES a secret ⇒ green (only added lines are scanned)", r.status === 0, r.stderr);
+
+  const nobase = scratch(); gitRepo(nobase, "feat");
+  r = pre(nobase, secretScan("fake-scan", "no-such-branch"));
+  check("an unresolvable base ⇒ red, never a silent pass", r.status === 1, `${r.status} ${r.stderr}`);
 }
 
 // ── surface ownership (profile.json surfaces[], subagent payloads) ───────────

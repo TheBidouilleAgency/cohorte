@@ -37,8 +37,10 @@ opens the **security section**.
   Otherwise every review is blocked by debt the feature didn't add.
 - **Green scans still leave output behind**, such as advisories below the threshold. The
   `cohorte-review` agent's security pass reads the security section, found by grepping for the
-  marker. An advisory on a package that the feature's diff adds or bumps is a `security`
-  finding. One on a package the feature didn't touch is `deferred`.
+  marker. The threshold is the project's choice, so nothing below it blocks. An advisory on a
+  dependency that the reviewer's own staged diff adds or bumps becomes one non-blocking
+  `quality` finding. Advisories on untouched dependencies are ignored: they are neither findings
+  nor backlog items.
 - **Quoting.** Pass each command as one argument. Single-quote any command that contains `$`,
   a backtick or `\` (a `'` inside becomes `'\''`). Inside double quotes the calling shell would
   expand the command's own variables before `preflight.sh` ever ran it.
@@ -53,7 +55,9 @@ opens the **security section**.
   included, the base is the merge-base, and `.claude/` and `specs/` are excluded. Keep only the
   added lines (`grep '^+'`), so that a feature *removing* a secret does not fail. Write the patch
   only under `specs/reports/`: it is gitignored and excluded from both the stamp digest and the
-  feature diff, so it changes neither. Delete it afterwards. Never pipe `feature-diff.sh`
+  feature diff, so it changes neither. The recipe deletes it on a pass. On a hit it keeps
+  `security-scan.patch` and `.patch.added`, because the scanner read only the added lines and its
+  line numbers point into `.added`. Use the patch to find the file. Never pipe `feature-diff.sh`
   straight into the scanner. In `sh`, a pipeline's status is its last command's, so an exit 3
   (no base) would hand the scanner an empty input that passes.
 
@@ -69,8 +73,8 @@ Never add one silently. `<default_branch>` is filled in at init.
 | `requirements*.txt` / `pyproject.toml` | `pip-audit -r requirements.txt` (or `pip-audit` in the project env) | no severity filter, so any known vuln is red |
 | `go.mod` | `govulncheck ./...` | only vulnerabilities the code actually reaches |
 | `Cargo.lock` | `cargo audit` | needs `cargo install cargo-audit` |
-| `gitleaks` on PATH | `P=specs/reports/security-scan.patch; ~/.claude/cohorte/pipeline/scripts/feature-diff.sh --default <default_branch> --patch > "$P" \|\| exit 2; grep '^+' "$P" \| gitleaks stdin --redact --no-banner; s=$?; rm -f "$P"; exit $s` | the feature diff only, secrets redacted from the report |
-| `trufflehog` on PATH | the same line with `trufflehog stdin --fail --no-update --results=verified,unknown` in place of `gitleaks …` | `--fail` exits 183 on a result. Without `--fail` it always exits 0 |
+| `gitleaks` on PATH | `P=specs/reports/security-scan.patch; ~/.claude/cohorte/pipeline/scripts/feature-diff.sh --default <default_branch> --patch > "$P" \|\| exit 2; grep '^+' "$P" > "$P.added"; gitleaks stdin --redact --no-banner < "$P.added" && rm -f "$P" "$P.added"` | the feature diff only, secrets redacted from the report |
+| `trufflehog` on PATH | the same line with `trufflehog stdin --fail --no-update --results=verified,unknown < "$P.added"` in place of `gitleaks …` | `--fail` exits 183 on a result. Without `--fail` it always exits 0 |
 
 Offer at most one secret scanner. A scanner that isn't installed is not proposed. Say how to
 install it, and let the human decide. The release agent's own check (no `.env` or credential

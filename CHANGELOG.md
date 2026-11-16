@@ -55,13 +55,13 @@ short, user-facing, most recent first. One `## <version> — <YYYY-MM-DD>` secti
   The lead, the fixed `cohorte-*` agents and unknown agent types are never restricted. Without
   `profile.json`, or with `ownership.enforce: false`, nothing changes. Targets in a linked
   worktree resolve against that worktree, and paths outside the project (`/dev/null`, `$TMPDIR`)
-  are not judged. Unrelated fix: `sed -i 's/…/' f` no longer reads its own script as a target.
+  are not judged.
 - **Dependency and secret scans in the review preflight: `commands.security: []`.** The commands
   run after typecheck, lint and tests, in the same `preflight.sh` call and report, behind a
   `: cohorte-security-scans` marker. A red scan aborts the review before any agent is spawned,
   like a red test. On a green run the reviewer's security pass reads the scan output below the
-  threshold: an advisory on a dependency the diff adds or bumps becomes a finding, and one on an
-  untouched dependency is deferred. `/cohorte-init-pipeline` detects the scanners and proposes
+  threshold. An advisory on a dependency the diff adds or bumps becomes a non-blocking `quality`
+  finding. One on an untouched dependency is ignored. `/cohorte-init-pipeline` detects the scanners and proposes
   them: `npm`/`pnpm`/`yarn` audit (production deps, high+), `pip-audit`, `govulncheck`,
   `cargo audit`, and `gitleaks` or `trufflehog` on the added lines of the feature's
   `feature-diff.sh --patch`, never the history. The workflow now single-quotes any check that

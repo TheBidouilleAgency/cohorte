@@ -433,7 +433,7 @@ console.log("review.js verdict contract");
   check("no commands.security ⇒ reviewers get no preflight-report slot",
     !/preflight report/.test(plain.prompts["review:backend"]), plain.prompts["review:backend"].slice(-200));
 
-  const SECRET = 'P=specs/reports/security-scan.patch; ~/.claude/cohorte/pipeline/scripts/feature-diff.sh --default main --patch > "$P" || exit 2; grep \'^+\' "$P" | gitleaks stdin --redact --no-banner; s=$?; rm -f "$P"; exit $s';
+  const SECRET = 'P=specs/reports/security-scan.patch; ~/.claude/cohorte/pipeline/scripts/feature-diff.sh --default main --patch > "$P" || exit 2; grep \'^+\' "$P" > "$P.added"; gitleaks stdin --redact --no-banner < "$P.added" && rm -f "$P" "$P.added"';
   const AUDIT = "npm audit --omit=dev --audit-level=high";
   const withSec = { ...PROFILE, commands: { ...PROFILE.commands, security: [AUDIT, "<detected audit>", "", SECRET] } };
   const sec = await run("review.js", replier([

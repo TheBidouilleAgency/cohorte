@@ -64,10 +64,14 @@ be precise and self-contained.
    (A security vulnerability blocks — §Severity & verdict.) **If your dispatch names a preflight
    report**, read its security section: Grep the report for the line `$ : cohorte-security-scans`
    and Read from there to the end, never the whole report. Those scans already passed, because a
-   red scan aborts the review before you are spawned. What remains is output below the threshold.
-   An advisory on a dependency that this diff adds or bumps (a manifest or lockfile hunk) is a
-   `security` finding: `file:line` is the manifest line, and the fix is the safe version. An
-   advisory on a dependency the diff doesn't touch is **deferred**. Never re-run a scanner.
+   red scan aborts the review before you are spawned. What remains is output **below the
+   threshold the project chose**, and that choice is the human's, so none of it is a `security`
+   finding (a `security` finding means BLOCK). Report an advisory only when its dependency is
+   added or bumped by a manifest or lockfile hunk **in your own staged diff**. Report it as one
+   `quality` finding at HIGH or MEDIUM: `file:line` is that manifest line, and the fix names the
+   patched version. Ignore advisories on dependencies the diff doesn't touch. They are not this
+   feature's and not deferred either, because the scanner reports them again every round. Never
+   re-run a scanner.
 4. **Conventions (`PIPELINE.md` §Conventions).** Enforce the per-surface rules the profile lists.
 5. **RBAC** — _only if `rbac.enabled`_: no cross-role/cross-tenant exposure; least privilege on every route.
 6. **Mobile-first / responsive** — _only if a surface has `uses_design: true`_: base styles small-screen,

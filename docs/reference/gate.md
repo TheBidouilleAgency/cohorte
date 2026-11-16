@@ -90,9 +90,10 @@ target the gate can't resolve but that looks like one of these files gets **ask*
 
 Reading them (`cat`, `jq`) is free. `preflight.sh` itself is allowed to write the stamp, but a
 direct `date +%s > .claude/preflight.ok` is not. A `Write`/`Edit`/`MultiEdit` aimed at one of
-these files gets **ask**, which becomes **deny** in unattended modes (see below). This affects
-`/cohorte-init-pipeline` and `/cohorte-update-pipeline` if the hook is ever registered for those
-tools: run them interactively. Rules change through PIPELINE.md and
+these files gets **ask**, which becomes **deny** in unattended modes (see below). The hook is
+registered for those tools, so this affects `/cohorte-init-pipeline` and `/cohorte-update-pipeline`
+whenever they edit one of these files with Write/Edit rather than through `cohorte sync`. Run
+them interactively. Rules change through PIPELINE.md and
 `/cohorte-update-pipeline`, never by editing the generated file from inside a run.
 
 ### Surface ownership
