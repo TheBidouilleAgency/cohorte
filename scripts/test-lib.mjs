@@ -252,6 +252,9 @@ console.log("doctor.js — the /cohorte-doctor port");
   c = await pjStatus();
   // Not a git repo here, so "committed" is unknown — never reported as a failure.
   eq("profile.json matching a fresh parse ⇒ ok", c.status, "ok");
+  writeFileSync(pjPath, profileJsonText(readFileSync(mdPath, "utf8")).replace(/\n/g, "\r\n"));
+  c = await pjStatus();
+  eq("CRLF line endings (Windows autocrlf checkout) are not staleness ⇒ ok", c.status, "ok");
   const mdText = readFileSync(mdPath, "utf8");
   writeFileSync(mdPath, mdText + "\n## Conventions\n\nprose only\n");
   const past = new Date(Date.now() - 3600e3);

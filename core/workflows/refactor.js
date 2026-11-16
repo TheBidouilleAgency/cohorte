@@ -126,7 +126,7 @@ const VERIFY = {
 // ── Phase 0 — profile ────────────────────────────────────────────────────────
 phase('Profile')
 const profile = unwrapProfile(await agent(
-  'Return this project\'s PIPELINE.md `yaml pipeline-profile` block as JSON, per your instructions.',
+  'Return this project\'s profile (the `yaml pipeline-profile` block — `.claude/profile.json`, else PIPELINE.md) as JSON, per your instructions.',
   { agentType: 'cohorte-profile-reader', label: 'profile', schema: PROFILE, effort: 'low' },
 ))
 if (!profile || profile.error) {
