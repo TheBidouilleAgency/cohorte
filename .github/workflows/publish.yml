@@ -8,6 +8,9 @@ on:
     workflows: [CI]
     types: [completed]
     branches: [main]
+  # Manual retry (e.g. a first trusted-publishing run that failed) — still main-only, still
+  # behind the npm-publish environment's approval.
+  workflow_dispatch:
 
 concurrency:
   group: publish
@@ -18,7 +21,9 @@ permissions: {}
 jobs:
   check:
     name: Sanity check
-    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -29,7 +34,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - uses: actions/setup-node@v5
         with:
@@ -108,7 +113,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - uses: actions/setup-node@v5
         with:
@@ -129,7 +134,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.check.outputs.version }}
-          SHA: ${{ github.event.workflow_run.head_sha }}
+          SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
         run: |
           git fetch --tags --quiet
           if git rev-parse "v$VERSION" >/dev/null 2>&1; then
