@@ -1,0 +1,56 @@
+name: Scanner recipes
+
+# Runs the `commands.security` recipes of profile/schema/preflight.md against the real scanners
+# (scripts/check-scanner-recipes.sh). Network-bound and slow to set up, so it is not part of CI:
+# weekly (scanners change their flags and exit codes), and on any change to the recipes.
+
+on:
+  schedule:
+    - cron: '17 6 * * 1'
+  pull_request:
+    paths:
+      - 'profile/schema/preflight.md'
+      - 'scripts/check-scanner-recipes.sh'
+      - 'scripts/feature-diff.sh'
+      - '.github/workflows/scanners.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  recipes:
+    name: Scanner recipes
+    runs-on: ubuntu-latest
+    env:
+      GITLEAKS_VERSION: 8.30.1
+      TRUFFLEHOG_VERSION: 3.99.9
+      PIP_AUDIT_VERSION: 2.10.1
+      GOVULNCHECK_VERSION: v1.9.0
+      CARGO_AUDIT_VERSION: 0.23.0
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: stable
+
+      - name: Install the scanners (pinned)
+        run: |
+          set -euo pipefail
+          bin="$HOME/.local/bin"; mkdir -p "$bin"; echo "$bin" >> "$GITHUB_PATH"
+          curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" | tar xz -C "$bin" gitleaks
+          curl -fsSL "https://github.com/trufflesecurity/trufflehog/releases/download/v${TRUFFLEHOG_VERSION}/trufflehog_${TRUFFLEHOG_VERSION}_linux_amd64.tar.gz" | tar xz -C "$bin" trufflehog
+          pip install --quiet "pip-audit==${PIP_AUDIT_VERSION}"
+          go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          cargo install --quiet --locked "cargo-audit@${CARGO_AUDIT_VERSION}"
+          corepack enable pnpm
+
+      - name: Run every recipe
+        run: bash scripts/check-scanner-recipes.sh
