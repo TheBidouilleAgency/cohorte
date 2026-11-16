@@ -255,7 +255,16 @@ if (!staged) {
     next: `re-run the review workflow, or /cohorte-review ${feature} conversationally`,
   }
 }
+// Every abort after the preflight overwrites verdict.json too: a stale SHIP left on disk from
+// an earlier round is exactly what /cohorte-ship (and a driver) would read.
+const writeAborted = why => agent(
+  `Write EXACTLY this to specs/reports/${feature}.verdict.json (overwrite), substituting <ISO now> ` +
+  'with `date -u +%Y-%m-%dT%H:%M:%SZ`, then return the single word done:\n' +
+  JSON.stringify({ id: feature, phase: 'review', ts: '<ISO now>', aborted: why, verdict: 'BLOCK', blocking: null }),
+  { model: 'haiku', label: 'stage-verdict', effort: 'low' },
+)
 if (staged.error) {
+  await writeAborted('stage-diff')
   return {
     verdict: 'ABORTED', aborted: 'stage-diff',
     reason: `feature-diff.sh failed — no diff, no reviewer: ${staged.error}`,
@@ -267,12 +276,7 @@ if (!touched.length) {
   // An empty diff reviewed NOTHING, so it certifies nothing. It used to score SHIP — and an
   // adds-only feature (before untracked files were diffed) reached /cohorte-ship on it. It is
   // an abort, and the aborted verdict overwrites any stale verdict.json a driver or ship reads.
-  await agent(
-    `Write EXACTLY this to specs/reports/${feature}.verdict.json (overwrite), substituting <ISO now> ` +
-    'with `date -u +%Y-%m-%dT%H:%M:%SZ`, then return the single word done:\n' +
-    JSON.stringify({ id: feature, phase: 'review', ts: '<ISO now>', aborted: 'empty-diff', verdict: 'BLOCK', blocking: null }),
-    { model: 'haiku', label: 'stage-verdict', effort: 'low' },
-  )
+  await writeAborted('empty-diff')
   return {
     verdict: 'ABORTED', aborted: 'empty-diff',
     reason: `the diff against the merge-base with ${base} is empty (untracked files included) — nothing was reviewed`,
@@ -435,8 +439,9 @@ const staging = await agent(
   // SHIP is parked nowhere the rest of the time, which is the leak this closes.
   (deferredAll.length
     ? `4. Route the deferred findings to specs/refactor-backlog.md (create it if absent): for each line below, ` +
-      `append it under the \`## <domain>\` heading named in its prefix (create that heading if absent) — with \`>>\`, ` +
-      `never by rewriting the file, and skip any whose file path + first words already appear there (grep -F first, ` +
+      `insert it directly under the \`## <domain>\` heading named in its prefix with one awk pass (heading absent ⇒ ` +
+      `append a new \`## <domain>\` block at the end with \`>>\`; a bare \`>>\` under another domain's heading files it ` +
+      `in the wrong section) — never by reading the file back and rewriting it, and skip any whose file path + first words already appear there (grep -F first, ` +
       `they may be left from a prior round or an /cohorte-audit):\n` +
       deferredAll.map(f =>
         `${f.surface}||- [ ] ${f.severity} · ${f.file}:${f.line} · ${f.kind} · ${f.fix} · deferred:${feature}`).join('\n') +

@@ -82,7 +82,8 @@ needed — run sync"). A worktree registered in `fleet.json` but gone from
 ## `sync` — the post-merge sweep
 
 Run after every merge (the human says which feature shipped, or you detect it: spec
-`status: shipped` + branch merged into `<default_branch>`):
+`status: merged`, or `status: shipped` + `gh pr view <branch> --json state` = `MERGED` — then set
+`status: merged` in that worktree's spec, SCHEMA.md §Spec status):
 
 1. Drop the shipped feature from `fleet.json` (rewrite, keep order of the rest) — and if its
    worktree still exists, remind the teardown `/cohorte-ship` proposes:

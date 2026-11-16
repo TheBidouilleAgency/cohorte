@@ -54,13 +54,10 @@ metrics line needs it:
 ## 1. Gather the inputs for stateless reviewers
 
 - Confirm `specs/$ARGUMENTS.md` exists.
-- **Every diff comes from `<core>/pipeline/scripts/feature-diff.sh`, never a bare `git diff`.**
-  Feature work is uncommitted until `/cohorte-ship`, and `git diff <ref>` silently drops every
-  untracked file — new modules escaped review, and an adds-only feature reviewed as an empty diff.
-  The script diffs a throwaway index (untracked files included, your real index untouched) against
-  the **merge-base** with the default branch (not its tip, which blames the feature for everything
-  `main` gained), `.claude/` and `specs/` excluded. Non-zero exit ⇒ **stop and relay it** (exit 3 =
-  base unresolvable); script absent ⇒ stop, the core is incomplete (`cohorte update`). Never fall
+- **Every diff comes from `<core>/pipeline/scripts/feature-diff.sh`, never a bare `git diff`**
+  (SCHEMA.md §Feature diff): feature work is uncommitted until ship, and `git diff <ref>` drops
+  every untracked file and diffs against the branch tip, not the merge-base. Non-zero exit ⇒ **stop
+  and relay it** (exit 3 = base unresolvable); script absent ⇒ stop (`cohorte update`). Never fall
   back to `git diff`.
 - **List the changed paths ONCE, patches only for retained surfaces.** One call:
   `<core>/pipeline/scripts/feature-diff.sh --default <default_branch> --numstat > specs/reports/$ARGUMENTS.stat.txt`
@@ -101,18 +98,13 @@ which sits at the END so every repeat hits the prompt-cache prefix:
 > every finding self-sufficient (`file:line` · severity · type · one-line concrete fix), no code
 > excerpts. — Variable slots: feature `$ARGUMENTS` · scope: the `<surface.key>` surface only · spec:
 > `specs/$ARGUMENTS.md` (source of truth) · contract: `<contract.path>/$ARGUMENTS.<ext>` · staged
-> diff: `specs/reports/$ARGUMENTS.<surface.key>.diff` · changed files (`--stat`): <list>."
-
-§0's preflight call already gave you the wall-clock start (`date +%s` in the same call) — §3's
-metrics line needs it.
+> diff: `specs/reports/$ARGUMENTS.<surface.key>.diff` · changed files: <list>."
 
 ## 3. Merge & relay the verdict
 
-**Roll call FIRST — a dead reviewer is not a clean surface.** Every surface you dispatched in §2 must
-come back with a REVIEW REPORT. A reviewer that died (rate limit, transport error, exhausted context)
-returns **nothing**, and zero findings from a dead reviewer is byte-identical to zero findings from a
-genuinely clean one — which is how "every reviewer crashed" reads as the strongest possible verdict
-from no evidence at all (SCHEMA.md §Dead agents). So:
+**Roll call FIRST — a dead reviewer is not a clean surface** (SCHEMA.md §Dead agents: its zero
+findings are byte-identical to a clean surface's). Every surface dispatched in §2 must come back
+with a REVIEW REPORT:
 
 - **Retry a silent surface ONCE**, byte-identical dispatch. Most deaths are transient, and the staged
   diff is already on disk — the retry costs one agent, not a re-review.
@@ -188,8 +180,9 @@ exactly the leak this step closes. Append each merged `## Deferred` item to
 - **Dedupe before appending:** `grep -F` the backlog for the item's `<file>` + the first words of its
   problem; already there (from a prior round or an `/cohorte-audit`) ⇒ skip it, don't stack duplicates round
   after round.
-- Append with `>>` in ONE Bash call; never read the whole backlog into context to rewrite it (it grows
-  with every audit the repo has ever run).
+- Write in ONE Bash call: insert each line directly under its `## <domain>` heading with one `awk`
+  pass (heading absent ⇒ append a new `## <domain>` block with `>>` — a bare `>>` lands under
+  whichever domain happens to be last). Never read the whole backlog into context to rewrite it.
 - Report it as **one line** in chat: `deferred: <n> parked in specs/refactor-backlog.md (<domains>)`.
 
 In chat print ONLY: the verdict, the severity-count table, a one-line digest of each CRITICAL/security

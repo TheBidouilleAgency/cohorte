@@ -161,6 +161,22 @@ console.log("review.js");
   check("SHIP + only LOW ⇒ next is /cohorte-ship", String(result.next).startsWith("/cohorte-ship"), result.next);
 }
 {
+  // D4 — /cohorte-ship refuses a SHIP without the freshness stamp, so the stamp IS the
+  // certification: written on a clean bill only, never over a surviving HIGH/MEDIUM.
+  const high = await run("review.js", replier([
+    ["review:", { verdict: "SHIP", findings: [finding({ severity: "MEDIUM" })] }], ...BASE_REVIEW,
+  ]));
+  check("SHIP + MEDIUM ⇒ no freshness stamp, no DoD tick in the staging prompt",
+    !/Stamp the freshness gate/.test(high.prompts["stage-report"]) && !/Tick the spec DoD/.test(high.prompts["stage-report"]));
+  check("SHIP + MEDIUM ⇒ verdict.json carries the MEDIUM count ship gates on",
+    /"MEDIUM":[1-9]/.test(high.prompts["stage-report"]), high.prompts["stage-report"].match(/"severity":\{[^}]*\}/)?.[0]);
+  const clean = await run("review.js", replier([
+    ["review:", { verdict: "SHIP", findings: [] }], ...BASE_REVIEW,
+  ]));
+  check("clean SHIP ⇒ the stamp is written",
+    /Stamp the freshness gate/.test(clean.prompts["stage-report"]));
+}
+{
   // Deferred findings are real but out of the feature's scope: they must be
   // counted and routed to the backlog, yet move NEITHER the verdict nor `clean`.
   // Both halves matter — a deferred item that blocks costs a fix loop it was
