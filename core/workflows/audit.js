@@ -238,6 +238,11 @@ const oldDomains = (existing && Array.isArray(existing.domains) ? existing.domai
   .filter(d => d && d.key).map(d => ({ key: String(d.key).trim(), lines: Array.isArray(d.lines) ? d.lines : [] }))
 const oldByKey = Object.fromEntries(oldDomains.map(d => [d.key, d.lines]))
 const isOpenDeferred = l => /^- \[ \]/.test(l) && /deferred:\S/.test(l)
+// A ticked item cleared by a refactor round that has not shipped yet: its `refactor:<id>` spec is
+// the review → PR route, and dropping the line would orphan it. Workflow scripts cannot read the
+// spec's status, so the workflow keeps every such line; /cohorte-audit (conversational) prunes the
+// ones whose spec is merged or gone.
+const isRefactorTick = l => /^- \[x\]/.test(l) && /refactor:\S/.test(l)
 let total = 0
 let carried = 0
 const sections = []
@@ -250,7 +255,7 @@ for (const key of order) {
     total += items.length
     const lines = items.map(it => `- [ ] ${it.severity} · ${it.file}:${it.line} · ${it.kind} · ${it.fix}`)
     if (d.overflow) lines.push(`- [ ] (+${d.overflow} more beyond the cap — re-audit ${d.key} after this pass)`)
-    const keep = (oldByKey[key] || []).filter(isOpenDeferred).filter(l => !lines.includes(l))
+    const keep = (oldByKey[key] || []).filter(l => isOpenDeferred(l) || isRefactorTick(l)).filter(l => !lines.includes(l))
     carried += keep.length
     sections.push({ key, lines: lines.concat(keep) })
   } else if (oldByKey[key] && oldByKey[key].length) {

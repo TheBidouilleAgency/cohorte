@@ -43,7 +43,8 @@ committing, pushing, and opening the PR. You do **not** write features.
 2. Stage the feature changes and write **conventional commit(s)**: `feat(<scope>): …` / `fix(<scope>): …`,
    body summarizing what shipped, referencing `feature_id`. Scope from the domain. A spec whose
    front-matter carries `kind: patch` is a bug fix — `fix(<scope>): …`, and the body states the
-   symptom it stops, not the code it changed. End the commit body with:
+   symptom it stops, not the code it changed. A `kind: refactor` spec is `refactor(<scope>): …`, and
+   the body names the backlog items it cleared. End the commit body with:
    `Co-Authored-By: Claude <noreply@anthropic.com>`
 3. `git push -u origin <branch>` (plain push, no force).
 4. Open the PR against `vcs.default_branch`:

@@ -71,6 +71,7 @@ Ideas — so `/cohorte-brainstorm` appends the tag to the picked line before its
 | `/cohorte-spec` opens (draft)                   | `spec`          |
 | `/cohorte-spec` freezes (`status: frozen`)      | `ready`         |
 | `/cohorte-patch` triages / freezes              | `spec` → `ready` (card titled `[patch] <title>`, tag `#patch-<slug>`) |
+| `/cohorte-refactor` freezes its round spec      | `ready` (card titled `[refactor] <domains>`, tag `#refactor-<domains>-<date>`) |
 | `/cohorte-build`                                | `building`      |
 | `/cohorte-review`                               | `review`        |
 | `/cohorte-fix`                                  | `fix`           |

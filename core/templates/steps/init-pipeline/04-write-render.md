@@ -25,7 +25,8 @@
    permission prompts — including mid-workflow, where nobody is watching a prompt: the detected
    per-surface `test_cmd`/`lint_cmd`/`typecheck_cmd`/`build_cmd` **and their `*_quiet_cmd`
    variants** and repo-wide `commands.*` equivalents as `Bash(<cmd>:*)` rules, plus read-only git —
-   `Bash(git status:*)`, `Bash(git diff:*)`, `Bash(git log:*)`, `Bash(git rev-parse:*)` — plus the
+   `Bash(git status:*)`, `Bash(git diff:*)`, `Bash(git log:*)`, `Bash(git rev-parse:*)`, plus
+   `Bash(git switch:*)` and `Bash(date:*)` (the refactor workflow cuts its branch and dates its spec) — plus the
    shipped pipeline scripts (`Bash(<core>/pipeline/scripts/:*)` — preflight, kanban-move;
    a prefix rule matches a command *starting* with that path, so a `bash <path>`
    invocation would need its own entry), and the

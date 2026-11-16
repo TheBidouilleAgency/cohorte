@@ -342,6 +342,11 @@ if (!['frozen', 'in-review', 'in-progress'].includes(status) && !blockedOk) {
     : `spec status is '${status || '(none)'}' — the loop needs frozen | in-review | in-progress ` +
       `(profile/schema/spec-status.md). draft ⇒ /cohorte-spec; shipped/merged ⇒ done already`)
 }
+// 1b. A `kind: refactor` spec (frozen by /cohorte-refactor §4) has no contract and enters at
+//     review — building it would dispatch implementers against a contract that does not exist.
+if (facts.spec.kind === 'refactor') {
+  return abortPre(`specs/${feature}.md is a kind: refactor spec — it was built by /cohorte-refactor; run /cohorte-review ${feature} then /cohorte-ship ${feature}, never the loop`)
+}
 // 2. A fresh readiness verdict — the gate /cohorte-build §1.6 wrote. NOT-READY is the one
 //    outcome more passes cannot fix; stale-or-absent means nobody has judged THIS spec.
 if (!fresh(facts.readiness)) {

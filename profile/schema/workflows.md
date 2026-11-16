@@ -49,7 +49,8 @@ Shared design, all four scripts:
 - **`refactor.js`** — big domains only (it skips domains with a handful of open items — the
   conversational `/cohorte-refactor` is cheaper there): `shared` first and alone (verified with the
   repo-wide commands — it has no surface commands of its own), then the other domains'
-  implementers in parallel, each verified per-domain.
+  implementers in parallel, each verified per-domain; then, gates green, it freezes the round as one
+  `kind: refactor` spec and ticks the backlog with `· refactor:<id>` (review → ship from there).
 - **`loop.js`** (the loop workflow, `cohorte-loop.js`) — build → review → [fix → review]* for ONE feature, unattended and
   resumable. Preconditions it verifies and refuses to work around: frozen/`in-review` spec, a fresh
   `readiness.json` at `READY`/`RESERVATIONS`, the contract on disk, every readiness surface owned by

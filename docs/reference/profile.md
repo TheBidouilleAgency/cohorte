@@ -127,6 +127,18 @@ commands:
   make_migration: "cd apps/api && node ace make:migration"
 ```
 
+### Project kind
+
+```yaml
+project:
+  kind: web        # web | api | cli | library | mobile | data | other — absent ⇒ web
+```
+
+Detected by `/cohorte-init-pipeline` and confirmed with you. The kind picks the spec's default
+Definition of Done, which review checks apply (mobile-first and the design step only where there is
+a UI; API compatibility for libraries and APIs; idempotency and backfills for data pipelines…) and
+whether the design step runs. The per-kind tables live in `profile/schema/project-kinds.md`.
+
 ### RBAC & design
 
 ```yaml
