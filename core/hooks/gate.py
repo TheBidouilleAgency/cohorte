@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # GENERATED from core/hooks/gate/*.py by scripts/build-gate.mjs — edit the modules, then run
 # `node scripts/build-gate.mjs`. validate-core fails when this file and the modules disagree.
-# Build order: runtime, shell, git, config, ownership, patterns, context, analyze, preflight,
-# evaluate, main.
+# Build order: runtime, shell, git, config, ownership, patterns, context, findings, rules,
+# protect, indirect, analyze, preflight, evaluate, main.
 """Cohorte PreToolUse gate for Claude Code (3.0 — Claude Code only).
 
 Installed per project as `.claude/hooks/cohorte-gate.py` and registered in the project's
@@ -1776,81 +1776,9 @@ class Ctx(object):
         return self._aliases[key]
 
 
-# ══ core/hooks/gate/analyze.py ═══════════════════════════════════════════════
-# ── analysis ─────────────────────────────────────────────────────────────────
-PROTECTED_HINT_RE = re.compile(r"(^|/)\.claude(/|$)|gate-config\.json|preflight\.ok|"
-                               r"settings(\.local)?\.json|cohorte-gate\.py|pipeline\.json|"
-                               r"(^|/)\.cohorte(/|$)")
-PROTECTED_NAME_RE = re.compile(r"gate-config\.json|preflight\.ok|\.claude/settings(\.local)?\.json|"
-                               r"cohorte-gate\.py|\.claude/profile\.json")
-SPAWN_RE = {
-    "py": re.compile(r"\bos\.(system|popen|exec\w*|spawn\w*)|\bsubprocess\b|\bpty\.spawn|"
-                     r"\bcommands\.getoutput|\bpexpect\b|\bsh\.\w+\("),
-    "js": re.compile(r"child_process|\bexecSync\b|\bspawnSync\b|\bexecFileSync\b|\bexecFile\(|"
-                     r"\bexec\(|\bspawn\(|Bun\.spawn|Deno\.(Command|run)|\$`|zx"),
-    "pl": re.compile(r"\bsystem\b|\bexec\b|`|\bqx\b|IO\.popen|Open3|\bspawn\b|%x|\bpopen\b|"
-                     r"\bshell_exec\b|\bpassthru\b|\bproc_open\b"),
-}
-STRING_LIT_RE = re.compile(r"'((?:[^'\\]|\\.)*)'|\"((?:[^\"\\]|\\.)*)\"")
-PROTECTED_BASENAMES = {"gate-config.json", "preflight.ok", "settings.json", "settings.local.json", "profile.json",
-                      "cohorte-gate.py", "pipeline.json", ".claude", ".cohorte", "hooks", "~", "",
-                      ".", ".."}
-
-
-def suspicious(tail, raw):
-    """For a path the gate can't resolve: could it name a protected file? Its static tail
-    decides — `…/.claude/pipeline-metrics.jsonl` can't, `$DIR/.claude/settings.json` can."""
-    base = os.path.basename(tail.rstrip("/")) if tail else ""
-    if tail and "/" in tail and base not in PROTECTED_BASENAMES and not tail.endswith("/"):
-        return False
-    return bool(PROTECTED_HINT_RE.search(raw))
-
-
-MAX_DEPTH = 6
-WRITE_OPS = {">", ">>", ">|", "&>", "&>>", "<>"}
-
-
+# ══ core/hooks/gate/findings.py ══════════════════════════════════════════════
 def norm_lower(s):
     return " ".join(s.lower().split())
-
-
-def lang_of(name):
-    if name.startswith("py"):
-        return "py"
-    if name in ("node", "nodejs", "deno", "bun"):
-        return "js"
-    return "pl"
-
-
-class State(object):
-    def __init__(self, cwd):
-        self.cwd = cwd
-        self.cwd_known = cwd is not None
-        self.sticky = False           # branch unknown for the rest of the chain
-        self.written = set()
-        self.git_aliases = {}
-
-    def copy(self):
-        s = State(self.cwd)
-        s.cwd_known = self.cwd_known
-        s.sticky = self.sticky
-        s.written = set(self.written)
-        s.git_aliases = dict(self.git_aliases)
-        return s
-
-
-class Inv(object):
-    def __init__(self, name, args, seg):
-        self.name = name
-        self.args = args
-        self.seg = seg
-        self.git = None
-        self.push = None
-        self.push_touches = False
-        self.push_unknown = False
-        self.core = None
-        self.cores = []
-        self.prefixes = []
 
 
 def short(text, n=90):
@@ -1858,11 +1786,7 @@ def short(text, n=90):
     return t if len(t) <= n else t[:n - 1] + "…"
 
 
-class Analyzer(object):
-    def __init__(self, ctx):
-        self.ctx = ctx
-        self.findings = []
-
+class Findings(object):
     def deny(self, why):
         self.findings.append(("deny", why))
 
@@ -1905,144 +1829,9 @@ class Analyzer(object):
             self.ask("the gate can't parse this command (%s), so it can't verify it — confirm"
                      % err)
 
-    def analyze_text(self, text, state, depth):
-        if depth > MAX_DEPTH:
-            self.opaque("commands are nested too deep", text)
-            return
-        try:
-            segs = parse_command(text)
-        except ParseError as e:
-            self.unparseable(text, e)
-            return
-        self.walk(segs, state, depth, text)
 
-    def walk(self, segs, state, depth, text=""):
-        invs = []
-        for idx, seg in enumerate(segs):
-            prev = segs[idx - 1] if idx else None
-            prev_inv = invs[-1] if invs else None
-            if seg.subshell:
-                state.sticky = True
-            self.walk_substs(seg, state, depth)
-            invs.append(self.eval_segment(seg, prev, prev_inv, state, depth))
-        self.multi_patterns(segs, invs, state)
-        for p in self.ctx.deny_pats + self.ctx.ask_pats:
-            if not p.segs and p.norm in norm_lower(text):
-                (self.deny if p in self.ctx.deny_pats else self.ask)(
-                    "`%s` (raw-text rule) matches this command" % p.text)
-
-    def walk_substs(self, seg, state, depth):
-        words = list(seg.words) + [r.target for r in seg.redirs]
-        for w in words:
-            for sub in w.substs:
-                self.walk(sub, state.copy(), depth + 1)
-        for h in seg.heredocs:
-            for sub in h.substs:
-                self.walk(sub, state.copy(), depth + 1)
-
-    # -- one simple command ----------------------------------------------------
-    def eval_segment(self, seg, prev, prev_inv, state, depth):
-        words = list(seg.words)
-        if seg.funcdef:
-            while words and words[0].value != "{":
-                words.pop(0)
-        for r in seg.redirs:
-            if r.op in WRITE_OPS or (r.op == ">&" and not (r.target.value.isdigit()
-                                                          or r.target.value == "-")):
-                self.check_path(r.target, state, "write", "a redirection")
-                self.remember_written(r.target, state)
-        while words and not words[0].quoted and words[0].value in RESERVED_SKIP:
-            words.pop(0)
-        if words and not words[0].quoted and words[0].value in RESERVED_HEADER:
-            return None
-        if words and words[-1].value == "}" and not words[-1].quoted:
-            words.pop()
-        argv, assigns, env_s, relocated, lookup = strip_prefixes(words)
-        prefixes = list(PREFIXES_SEEN)
-        seg_unknown = relocated
-        if GIT_ENV_VARS.intersection(assigns):
-            state.sticky = True
-            seg_unknown = True
-        if env_s is not None:
-            if env_s.dynamic:
-                self.opaque("`env -S` runs a string built at run time", seg.text)
-            else:
-                self.analyze_text(env_s.value, state.copy(), depth + 1)
-            return None
-        if lookup or not argv:
-            return None
-        cmd = argv[0]
-        if cmd.dynamic:
-            self.opaque("the command name is computed at run time", seg.text)
-            return None
-        name = cmd_name(cmd.value)
-        args = argv[1:]
-        inv = Inv(name, args, seg)
-        inv.prefixes = prefixes
-
-        if name == "git":
-            g = self.expand_git(args, state, depth)
-            if g is None:
-                return None
-            inv.git = g
-            inv.args = args = (argv[1:1 + (g.sub_index or 0)] + [static_word(g.sub)] + g.args
-                               if g.sub else args)
-            if g.relocated:
-                seg_unknown = True
-            if g.dynamic_global:
-                self.opaque("git's arguments are computed at run time", seg.text)
-        else:
-            inv.core = runner_core(name, args)
-            inv.cores = wrapper_cores(name, args)
-
-        here_unknown = seg_unknown or state.sticky or not state.cwd_known
-        if inv.git and inv.git.sub == "push":
-            self.eval_push(inv, state, here_unknown)
-        self.match_config(inv, state, here_unknown)
-        self.indirection(inv, seg, prev, prev_inv, state, depth)
-        self.protect(inv, state, seg_unknown)
-        self.update_state(inv, seg, state, assigns)
-        return inv
-
-    def expand_git(self, args, state, depth):
-        for _ in range(4):
-            g = parse_git(args)
-            if g.sub is None or g.sub in GIT_BUILTINS:
-                if g.sub == "config":
-                    self.git_config_alias(g, state, depth)
-                return g
-            alias = g.c_aliases.get(g.sub) or state.git_aliases.get(g.sub)
-            if alias is None and state.cwd_known and not g.relocated:
-                alias = self.ctx.git_alias(g.sub, state.cwd)
-            if alias is None:
-                return g
-            if alias.startswith("!"):
-                extra = " ".join(shlex.quote(a.value) for a in g.args if not a.dynamic)
-                self.analyze_text(alias[1:] + " " + extra, state.copy(), depth + 1)
-                return None
-            try:
-                segs = parse_command(alias)
-            except ParseError:
-                self.opaque("git alias `%s` can't be parsed" % g.sub, alias)
-                return None
-            aw = segs[0].words if segs else []
-            args = args[:g.sub_index] + aw + g.args
-        return parse_git(args)
-
-    def git_config_alias(self, g, state, depth):
-        a = g.args
-        for k, w in enumerate(a):
-            if not w.dynamic and w.value.lower().startswith("alias.") and k + 1 < len(a):
-                val = a[k + 1]
-                name = w.value[6:]
-                if val.dynamic:
-                    self.opaque("a git alias is defined from a run-time value", val.raw)
-                    return
-                state.git_aliases[name] = val.value
-                inner = val.value[1:] if val.value.startswith("!") else "git " + val.value
-                self.analyze_text(inner, state.copy(), depth + 1)
-                return
-
+# ══ core/hooks/gate/rules.py ═════════════════════════════════════════════════
+class RuleChecks(object):
     def branch_gated(self, state, here_unknown):
         if here_unknown or state.sticky or not state.cwd_known:
             return True
@@ -2232,7 +2021,260 @@ class Analyzer(object):
                         self.ask("`%s` is a gated command sequence — confirm" % p.text)
                     break
 
-    # -- indirection ---------------------------------------------------------------
+
+# ══ core/hooks/gate/protect.py ═══════════════════════════════════════════════
+PROTECTED_HINT_RE = re.compile(r"(^|/)\.claude(/|$)|gate-config\.json|preflight\.ok|"
+                               r"settings(\.local)?\.json|cohorte-gate\.py|pipeline\.json|"
+                               r"(^|/)\.cohorte(/|$)")
+PROTECTED_BASENAMES = {"gate-config.json", "preflight.ok", "settings.json", "settings.local.json", "profile.json",
+                      "cohorte-gate.py", "pipeline.json", ".claude", ".cohorte", "hooks", "~", "",
+                      ".", ".."}
+
+
+def suspicious(tail, raw):
+    """For a path the gate can't resolve: could it name a protected file? Its static tail
+    decides — `…/.claude/pipeline-metrics.jsonl` can't, `$DIR/.claude/settings.json` can."""
+    base = os.path.basename(tail.rstrip("/")) if tail else ""
+    if tail and "/" in tail and base not in PROTECTED_BASENAMES and not tail.endswith("/"):
+        return False
+    return bool(PROTECTED_HINT_RE.search(raw))
+
+
+class SelfProtection(object):
+    def path_key(self, w, state):
+        v = os.path.expanduser(w.value)
+        if not os.path.isabs(v) and state.cwd_known:
+            v = os.path.join(state.cwd, v)
+        return os.path.normpath(v)
+
+    def remember_written(self, w, state):
+        if not w.dynamic:
+            state.written.add(self.path_key(w, state))
+
+    def known_text(self, w, state):
+        """A run-time word with only the variables the gate can resolve itself
+        ($CLAUDE_PROJECT_DIR, $HOME, $PWD) substituted, or None if anything else is left."""
+        t = w.raw
+        if len(t) >= 2 and t[0] == t[-1] == '"':
+            t = t[1:-1]
+        for var, val in (("CLAUDE_PROJECT_DIR", os.environ.get("CLAUDE_PROJECT_DIR")),
+                         ("HOME", os.path.expanduser("~")),
+                         ("PWD", state.cwd if state.cwd_known else None)):
+            if val:
+                # Forward slashes: a Windows value (C:\\Users\\…) would otherwise read as
+                # shell escapes below and every expanded path would look suspect.
+                val = val.replace("\\", "/")
+                t = t.replace("${%s}" % var, val).replace("$" + var, val)
+        if "$" in t or "`" in t or "'" in t or '"' in t or "\\" in t:
+            return None
+        return t
+
+    def classify_path(self, w, state, mode, relocated=False):
+        ctx = self.ctx
+        if w.dynamic:
+            t = self.known_text(w, state)
+            if t is None:
+                return "suspect" if suspicious(w.value.split(DYN)[-1], w.raw) else None
+            w = static_word(t)
+        v = os.path.expanduser(w.value)
+        if not v:
+            return None
+        if not os.path.isabs(v):
+            if relocated or not state.cwd_known:
+                return "suspect" if suspicious(v, v) else None
+            v = os.path.join(state.cwd, v)
+        prot = ctx.delete_protected if mode in ("delete", "recursive", "chmod") else ctx.protected
+        targets = [v]
+        if w.glob:
+            pat = os.path.normpath(v)
+            if any(fnmatch.fnmatchcase(p, pat) for p in prot):
+                return "protected"
+            try:
+                targets = glob.glob(v)[:500]
+            except Exception:
+                targets = []
+        for t in targets:
+            for cand in {os.path.normpath(os.path.abspath(t)), os.path.realpath(t)}:
+                if cand in prot:
+                    return "protected"
+                if mode in ("delete", "recursive", "chmod"):
+                    pre = cand if cand.endswith(os.sep) else cand + os.sep
+                    if any(p.startswith(pre) for p in prot):
+                        return "protected" if mode == "delete" else "suspect"
+        return None
+
+    def check_owner(self, w, state, mode, via, relocated=False, existing=False):
+        """Surface ownership for a Bash write — best effort: a target the gate can't resolve
+        statically (a run-time word, a relative path after an unresolvable `cd`) is let
+        through, never asked about (an ask is a deny in unattended runs)."""
+        try:
+            t = self.known_text(w, state) if w.dynamic else w.value
+            if not t:
+                return
+            v = os.path.expanduser(t)
+            if not os.path.isabs(v):
+                if relocated or not state.cwd_known:
+                    return
+                v = os.path.join(state.cwd, v)
+            if existing and not os.path.exists(v):
+                return
+            why = self.ctx.owner.judge(v)
+        except Exception as e:
+            warn("surface ownership could not judge `%s`: %s: %s" % (w.raw, type(e).__name__, e))
+            return
+        if why:
+            verb = {"write": "write", "delete": "delete or move", "recursive": "write into",
+                    "chmod": "change the permissions of"}.get(mode, "write")
+            self.deny("%s would %s `%s`: %s" % (via, verb, w.raw, why))
+
+    def check_path(self, w, state, mode, via, relocated=False, existing=False):
+        if self.ctx.owner is not None:
+            self.check_owner(w, state, mode, via, relocated, existing)
+        kind = self.classify_path(w, state, mode, relocated)
+        if kind is None:
+            return
+        verb = {"write": "overwrite", "delete": "delete or move", "recursive": "overwrite",
+                "chmod": "change the permissions of"}[mode]
+        if kind == "protected" and mode in ("write", "delete"):
+            self.deny("%s would %s `%s`, which the Cohorte gate depends on (self-protection). "
+                      "Edit gate rules through PIPELINE.md and /cohorte-update-pipeline, or ask "
+                      "the human" % (via, verb, w.raw))
+        else:
+            self.ask("%s may %s a file the Cohorte gate depends on (`%s`) — confirm"
+                     % (via, verb, w.raw))
+
+    def protect(self, inv, state, relocated):
+        name, args = inv.name, inv.args
+
+        def positionals(tokens, with_arg=()):
+            out = []
+            end = False
+            k = 0
+            while k < len(tokens):
+                w = tokens[k]
+                v = w.value
+                if not end and v == "--":
+                    end = True
+                elif not end and is_flag_word(w):
+                    if v in with_arg:
+                        k += 1
+                else:
+                    out.append(w)
+                k += 1
+            return out
+
+        def recursive(tokens):
+            fl = flag_names(tokens)
+            return bool(fl & {"-r", "-R", "-a", "--recursive", "--archive"})
+
+        def copy_like(srcs, dst, label, mv=False):
+            for s in srcs:
+                if mv:
+                    self.check_path(s, state, "delete", "`%s`" % label, relocated)
+            self.check_path(dst, state, "write", "`%s`" % label, relocated)
+            dk = self.path_key(dst, state) if not dst.dynamic else None
+            if dk and state.cwd_known and (os.path.isdir(dk) or dst.value.endswith("/")):
+                for s in srcs:
+                    if not s.dynamic:
+                        self.check_path(static_word(os.path.join(dk, os.path.basename(
+                            s.value.rstrip("/")))), state, "write", "`%s`" % label, relocated)
+                if recursive(args) or mv:
+                    self.check_path(dst, state, "recursive", "`%s`" % label, relocated)
+
+        if name in ("rm", "unlink", "shred", "rmdir", "srm", "trash", "trash-put"):
+            for p in positionals(args):
+                self.check_path(p, state, "delete", "`%s`" % name, relocated)
+        elif name in ("mv", "cp", "install", "ln", "rsync", "scp", "ditto"):
+            pos = positionals(args, ("-t", "--target-directory", "-S", "--suffix", "-m",
+                                     "--mode", "-o", "-g", "-e", "--exclude", "--include"))
+            target = None
+            for k, w in enumerate(args):
+                if w.value in ("-t", "--target-directory") and k + 1 < len(args):
+                    target = args[k + 1]
+                elif w.value.startswith("--target-directory="):
+                    target = static_word(w.value.split("=", 1)[1])
+            if target is not None:
+                copy_like(pos, static_word(target.value.rstrip("/") + "/")
+                          if not target.dynamic else target, name, mv=(name == "mv"))
+            elif len(pos) >= 2:
+                copy_like(pos[:-1], pos[-1], name, mv=(name == "mv"))
+        elif name == "tee":
+            for p in positionals(args):
+                self.check_path(p, state, "write", "`tee`", relocated)
+                self.remember_written(p, state)
+        elif name == "truncate":
+            for p in positionals(args, ("-s", "-r", "--size", "--reference")):
+                self.check_path(p, state, "write", "`truncate`", relocated)
+        elif name in ("sed", "gsed", "perl", "ruby"):
+            inplace = any(
+                not w.dynamic and (w.value.startswith("--in-place") or (
+                    w.value.startswith("-") and not w.value.startswith("--")
+                    and "i" in w.value[1:].split(".")[0]))
+                for w in args)
+            if inplace:
+                # Only existing files can be edited in place, so for ownership a positional
+                # that names nothing on disk is the sed script (`sed -i 's/a/b/' f`) or a BSD
+                # backup suffix (`sed -i .bak …`), not a target.
+                for p in positionals(args, ("-e", "-f")):
+                    self.check_path(p, state, "write", "`%s -i`" % name, relocated, existing=True)
+        elif name == "dd":
+            for w in args:
+                if w.value.startswith("of="):
+                    self.check_path(static_word(w.value[3:]) if not w.dynamic else w,
+                                    state, "write", "`dd of=`", relocated)
+        elif name in ("curl", "wget"):
+            opts = ("-o", "--output") if name == "curl" else ("-O", "--output-document")
+            for k, w in enumerate(args):
+                v = w.value
+                if v in opts and k + 1 < len(args):
+                    self.check_path(args[k + 1], state, "write", "`%s %s`" % (name, v), relocated)
+                elif any(v.startswith(o + "=") for o in opts if o.startswith("--")):
+                    self.check_path(static_word(v.split("=", 1)[1]), state, "write",
+                                    "`%s`" % name, relocated)
+        elif name in ("chmod", "chown", "chgrp", "chflags", "chattr", "setfacl"):
+            for p in positionals(args)[1:]:
+                self.check_path(p, state, "chmod", "`%s`" % name, relocated)
+        elif name == "find" and any(w.value == "-delete" for w in args):
+            for w in args:
+                if w.value.startswith("-") or w.value in ("(", "!", ")"):
+                    break
+                self.check_path(w, state, "delete", "`find -delete`", relocated)
+        elif name == "git" and inv.git and inv.git.sub in ("rm", "mv"):
+            g = inv.git
+            pos = positionals(g.args)
+            reloc = relocated or g.relocated
+            if g.sub == "rm" and not any(w.value == "--cached" for w in g.args):
+                for p in pos:
+                    self.check_path(p, state, "delete", "`git rm`", reloc)
+            elif g.sub == "mv" and len(pos) >= 2:
+                for p in pos[:-1]:
+                    self.check_path(p, state, "delete", "`git mv`", reloc)
+                self.check_path(pos[-1], state, "write", "`git mv`", reloc)
+
+
+# ══ core/hooks/gate/indirect.py ══════════════════════════════════════════════
+PROTECTED_NAME_RE = re.compile(r"gate-config\.json|preflight\.ok|\.claude/settings(\.local)?\.json|"
+                               r"cohorte-gate\.py|\.claude/profile\.json")
+SPAWN_RE = {
+    "py": re.compile(r"\bos\.(system|popen|exec\w*|spawn\w*)|\bsubprocess\b|\bpty\.spawn|"
+                     r"\bcommands\.getoutput|\bpexpect\b|\bsh\.\w+\("),
+    "js": re.compile(r"child_process|\bexecSync\b|\bspawnSync\b|\bexecFileSync\b|\bexecFile\(|"
+                     r"\bexec\(|\bspawn\(|Bun\.spawn|Deno\.(Command|run)|\$`|zx"),
+    "pl": re.compile(r"\bsystem\b|\bexec\b|`|\bqx\b|IO\.popen|Open3|\bspawn\b|%x|\bpopen\b|"
+                     r"\bshell_exec\b|\bpassthru\b|\bproc_open\b"),
+}
+STRING_LIT_RE = re.compile(r"'((?:[^'\\]|\\.)*)'|\"((?:[^\"\\]|\\.)*)\"")
+
+
+def lang_of(name):
+    if name.startswith("py"):
+        return "py"
+    if name in ("node", "nodejs", "deno", "bun"):
+        return "js"
+    return "pl"
+
+
+class Indirection(object):
     def indirection(self, inv, seg, prev, prev_inv, state, depth):
         name, args = inv.name, inv.args
         if name in SHELLS:
@@ -2544,216 +2586,185 @@ class Analyzer(object):
                 self.opaque("`%s` executes whatever the pipe feeds it" % name,
                             prev.text + " | " + seg.text)
 
-    # -- self-protection --------------------------------------------------------------
-    def path_key(self, w, state):
-        v = os.path.expanduser(w.value)
-        if not os.path.isabs(v) and state.cwd_known:
-            v = os.path.join(state.cwd, v)
-        return os.path.normpath(v)
 
-    def remember_written(self, w, state):
-        if not w.dynamic:
-            state.written.add(self.path_key(w, state))
+# ══ core/hooks/gate/analyze.py ═══════════════════════════════════════════════
+MAX_DEPTH = 6
+WRITE_OPS = {">", ">>", ">|", "&>", "&>>", "<>"}
 
-    def known_text(self, w, state):
-        """A run-time word with only the variables the gate can resolve itself
-        ($CLAUDE_PROJECT_DIR, $HOME, $PWD) substituted, or None if anything else is left."""
-        t = w.raw
-        if len(t) >= 2 and t[0] == t[-1] == '"':
-            t = t[1:-1]
-        for var, val in (("CLAUDE_PROJECT_DIR", os.environ.get("CLAUDE_PROJECT_DIR")),
-                         ("HOME", os.path.expanduser("~")),
-                         ("PWD", state.cwd if state.cwd_known else None)):
-            if val:
-                # Forward slashes: a Windows value (C:\\Users\\…) would otherwise read as
-                # shell escapes below and every expanded path would look suspect.
-                val = val.replace("\\", "/")
-                t = t.replace("${%s}" % var, val).replace("$" + var, val)
-        if "$" in t or "`" in t or "'" in t or '"' in t or "\\" in t:
-            return None
-        return t
 
-    def classify_path(self, w, state, mode, relocated=False):
-        ctx = self.ctx
-        if w.dynamic:
-            t = self.known_text(w, state)
-            if t is None:
-                return "suspect" if suspicious(w.value.split(DYN)[-1], w.raw) else None
-            w = static_word(t)
-        v = os.path.expanduser(w.value)
-        if not v:
-            return None
-        if not os.path.isabs(v):
-            if relocated or not state.cwd_known:
-                return "suspect" if suspicious(v, v) else None
-            v = os.path.join(state.cwd, v)
-        prot = ctx.delete_protected if mode in ("delete", "recursive", "chmod") else ctx.protected
-        targets = [v]
-        if w.glob:
-            pat = os.path.normpath(v)
-            if any(fnmatch.fnmatchcase(p, pat) for p in prot):
-                return "protected"
-            try:
-                targets = glob.glob(v)[:500]
-            except Exception:
-                targets = []
-        for t in targets:
-            for cand in {os.path.normpath(os.path.abspath(t)), os.path.realpath(t)}:
-                if cand in prot:
-                    return "protected"
-                if mode in ("delete", "recursive", "chmod"):
-                    pre = cand if cand.endswith(os.sep) else cand + os.sep
-                    if any(p.startswith(pre) for p in prot):
-                        return "protected" if mode == "delete" else "suspect"
-        return None
+class State(object):
+    def __init__(self, cwd):
+        self.cwd = cwd
+        self.cwd_known = cwd is not None
+        self.sticky = False           # branch unknown for the rest of the chain
+        self.written = set()
+        self.git_aliases = {}
 
-    def check_owner(self, w, state, mode, via, relocated=False, existing=False):
-        """Surface ownership for a Bash write — best effort: a target the gate can't resolve
-        statically (a run-time word, a relative path after an unresolvable `cd`) is let
-        through, never asked about (an ask is a deny in unattended runs)."""
+    def copy(self):
+        s = State(self.cwd)
+        s.cwd_known = self.cwd_known
+        s.sticky = self.sticky
+        s.written = set(self.written)
+        s.git_aliases = dict(self.git_aliases)
+        return s
+
+
+class Inv(object):
+    def __init__(self, name, args, seg):
+        self.name = name
+        self.args = args
+        self.seg = seg
+        self.git = None
+        self.push = None
+        self.push_touches = False
+        self.push_unknown = False
+        self.core = None
+        self.cores = []
+        self.prefixes = []
+
+
+class Analyzer(Indirection, SelfProtection, RuleChecks, Findings):
+    def __init__(self, ctx):
+        self.ctx = ctx
+        self.findings = []
+
+    def analyze_text(self, text, state, depth):
+        if depth > MAX_DEPTH:
+            self.opaque("commands are nested too deep", text)
+            return
         try:
-            t = self.known_text(w, state) if w.dynamic else w.value
-            if not t:
-                return
-            v = os.path.expanduser(t)
-            if not os.path.isabs(v):
-                if relocated or not state.cwd_known:
-                    return
-                v = os.path.join(state.cwd, v)
-            if existing and not os.path.exists(v):
-                return
-            why = self.ctx.owner.judge(v)
-        except Exception as e:
-            warn("surface ownership could not judge `%s`: %s: %s" % (w.raw, type(e).__name__, e))
+            segs = parse_command(text)
+        except ParseError as e:
+            self.unparseable(text, e)
             return
-        if why:
-            verb = {"write": "write", "delete": "delete or move", "recursive": "write into",
-                    "chmod": "change the permissions of"}.get(mode, "write")
-            self.deny("%s would %s `%s`: %s" % (via, verb, w.raw, why))
+        self.walk(segs, state, depth, text)
 
-    def check_path(self, w, state, mode, via, relocated=False, existing=False):
-        if self.ctx.owner is not None:
-            self.check_owner(w, state, mode, via, relocated, existing)
-        kind = self.classify_path(w, state, mode, relocated)
-        if kind is None:
-            return
-        verb = {"write": "overwrite", "delete": "delete or move", "recursive": "overwrite",
-                "chmod": "change the permissions of"}[mode]
-        if kind == "protected" and mode in ("write", "delete"):
-            self.deny("%s would %s `%s`, which the Cohorte gate depends on (self-protection). "
-                      "Edit gate rules through PIPELINE.md and /cohorte-update-pipeline, or ask "
-                      "the human" % (via, verb, w.raw))
+    def walk(self, segs, state, depth, text=""):
+        invs = []
+        for idx, seg in enumerate(segs):
+            prev = segs[idx - 1] if idx else None
+            prev_inv = invs[-1] if invs else None
+            if seg.subshell:
+                state.sticky = True
+            self.walk_substs(seg, state, depth)
+            invs.append(self.eval_segment(seg, prev, prev_inv, state, depth))
+        self.multi_patterns(segs, invs, state)
+        for p in self.ctx.deny_pats + self.ctx.ask_pats:
+            if not p.segs and p.norm in norm_lower(text):
+                (self.deny if p in self.ctx.deny_pats else self.ask)(
+                    "`%s` (raw-text rule) matches this command" % p.text)
+
+    def walk_substs(self, seg, state, depth):
+        words = list(seg.words) + [r.target for r in seg.redirs]
+        for w in words:
+            for sub in w.substs:
+                self.walk(sub, state.copy(), depth + 1)
+        for h in seg.heredocs:
+            for sub in h.substs:
+                self.walk(sub, state.copy(), depth + 1)
+
+    # -- one simple command ----------------------------------------------------
+    def eval_segment(self, seg, prev, prev_inv, state, depth):
+        words = list(seg.words)
+        if seg.funcdef:
+            while words and words[0].value != "{":
+                words.pop(0)
+        for r in seg.redirs:
+            if r.op in WRITE_OPS or (r.op == ">&" and not (r.target.value.isdigit()
+                                                          or r.target.value == "-")):
+                self.check_path(r.target, state, "write", "a redirection")
+                self.remember_written(r.target, state)
+        while words and not words[0].quoted and words[0].value in RESERVED_SKIP:
+            words.pop(0)
+        if words and not words[0].quoted and words[0].value in RESERVED_HEADER:
+            return None
+        if words and words[-1].value == "}" and not words[-1].quoted:
+            words.pop()
+        argv, assigns, env_s, relocated, lookup = strip_prefixes(words)
+        prefixes = list(PREFIXES_SEEN)
+        seg_unknown = relocated
+        if GIT_ENV_VARS.intersection(assigns):
+            state.sticky = True
+            seg_unknown = True
+        if env_s is not None:
+            if env_s.dynamic:
+                self.opaque("`env -S` runs a string built at run time", seg.text)
+            else:
+                self.analyze_text(env_s.value, state.copy(), depth + 1)
+            return None
+        if lookup or not argv:
+            return None
+        cmd = argv[0]
+        if cmd.dynamic:
+            self.opaque("the command name is computed at run time", seg.text)
+            return None
+        name = cmd_name(cmd.value)
+        args = argv[1:]
+        inv = Inv(name, args, seg)
+        inv.prefixes = prefixes
+
+        if name == "git":
+            g = self.expand_git(args, state, depth)
+            if g is None:
+                return None
+            inv.git = g
+            inv.args = args = (argv[1:1 + (g.sub_index or 0)] + [static_word(g.sub)] + g.args
+                               if g.sub else args)
+            if g.relocated:
+                seg_unknown = True
+            if g.dynamic_global:
+                self.opaque("git's arguments are computed at run time", seg.text)
         else:
-            self.ask("%s may %s a file the Cohorte gate depends on (`%s`) — confirm"
-                     % (via, verb, w.raw))
+            inv.core = runner_core(name, args)
+            inv.cores = wrapper_cores(name, args)
 
-    def protect(self, inv, state, relocated):
-        name, args = inv.name, inv.args
+        here_unknown = seg_unknown or state.sticky or not state.cwd_known
+        if inv.git and inv.git.sub == "push":
+            self.eval_push(inv, state, here_unknown)
+        self.match_config(inv, state, here_unknown)
+        self.indirection(inv, seg, prev, prev_inv, state, depth)
+        self.protect(inv, state, seg_unknown)
+        self.update_state(inv, seg, state, assigns)
+        return inv
 
-        def positionals(tokens, with_arg=()):
-            out = []
-            end = False
-            k = 0
-            while k < len(tokens):
-                w = tokens[k]
-                v = w.value
-                if not end and v == "--":
-                    end = True
-                elif not end and is_flag_word(w):
-                    if v in with_arg:
-                        k += 1
-                else:
-                    out.append(w)
-                k += 1
-            return out
+    def expand_git(self, args, state, depth):
+        for _ in range(4):
+            g = parse_git(args)
+            if g.sub is None or g.sub in GIT_BUILTINS:
+                if g.sub == "config":
+                    self.git_config_alias(g, state, depth)
+                return g
+            alias = g.c_aliases.get(g.sub) or state.git_aliases.get(g.sub)
+            if alias is None and state.cwd_known and not g.relocated:
+                alias = self.ctx.git_alias(g.sub, state.cwd)
+            if alias is None:
+                return g
+            if alias.startswith("!"):
+                extra = " ".join(shlex.quote(a.value) for a in g.args if not a.dynamic)
+                self.analyze_text(alias[1:] + " " + extra, state.copy(), depth + 1)
+                return None
+            try:
+                segs = parse_command(alias)
+            except ParseError:
+                self.opaque("git alias `%s` can't be parsed" % g.sub, alias)
+                return None
+            aw = segs[0].words if segs else []
+            args = args[:g.sub_index] + aw + g.args
+        return parse_git(args)
 
-        def recursive(tokens):
-            fl = flag_names(tokens)
-            return bool(fl & {"-r", "-R", "-a", "--recursive", "--archive"})
-
-        def copy_like(srcs, dst, label, mv=False):
-            for s in srcs:
-                if mv:
-                    self.check_path(s, state, "delete", "`%s`" % label, relocated)
-            self.check_path(dst, state, "write", "`%s`" % label, relocated)
-            dk = self.path_key(dst, state) if not dst.dynamic else None
-            if dk and state.cwd_known and (os.path.isdir(dk) or dst.value.endswith("/")):
-                for s in srcs:
-                    if not s.dynamic:
-                        self.check_path(static_word(os.path.join(dk, os.path.basename(
-                            s.value.rstrip("/")))), state, "write", "`%s`" % label, relocated)
-                if recursive(args) or mv:
-                    self.check_path(dst, state, "recursive", "`%s`" % label, relocated)
-
-        if name in ("rm", "unlink", "shred", "rmdir", "srm", "trash", "trash-put"):
-            for p in positionals(args):
-                self.check_path(p, state, "delete", "`%s`" % name, relocated)
-        elif name in ("mv", "cp", "install", "ln", "rsync", "scp", "ditto"):
-            pos = positionals(args, ("-t", "--target-directory", "-S", "--suffix", "-m",
-                                     "--mode", "-o", "-g", "-e", "--exclude", "--include"))
-            target = None
-            for k, w in enumerate(args):
-                if w.value in ("-t", "--target-directory") and k + 1 < len(args):
-                    target = args[k + 1]
-                elif w.value.startswith("--target-directory="):
-                    target = static_word(w.value.split("=", 1)[1])
-            if target is not None:
-                copy_like(pos, static_word(target.value.rstrip("/") + "/")
-                          if not target.dynamic else target, name, mv=(name == "mv"))
-            elif len(pos) >= 2:
-                copy_like(pos[:-1], pos[-1], name, mv=(name == "mv"))
-        elif name == "tee":
-            for p in positionals(args):
-                self.check_path(p, state, "write", "`tee`", relocated)
-                self.remember_written(p, state)
-        elif name == "truncate":
-            for p in positionals(args, ("-s", "-r", "--size", "--reference")):
-                self.check_path(p, state, "write", "`truncate`", relocated)
-        elif name in ("sed", "gsed", "perl", "ruby"):
-            inplace = any(
-                not w.dynamic and (w.value.startswith("--in-place") or (
-                    w.value.startswith("-") and not w.value.startswith("--")
-                    and "i" in w.value[1:].split(".")[0]))
-                for w in args)
-            if inplace:
-                # Only existing files can be edited in place, so for ownership a positional
-                # that names nothing on disk is the sed script (`sed -i 's/a/b/' f`) or a BSD
-                # backup suffix (`sed -i .bak …`), not a target.
-                for p in positionals(args, ("-e", "-f")):
-                    self.check_path(p, state, "write", "`%s -i`" % name, relocated, existing=True)
-        elif name == "dd":
-            for w in args:
-                if w.value.startswith("of="):
-                    self.check_path(static_word(w.value[3:]) if not w.dynamic else w,
-                                    state, "write", "`dd of=`", relocated)
-        elif name in ("curl", "wget"):
-            opts = ("-o", "--output") if name == "curl" else ("-O", "--output-document")
-            for k, w in enumerate(args):
-                v = w.value
-                if v in opts and k + 1 < len(args):
-                    self.check_path(args[k + 1], state, "write", "`%s %s`" % (name, v), relocated)
-                elif any(v.startswith(o + "=") for o in opts if o.startswith("--")):
-                    self.check_path(static_word(v.split("=", 1)[1]), state, "write",
-                                    "`%s`" % name, relocated)
-        elif name in ("chmod", "chown", "chgrp", "chflags", "chattr", "setfacl"):
-            for p in positionals(args)[1:]:
-                self.check_path(p, state, "chmod", "`%s`" % name, relocated)
-        elif name == "find" and any(w.value == "-delete" for w in args):
-            for w in args:
-                if w.value.startswith("-") or w.value in ("(", "!", ")"):
-                    break
-                self.check_path(w, state, "delete", "`find -delete`", relocated)
-        elif name == "git" and inv.git and inv.git.sub in ("rm", "mv"):
-            g = inv.git
-            pos = positionals(g.args)
-            reloc = relocated or g.relocated
-            if g.sub == "rm" and not any(w.value == "--cached" for w in g.args):
-                for p in pos:
-                    self.check_path(p, state, "delete", "`git rm`", reloc)
-            elif g.sub == "mv" and len(pos) >= 2:
-                for p in pos[:-1]:
-                    self.check_path(p, state, "delete", "`git mv`", reloc)
-                self.check_path(pos[-1], state, "write", "`git mv`", reloc)
+    def git_config_alias(self, g, state, depth):
+        a = g.args
+        for k, w in enumerate(a):
+            if not w.dynamic and w.value.lower().startswith("alias.") and k + 1 < len(a):
+                val = a[k + 1]
+                name = w.value[6:]
+                if val.dynamic:
+                    self.opaque("a git alias is defined from a run-time value", val.raw)
+                    return
+                state.git_aliases[name] = val.value
+                inner = val.value[1:] if val.value.startswith("!") else "git " + val.value
+                self.analyze_text(inner, state.copy(), depth + 1)
+                return
 
     # -- chain state -----------------------------------------------------------------
     def update_state(self, inv, seg, state, assigns):

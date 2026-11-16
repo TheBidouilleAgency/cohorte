@@ -230,14 +230,43 @@ fi
 
 # Serialize the read-modify-write: parallel worktrees (/cohorte-fleet, the loop workflow) move
 # cards on ONE board, and two concurrent rewrites used to lose one of the moves.
-# Where flock(1) exists (Linux), the kernel holds the lock and drops it if we die; the lock file
-# lives in $TMPDIR keyed by the board's path, never next to the board in the human's vault.
-# Elsewhere (macOS has no flock) an atomic `mkdir` is the lock and the holder's PID marks it: a
-# lock is stale only when that process is gone, never by age. COHORTE_KANBAN_NO_FLOCK=1 forces
-# the fallback (tests).
+# A kernel lock whenever possible: flock(2) on fd 9, held by this shell until it exits — the
+# kernel drops it if we die, so there is no stale lock to break. flock(1) where it exists (Linux);
+# otherwise python3 takes it on the INHERITED fd 9 (a flock belongs to the open file, which this
+# shell keeps open after python exits) — python3 is there wherever cohorte runs, the gate needs it.
+# The lock file lives in $TMPDIR keyed by the board's physical path (`./Tasks.md`, an absolute
+# path and a symlinked vault serialize together), never next to the board in the human's vault.
+# Last resort, neither available: an atomic `mkdir` with the holder's PID (stale only when that
+# process is gone; breaking it is serialized under `<lock>.break`).
+# COHORTE_KANBAN_LOCK=flock|python|mkdir forces one (tests); COHORTE_KANBAN_NO_FLOCK=1 skips flock(1).
+board_key="$(cd "$(dirname "$board")" && pwd -P)/$(basename "$board")"
 lock="${board}.lock"
-if [ -z "${COHORTE_KANBAN_NO_FLOCK:-}" ] && command -v flock >/dev/null 2>&1; then
-  flockfile="${TMPDIR:-/tmp}/cohorte-kanban-$(printf '%s' "$board" | cksum | cut -d' ' -f1).lock"
+flockfile="${TMPDIR:-/tmp}/cohorte-kanban-$(printf '%s' "$board_key" | cksum | cut -d' ' -f1).lock"
+lock_kind=${COHORTE_KANBAN_LOCK:-}
+if [ -z "$lock_kind" ]; then
+  if [ -z "${COHORTE_KANBAN_NO_FLOCK:-}" ] && command -v flock >/dev/null 2>&1; then lock_kind=flock
+  elif python3 -c 'import fcntl' >/dev/null 2>&1; then lock_kind=python
+  else lock_kind=mkdir
+  fi
+fi
+if [ "$lock_kind" = python ]; then
+  exec 9>"$flockfile"
+  if ! python3 -c 'import errno, fcntl, sys, time
+end = time.time() + 30
+while True:
+    try:
+        fcntl.flock(9, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        sys.exit(0)
+    except OSError as e:
+        if e.errno not in (errno.EAGAIN, errno.EACCES, errno.EWOULDBLOCK):
+            raise
+    if time.time() > end:
+        sys.exit(1)
+    time.sleep(0.02)'; then
+    echo "error: board is locked by another move ($flockfile) — retry" >&2
+    exit 4
+  fi
+elif [ "$lock_kind" = flock ]; then
   exec 9>"$flockfile"
   if ! flock -w 30 9; then
     echo "error: board is locked by another move ($flockfile) — retry" >&2
@@ -248,11 +277,22 @@ else
   until mkdir "$lock" 2>/dev/null; do
     holder=$(cat "$lock/pid" 2>/dev/null || true)
     if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; then
-      # Dead holder. Remove only if it is still THAT lock (another waiter may have replaced it).
-      if [ "$(cat "$lock/pid" 2>/dev/null || true)" = "$holder" ]; then
-        rm -f "$lock/pid"; rmdir "$lock" 2>/dev/null || true
+      # Dead holder. One breaker at a time; under that, remove the lock only if it still names
+      # the same dead holder — then nobody else can have replaced it (only a breaker or its
+      # owner removes a lock, and the owner is dead).
+      if mkdir "$lock.break" 2>/dev/null; then
+        echo $$ > "$lock.break/pid"
+        if [ "$(cat "$lock/pid" 2>/dev/null || true)" = "$holder" ]; then
+          rm -f "$lock/pid"; rmdir "$lock" 2>/dev/null || true
+        fi
+        rm -f "$lock.break/pid"; rmdir "$lock.break" 2>/dev/null || true
+        continue
       fi
-      continue
+      # Another waiter is breaking it — unless that breaker died mid-way too.
+      breaker=$(cat "$lock.break/pid" 2>/dev/null || true)
+      if [ -n "$breaker" ] && ! kill -0 "$breaker" 2>/dev/null; then
+        rm -f "$lock.break/pid"; rmdir "$lock.break" 2>/dev/null || true
+      fi
     fi
     waited=$((waited + 1))
     if [ "$waited" -gt 300 ]; then

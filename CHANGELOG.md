@@ -7,6 +7,22 @@ short, user-facing, most recent first. One `## <version> — <YYYY-MM-DD>` secti
 > They are history and are deliberately not rewritten — every command gained a `cohorte-` prefix
 > in 2.0.0.
 
+## 3.1.3 — 2026-11-16
+
+- **Kanban moves on macOS use a kernel lock.** macOS has no `flock(1)`, so parallel moves on one
+  board fell back to a hand-made `mkdir` lock — and a move killed while holding it left a stale
+  lock that the waiters broke all at once, letting two writers in: about half the runs with a
+  dozen parallel moves lost one. The lock is now a real `flock` taken by `python3` (which the gate
+  already requires) on the shell's own file descriptor: the kernel releases it if the move dies, so
+  there is nothing stale to break. The `mkdir` lock stays as a last resort (no flock, no python3),
+  with stale-lock breaking serialized; all locks are keyed by the board's physical path.
+- **`cohorte doctor` reports folder trust.** Claude Code ignores a project's `permissions.allow`
+  until its folder has been trusted (the dialog an interactive `claude` shows once); under
+  `claude -p` — CI, francois — every pipeline script then asks or is refused. Doctor now warns and
+  says how to fix it. The gate itself runs either way.
+- **The nightly real-model run is gone.** `scripts/ci/llm-e2e.sh` stays, to run by hand.
+- **Internal:** the gate's analyzer is split into modules; no behaviour change.
+
 ## 3.1.2 — 2026-11-16
 
 - **A red test piped into `| tail` no longer passes the preflight.** A quiet variant such as

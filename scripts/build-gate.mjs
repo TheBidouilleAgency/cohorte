@@ -27,7 +27,7 @@ export const OUT = "core/hooks/gate.py";
 // Build order. A module may use, at import time, only names from modules before it — and its
 // `from .x import` lines may only name those.
 export const MODULES = ["runtime", "shell", "git", "config", "ownership", "patterns", "context",
-  "analyze", "preflight", "evaluate", "main"];
+  "findings", "rules", "protect", "indirect", "analyze", "preflight", "evaluate", "main"];
 
 const IMPORT_RE = /^import ([A-Za-z_][A-Za-z0-9_]*)$/;
 const FROM_RE = /^from \.([A-Za-z_][A-Za-z0-9_]*) import (.+)$/;

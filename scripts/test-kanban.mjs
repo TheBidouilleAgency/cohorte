@@ -301,15 +301,17 @@ console.log("auto resolution");
 
 // Parallel worktrees move cards on ONE board. Without the lock, two concurrent rewrites lost
 // one of the moves (both read the old board, the last writer won). Both locks are exercised: flock
-// where it exists (Linux) and the mkdir/PID fallback (macOS, or COHORTE_KANBAN_NO_FLOCK=1).
+// where it exists (Linux), a python3-held flock (macOS) and the mkdir/PID last resort.
 if (process.platform !== "win32") {
   const { spawn } = await import("node:child_process");
-  // The fallback only runs where flock(1) is missing (macOS); test it there. On GitHub's Linux
-  // runners the forced fallback still lost a concurrent move now and then (never reproduced in a
-  // Linux container) — which is exactly why Linux uses flock. The macOS CI job covers it.
+  // Three locks: flock(1) (Linux), a python3-held flock (macOS — no flock(1) there) and, last
+  // resort, mkdir/PID. On GitHub's Linux runners the mkdir lock still lost a concurrent move now
+  // and then, every writer exiting 0 (never reproduced on macOS nor in Linux containers) — which
+  // is why it is the last resort; its concurrency checks run on macOS only.
   const hasFlock = spawnSync("sh", ["-c", "command -v flock"], { encoding: "utf8" }).status === 0;
-  const modes = [["default lock", {}]];
-  if (!hasFlock) modes.push(["mkdir/PID fallback", { COHORTE_KANBAN_NO_FLOCK: "1" }]);
+  const modes = [["default lock", {}], ["python3 flock", { COHORTE_KANBAN_LOCK: "python" }]];
+  if (hasFlock) modes.push(["flock(1)", { COHORTE_KANBAN_LOCK: "flock" }]);
+  if (process.platform === "darwin") modes.push(["mkdir/PID fallback", { COHORTE_KANBAN_LOCK: "mkdir" }]);
   for (const [label, extra] of modes) {
     const d = scratch();
     const ids = Array.from({ length: 8 }, (_, i) => `par-${i}`);
@@ -325,13 +327,42 @@ if (process.platform !== "win32") {
       `${moved.length}/8 in Building · exits ${JSON.stringify(results.filter((r) => r.code !== 0))}\n${readFileSync(b, "utf8")}`);
     check(`${label}: nothing is left next to the board`, readdirSync(d).every((f) => f === "Tasks.md"), readdirSync(d).join(", "));
   }
+  // A crashed writer's stale lock, with many waiters: they all saw the same dead holder, and each
+  // used to remove "the" lock — the second removing the fresh one a third had just taken, so two
+  // writers ran at once (about half the runs lost a move). Breaking is now serialized.
+  if (process.platform === "darwin") {
+    const deadPid = spawnSync(process.execPath, ["-e", "process.stdout.write(String(process.pid))"], { encoding: "utf8" }).stdout;
+    let lost = 0, leftovers = "", detail = "";
+    for (let round = 0; round < 8; round++) {
+      const d = scratch();
+      const ids = Array.from({ length: 12 }, (_, i) => `st-${i}`);
+      const b = board(d, { Ideas: ids.map((id) => `- [ ] ${id} #${id}`) });
+      mkdirSync(b + ".lock");
+      writeFileSync(join(b + ".lock", "pid"), deadPid + "\n");
+      const runs = await Promise.all(ids.map((id) => new Promise((res) => {
+        const c = spawn("sh", [SCRIPT, b, id, "Building"], { stdio: ["ignore", "ignore", "pipe"], env: { ...process.env, COHORTE_KANBAN_LOCK: "mkdir" } });
+        let err = "";
+        c.stderr.on("data", (x) => { err += x; });
+        c.on("close", (code) => res({ id, code, err: err.trim() }));
+      })));
+      const missing = ids.filter((id) => columnOf(b, id) !== "Building");
+      if (missing.length) {
+        lost++;
+        if (!detail) detail = `missing ${missing.join(",")} · failed runs ${JSON.stringify(runs.filter((r) => r.code !== 0 || r.err))}\n${readFileSync(b, "utf8")}`;
+      }
+      const extra = readdirSync(d).filter((f) => f !== "Tasks.md");
+      if (extra.length) leftovers = extra.join(", ");
+    }
+    check("fallback: a stale lock with 12 concurrent waiters loses no move (8 rounds)", lost === 0, `${lost}/8 rounds lost a move — first: ${detail}`);
+    check("fallback: …and leaves no lock or breaker behind", !leftovers, leftovers);
+  }
   // The fallback's crashed writer: its lock holds a PID that no longer exists.
   const d = scratch();
   const b = board(d, { Ideas: ["- [ ] par-0 #par-0"] });
   const dead = spawnSync(process.execPath, ["-e", "process.stdout.write(String(process.pid))"], { encoding: "utf8" }).stdout;
   mkdirSync(b + ".lock");
   writeFileSync(join(b + ".lock", "pid"), dead + "\n");
-  const r = spawnSync("sh", [SCRIPT, b, "par-0", "Review"], { encoding: "utf8", env: { ...process.env, COHORTE_KANBAN_NO_FLOCK: "1" } });
+  const r = spawnSync("sh", [SCRIPT, b, "par-0", "Review"], { encoding: "utf8", env: { ...process.env, COHORTE_KANBAN_LOCK: "mkdir" } });
   check("fallback: a stale lock (its holder is dead) is broken, not waited on", r.status === 0 && columnOf(b, "par-0") === "Review", r.stderr);
   check("fallback: …and our own lock is released after the move", !existsSync(b + ".lock"));
 }

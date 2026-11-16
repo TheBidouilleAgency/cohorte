@@ -146,10 +146,12 @@ The gate ships as **one** stdlib-only file, `core/hooks/gate.py`: `lib/install.j
 Its source is split into modules under `core/hooks/gate/` — `runtime` (time budget, git runner),
 `shell` (lexer, prefix stripping), `git` (global options, push semantics), `config`
 (gate-config.json validation, project roots), `ownership` (profile.json surfaces), `patterns`
-(pattern matching), `context` (`Ctx`), `analyze` (the Bash analyzer: indirection,
-self-protection, branch-aware rules), `preflight` (the stamp/digest phase gate), `evaluate` (one
-payload's decision), `main` (output envelope, hook and `--check` entry points); `__init__.py`
-holds the gate's docstring. The builder concatenates them in that fixed order: each module's
+(pattern matching), `context` (`Ctx`), then the Bash analyzer: `findings` (the deny/ask list,
+hidden-text judgement), `rules` (the push floor, config rules, branch awareness), `protect`
+(self-protection, Bash-side ownership), `indirect` (`sh -c`, `eval`, inline code, xargs, …) —
+mixins that `analyze` composes into `Analyzer` with the command walk and chain state —
+`preflight` (the stamp/digest phase gate), `evaluate` (one payload's decision), `main` (output
+envelope, hook and `--check` entry points); `__init__.py` holds the gate's docstring. The builder concatenates them in that fixed order: each module's
 `import <stdlib>` lines are hoisted to the top (deduplicated, sorted), its `from .<module> import …`
 lines are stripped (they may only name a module built earlier), and the rest is copied
 verbatim. It fails on an unlisted or missing module, an unsupported import form, or a top-level
