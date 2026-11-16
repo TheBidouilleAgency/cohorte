@@ -123,7 +123,7 @@ and anything that needs the app up is yours to exercise by hand before or after 
 1. The lead computes the diff **once**: one `git diff --stat`, grouped by surface path, then a
    full patch staged per touched surface to `specs/reports/<id>.<surface>.diff`. Reviewers are
    read-only (no Bash) — the staged artifact is how they review hunks instead of whole files.
-2. **One `review` agent per touched surface, in parallel.** Checks, in order: spec conformance,
+2. **One `cohorte-review` agent per touched surface, in parallel.** Checks, in order: spec conformance,
    correctness, security, conventions, RBAC + mobile-first (if enabled), TDD coverage, plus
    language-specific traps (floating promises, mutable default args, `.unwrap()` outside tests,
    un-`ctx`'d goroutines, `UPDATE` without `WHERE`, …).
@@ -167,7 +167,7 @@ re-verdict. Kanban → **Fix**, then back to **Review**.
   changed since the review verdict, it refuses** and sends you back to `/cohorte-review`.
 - Verifies the DoD checkboxes; open items require your explicit "ship anyway".
 - Asks you to confirm. Then: spec `status: shipped` (before dispatch, so it ships in the same
-  commit), and the `release` agent writes conventional commits, pushes (never force), opens the
+  commit), and the `cohorte-release` agent writes conventional commits, pushes (never force), opens the
   PR (`gh` when available, otherwise compare URL + drafted body from the template). It never
   edits source and refuses staged secrets.
 - Watches CI (`gh pr checks --watch`); red ⇒ back to `/cohorte-fix`. After the merge, proposes the
@@ -197,7 +197,7 @@ read `kind: patch` at all:
 - `/cohorte-build` §1.6 judges the **§4 regression test** and the §1 repro instead of contract
   completeness — the test is what the diff gets checked against — and §2 authors no contract when §5
   Contract delta is `none`.
-- The `review` agent adds scope creep as a first-class finding: a tidy improvement the spec didn't
+- The `cohorte-review` agent adds scope creep as a first-class finding: a tidy improvement the spec didn't
   ask for still widens the blast radius of a change that is shipping fast.
 - `/cohorte-ship` branches off `vcs.patch_branch_prefix` (`fix/`), defaults the release note to a
   `patch` bump, and the release agent commits `fix(<scope>)`.
@@ -209,8 +209,8 @@ independently. Changing an *existing* contract entry is a legitimate §5 delta.
 
 ## The disk artifacts, at a glance
 
-`<state>` is the project's pipeline dir: `.claude/` on a Claude Code install, `.cohorte/` on
-every other runtime ([Runtimes](/reference/runtimes)).
+`<state>` is the project's pipeline dir, `.claude/` — committed except for the local-only
+artifacts `cohorte sync` gitignores ([Installers](/reference/installers)).
 
 | Path | Written by | Read by |
 | --- | --- | --- |

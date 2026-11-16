@@ -37,6 +37,33 @@ everything that describes a project lives in that project and is committed with 
   `~/.claude/settings.json` first, then moves the 2.x core to `~/.claude/cohorte/legacy-backup/`),
   then `/cohorte-update-pipeline` in each project. Tried the discontinued Python line? Run
   `uv tool uninstall cohorte-engine` and delete `~/.cohorte/`.
+- **A gate that parses commands.** The hook used to grep the command text: `git push origin main
+  --force`, `git push origin +main`, `git push origin feat:main` or `git -C . push -f` all got
+  through. It now reads commands like a shell (quotes, continuations, `$(…)`, `sh -c`, env/sudo
+  prefixes, git global options and aliases), judges `git push` by its flags **and its destination
+  branch**, treats a detached HEAD or a `git switch main && …` chain as the default branch, and
+  denies a force push to the default branch in every Cohorte project even without a config. It
+  **fails closed** (an error, a malformed payload or an invalid `gate-config.json` no longer let the
+  command through), protects its own files from the agent, binds the preflight stamp to the checkout
+  that earned it, and its phase gate now sees `Agent` dispatches (the tool's name since Claude Code
+  2.1.63 — the old `Bash|Task` matcher never fired). Still a guard against agent mistakes, not a
+  sandbox: keep branch protection on the remote.
+- **Review sees what the feature changed.** Every diff (review, implementer self-check, freshness
+  stamp, ship) goes through `<core>/pipeline/scripts/feature-diff.sh`: untracked files are included
+  (new modules used to escape review entirely, and a feature that only added files scored SHIP) and
+  the base is the merge-base, so commits landing on `main` no longer show up as deletions. Existing
+  freshness stamps re-review once.
+- **Ship gates on the verdict file:** `/cohorte-ship` requires `verdict.json` = SHIP with no
+  unreviewed surface and no HIGH/MEDIUM left (a missing stamp no longer reads as "legacy, skip").
+- **Fixes across the cycle:** `/cohorte-fleet` worktrees now get their spec, design brief and
+  contract (re-render `scripts/new-feature.sh` with `/cohorte-update-pipeline`); the loop workflow
+  really resumes after a resumable stop, and `/cohorte-build <id> --readiness-only` refreshes the
+  readiness verdict without a rebuild; the audit workflow no longer wipes the deferred backlog;
+  `/cohorte-review --pr` runs nothing from a non-collaborator's PR without your go-ahead and installs
+  with `--ignore-scripts`; one verdict rule; a dead reviewer is retried once; `/cohorte-build`
+  creates the feature branch when isolation is off; `feature_id` no longer drifts between
+  brainstorm and spec; the dead `design.inline` option is gone.
+- **Lifecycle:** specs gain `merged` (reconciled from `gh pr view`) and `abandoned` statuses.
 - **Requirements:** Node ≥ 20, Python ≥ 3.9 as `python3`. `doctor` no longer crashes on an
   indentless YAML list, `- db:wipe` stays a string, and `metrics --days=abc` is an error.
 - **Releases:** publishing now waits for CI to pass on `main` and for a maintainer's approval;

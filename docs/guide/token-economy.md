@@ -16,7 +16,7 @@ redirected to `specs/reports/<id>.preflight.txt`:
   zero agents are spawned.** A reviewer dispatched onto code that doesn't compile burns its whole
   run rediscovering what `tsc` printed for free.
 - **All green** ⇒ it stamps `<state>/preflight.ok` (`<epoch> <HEAD sha> <tree digest>`), which the
-  gate hook enforces as a **phase gate**: a `review` dispatch with a missing or stale stamp (older
+  gate hook enforces as a **phase gate**: a `cohorte-review` dispatch with a missing or stale stamp (older
   than `gate.preflight.max_age_minutes`, or the code changed since) gets a confirmation prompt. A lead can't
   accidentally skip the gate; a human can consciously override it.
 
@@ -97,7 +97,7 @@ until 2.2.0 and was retired; the file contract it used is still written on every
 - **Surface agents** pin their profile tier: `sonnet` by default (implementers mostly apply a
   frozen contract), `haiku` for purely mechanical surfaces, `inherit` only when a surface makes
   real design decisions worth the lead's model.
-- **Fixed agents**: `review` sonnet · `release` haiku · `profile-reader` haiku.
+- **Fixed agents**: `cohorte-review` sonnet · `cohorte-release` haiku · `cohorte-profile-reader` haiku.
 - **Workflows** route every mechanical phase (profile read, preflight, staging, verify, report
   writing) to haiku explicitly.
 

@@ -10,15 +10,18 @@ model — their value is the conversation.
 | `/cohorte-init-pipeline` | inherit | Detect stack → interview → generate profile + agents. Once per project. |
 | `/cohorte-brainstorm` | inherit | Persona panel pressure-tests a feature idea. |
 | `/cohorte-spec` | inherit | Freeze the spec + contract; also applies review returns (Mode B). |
+| `/cohorte-intake [paste]` | inherit | Triage a ticket / email / trace / thread into a `/cohorte-patch` handoff or a brainstorm seed. |
 | `/cohorte-patch [bug]` | inherit | Triage a bug → freeze `specs/patch-<slug>.md` (`kind: patch`). Then the normal build/review/ship. |
-| `/cohorte-build <id>` | sonnet | Author the contract, dispatch one implementer per surface, parallel. |
+| `/cohorte-build <id> [--readiness-only]` | sonnet | Readiness verdict, then author the contract and dispatch one implementer per surface, parallel. `--readiness-only` stops after the verdict. |
 | `/cohorte-review <id>` | sonnet | Preflight, staged diff, one reviewer per touched surface, merged verdict. |
 | `/cohorte-fix <id>` | sonnet | Apply a report; re-dispatch only the surfaces with findings. |
-| `/cohorte-ship <id>` | sonnet | Freshness + DoD gates, human confirm, release agent, CI watch, teardown. |
+| `/cohorte-fleet plan\|status\|sync` | sonnet | Several features in parallel: overlap matrix, merge order, one worktree each, post-merge rebase sweep. |
+| `/cohorte-ship <id>` | sonnet | Verdict-file + freshness + DoD gates, human confirm, release agent, CI watch, `merged` reconcile, teardown. |
 | `/cohorte-audit [target]` | sonnet | Mechanical gates + convention/TDD audit → prioritized backlog. |
 | `/cohorte-refactor <domain…>` | sonnet | Apply the backlog per domain via the surface implementers, TDD-first. |
+| `/cohorte-retro [last <n> \| all]` | inherit | Turn repeated review findings into ratified §Conventions rules, re-render the agents. |
 | `/cohorte-align-ds` | sonnet | Align the code UI kit to the design system (design → code). |
-| `/cohorte-update-pipeline` | sonnet | Refresh the core + reconcile this repo's generated files. |
+| `/cohorte-update-pipeline` | sonnet | `cohorte update`, `cohorte sync` this repo, reconcile its generated files. |
 | `/cohorte-doctor` | sonnet | Diagnose the whole installation; exact fix per failure. |
 
 ---
@@ -30,10 +33,8 @@ One-time per project, interactive, driven by step files (`templates/steps/init-p
 command variants, contract mechanism, UI language, RBAC, design, retrieval provider, isolation,
 gate patterns, personas; optional kanban link) → **show the
 draft** → **write & render** (`PIPELINE.md`, one agent per surface with baked conventions,
-`gate-config.json` incl. the preflight block, `settings.json` permissions + hooks per install
-mode, retrieval wiring with health check, isolation scripts, `specs/_template.md`, the committed
-`.claude/pipeline.json` pointer, optional CI workflow, gitignore entries for
-`pipeline-metrics.jsonl` + `specs/reports/`) → **report**. Everything it generates goes into
+`gate-config.json` incl. the preflight block, `settings.json` permissions, the gate + pointer +
+gitignore entries via `cohorte sync`, retrieval wiring with health check, isolation scripts, optional CI workflow) → **report**. Everything it generates goes into
 *this repo* — never into `~/.claude`.
 
 ## `/cohorte-intake [paste]`
@@ -130,8 +131,11 @@ machine contract with any automated driver; no prose is ever parsed. A red prefl
 **PR mode** — `/cohorte-review --pr <num>` (or a PR URL) reviews an **incoming** pull request:
 same reviewers, same report format, none of the pipeline's certifications (no spec ⇒ audit mode
 — conventions/quality/security/TDD only; no kanban, no verdict.json, no DoD tick, no freshness
-stamp). The PR is fetched into a throwaway worktree (your checkout is never touched), preflight
-runs there (red ⇒ the mechanical failures *are* the review — no reviewers wasted), and the
+stamp). The PR is fetched into a throwaway worktree (your checkout is never touched). **Code from
+someone else's PR is untrusted:** unless its author is an owner, member or collaborator of the repo,
+nothing from it runs — the review is static and reads `gh pr checks` instead — until you agree; even
+then dependencies install with `--ignore-scripts`. Preflight then runs in the worktree (red ⇒ the
+mechanical failures *are* the review — no reviewers wasted), and the
 merged report is staged to `specs/reports/pr-<num>.md`. Posting it as a PR comment via `gh` is
 offered and **always requires your explicit go-ahead** — declining leaves the report on disk as
 a complete outcome. Worktree torn down either way.
@@ -146,7 +150,7 @@ collapses fully-fixed rounds to one line, metrics, routes to `/cohorte-review`.
 
 ## `/cohorte-loop <id>` — workflow-only
 
-Not a command file: **the loop exists only as a workflow script** (`core/workflows/loop.js`,
+Not a command file: **the loop exists only as a workflow script** (`~/.claude/workflows/cohorte-loop.js`,
 Claude Code ≥ 2.1.154 with workflows enabled — ask *"run the loop workflow for `<id>`"*, args
 `{feature, maxRounds?}`). If the runtime is unavailable it refuses; there is deliberately no
 conversational fallback (a lead re-reasoning the fan-out every round at session prices is the
@@ -156,7 +160,9 @@ feature: verifies `/cohorte-build`'s outputs as preconditions (frozen spec, fres
 work already landed, calls the review workflow each round, and exits on zero blocking findings
 (ship), identical blocking findings two rounds running (treading water), `maxRounds` (default
 5), an unreviewed surface, dead implementers, or a finding that would change the frozen
-contract (lead-only). State lives in `specs/reports/<id>.loop.json`; re-invoking resumes.
+contract (lead-only). State lives in `specs/reports/<id>.loop.json`; re-invoking resumes after a
+resumable stop (a crash, a dead surface, an unreviewed surface, maxRounds) — a terminal stop (ship,
+treading water) is not resumed.
 See the [workflows guide](../guide/workflows.md).
 
 ## `/cohorte-fleet plan|status|sync`
@@ -174,18 +180,19 @@ See the [parallel features guide](../guide/parallel-features.md).
 
 ## `/cohorte-ship <id>`
 
-Pre-flight: SHIP verdict confirmed; **freshness gate** (recompute the digest — mismatch ⇒
+Pre-flight: `specs/reports/<id>.verdict.json` must say `SHIP` with no unreviewed surface and no
+HIGH/MEDIUM left; **freshness gate** (recompute the digest — mismatch ⇒
 refuse, re-review); DoD verification (open boxes need explicit human override); human
 confirmation. Then: spec → `status: shipped` *before* dispatch, the **release note** when
 `release_notes.enabled` (the lead writes it — bump level is project policy — so it lands in the
-release commit, not a follow-up), `release` agent (conventional commits, plain push, PR via `gh` or
+release commit, not a follow-up), `cohorte-release` agent (conventional commits, plain push, PR via `gh` or
 compare URL + drafted body), kanban → Shipped with the PR number,
 CI watch, and — after the confirmed merge — the worktree teardown proposal.
 
 ## `/cohorte-audit [target]`
 
 §1 runs the mechanical gates (quiet variants) scoped to the target, redirected to
-`specs/reports/audit-gates.txt`. §2 dispatches `review` in **audit mode** (no spec; conventions +
+`specs/reports/audit-gates.txt`. §2 dispatches `cohorte-review` in **audit mode** (no spec; conventions +
 TDD coverage + over-engineering + design usage as the rulebook). §3 writes the prioritized
 `specs/refactor-backlog.md` grouped by domain. Backlog items tagged `complexity` are the
 over-engineering cuts, ranked biggest first inside their domain — the cheapest wins in the file
@@ -219,21 +226,25 @@ Design → code alignment. No-ops with a clear message when `design.enabled` is 
 
 ## `/cohorte-update-pipeline [path]`
 
-§1 detects install scope + versions (never migrates bundled ↔ global on its own). §2 runs the
-installer's `--update` (npm preferred, local checkout or piped installer as fallbacks). §3
-reports old → new + syncs the `pipeline.json` pointer in both modes + prints the CHANGELOG
-delta. §3.5 **reconciles** this repo's generated files: profile top-up (new fields at defaults,
-one batched question set for genuine decisions — e.g. quiet variants), agent re-render (refreshes
-baked conventions), additive settings/gate patch, capability wiring + health checks, global
-config seed, kanban sync. §4 follow-ups: session restart, per-repo reconcile for other global
-repos, commit.
+§1 reads the core version and this repo's pointer (a pointer with a 2.x `mode` marks a repo to
+migrate). §2 runs `npm i -g cohorte@latest && cohorte update` (or `node <path>/bin/cli.js update`
+from a local checkout). §2b runs `cohorte sync` for this repo — refreshes the committed gate and the
+pointer and, on a 2.x repo, removes the vendored core. §3 prints old → new and the CHANGELOG delta.
+§3.5 **reconciles** this repo's generated files: profile top-up (new fields at defaults, one batched
+question set for genuine decisions), agent re-render into `.claude/agents` (refreshes baked
+conventions), additive permissions/gate-config patch, capability wiring + health checks, config
+seed, kanban sync. §4 follow-ups: session restart, `/cohorte-update-pipeline` in each other repo,
+commit.
 
 ## `/cohorte-doctor`
 
-Nine check groups, each failure with its exact fix: **1** core & pointer (+ shipped scripts
-present & executable, VERSION not newer than siblings), **2** profile ↔ agents (orphans, tool
-lists, **model pins** on agents and commands), **3** hooks & gate (config drift, single
-registration), **4** retrieval health, **5** design paths, **6** isolation (rendered scripts,
-slot table, stale slots / zombie worktrees), **7** the kanban board link, **8** workflows
-(CLI ≥ 2.1.154, the four scripts, `profile-reader`, runtime in-session, preflight wiring — with
-the one-line path summary), **9** specs & metrics hygiene.
+Starts from `cohorte doctor` (the same file-level checks, deterministic), then adds what only a live
+session can see. Nine check groups, each failure with its exact fix: **1** core & pointer (+ 2.x
+leftovers, shipped scripts present & executable), **2** profile ↔ agents (orphans, tool lists,
+**model pins** on agents and commands), **3** hooks & gate (config drift, the committed
+`cohorte-gate.py` registered once for `Bash|Task|Agent` and `Write|Edit|MultiEdit`, `python3`
+present), **4** retrieval health, **5** design paths, **6** isolation (rendered scripts, slot table,
+stale slots / zombie worktrees), **7** the kanban board link, **8** workflows (CLI ≥ 2.1.154, the four
+`cohorte-*.js` scripts, `cohorte-profile-reader`, runtime in-session, preflight wiring — with the
+one-line path summary), **9** specs & metrics hygiene (including `shipped` specs whose PR has merged
+or closed).

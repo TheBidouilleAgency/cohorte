@@ -19,6 +19,23 @@ the gate (`.claude/hooks/cohorte-gate.py`) checks before letting review dispatch
 **local, gitignored** file —
 never commit it (see [gate.md](gate.md#the-preflight-phase-gate)).
 
+## `feature-diff.sh` — what the feature changed
+
+The one way every phase computes a feature's diff (review staging, the implementer's self-check, the
+freshness digest `/cohorte-ship` recomputes, the loop and refactor workflows):
+
+```sh
+<core>/pipeline/scripts/feature-diff.sh --default main --numstat      # changed files, full paths
+<core>/pipeline/scripts/feature-diff.sh --default main --patch -- apps/api > specs/reports/x.api.diff
+<core>/pipeline/scripts/feature-diff.sh --default main --digest       # the freshness stamp
+```
+
+It diffs a **throwaway index** — so untracked files (every new module a feature adds) are
+included and your real index is never touched — against the **merge-base** with the default
+branch (local or `origin/`, whichever is newer), so commits landing on `main` meanwhile never show up
+as deletions. `.claude/` and `specs/` are excluded. Exit 3 means the base could not be resolved;
+callers stop rather than fall back to a plain `git diff`.
+
 ## `kanban-move.sh` — board updates outside agent context
 
 ```sh

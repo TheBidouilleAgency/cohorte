@@ -285,15 +285,15 @@ Rules that make it safe:
 
 Four **workflow scripts** ship for the Claude Code Workflow runtime — the same fan-out the
 commands orchestrate, but driven by a deterministic script instead of the lead reasoning it out
-turn by turn. Three are opt-in variants of their same-named commands; the fourth, `loop.js`,
-exists **only** as a workflow:
+turn by turn. They are installed in `~/.claude/workflows/`. Three are opt-in variants of their
+same-named commands; the fourth, `cohorte-loop.js`, exists **only** as a workflow:
 
 | Script                  | What it runs                                                                              |
 | ----------------------- | ----------------------------------------------------------------------------------------- |
-| `workflows/review.js`   | Preflight gate (aborts while red — zero agents), one reviewer per touched surface, adversarial cross-check of CRITICAL/security findings, merged verdict only. |
-| `workflows/audit.js`    | One auditor per domain (every surface + shared) concurrently, prioritized `specs/refactor-backlog.md`. |
-| `workflows/refactor.js` | Big domains only: `shared` first and alone, then parallel surface implementers, per-domain verify + one retry. |
-| `workflows/loop.js`     | `/cohorte-loop` — build → review → [fix → review]* for one feature, unattended and resumable; exits on zero blocking findings, treading water, maxRounds, or anything that needs a human (contract change, unreviewed surface). No conversational fallback, on purpose. |
+| `cohorte-review.js`     | Preflight gate (aborts while red — zero agents), one reviewer per touched surface, adversarial cross-check of CRITICAL/security findings, merged verdict only. |
+| `cohorte-audit.js`      | One auditor per domain (every surface + shared) concurrently, prioritized `specs/refactor-backlog.md`. |
+| `cohorte-refactor.js`   | Big domains only: `shared` first and alone, then parallel surface implementers, per-domain verify + one retry. |
+| `cohorte-loop.js`       | The loop workflow — build → review → [fix → review]* for one feature, unattended and resumable; exits on zero blocking findings, treading water, maxRounds, or anything that needs a human (contract change, unreviewed surface). No conversational fallback, on purpose. |
 
 The essentials:
 
@@ -306,7 +306,7 @@ The essentials:
   anything: whatever would have been a mid-run question lands in the result at the end. The
   destructive-command gate still fires inside workflow subagents; in unattended runs its confirms
   become denies.
-- Phase 0 of every script is the `profile-reader` agent (haiku) — it reads `PIPELINE.md` and hands
+- Phase 0 of every script is the `cohorte-profile-reader` agent (haiku) — it reads `PIPELINE.md` and hands
   the script the profile as JSON, since workflow scripts have no filesystem access. Mechanical
   phases run on haiku; judgment phases use the same pinned agents as the commands.
 
