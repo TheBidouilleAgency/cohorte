@@ -110,6 +110,11 @@ const AUDIT_CFG = {
   preflight: { enabled: true, agents: ["cohorte-review", "review"], max_age_minutes: 30 },
 };
 
+// The profile/schema/preflight.md secret-scan recipe; `scanner` reads the added lines on stdin.
+const secretScan = (scanner = "gitleaks stdin --redact --no-banner", branch = "main") =>
+  `P=specs/reports/security-scan.patch; ~/.claude/cohorte/pipeline/scripts/feature-diff.sh --default ${branch} ` +
+  `--patch > "$P" || exit 2; grep '^+' "$P" > "$P.added"; ${scanner} < "$P.added" && rm -f "$P" "$P.added"`;
+
 // ── inert outside Cohorte projects ───────────────────────────────────────────
 console.log("gate.py — inert without a pointer or a config");
 {
@@ -229,12 +234,35 @@ console.log("gate.py — indirection (sh -c, eval, pipes, inline code)");
   ]);
 }
 
+// ── verify-run.sh hands commands to a shell: the gate judges each one ────────
+// The script also asks the gate itself, but its --confirmed flag is the lead's word; a denied
+// command must stay denied whatever the flag says.
+console.log("gate.py — verify-run.sh arguments");
+{
+  const feat = scratch({ config: AUDIT_CFG }); gitRepo(feat, "feat");
+  const V = "~/.claude/cohorte/pipeline/scripts/verify-run.sh run x";
+  table("verify-run.sh", feat, [
+    [`${V} --dev "pnpm dev" --ready http://localhost:3000 --check "smoke=pnpm test:smoke"`, "allow"],
+    [`${V} --check "e2e=rm -rf /tmp/e2e-out"`, "deny"],
+    [`${V} --migrate "node ace migration:run" --db local --confirmed`, "ask"],
+    [`${V} --check "smoke=psql -c 'select 1'"`, "ask"],
+    [`${V} --dev "git push -f origin main" --ready "curl -s localhost"`, "deny"],
+    [`bash ${V} --check "lint=git push --force"`, "deny"],
+  ]);
+}
+
 // ── false positives the substring gate had (G11) ─────────────────────────────
 console.log("gate.py — false positives (G11) and the pipeline's own commands");
 {
   const feat = scratch({ config: AUDIT_CFG }); gitRepo(feat, "feat");
   const commitMsg = "git commit -m \"$(cat <<'EOF'\nfeat: don't run (git push -f) or `rm -rf /`\n\nCo-Authored-By: x\nEOF\n)\"";
+  // commands.security as review.js passes them (the profile/schema/preflight.md recipes).
+  // The script path must be static (`~/…`): a computed command name gets "ask" (deny headless).
+  const sq = (c) => `'${c.replace(/'/g, "'\\''")}'`;
+  const secPreflight = '.claude/pipeline/scripts/preflight.sh specs/reports/x.preflight.txt "tsc --noEmit" ' +
+    `": cohorte-security-scans" "npm audit --omit=dev --audit-level=high" ${sq(secretScan())}`;
   table("must allow", feat, [
+    [secPreflight, "allow"],
     ["git commit -m \"docs: explain why git push -f is banned\"", "allow"],
     ["grep -rn \"git push -f\" docs/", "allow"],
     ["grep -rn 'rm -rf' .", "allow"],
@@ -617,6 +645,231 @@ console.log("gate.py — preflight phase gate");
   check("preflight disabled ⇒ never gated", run(dispatch("cohorte-review", off), { projectDir: off }).raw === "");
   const noblock = scratch({ config: { deny: [] } }); gitRepo(noblock, "feat");
   check("no preflight block ⇒ never gated", run(dispatch("cohorte-review", noblock), { projectDir: noblock }).raw === "");
+}
+
+// ── commands.security through the real preflight.sh + feature-diff.sh ────────
+// Argument arrays only (no shell string is built here); the scanner is a stub on PATH and
+// `~` is a throwaway HOME holding the shipped feature-diff.sh, so nothing real is touched.
+console.log("preflight.sh — commands.security secret-scan recipe (stub scanner)");
+{
+  const home = realpathSync(mkdtempSync(join(tmpdir(), "gate-home-")));
+  tmps.push(home);
+  const scripts = join(home, ".claude", "cohorte", "pipeline", "scripts");
+  mkdirSync(scripts, { recursive: true });
+  writeFileSync(join(scripts, "feature-diff.sh"), readFileSync(join(root, "scripts", "feature-diff.sh")), { mode: 0o755 });
+  mkdirSync(join(home, "bin"));
+  writeFileSync(join(home, "bin", "fake-scan"),
+    "#!/bin/sh\nif grep -q 'SECRET_TOKEN='; then echo 'fake-scan: leak SECRET_TOKEN'; exit 1; fi\nexit 0\n", { mode: 0o755 });
+  const env = { ...process.env, HOME: home, PATH: `${join(home, "bin")}:${process.env.PATH}` };
+  delete env.CLAUDE_PROJECT_DIR; delete env.CLAUDE_CONFIG_DIR;
+  const pre = (dir, scan) => {
+    mkdirSync(join(dir, "specs", "reports"), { recursive: true });
+    const report = join(dir, "specs", "reports", "f.preflight.txt");
+    const r = spawnSync("sh", [PREFLIGHT, report, "true", ": cohorte-security-scans", scan], { cwd: dir, env, encoding: "utf8" });
+    return { status: r.status, report: existsSync(report) ? readFileSync(report, "utf8") : "", stderr: r.stderr };
+  };
+  const leftovers = (dir) => ["security-scan.patch", "security-scan.patch.added"]
+    .filter((f) => existsSync(join(dir, "specs", "reports", f)));
+
+  const clean = scratch(); gitRepo(clean, "feat");
+  writeFileSync(join(clean, "new.ts"), "export const x = 1\n");             // untracked feature work
+  let r = pre(clean, secretScan("fake-scan"));
+  check("clean feature diff ⇒ green", r.status === 0, r.stderr);
+  check("the report opens the security section with `$ : cohorte-security-scans`",
+    r.report.split("\n").includes("$ : cohorte-security-scans"), r.report.slice(0, 300));
+  check("green ⇒ the stamp is written", existsSync(join(clean, ".claude", "preflight.ok")));
+  check("green ⇒ the scanned patch files are removed", leftovers(clean).length === 0, leftovers(clean).join(","));
+
+  const leak = scratch(); gitRepo(leak, "feat");
+  writeFileSync(join(leak, "config.ts"), "const k = 'x'\nSECRET_TOKEN=abc123\n");  // untracked: history scans miss it
+  r = pre(leak, secretScan("fake-scan"));
+  check("a secret in an untracked feature file ⇒ red", r.status === 1 && /leak SECRET_TOKEN/.test(r.stderr), r.stderr);
+  check("red ⇒ no stamp", !existsSync(join(leak, ".claude", "preflight.ok")));
+  check("red ⇒ the scanned files stay (gitignored) so the hit can be located", leftovers(leak).length === 2, leftovers(leak).join(","));
+
+  const removal = scratch(); gitRepo(removal, "main");
+  writeFileSync(join(removal, "old.env.ts"), "SECRET_TOKEN=legacy\n");
+  git(removal, "add", "-A"); git(removal, "commit", "-qm", "legacy secret");
+  git(removal, "update-ref", "refs/remotes/origin/main", "HEAD");
+  git(removal, "checkout", "-qb", "feat");
+  writeFileSync(join(removal, "old.env.ts"), "// secret moved to the vault\n");
+  r = pre(removal, secretScan("fake-scan"));
+  check("a feature that REMOVES a secret ⇒ green (only added lines are scanned)", r.status === 0, r.stderr);
+
+  const nobase = scratch(); gitRepo(nobase, "feat");
+  r = pre(nobase, secretScan("fake-scan", "no-such-branch"));
+  check("an unresolvable base ⇒ red, never a silent pass", r.status === 1, `${r.status} ${r.stderr}`);
+}
+
+// ── surface ownership (profile.json surfaces[], subagent payloads) ───────────
+console.log("gate.py — surface ownership");
+{
+  const OWN_PROFILE = {
+    name: "p",
+    contract: { enabled: true, path: "packages/shared/src", index: "packages/shared/src/index.ts" },
+    ownership: { shared_writable: ["pnpm-lock.yaml", "packages/*/package.json"] },
+    surfaces: [
+      { key: "backend", path: "apps/api", agent: "backend", owns_also: ["db/migrations"] },
+      { key: "frontend", path: "apps/web", agent: "frontend" },
+      { key: "docs", path: "<path>", agent: "docs" },
+    ],
+  };
+  const fixture = (profile) => {
+    const d = scratch(); gitRepo(d, "feat");
+    for (const p of ["apps/api/src", "apps/web/src", "apps/api-v2", "packages/shared/src", "db/migrations"])
+      mkdirSync(join(d, p), { recursive: true });
+    writeFileSync(join(d, "apps", "api", "src", "f.ts"), "a\n");
+    writeFileSync(join(d, "apps", "web", "src", "f.tsx"), "a\n");
+    if (profile !== undefined)
+      writeFileSync(join(d, ".claude", "profile.json"), typeof profile === "string" ? profile : JSON.stringify(profile));
+    return d;
+  };
+  const as = (agent_type, agent_id = "agent-1") => (agent_type ? { agent_id, agent_type } : {});
+  const edit = (tool, file, cwd, who, extra = {}) => {
+    const tool_input = tool === "NotebookEdit" ? { notebook_path: file, new_source: "x" }
+      : tool === "MultiEdit" ? { file_path: file, edits: [{ old_string: "a", new_string: "b" }] }
+      : tool === "Edit" ? { file_path: file, old_string: "a", new_string: "b" }
+      : { file_path: file, content: "x" };
+    return { tool_name: tool, tool_input, cwd, ...who, ...extra };
+  };
+  const d = fixture(OWN_PROFILE);
+  const at = { projectDir: d };
+  const W = (rel, who, extra) => run(edit("Write", join(d, rel), d, who, extra), at);
+
+  const rows = [
+    ["apps/api/src/new.ts", "backend", "allow", "in-tree Write"],
+    ["apps/web/src/x.tsx", "backend", "deny", "another surface's tree", /surface `frontend` \(agent `frontend`\)/],
+    ["packages/shared/src/feat.ts", "backend", "deny", "the contract", /frozen contract/],
+    ["packages/shared/src/index.ts", "backend", "deny", "the contract barrel", /frozen contract/],
+    ["db/migrations/001.sql", "backend", "allow", "owns_also"],
+    ["pnpm-lock.yaml", "backend", "allow", "shared_writable file"],
+    ["packages/shared/package.json", "backend", "allow", "shared_writable glob"],
+    ["apps/api-v2/x.ts", "backend", "deny", "a sibling dir sharing the prefix (apps/api-v2)"],
+    ["apps/api/../web/x.ts", "backend", "deny", "a `..` escape (apps/api/../web)"],
+    ["README.md", "backend", "deny", "a file no surface owns", /no surface owns it/],
+    [".claude/profile.json", "backend", "deny", "the profile itself"],
+    ["db/migrations/001.sql", "frontend", "deny", "another surface's owns_also"],
+    ["apps/web/src/x.tsx", "frontend", "allow", "the frontend agent in its own tree"],
+    ["apps/web/src/x.tsx", null, "allow", "the lead (no agent_id)"],
+    ["apps/web/src/x.tsx", "cohorte-review", "allow", "a fixed cohorte-* agent"],
+    ["apps/web/src/x.tsx", "general-purpose", "allow", "an unknown agent type"],
+    ["apps/web/src/x.tsx", "docs", "allow", "a surface whose path is a <placeholder> (inert)"],
+  ];
+  for (const [rel, who, want, why, re] of rows) {
+    const r = W(rel, as(who));
+    check(`${who || "lead"} Write ${rel} ⇒ ${want} (${why})`,
+      r.decision === want && (!re || re.test(r.reason || "")), `got ${r.decision}: ${r.reason || r.stderr}`);
+  }
+  const typeOnly = run(edit("Write", join(d, "apps/web/x.tsx"), d, { agent_type: "backend" }), at);
+  check("agent_type without agent_id (a --agent main session) ⇒ unrestricted", typeOnly.raw === "", typeOnly.reason);
+  for (const tool of ["Edit", "MultiEdit", "NotebookEdit"]) {
+    const r = run(edit(tool, join(d, "apps/web/src/f.tsx"), d, as("backend")), at);
+    check(`${tool} out of tree by backend ⇒ deny`, r.decision === "deny", `${r.decision}: ${r.reason}`);
+    const ok = run(edit(tool, join(d, "apps/api/src/f.ts"), d, as("backend")), at);
+    check(`${tool} in tree by backend ⇒ allow`, ok.raw === "", ok.reason);
+  }
+  const multiInner = run({ tool_name: "MultiEdit", cwd: d, ...as("backend"),
+    tool_input: { file_path: join(d, "apps/api/src/f.ts"), edits: [{ file_path: join(d, "apps/web/src/f.tsx"), old_string: "a", new_string: "b" }] } }, at);
+  check("MultiEdit with an out-of-tree per-edit file_path ⇒ deny", multiInner.decision === "deny", multiInner.reason);
+  const noPath = run({ tool_name: "NotebookEdit", tool_input: { new_source: "x" }, cwd: d, ...as("backend") }, at);
+  check("an edit tool with no path, by a surface agent ⇒ deny (fail closed)", noPath.decision === "deny", noPath.reason);
+  const noPathLead = run({ tool_name: "NotebookEdit", tool_input: { new_source: "x" }, cwd: d }, at);
+  check("…and by the lead ⇒ allow", noPathLead.raw === "", noPathLead.reason);
+  const relW = run(edit("Write", "apps/web/src/x.tsx", d, as("backend")), at);
+  check("a relative file_path resolves against the payload cwd ⇒ deny", relW.decision === "deny", relW.reason);
+  const outside = run(edit("Write", join(tmpdir(), "cohorte-gate-scratch.log"), d, as("backend")), at);
+  check("a target outside every project checkout ($TMPDIR) ⇒ not judged", outside.raw === "", outside.reason);
+  const unattended = W("apps/web/src/x.tsx", as("backend"), { permission_mode: "bypassPermissions" });
+  check("bypassPermissions ⇒ still deny", unattended.decision === "deny", unattended.decision);
+  const prot = W(".claude/settings.json", as("backend"));
+  check("ownership deny outranks the self-protection ask", prot.decision === "deny", prot.decision);
+
+  // Bash writes by a surface agent — best effort, through the self-protection target analysis.
+  const B = (command, who, extra = {}) => run({ ...bash(command, d, extra), ...as(who) }, at);
+  for (const [cmd, who, want] of [
+    ["echo x > apps/web/src/x.tsx", "backend", "deny"],
+    ["echo x > apps/api/src/x.ts", "backend", "allow"],
+    ["cp apps/api/src/f.ts apps/web/src/", "backend", "deny"],
+    ["mv apps/web/src/f.tsx apps/api/src/", "backend", "deny"],
+    ["rm apps/web/src/f.tsx", "backend", "deny"],
+    ["tee apps/web/src/x.tsx < /dev/null", "backend", "deny"],
+    ["sed -i 's/a/b/' apps/api/src/f.ts", "backend", "allow"],
+    ["sed -i '' 's/a/b/' apps/api/src/f.ts", "backend", "allow"],
+    ["sed -i 's/a/b/' apps/web/src/f.tsx", "backend", "deny"],
+    ["cd apps/web && echo x > src/y.tsx", "backend", "deny"],
+    ["cd apps/api && echo x > src/y.ts", "backend", "allow"],
+    ["bash -c 'echo x > apps/web/src/y.tsx'", "backend", "deny"],
+    ["echo x > packages/shared/src/feat.ts", "backend", "deny"],
+    ["npm test > /dev/null 2>&1", "backend", "allow"],
+    [`npm test > ${sh(join(tmpdir(), "cohorte-gate-log.txt"))}`, "backend", "allow"],
+    ['echo x > "$OUT/y.tsx"', "backend", "allow"],
+    ["cat apps/web/src/f.tsx", "backend", "allow"],
+    ["echo x > apps/web/src/x.tsx", null, "allow"],
+    ["echo x > apps/web/src/x.tsx", "cohorte-release", "allow"],
+  ]) {
+    const r = B(cmd, who);
+    check(`${who || "lead"} Bash ${JSON.stringify(cmd)} ⇒ ${want}`, r.decision === want,
+      `got ${r.decision}: ${r.reason || r.stderr}`);
+  }
+
+  // Inert cases.
+  const none = fixture(undefined);
+  check("no profile.json ⇒ ownership inert",
+    run(edit("Write", join(none, "apps/web/src/x.tsx"), none, as("backend")), { projectDir: none }).raw === "");
+  const off = fixture({ ...OWN_PROFILE, ownership: { enforce: false } });
+  check("ownership.enforce: false ⇒ inert",
+    run(edit("Write", join(off, "apps/web/src/x.tsx"), off, as("backend")), { projectDir: off }).raw === "");
+  check("ownership.enforce: false ⇒ Bash inert too",
+    run({ ...bash("echo x > apps/web/src/x.tsx", off), ...as("backend") }, { projectDir: off }).raw === "");
+  const bad = fixture("{ not json");
+  const badW = run(edit("Write", join(bad, "apps/web/src/x.tsx"), bad, as("backend")), { projectDir: bad });
+  check("malformed profile.json ⇒ inert, with a warning", badW.raw === "" && /unreadable/.test(badW.stderr || ""), badW.stderr);
+  const badB = run({ ...bash("echo x > apps/web/src/x.tsx && ls", bad), ...as("backend") }, { projectDir: bad });
+  check("malformed profile.json ⇒ Bash still evaluated normally (no fail-closed deny)", badB.raw === "", badB.reason);
+  const odd = fixture({ surfaces: "nope", ownership: [], contract: 3 });
+  check("wrong-typed profile fields ⇒ inert, never a crash",
+    run({ ...bash("echo x > apps/web/src/x.tsx", odd), ...as("backend") }, { projectDir: odd }).raw === "");
+
+  // The contract wins over the surface's own path — unless contract.enabled is false.
+  const inner = { ...OWN_PROFILE, contract: { enabled: true, path: "apps/api/contract" } };
+  const ci = fixture(inner);
+  const ciW = run(edit("Write", join(ci, "apps/api/contract/feat.ts"), ci, as("backend")), { projectDir: ci });
+  check("a contract inside the surface's own tree is still read-only", ciW.decision === "deny" && /contract/.test(ciW.reason || ""), ciW.reason);
+  const cOff = fixture({ ...inner, contract: { enabled: false, path: "apps/api/contract" } });
+  check("contract.enabled: false ⇒ its path is ordinary surface code",
+    run(edit("Write", join(cOff, "apps/api/contract/feat.ts"), cOff, as("backend")), { projectDir: cOff }).raw === "");
+
+  // A surface path of "." (single-app repo) owns everything but the contract.
+  const single = fixture({ contract: { path: "src/contract" }, surfaces: [{ key: "app", path: ".", agent: "app" }] });
+  check("surface path `.` ⇒ the whole repo",
+    run(edit("Write", join(single, "anything/x.ts"), single, as("app")), { projectDir: single }).raw === "");
+  check("surface path `.` ⇒ the contract still denied",
+    run(edit("Write", join(single, "src/contract/x.ts"), single, as("app")), { projectDir: single }).decision === "deny");
+
+  // Linked worktrees: surface paths resolve against the target's own checkout.
+  const wt = join(d, "..", `${d.split("/").pop()}-own-wt`);
+  const nested = join(d, ".worktrees", "n");
+  let ok = false;
+  try {
+    execFileSync("git", ["worktree", "add", "-q", "-b", "feature/o", wt], { cwd: d, stdio: "ignore" });
+    tmps.push(wt);
+    execFileSync("git", ["worktree", "add", "-q", "-b", "feature/n", nested], { cwd: d, stdio: "ignore" });
+    ok = true;
+  } catch { /* worktree unsupported */ }
+  if (ok) {
+    for (const [base, label] of [[wt, "sibling worktree"], [nested, "worktree nested under the main checkout"]]) {
+      const inW = run(edit("Write", join(base, "apps/api/src/n.ts"), d, as("backend")), at);
+      check(`${label}, lead session in main: its apps/api ⇒ allow`, inW.raw === "", inW.reason);
+      const outW = run(edit("Write", join(base, "apps/web/src/n.tsx"), d, as("backend")), at);
+      check(`${label}: its apps/web ⇒ deny`, outW.decision === "deny", outW.reason);
+    }
+    const fromWt = run(edit("Write", join(wt, "apps/api/src/n.ts"), wt, as("backend")), { projectDir: wt });
+    check("session opened in the worktree (profile.json only in main) ⇒ still enforced, in-tree allow", fromWt.raw === "", fromWt.reason);
+    const fromWtOut = run(edit("Write", join(wt, "apps/web/src/n.tsx"), wt, as("backend")), { projectDir: wt });
+    check("…and out-of-tree deny", fromWtOut.decision === "deny", fromWtOut.reason);
+  } else {
+    console.log("  – skipped (git worktree unavailable)");
+  }
 }
 
 // ── stamps are bound to the dispatch checkout (G8 cross-worktree) ────────────

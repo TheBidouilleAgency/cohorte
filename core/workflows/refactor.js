@@ -5,11 +5,13 @@
 // cheaper through the conversational /cohorte-refactor — this script skips it and says
 // so. Invoke with args = {domains: ["backend", …]} or {domains: "all"}.
 //
-// Shape (SCHEMA.md §Workflows): profile via profile-reader (phase 0), the open
+// Shape (profile/schema/workflows.md): profile via profile-reader (phase 0), the open
 // backlog read once, the `shared` domain (contract package — every slice
 // imports it) refactored FIRST and alone, then the other domains' surface
 // implementers in parallel (their trees are disjoint by construction), each
-// verified per-domain with one bounded retry round, and the backlog ticked.
+// verified per-domain with one bounded retry round, then — gates green and ≥ 1 item
+// cleared — the round frozen as ONE `kind: refactor` spec (the route to /cohorte-review →
+// /cohorte-ship, which ships specs, not backlogs) and the backlog ticked with its id.
 
 export const meta = {
   name: 'cohorte-refactor',
@@ -21,7 +23,8 @@ export const meta = {
     { title: 'Shared', detail: 'refactor the contract package first, alone' },
     { title: 'Refactor', detail: 'one surface implementer per domain, parallel' },
     { title: 'Verify', detail: 'per-domain gates + item check, one retry round', model: 'haiku' },
-    { title: 'Tick', detail: 'check cleared items off specs/refactor-backlog.md', model: 'haiku' },
+    { title: 'Spec', detail: 'freeze the round as a kind: refactor spec for review → ship', model: 'haiku' },
+    { title: 'Tick', detail: 'check cleared items off specs/refactor-backlog.md (· refactor:<id>)', model: 'haiku' },
   ],
 }
 
@@ -113,6 +116,18 @@ const OPEN = {
   },
 }
 
+// The spec writer settles the id (the script has no clock — Date is unavailable in a
+// workflow) and returns it; anything not shaped like a refactor id counts as a dead writer.
+const SPEC = {
+  type: 'object', required: ['id', 'branch'], additionalProperties: false,
+  properties: {
+    id: { type: 'string', description: 'refactor-<domains>-<YYYY-MM-DD>[-n], the spec file name without .md' },
+    branch: { type: 'string', description: 'the branch checked out after step 3' },
+    kanban: { type: 'string', description: 'the line kanban-move.sh printed' },
+  },
+}
+const SPEC_ID = /^refactor-[a-z0-9][a-z0-9-]*$/
+
 const VERIFY = {
   type: 'object', required: ['cleared', 'remaining', 'gatesGreen'], additionalProperties: false,
   properties: {
@@ -126,7 +141,7 @@ const VERIFY = {
 // ── Phase 0 — profile ────────────────────────────────────────────────────────
 phase('Profile')
 const profile = unwrapProfile(await agent(
-  'Return this project\'s PIPELINE.md `yaml pipeline-profile` block as JSON, per your instructions.',
+  'Return this project\'s profile (the `yaml pipeline-profile` block — `.claude/profile.json`, else PIPELINE.md) as JSON, per your instructions.',
   { agentType: 'cohorte-profile-reader', label: 'profile', schema: PROFILE, effort: 'low' },
 ))
 if (!profile || profile.error) {
@@ -228,6 +243,9 @@ const verifyDomain = async (d, implHandoff) => {
     v = v2
       ? { ...v2, cleared: [...new Set(cleared1.concat(v2.cleared || []))] }
       : { cleared: cleared1, remaining: retryItems, gatesGreen: false, failures: 'verifier died on the retry round' }
+    // The retry's verifier is asked the same question with no gates either — its
+    // gatesGreen is no more evidence than round 1's was.
+    if (noGates) v = { ...v, gatesGreen: false, failures: 'no gate commands declared for this domain — gates unverified' }
   }
   return { key: d.key, ...(v || { cleared: [], remaining: d.items, gatesGreen: false, failures: 'verifier died' }) }
 }
@@ -260,13 +278,94 @@ const restResults = await pipeline(
 )
 results.push(...restResults.filter(Boolean))
 
-// ── Phase 5 — tick the cleared items ─────────────────────────────────────────
-phase('Tick')
+// ── Phase 5 — freeze the round as a `kind: refactor` spec ────────────────────
+// Without it the round is code in the working tree with no route to a PR. ONE spec for the
+// whole round: review's diff, the freshness digest and the release commit all cover the
+// whole tree, so a spec per domain would each claim the others' code. Red gates ⇒ no spec
+// (review's preflight would abort it anyway) — finish the round first.
 const clearedAll = results.flatMap(r => r.cleared)
+const remainingAll = results.flatMap(r => r.remaining)
+const gatesAllGreen = results.length > 0 && results.every(r => r.gatesGreen)
+const clearedDomains = results.filter(r => r.cleared.length)
+// Surface keys are free text (`web_checkout`, `API`); an id is a file name and a branch,
+// and SPEC_ID below rejects anything else — so normalize here, not in the writer.
+const idPart = k => String(k).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'domain'
+const slug = clearedDomains.length > 3 ? 'all' : clearedDomains.map(r => idPart(r.key)).join('-')
+const prefix = (profile.vcs && profile.vcs.feature_branch_prefix) || 'feature/'
+const bare = l => String(l).replace(/^- \[[ x]\] /, '- ')
+const specTitle = `Refactor ${slug} — ${clearedAll.length} backlog item(s)`
+const specText = [
+  '---',
+  'feature_id: <ID>',
+  'kind: refactor # behaviour-preserving backlog pass — no contract; commit as refactor(<scope>)',
+  `title: ${specTitle}`,
+  'status: frozen',
+  `branch: ${prefix}<ID>`,
+  'created: <DATE>',
+  'reviewed_base:',
+  'reviewed_digest:',
+  '---',
+  '',
+  `# ${specTitle}`,
+  '',
+  '## 1. Goal',
+  '',
+  `Clear ${clearedAll.length} \`specs/refactor-backlog.md\` item(s) on ${clearedDomains.map(r => r.key).join(', ')} with no change of public behaviour.`,
+  '',
+  '## 2. Scope',
+  '',
+  '**In:** the §6 items, verbatim. **Out:** any behaviour change; the items §7 lists.',
+  '',
+  '## 6. Surface tasks',
+  ...clearedDomains.flatMap(r => ['', `### ${r.key}`, '', ...r.cleared.map(bare)]),
+  '',
+  '## 7. Out of scope',
+  '',
+  ...(remainingAll.length ? remainingAll.map(l => `${bare(l)} (still open in the backlog)`) : ['none']),
+  '',
+  '## 9. Acceptance criteria / DoD',
+  '',
+  '- [ ] Public behaviour preserved — no exported signature, route, response shape, CLI flag or persisted format changed (unless an item marks it a bug)',
+  '- [ ] Each §6 item cleared at its file:line',
+  '- [ ] All tests green — behaviour pinned by tests added first; no existing test loosened',
+  '- [ ] `PIPELINE.md` commands.lint · typecheck · test green',
+  "- [ ] Nothing outside §6's surfaces changed",
+  '',
+  '## Remediation',
+  '',
+].join('\n')
+
+let spec = null
+const wantSpec = clearedAll.length > 0 && gatesAllGreen
+if (wantSpec) {
+  phase('Spec')
+  const w = await agent(
+    'Freeze this cohorte refactor round as a spec (mechanical — no judgment). ' +
+    `0. ONE open refactor spec per branch: if \`git rev-parse --abbrev-ref HEAD\` is ${prefix}refactor-<x> and ` +
+    'specs/refactor-<x>.md exists with `status:` frozen or in-review, then ID = refactor-<x>: append the §6 item ' +
+    "lines below under their `### <domain>` headings there (add a heading if missing), skip to step 4. " +
+    `1. Run \`date +%F\` ⇒ DATE; ID = refactor-${slug}-DATE. If specs/ID.md exists and its \`status:\` is ` +
+    'shipped/merged/abandoned, suffix -2, -3… until the name is free. If it exists UNSHIPPED (frozen/in-review), ' +
+    "do not overwrite it: append this round's §6 item lines under their `### <domain>` headings there and skip step 2. " +
+    '2. Write specs/ID.md with EXACTLY the content below, every <ID> and <DATE> substituted. ' +
+    `3. \`git rev-parse --abbrev-ref HEAD\`: on ${base} ⇒ \`git switch -c ${prefix}ID\` (uncommitted work carries over); ` +
+    `already on ${prefix}ID ⇒ keep it; any other branch ⇒ leave it and report it. ` +
+    `4. \`<core>/pipeline/scripts/kanban-move.sh auto ID ready --title "[refactor] ${slug}"\` ` +
+    '(<core> = "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/cohorte"). ' +
+    'Return id (ID), branch (checked out now) and kanban (the line the script printed).\n' +
+    `<<<SPEC\n${specText}SPEC`,
+    { model: 'haiku', label: 'write-spec', schema: SPEC, effort: 'low' },
+  )
+  spec = w && typeof w === 'object' && SPEC_ID.test(String(w.id || '')) ? w : null
+}
+
+// ── Phase 6 — tick the cleared items ─────────────────────────────────────────
+phase('Tick')
 let tickedOk = true
 if (clearedAll.length) {
   const ticked = await agent(
     'In specs/refactor-backlog.md flip EXACTLY these open `- [ ]` item lines to `- [x]` (match verbatim, ' +
+    (spec ? `append \` · refactor:${spec.id}\` to each flipped line, ` : '') +
     'leave every other line untouched), then return the single word done:\n' + clearedAll.join('\n'),
     { model: 'haiku', label: 'tick-backlog', effort: 'low' },
   )
@@ -275,6 +374,7 @@ if (clearedAll.length) {
   tickedOk = ticked != null && /done/i.test(String(ticked))
 }
 
+const branchOk = spec && spec.branch === `${prefix}${spec.id}`
 return {
   domains: Object.fromEntries(results.map(r => [r.key, {
     cleared: r.cleared.length, remaining: r.remaining.length, gatesGreen: r.gatesGreen,
@@ -282,10 +382,17 @@ return {
   skippedSmall: Object.fromEntries(small.map(d => [d.key, d.items.length])),
   stillOpen: results.flatMap(r => r.remaining.map(line => `[${r.key}] ${line}`)).slice(0, 15),
   backlogTicked: tickedOk,
+  // Only a writer that came back with a well-formed id has its spec claimed.
+  refactorSpec: spec ? `specs/${spec.id}.md` : null,
   next: !tickedOk
     ? `${clearedAll.length} item(s) were cleared in code but NOT ticked off specs/refactor-backlog.md ` +
       '(the ticking agent died) — tick them by hand, or the next /cohorte-refactor re-dispatches finished work'
-    : results.some(r => r.remaining.length || !r.gatesGreen)
-      ? 'items remain — finish them with the conversational /cohorte-refactor <domain>'
-      : 'all dispatched domains clean — optionally close with one final /cohorte-audit',
+    : wantSpec && !spec
+      ? `the refactor spec was NOT written (the spec writer died) — the ${clearedAll.length} cleared item(s) have no ` +
+        'route to a PR: write it per /cohorte-refactor §4, then /cohorte-review <id> → /cohorte-ship <id>'
+      : spec
+        ? `/cohorte-review ${spec.id} → /cohorte-ship ${spec.id}` +
+          (branchOk ? '' : ` — but the checked-out branch is ${spec.branch || 'unknown'}, not ${prefix}${spec.id}: /cohorte-ship refuses it, switch first`) +
+          (remainingAll.length ? ` (${remainingAll.length} item(s) still open, listed in its §7 — /cohorte-refactor <domain> appends them to this spec first, or ship without them)` : '')
+        : 'items remain — finish them with the conversational /cohorte-refactor <domain> (gates must be green before the round gets a spec)',
 }

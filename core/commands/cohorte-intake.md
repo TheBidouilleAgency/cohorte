@@ -50,12 +50,12 @@ patch triage starts loaded instead of re-asking:
 **Stage it** to `specs/reports/intake-<slug>.md` (overwrite; `mkdir -p specs/reports` first —
 the gitignored buffer dir, so the handoff survives a `/clear`). Then:
 
-> **Kanban** (SCHEMA.md §Kanban): run
+> **Kanban** (`<core>/pipeline/schema/kanban.md`): run
 > `<core>/pipeline/scripts/kanban-move.sh auto patch-<slug> ideas --title "[patch] <one-line title>"`.
 > The id is **`patch-<slug>`, prefix included, and the title prefix is `[patch]`** — that is the
 > exact join key and the exact title `/cohorte-patch` §1 looks for, so its later move finds THIS
-> card instead of creating a duplicate and stranding this one in Ideas (the failure SCHEMA
-> §Kanban's "tag before you move" exists to prevent). `auto` resolves the board from the config
+> card instead of creating a duplicate and stranding this one in Ideas (the failure
+> `<core>/pipeline/schema/kanban.md`'s "tag before you move" exists to prevent). `auto` resolves the board from the config
 > itself and exits 0 with a `kanban: <reason>` line when there is none — so **never decide "no
 > board is configured" without running it**.
 

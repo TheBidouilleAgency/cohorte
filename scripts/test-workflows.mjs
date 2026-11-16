@@ -424,6 +424,51 @@ console.log("review.js verdict contract");
     /feature-diff\.sh --base \$BASE --digest/.test(prompts["stage-report"]), prompts["stage-report"].slice(-400));
 }
 {
+  // commands.security: run by the same preflight, after the tests, behind a marker.
+  const PRE = "<core>/pipeline/scripts/preflight.sh specs/reports/feat-x.preflight.txt ";
+  const plain = await run("review.js", replier([["review:", { verdict: "SHIP", findings: [] }], ...BASE_REVIEW]));
+  check("no commands.security ⇒ the preflight call is unchanged",
+    plain.prompts.preflight.includes(PRE + '"tsc --noEmit" "lint -q" "test --dot"\n') &&
+    !/cohorte-security-scans/.test(plain.prompts.preflight), plain.prompts.preflight.slice(0, 300));
+  check("no commands.security ⇒ reviewers get no preflight-report slot",
+    !/preflight report/.test(plain.prompts["review:backend"]), plain.prompts["review:backend"].slice(-200));
+
+  const SECRET = 'P=specs/reports/security-scan.patch; ~/.claude/cohorte/pipeline/scripts/feature-diff.sh --default main --patch > "$P" || exit 2; grep \'^+\' "$P" > "$P.added"; gitleaks stdin --redact --no-banner < "$P.added" && rm -f "$P" "$P.added"';
+  const AUDIT = "npm audit --omit=dev --audit-level=high";
+  const withSec = { ...PROFILE, commands: { ...PROFILE.commands, security: [AUDIT, "<detected audit>", "", SECRET] } };
+  const sec = await run("review.js", replier([
+    ["review:", { verdict: "SHIP", findings: [] }], ["profile", withSec], ...BASE_REVIEW,
+  ]));
+  const line = sec.prompts.preflight.split("\n").find((l) => l.startsWith(PRE)) || "";
+  const single = `'${SECRET.replace(/'/g, "'\\''")}'`;
+  check("commands.security run after typecheck/lint/tests, behind the marker, in order",
+    line === PRE + `"tsc --noEmit" "lint -q" "test --dot" ": cohorte-security-scans" "${AUDIT}" ${single}`, line);
+  // The single-quoted form must round-trip to the exact command (no shell is used to check it).
+  const unq = single.slice(1, -1).split("'\\''").join("'");
+  check("a command with `$` is single-quoted, so the calling shell expands nothing", unq === SECRET, unq);
+  check("placeholder and empty security entries are dropped", !/detected audit/.test(line));
+  check("commands.security ⇒ each reviewer is pointed at the preflight report's security section",
+    /preflight report: specs\/reports\/feat-x\.preflight\.txt \(security section from the line `\$ : cohorte-security-scans`\)$/
+      .test(sec.prompts["review:backend"]), sec.prompts["review:backend"].slice(-200));
+
+  const asString = await run("review.js", replier([
+    ["review:", { verdict: "SHIP", findings: [] }],
+    ["profile", { ...PROFILE, commands: { ...PROFILE.commands, security: AUDIT } }], ...BASE_REVIEW,
+  ]));
+  check("commands.security given as one string is accepted",
+    asString.prompts.preflight.includes(`"test --dot" ": cohorte-security-scans" "${AUDIT}"\n`), asString.prompts.preflight.slice(0, 300));
+  const empty = await run("review.js", replier([
+    ["review:", { verdict: "SHIP", findings: [] }],
+    ["profile", { ...PROFILE, commands: { ...PROFILE.commands, security: [] } }], ...BASE_REVIEW,
+  ]));
+  check("commands.security: [] ⇒ no marker", !/cohorte-security-scans/.test(empty.prompts.preflight));
+  const red = await run("review.js", replier([
+    ["profile", withSec], ["preflight", { pass: false, tail: "leak found" }], ...BASE_REVIEW,
+  ]));
+  check("red preflight with security scans ⇒ ABORTED, reason names commands.security",
+    red.result.aborted === "preflight" && /commands\.security/.test(red.result.reason), red.result.reason);
+}
+{
   // D13: a dead reviewer is retried ONCE, byte-identical, like a dead implementer.
   const { result, calls, prompts } = await run("review.js", (prompt, opts) => {
     const label = opts.label || "";
@@ -711,6 +756,139 @@ console.log("refactor.js retry & args");
   }, { domains: ["shared"] });
   check("no gate commands at all ⇒ gatesGreen false (unverified), whatever the verifier claims",
     bare.result.domains.shared.gatesGreen === false, JSON.stringify(bare.result.domains));
+}
+
+// ── refactor.js — the delivery path: a cleared round becomes a `kind: refactor` spec ──
+// Without it a refactor round was code in the working tree with no route to a PR
+// (/cohorte-ship ships a spec). One spec per round, only on green gates, and the backlog
+// ticks point at it.
+console.log("refactor.js delivery spec");
+// Surfaces with gate commands: a domain with none is unverified, never green (D13).
+const GATED = { ...PROFILE, surfaces: PROFILE.surfaces.map(x => ({ ...x, test_cmd: `t ${x.key}` })) };
+{
+  // …including after a retry round: the re-verifier's gatesGreen is no more evidence.
+  const items = ["- [ ] a", "- [ ] b", "- [ ] c", "- [ ] d", "- [ ] e"];
+  const { result } = await run("refactor.js", (prompt, opts) => {
+    const label = opts.label || "";
+    if (label === "profile") return PROFILE;
+    if (label === "read-backlog") return { domains: [{ key: "backend", items }] };
+    if (label === "verify:backend") return { cleared: items.slice(0, 4), remaining: items.slice(4), gatesGreen: true };
+    if (label === "reverify:backend") return { cleared: items.slice(4), remaining: [], gatesGreen: true };
+    if (label === "tick-backlog") return "done";
+    return "handoff";
+  }, { domains: ["backend"] });
+  check("no gate commands + a retry round ⇒ still gatesGreen false",
+    result.domains.backend.gatesGreen === false && result.refactorSpec === null, JSON.stringify(result.domains));
+}
+{
+  const items = ["- [ ] HIGH · apps/api/a.ts:1 · rule · split it", "- [ ] b", "- [ ] c", "- [ ] d", "- [ ] e"];
+  let specPrompt = "", tickPrompt = "";
+  const { result, calls } = await run("refactor.js", (prompt, opts) => {
+    const label = opts.label || "";
+    if (label === "profile") return { ...GATED, vcs: { default_branch: "main", feature_branch_prefix: "feat/" } };
+    if (label === "read-backlog") return { domains: [{ key: "backend", items }] };
+    if (label === "verify:backend") return { cleared: items.slice(0, 4), remaining: items.slice(4), gatesGreen: true };
+    if (label === "reverify:backend") return { cleared: [], remaining: items.slice(4), gatesGreen: true };
+    if (label === "write-spec") { specPrompt = prompt; return { id: "refactor-backend-2026-11-16", branch: "feat/refactor-backend-2026-11-16", kanban: "moved" }; }
+    if (label === "tick-backlog") { tickPrompt = prompt; return "done"; }
+    return "handoff";
+  }, { domains: ["backend"] });
+  const body = specPrompt.split("<<<SPEC\n")[1] || "";
+  check("green round ⇒ one spec written, before the tick",
+    calls.indexOf("write-spec") > -1 && calls.indexOf("write-spec") < calls.indexOf("tick-backlog"), calls.join(","));
+  check("spec front-matter: kind: refactor, frozen, feature branch prefix, empty review stamps",
+    /^kind: refactor\b/m.test(body) && /^status: frozen$/m.test(body) && /^branch: feat\/<ID>$/m.test(body)
+      && /^reviewed_base:$/m.test(body) && /^reviewed_digest:$/m.test(body), body.slice(0, 400));
+  check("id derived from the cleared domains", /ID = refactor-backend-DATE/.test(specPrompt), specPrompt.slice(0, 200));
+  check("scope = the cleared items verbatim (checkbox dropped), open ones under §7",
+    body.includes("### backend\n\n- HIGH · apps/api/a.ts:1 · rule · split it") &&
+      /## 7\. Out of scope\n\n- e \(still open/.test(body), body);
+  check("DoD = behaviour preserved + tests green, and NO contract section",
+    /^- \[ \] Public behaviour preserved/m.test(body) && /^- \[ \] All tests green/m.test(body)
+      && body.includes("## 9. Acceptance criteria / DoD") && !/^## 5\./m.test(body) && /^## Remediation$/m.test(body), body);
+  check("ticks reference the spec id", tickPrompt.includes("· refactor:refactor-backend-2026-11-16"), tickPrompt.slice(0, 200));
+  check("returns the spec and routes to review → ship",
+    result.refactorSpec === "specs/refactor-backend-2026-11-16.md"
+      && /^\/cohorte-review refactor-backend-2026-11-16 → \/cohorte-ship refactor-backend-2026-11-16/.test(result.next), result.next);
+  check("…naming the items still open", /1 item\(s\) still open/.test(result.next), result.next);
+}
+{
+  // Red gates ⇒ no spec: review's preflight would abort it, and a spec over red code is a lie.
+  const items = ["- [ ] a", "- [ ] b", "- [ ] c", "- [ ] d", "- [ ] e"];
+  const { result, calls } = await run("refactor.js", (prompt, opts) => {
+    const label = opts.label || "";
+    if (label === "profile") return GATED;
+    if (label === "read-backlog") return { domains: [{ key: "backend", items }] };
+    if (label.startsWith("verify:") || label.startsWith("reverify:")) return { cleared: items, remaining: [], gatesGreen: false, failures: "lint red" };
+    if (label === "tick-backlog") return "done";
+    return "handoff";
+  }, { domains: ["backend"] });
+  check("red gates ⇒ no spec writer dispatched", !calls.includes("write-spec"), calls.join(","));
+  check("red gates ⇒ no spec claimed, next says finish first",
+    result.refactorSpec === null && /gates must be green/.test(result.next), result.next);
+}
+{
+  // A dead (or malformed) writer must not have a spec path claimed — the round would look routed.
+  const items = ["- [ ] a", "- [ ] b", "- [ ] c", "- [ ] d", "- [ ] e"];
+  for (const reply of [null, "ok", { id: "../etc", branch: "x" }]) {
+    let tickPrompt = "";
+    const { result } = await run("refactor.js", (prompt, opts) => {
+      const label = opts.label || "";
+      if (label === "profile") return GATED;
+      if (label === "read-backlog") return { domains: [{ key: "backend", items }] };
+      if (label === "verify:backend") return { cleared: items, remaining: [], gatesGreen: true };
+      if (label === "write-spec") return reply;
+      if (label === "tick-backlog") { tickPrompt = prompt; return "done"; }
+      return "handoff";
+    }, { domains: ["backend"] });
+    check(`spec writer → ${JSON.stringify(reply)} ⇒ no spec claimed, next says it was NOT written`,
+      result.refactorSpec === null && /spec was NOT written/.test(result.next), result.next);
+    check("…the cleared items are still ticked, without a refactor: link",
+      items.every(i => tickPrompt.includes(i)) && !/refactor:/.test(tickPrompt), tickPrompt.slice(0, 160));
+  }
+}
+{
+  // Several domains ⇒ ONE spec whose id joins their keys; the wrong branch is named.
+  const items = ["- [ ] a", "- [ ] b", "- [ ] c", "- [ ] d", "- [ ] e"];
+  let specPrompt = "";
+  const { result } = await run("refactor.js", (prompt, opts) => {
+    const label = opts.label || "";
+    if (label === "profile") return GATED;
+    if (label === "read-backlog") return { domains: [{ key: "backend", items }, { key: "frontend", items }] };
+    if (label.startsWith("verify:")) return { cleared: items, remaining: [], gatesGreen: true };
+    if (label === "write-spec") { specPrompt = prompt; return { id: "refactor-backend-frontend-2026-11-16", branch: "main" }; }
+    if (label === "tick-backlog") return "done";
+    return "handoff";
+  }, { domains: "all" });
+  check("two domains ⇒ one spec, id joins the keys",
+    /ID = refactor-backend-frontend-DATE/.test(specPrompt) && /### backend[\s\S]*### frontend/.test(specPrompt), specPrompt.slice(0, 200));
+  check("spec on the wrong branch ⇒ next says ship will refuse it",
+    /checked-out branch is main/.test(result.next), result.next);
+}
+{
+  // Surface keys are free text; the id is a file name + branch. A raw `Web_Checkout` in the id
+  // failed SPEC_ID, so a spec that WAS written was reported unwritten and the ticks lost their link.
+  const items = ["- [ ] a", "- [ ] b", "- [ ] c", "- [ ] d", "- [ ] e"];
+  let specPrompt = "";
+  const prof = { ...GATED, surfaces: [{ key: "Web_Checkout", path: "apps/web", agent: "web", test_cmd: "t" }] };
+  const { result } = await run("refactor.js", (prompt, opts) => {
+    const label = opts.label || "";
+    if (label === "profile") return prof;
+    if (label === "read-backlog") return { domains: [{ key: "Web_Checkout", items }] };
+    if (label.startsWith("verify:")) return { cleared: items, remaining: [], gatesGreen: true };
+    if (label === "write-spec") {
+      specPrompt = prompt;
+      const id = (prompt.match(/ID = (refactor-[a-z0-9-]+)-DATE/) || [])[1] + "-2026-11-16";
+      return { id, branch: `feature/${id}` };
+    }
+    if (label === "tick-backlog") return "done";
+    return "handoff";
+  }, { domains: ["Web_Checkout"] });
+  check("surface key normalized into the id (web-checkout), and the spec is claimed",
+    /ID = refactor-web-checkout-DATE/.test(specPrompt) && result.refactorSpec === "specs/refactor-web-checkout-2026-11-16.md",
+    `${specPrompt.slice(0, 160)} → ${result.refactorSpec}`);
+  check("…an open refactor spec on the current branch is appended to, not duplicated",
+    /ONE open refactor spec per branch/.test(specPrompt), specPrompt.slice(0, 200));
 }
 
 // ── loop.js — build → review → [fix → review]*, unattended ──────────────────

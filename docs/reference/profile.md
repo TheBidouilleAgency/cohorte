@@ -7,8 +7,12 @@ generic and references this file by section. **Machine block first, prose after*
 prose sections carry conventions agents read (baked into their rendered files).
 
 The full field-by-field reference lives in the repo:
-[`profile/SCHEMA.md`](https://github.com/TheBidouilleAgency/cohorte/blob/main/profile/SCHEMA.md)
-(installed as `<core>/pipeline/SCHEMA.md`). This page summarizes each block and its consumers.
+[`profile/schema/profile-block.md`](https://github.com/TheBidouilleAgency/cohorte/blob/main/profile/schema/profile-block.md)
+(installed as `<core>/pipeline/schema/profile-block.md`). The rest of the rulebook — spec status,
+kanban, reconcile, workflows, … — is one file per topic under
+[`profile/schema/`](https://github.com/TheBidouilleAgency/cohorte/tree/main/profile/schema), indexed by
+`profile/SCHEMA.md`; each command cites only the file it needs. This page summarizes each block and its
+consumers.
 
 ## Machine block
 
@@ -122,6 +126,42 @@ commands:
   migrate: "cd apps/api && node ace migration:run"
   make_migration: "cd apps/api && node ace make:migration"
 ```
+
+### Runtime verification, security scans, ownership (3.1)
+
+```yaml
+commands:
+  dev: pnpm dev
+  dev_ready: http://localhost:5173     # or a probe command — empty ⇒ /cohorte-verify stays off
+  smoke: pnpm test:smoke
+  e2e: pnpm exec playwright test
+  migrate_down: "cd apps/api && node ace migration:rollback"
+  security:                            # run by the review preflight, after typecheck/lint/tests
+    - pnpm audit --prod --audit-level=high
+verify:
+  db: local                            # shared ⇒ migrations refused unless each worktree has its own DB
+ownership:
+  enforce: true                        # the gate denies a surface agent's writes outside its tree
+  shared_writable: [pnpm-lock.yaml]    # files any surface may write
+surfaces:
+  - key: api
+    owns_also: [packages/api-client]   # extra paths this surface may write
+```
+
+See `profile/schema/verify.md`, `profile/schema/preflight.md` §Security scans and
+[Gate & permissions](/reference/gate) §Surface ownership.
+
+### Project kind
+
+```yaml
+project:
+  kind: web        # web | api | cli | library | mobile | data | other — absent ⇒ web
+```
+
+Detected by `/cohorte-init-pipeline` and confirmed with you. The kind picks the spec's default
+Definition of Done, which review checks apply (mobile-first and the design step only where there is
+a UI; API compatibility for libraries and APIs; idempotency and backfills for data pipelines…) and
+whether the design step runs. The per-kind tables live in `profile/schema/project-kinds.md`.
 
 ### RBAC & design
 

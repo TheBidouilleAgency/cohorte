@@ -8,10 +8,10 @@ You are the **lead**. Audit **$ARGUMENTS** (default: whole repo) to drive it to 
 analyze only — no fixes (those go through `/cohorte-refactor`).
 
 > Read `PIPELINE.md` §`commands` (the mechanical gates), `surfaces`, and §Conventions — plus
-> `specs/_decisions.md` §Live if it exists (SCHEMA.md §Decisions): those standing decisions are part
+> `specs/_decisions.md` §Live if it exists (`<core>/pipeline/schema/decisions.md`): those standing decisions are part
 > of the rulebook you audit against, and code that contradicts one is a finding like any other.
 >
-> **Workflow variant** (opt-in — SCHEMA.md §Workflows): on Claude Code ≥ 2.1.154 with workflows
+> **Workflow variant** (opt-in — `<core>/pipeline/schema/workflows.md`): on Claude Code ≥ 2.1.154 with workflows
 > enabled, the human can ask to "run the audit workflow" (`<core>/workflows/audit.js` — one auditor
 > per domain, concurrent). This conversational path stays the default and the fallback.
 
@@ -20,7 +20,7 @@ analyze only — no fixes (those go through `/cohorte-refactor`).
 Run the profile's checks **scoped to `$ARGUMENTS`** when a path/domain is given (lint/format/typecheck
 on that path, tests via that surface's `test_cmd`); repo-wide only for the default whole-repo audit.
 Use the quiet variants (`commands.lint_quiet`/`test_quiet`, else the `2>&1 | tail -40` fallback —
-SCHEMA.md §Output discipline) and redirect every command's output into
+`<core>/pipeline/schema/output-discipline.md`) and redirect every command's output into
 `specs/reports/audit-gates.txt` in ONE call — truncate it first (`: > specs/reports/audit-gates.txt`,
 so a previous run's output is never read as this one's), then per command
 `printf '\n$ %s\n' "<cmd>" >> specs/reports/audit-gates.txt; <cmd> >> specs/reports/audit-gates.txt 2>&1`
@@ -63,5 +63,12 @@ and re-emit every **open** (`- [ ]`) match of that domain verbatim, tag included
 put there by `/cohorte-review` §3.5 — a real finding a feature deliberately did not own — and an audit that
 blindly overwrites a section is the one way they silently disappear. Already-ticked (`- [x]`) ones in a
 rewritten section are done: drop them.
+
+**Keep the in-flight refactor ticks** too: `/cohorte-refactor` §4 links what it cleared as
+`- [x] … · refactor:<id>`, and until `specs/<id>.md` is `merged` that line is the backlog's only
+pointer to where the work went (it is in review, or on an unmerged PR). So re-emit each such line
+verbatim while its spec's `status` (one `grep '^status:'` per id) is not `merged`/`abandoned`, and
+drop any new finding with the same `file` + problem (the fix is pending there, not missing). Spec
+merged, abandoned or absent ⇒ drop the line like any ticked one — whatever survived is re-found.
 Print a short summary (counts per domain + top items). Tell the human: refactor a domain with
 `/cohorte-refactor <domain>`.

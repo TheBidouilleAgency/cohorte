@@ -11,13 +11,13 @@ at Finish, when a board is configured.
 > Read `PIPELINE.md` §Personas (the panel) and §`rbac` first. If `rbac.enabled`, the panel must
 > pressure-test the idea so it serves **every** role, not just admins.
 >
-> Also read `specs/_decisions.md` §Live if it exists (SCHEMA.md §Decisions) — one line per standing
+> Also read `specs/_decisions.md` §Live if it exists (`<core>/pipeline/schema/decisions.md`) — one line per standing
 > decision. The panel argues about the idea, not about settled ground: a persona that proposes
 > something a live line already decided must be told so by another persona, and an idea that genuinely
 > needs to overturn one must say which line, out loud, so the human decides it here rather than
 > discovering the contradiction at `/cohorte-spec`.
 >
-> **Kanban** (SCHEMA.md §Kanban): every card move below is one call —
+> **Kanban** (`<core>/pipeline/schema/kanban.md`): every card move below is one call —
 > `<core>/pipeline/scripts/kanban-move.sh auto <feature_id> <stage> [--title "<human title>"]`, with
 > `auto` resolves the
 > board from `<config>` itself and exits 0 with a `kanban: <reason>` line when

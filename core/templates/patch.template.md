@@ -2,10 +2,11 @@
 feature_id: patch-<slug>
 kind: patch # a bug fix, not a feature — /cohorte-build skips contract authoring, /cohorte-ship commits `fix(…)`
 title: <one line: the bug, from the user's side>
-status: draft # draft → frozen → in-progress → in-review → shipped → merged · blocked · abandoned (see SCHEMA.md §Spec status)
+status: draft # draft → frozen → in-progress → in-review → shipped → merged · blocked · abandoned (see `<core>/pipeline/schema/spec-status.md`)
 severity: <critical | major | minor> # drives nothing mechanical; it is what the human triages on
 branch: <patch_branch_prefix><feature_id>
 created: <YYYY-MM-DD>
+migrations: false # true only if the fix ships a migration — then ## Rollback is mandatory
 reviewed_base: # merge-base sha at the last SHIP verdict — freshness-gate anchor (written by /cohorte-review)
 reviewed_digest: # sha256 (16 hex) of the reviewed source diff vs reviewed_base, specs excluded — /cohorte-ship re-checks
 design_files: [] # omit unless the fix is itself visual
@@ -77,8 +78,16 @@ design_files: [] # omit unless the fix is itself visual
 - [ ] The §4 regression test exists, and failed before the fix
 - [ ] Each touched surface's tests (TDD) green
 - [ ] `PIPELINE.md` commands.lint · typecheck · test green
-- [ ] The repro in §1 no longer reproduces
+- [ ] The repro in §1 no longer reproduces · runtime
 - [ ] Nothing outside §6's surfaces changed
+
+## Rollback
+
+> Only if `migrations: true` (then mandatory — `/cohorte-ship` refuses stubs); delete otherwise.
+
+- **Revert:** …
+- **Data:** …
+- **Migration down:** …
 
 ## Remediation
 

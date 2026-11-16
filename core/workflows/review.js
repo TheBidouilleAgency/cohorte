@@ -4,7 +4,7 @@
 // Invoke with args = {feature: "<feature_id>"} (or the bare feature id string).
 // Requires Claude Code >= 2.1.154 with workflows enabled — /cohorte-doctor reports this.
 //
-// Shape (SCHEMA.md §Workflows): phase 0 reads the profile through the
+// Shape (profile/schema/workflows.md): phase 0 reads the profile through the
 // profile-reader agent (scripts have no filesystem or shell), the deterministic
 // preflight aborts while red (zero reviewers spawned), the diff is staged ONCE
 // per touched surface, one reviewer runs per surface in parallel, an adversarial
@@ -44,7 +44,7 @@ const ARGS = (() => {
 })()
 // Approximate cost of this run from the runtime's own output-token counter — the one
 // figure the conversational path cannot record (a lead cannot read a subagent's token
-// count; SCHEMA.md §Measuring cost). Sampled at start, delta stamped into the metrics line.
+// count; profile/schema/metrics.md). Sampled at start, delta stamped into the metrics line.
 const spentNow = () => {
   try {
     const v = (budget && typeof budget.spent === 'function') ? budget.spent() : 0
@@ -183,7 +183,7 @@ const VERDICT = {
 // ── Phase 0 — profile ────────────────────────────────────────────────────────
 phase('Profile')
 const profile = unwrapProfile(await agent(
-  'Return this project\'s PIPELINE.md `yaml pipeline-profile` block as JSON, per your instructions.',
+  'Return this project\'s profile (the `yaml pipeline-profile` block — `.claude/profile.json`, else PIPELINE.md) as JSON, per your instructions.',
   { agentType: 'cohorte-profile-reader', label: 'profile', schema: PROFILE, effort: 'low' },
 ))
 if (!profile || profile.error) {
@@ -199,16 +199,28 @@ if (!surfaces.length) {
   return { verdict: 'ABORTED', aborted: 'profile', reason: 'profile has no surfaces — nothing would be reviewed. the `yaml pipeline-profile` block in PIPELINE.md is empty or unparseable, or the profile-reader mis-returned; run /cohorte-doctor' }
 }
 const quiet = (q, full) => (q && !String(q).startsWith('<') ? q : full ? `${full} 2>&1 | tail -40` : '')
+// commands.security (profile/schema/preflight.md): dependency audits and a secret scan of the
+// feature's own diff, run AFTER typecheck/lint/tests by the same script, into the same report.
+// A no-op marker opens their section so a reviewer (no Bash) can Grep for it and Read from there.
+const SECURITY_MARKER = ': cohorte-security-scans'
+const security = (Array.isArray(cmds.security) ? cmds.security : [cmds.security])
+  .filter(c => typeof c === 'string' && c.trim() && !c.trim().startsWith('<'))
 const checks = [cmds.typecheck, quiet(cmds.lint_quiet, cmds.lint), quiet(cmds.test_quiet, cmds.test)]
   .filter(c => c && !String(c).startsWith('<'))
+  .concat(security.length ? [SECURITY_MARKER, ...security] : [])
+// Each check is one argument of the preflight call. Double quotes would let the CALLING shell
+// expand a `$VAR` meant for the check's own `sh -c` (the secret-scan recipe sets and reads one),
+// so a command with shell syntax in it is single-quoted instead.
+const shq = c => /[$`\\]/.test(c) ? `'${String(c).replace(/'/g, "'\\''")}'` : JSON.stringify(c)
+const preflightReport = `specs/reports/${feature}.preflight.txt`
 
 // ── Phase 1 — deterministic preflight (abort while red, zero reviewers) ─────
 phase('Preflight')
 const pre = await agent(
   `Run the cohorte deterministic pre-flight for feature ${feature} in ONE Bash call, starting it with ` +
   '`date +%s` (return that number as `epoch` — the run\'s wall-clock origin for the metrics line):\n' +
-  `<core>/pipeline/scripts/preflight.sh specs/reports/${feature}.preflight.txt ` +
-  checks.map(c => JSON.stringify(c)).join(' ') + '\n' +
+  `<core>/pipeline/scripts/preflight.sh ${preflightReport} ` +
+  checks.map(shq).join(' ') + '\n' +
   '(<core> = "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/cohorte". ' +
   'Script absent: run the quoted commands yourself, each appended to the same report file, stopping at the first failure.) ' +
   'Return pass=true only on a fully green run. On failure set pass=false, put the raw last 40 lines of the report ' +
@@ -221,7 +233,8 @@ const pre = await agent(
 if (!pre || !pre.pass) {
   return {
     verdict: 'ABORTED', aborted: 'preflight',
-    reason: 'preflight red — fix the mechanical failures (or run /cohorte-fix) before any review; no reviewer was spawned',
+    reason: 'preflight red — fix the mechanical failures (or run /cohorte-fix) before any review; no reviewer was spawned' +
+      (security.length ? ' (commands.security counts: a dependency advisory at its threshold, or a secret in the feature diff, is red too)' : ''),
     failures: (pre && pre.tail) || 'preflight agent returned nothing',
   }
 }
@@ -229,7 +242,7 @@ if (!pre || !pre.pass) {
 // ── Phase 2 — stage the diff once ────────────────────────────────────────────
 phase('Stage')
 const surfaceList = surfaces.map(s => `${s.key} → ${s.path}`).join(' · ') || '(none declared)'
-// Every diff goes through feature-diff.sh (SCHEMA.md §Feature diff): a throwaway index so
+// Every diff goes through feature-diff.sh (profile/schema/feature-diff.md): a throwaway index so
 // UNTRACKED files are reviewed (feature work is uncommitted until ship — a bare `git diff`
 // dropped every new module, and an adds-only feature staged an empty diff that scored SHIP),
 // against the MERGE-BASE with the default branch (its tip blamed the feature for every file
@@ -293,8 +306,9 @@ const reviewPrompt = s =>
   'one line each, no code excerpts). Put anything real but OUT of this feature\'s scope in `deferred` ' +
   '(max 10, each with its out-of-scope reason) per your §Deferred rules — never in `findings`. — Variable slots: ' +
   `feature ${feature} · scope: the ${s.key} surface only · spec: specs/${feature}.md · ` +
-  `staged diff: ${s.diff} · changed files: ${s.files.join(', ')}`
-// SCHEMA.md §Dead agents, the same rule as the build: a silent reviewer is retried ONCE,
+  `staged diff: ${s.diff} · changed files: ${s.files.join(', ')}` +
+  (security.length ? ` · preflight report: ${preflightReport} (security section from the line \`$ ${SECURITY_MARKER}\`)` : '')
+// profile/schema/dead-agents.md, the same rule as the build: a silent reviewer is retried ONCE,
 // byte-identical (the staged diff is already on disk — the retry costs one agent); only a
 // surface silent twice is `unreviewed`.
 const reviewOnce = (s, label) =>
@@ -426,7 +440,7 @@ const staging = await agent(
   `${verdictJson}\n` +
   // Per-surface verdicts (not the merged one stamped on every row — one BLOCK used to
   // mark ALL surfaces failed), and dead reviewers logged as "dead"
-  // per SCHEMA.md §Dead agents — an incomplete batch is the batch worth recording.
+  // per profile/schema/dead-agents.md — an incomplete batch is the batch worth recording.
   `3. Append one line to $(dirname "$(git rev-parse --git-common-dir)")/.claude/pipeline-metrics.jsonl: ` +
   // seconds: the clock lives in Bash (scripts have none) — elapsed since the preflight's
   // `date +%s`. No epoch came back ⇒ the field is OMITTED, never a made-up 0.

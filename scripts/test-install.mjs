@@ -19,9 +19,11 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+const { profileJsonText, parseProfileBlock } = createRequire(import.meta.url)(join(root, "lib", "yaml.js"));
 const CLI = join(root, "bin", "cli.js");
 const WIN = process.platform === "win32";
 
@@ -90,6 +92,13 @@ console.log("install — a fresh machine");
     "implementer.template.md", "CHANGELOG.md"]) {
     check(`cohorte/pipeline/${f}`, existsSync(join(sb.g, "cohorte", "pipeline", f)));
   }
+  const topics = readdirSync(join(root, "profile/schema")).filter((f) => f.endsWith(".md"));
+  check("the schema topic files ship (one per section, indexed by SCHEMA.md)", topics.length > 10
+    && topics.every((f) => read(join(sb.g, "cohorte/pipeline/schema", f)) === read(join(root, "profile/schema", f))), topics.join(","));
+  check("a rendered command cites a schema topic file that is installed", (() => {
+    const m = read(join(sb.g, "commands/cohorte-build.md")).match(/<core>\/pipeline\/schema\/([a-z0-9-]+\.md)/);
+    return m && existsSync(join(sb.g, "cohorte/pipeline/schema", m[1]));
+  })());
   check("VERSION is the package version", read(join(sb.g, "cohorte/pipeline/VERSION")).trim() === pkg.version);
   for (const s of shippedScripts) {
     const p = join(sb.g, "cohorte", "pipeline", "scripts", s);
@@ -101,6 +110,8 @@ console.log("install — a fresh machine");
       && !existsSync(join(sb.g, "cohorte/pipeline/scripts/new-feature.sh")));
   check("the gate and the project wiring lib ship in the core",
     existsSync(join(sb.g, "cohorte/hooks/gate.py")) && existsSync(join(sb.g, "cohorte/lib/project.js")));
+  check("…with the parser sync needs for .claude/profile.json, next to it",
+    read(join(sb.g, "cohorte/lib/yaml.js")) === read(join(root, "lib/yaml.js")));
   check("no bytecode cache rides along", !walk(sb.g).some((f) => /__pycache__|\.pyc$/.test(f)));
   check("the user config is seeded", existsSync(join(sb.g, "cohorte.config.yaml")));
   check("no settings.json is written machine-wide (the gate is per project)", !existsSync(join(sb.g, "settings.json")));
@@ -284,8 +295,8 @@ console.log("sync — wires one project");
   const s = JSON.parse(read(join(d, ".claude/settings.json")));
   const groups = s.hooks.PreToolUse;
   const gateGroups = groups.filter((g) => g.hooks.some((h) => h.command.includes("cohorte-gate.py")));
-  check("registered for Bash|Task|Agent and Write|Edit|MultiEdit",
-    JSON.stringify(gateGroups.map((g) => g.matcher)) === JSON.stringify(["Bash|Task|Agent", "Write|Edit|MultiEdit"]));
+  check("registered for Bash|Task|Agent and Write|Edit|MultiEdit|NotebookEdit",
+    JSON.stringify(gateGroups.map((g) => g.matcher)) === JSON.stringify(["Bash|Task|Agent", "Write|Edit|MultiEdit|NotebookEdit"]));
   check("project-relative, fail-closed command",
     gateGroups.every((g) => g.hooks[0].command === 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/cohorte-gate.py"'
       && g.hooks[0].onFailure === "block"));
@@ -297,6 +308,8 @@ console.log("sync — wires one project");
   check(".gitignore covers the local artifacts",
     [".claude/preflight.ok", ".claude/pipeline-metrics.jsonl", "specs/reports/"].every((l) => ignore.includes(l)));
   check("specs/_template.md is seeded", existsSync(join(d, "specs/_template.md")));
+  check("no PIPELINE.md ⇒ no .claude/profile.json, and sync says so",
+    !existsSync(join(d, ".claude/profile.json")) && /profile\.json not written/.test(r.out), r.out);
   const again = cli(sb, "sync", d);
   check("a second sync changes nothing", /already in sync/.test(again.out), again.out);
 
@@ -331,9 +344,9 @@ console.log("sync — wires one project");
       ["Bash|Task|Agent", "Bash", { command: "ls" }, "allow"],
       ["Bash|Task|Agent", "Bash", { command: "git push --force" }, "deny"],
       ["Bash|Task|Agent", "Agent", { subagent_type: "backend", prompt: "x" }, "allow"],
-      ["Write|Edit|MultiEdit", "Write", { file_path: join(spaced, "src/a.ts"), content: "x" }, "allow"],
-      ["Write|Edit|MultiEdit", "MultiEdit", { file_path: join(spaced, "src/a.ts"), edits: [{ old_string: "a", new_string: "b" }] }, "allow"],
-      ["Write|Edit|MultiEdit", "Edit", { file_path: join(spaced, ".claude/gate-config.json"), old_string: "a", new_string: "b" }, "ask"],
+      ["Write|Edit|MultiEdit|NotebookEdit", "Write", { file_path: join(spaced, "src/a.ts"), content: "x" }, "allow"],
+      ["Write|Edit|MultiEdit|NotebookEdit", "MultiEdit", { file_path: join(spaced, "src/a.ts"), edits: [{ old_string: "a", new_string: "b" }] }, "allow"],
+      ["Write|Edit|MultiEdit|NotebookEdit", "Edit", { file_path: join(spaced, ".claude/gate-config.json"), old_string: "a", new_string: "b" }, "ask"],
     ];
     for (const [m, tool, input, want] of cases) {
       const r = hook(m, tool, input);
@@ -348,6 +361,75 @@ console.log("sync — wires one project");
   const b = cli(sb, "sync", d);
   check("an invalid project settings.json aborts the sync", b.status === 1 && /not valid JSON/.test(b.out), b.out);
   check("…and is left byte-identical", read(join(d, ".claude/settings.json")) === broken);
+  git("status");
+}
+
+// ── H1. sync — .claude/profile.json, through the INSTALLED project.js ─────────
+// `<sync>` in every prompt is `node <core>/lib/project.js sync .` — the copy the installer wrote,
+// not the source tree — so this block runs exactly that file.
+console.log("sync — writes .claude/profile.json (the installed <sync>)");
+{
+  const sb = sandbox();
+  cli(sb, "install");
+  const { d, git } = gitRepo();
+  const installedSync = (...a) => {
+    const r = spawnSync(process.execPath, [join(sb.g, "cohorte/lib/project.js"), "sync", d, ...a], {
+      encoding: "utf8", env: { ...process.env, HOME: sb.home, USERPROFILE: sb.home, CLAUDE_CONFIG_DIR: sb.g },
+    });
+    return { status: r.status, out: (r.stdout || "") + (r.stderr || "") };
+  };
+  const md = (surfaces) => "# Profile\n\n```yaml pipeline-profile\nname: demo\nvcs:\n  default_branch: main\n"
+    + "surfaces:\n" + surfaces.map((k) => `  - key: ${k}\n    path: apps/${k}\n    agent: ${k}\n    tools: [Read, Edit]\n`).join("")
+    + "gate:\n  deny: [\"rm -rf /\"]  # never\n```\n\n## Conventions\n\nprose\n";
+  write(join(d, "PIPELINE.md"), md(["web"]));
+  let r = installedSync();
+  const pj = join(d, ".claude/profile.json");
+  check("installed project.js exits 0", r.status === 0, r.out);
+  check("writes .claude/profile.json = the parsed machine block",
+    existsSync(pj) && JSON.stringify(JSON.parse(read(pj))) === JSON.stringify(parseProfileBlock(read(join(d, "PIPELINE.md")))), r.out);
+  check("…byte-identical to the shared serializer doctor compares with", read(pj) === profileJsonText(read(join(d, "PIPELINE.md"))));
+  check("…and asks for it to be committed", /Commit .*\.claude\/profile\.json/.test(r.out), r.out);
+  check("profile.json is not gitignored (it is committed)", (() => {
+    const c = spawnSync("git", ["-C", d, "check-ignore", "-q", ".claude/profile.json"]);
+    return c.status === 1;
+  })());
+  check("a second sync is a no-op", /already in sync/.test(installedSync().out));
+  const pjCheck = () => {
+    const out = cli(sb, "doctor", d, "--json").out;
+    try { return JSON.parse(out).checks.find((c) => c.id === "profile-json") || {}; } catch { return { detail: out }; }
+  };
+  let pc = pjCheck();
+  check("doctor: fresh but uncommitted ⇒ warn naming the commit", pc.status === "warn" && /not committed/.test(pc.detail), JSON.stringify(pc));
+  git("add", ".claude/profile.json"); git("commit", "-q", "-m", "profile");
+  pc = pjCheck();
+  check("doctor: committed and matching ⇒ ok", pc.status === "ok", JSON.stringify(pc));
+
+  writeFileSync(join(d, "PIPELINE.md"), read(join(d, "PIPELINE.md")).replace("prose", "more prose"));
+  check("a prose-only edit changes nothing", /already in sync/.test(installedSync().out));
+
+  writeFileSync(join(d, "PIPELINE.md"), md(["web", "api"]));
+  pc = pjCheck();
+  check("doctor: machine block edited, not re-synced ⇒ warn, fix is cohorte sync",
+    pc.status === "warn" && /sync/.test(pc.fix || ""), JSON.stringify(pc));
+  r = installedSync();
+  check("a machine-block edit regenerates it (a new surface reaches the agents)",
+    /updated \.claude\/profile\.json/.test(r.out) && JSON.parse(read(pj)).surfaces.map((s) => s.key).join() === "web,api", r.out);
+
+  const good = read(pj);
+  writeFileSync(join(d, "PIPELINE.md"), "# no block any more\n");
+  r = installedSync();
+  check("an unparseable PIPELINE.md writes nothing, says so, keeps the old file",
+    r.status === 0 && /no parseable/.test(r.out) && /may be stale/.test(r.out) && read(pj) === good, r.out);
+
+  // The lazy require: a core missing yaml.js still wires the gate.
+  rmSync(join(sb.g, "cohorte/lib/yaml.js"));
+  writeFileSync(join(d, "PIPELINE.md"), md(["web"]));
+  r = installedSync();
+  check("yaml.js missing ⇒ the gate is still wired, profile.json skipped with a reason",
+    r.status === 0 && /yaml\.js missing/.test(r.out) && existsSync(join(d, ".claude/hooks/cohorte-gate.py")), r.out);
+
+  const u = cli(sb, "uninstall", "--project", d);
+  check("uninstall --project removes .claude/profile.json", u.status === 0 && !existsSync(pj), u.out);
   git("status");
 }
 

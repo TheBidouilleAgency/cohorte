@@ -10,11 +10,11 @@ You run the **spec** step in the main thread — interactive, with the human. Pa
 > Read `PIPELINE.md` first: `contract` (mechanism/path — so §5 names the right schema types),
 > `design.enabled` (whether §8 matters), and §Conventions. Use `specs/_template.md` as the section list.
 >
-> **Decision journal** (SCHEMA.md §Decisions): read `specs/_decisions.md` §Live if it exists — one
+> **Decision journal** (`<core>/pipeline/schema/decisions.md`): read `specs/_decisions.md` §Live if it exists — one
 > line per standing decision, so it is cheap. It is the ONLY place the project's transverse rules
 > live; a spec that contradicts one silently un-decides it. Absent ⇒ nothing to honour yet.
 >
-> **Kanban** (SCHEMA.md §Kanban): when the spec opens, run
+> **Kanban** (`<core>/pipeline/schema/kanban.md`): when the spec opens, run
 > `<core>/pipeline/scripts/kanban-move.sh auto <feature_id> spec --title "<human title>"`; on freeze
 > (`status: frozen`, Mode A), the same call with `ready`. `auto` resolves the board from the config itself and exits 0 with a
 > `kanban: <reason>` line when there is none — so **never decide "no board is configured" without
@@ -53,6 +53,15 @@ Detect the mode from the pasted content:
    owns (a new service/app/top-level module), note it in the spec (a line in the relevant task section:
    `> needs new surface: <proposed key/path>`). Don't render agents here — `/cohorte-build` §1.5 auto-reconciles
    it. This is just so the human isn't surprised when `/cohorte-build` proposes a new agent.
+4c. **Migrations → a way back.** If §4 adds or alters a migration (or the contract changes what is
+   persisted), set `migrations: true` in the front-matter and fill `## Rollback` with the human —
+   what to revert, what data is lost or irreversible, the exact down step on the dev DB
+   (`commands.migrate_down` when it fits). `<core>/pipeline/schema/verify.md` §Migrations. Before the
+   freeze, `<core>/pipeline/scripts/verify-run.sh rollback-check specs/<id>.md` must exit 0 —
+   `/cohorte-ship` refuses the spec otherwise. Tag DoD lines only a running app can prove
+   `· runtime: <check>` (see the template's §9 note), and drop the template's runtime lines that
+   do not apply: `rollback` without `migrations: true`, and `e2e` when the profile has no
+   `commands.e2e` (retag it `smoke`, or bare `· runtime` for a human check).
 5. When the human validates, **freeze**: write `specs/<id>.md` (`status: frozen`, front-matter filled).
    Create the file — do not ask the human to. **Postcondition:** `grep -q '^status: frozen' specs/<id>.md`
    — if it fails the freeze didn't land; fix it before pointing the human at `/cohorte-build`.

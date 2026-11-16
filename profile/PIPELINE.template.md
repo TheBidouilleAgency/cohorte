@@ -19,6 +19,12 @@ one_liner: <one sentence: what this product is>
 ui_language: <English | French | …>          # language of ALL user-facing copy
 package_manager: <pnpm | npm | yarn | bun | pip | cargo | go>
 
+# ── project kind (what the repo delivers) ───────────────────────────────────
+# Selects the spec DoD defaults, the review's kind-specific checks and whether
+# the design step applies — see <core>/pipeline/schema/project-kinds.md.
+project:
+  kind: <web | api | cli | library | mobile | data | other>   # absent ⇒ web
+
 # ── vcs ─────────────────────────────────────────────────────────────────────
 vcs:
   host: <github | gitlab | none>
@@ -48,7 +54,7 @@ retrieval:
 # This list GROWS automatically: /cohorte-build §1.5 adds a surface (and renders its
 # agent) when a spec touches a tree no surface owns, or splits a bottleneck
 # surface into specialized sub-surfaces. Keep one owner per tree; shared code
-# (routing/state/DS) is its own single-owner surface. See SCHEMA.md §Specialization.
+# (routing/state/DS) is its own single-owner surface. See `<core>/pipeline/schema/specialization.md`.
 surfaces:
   - key: backend                              # short id, used as agent name + scope
     path: apps/api                            # the ONLY tree this surface's agent may touch
@@ -98,6 +104,14 @@ contract:
   index: packages/shared-types/src/index.ts   # barrel to export from, or "" if none
   authored_by: lead                           # NEVER the implementer agents
 
+# ── surface ownership (enforced by the gate hook) ──────────────────────────
+# A surface agent may write only under its surfaces[].path (+ an optional per-surface
+# `owns_also: [db/migrations]`, + shared_writable below); contract.path is read-only to it.
+# Write/Edit outside ⇒ denied; Bash writes ⇒ best effort. The lead is never restricted.
+ownership:
+  enforce: true                               # false ⇒ back to convention + review only
+  shared_writable: []                         # e.g. [pnpm-lock.yaml] — files every surface may touch
+
 # ── release notes (optional) ────────────────────────────────────────────────
 # A per-feature release note the project's versioning tool consumes. When
 # enabled, /cohorte-ship authors it BEFORE dispatching the release agent, so it
@@ -128,9 +142,33 @@ commands:
   typecheck: pnpm check-types
   test: pnpm test
   test_quiet: pnpm test --reporter=dot       # bridled variant — what the /cohorte-review preflight runs
+  security: []                               # dependency audit / feature-diff secret scan commands, run after tests (schema/preflight.md)
   # migration commands — omit / leave "" if the project has no DB migrations
   migrate: "cd apps/api && node ace migration:run"
   make_migration: "cd apps/api && node ace make:migration"
+  # undo the last migration on the DEV db — /cohorte-verify checks down-then-up, /cohorte-revert
+  # runs it. A command in gate.deny is never run (e.g. migration:rollback below): move it to
+  # gate.ask to let the pipeline verify rollbacks. "" ⇒ rollback is not verified.
+  migrate_down: ""
+  # runtime verification (/cohorte-verify, <core>/pipeline/schema/verify.md) — `dev` counts only
+  # with a `dev_ready` probe; all "" ⇒ verify is skipped silently
+  dev_ready: ""                              # URL answering 2xx/3xx once `dev` is up, or a shell probe exiting 0 — e.g. "http://localhost:3333/health"
+  smoke: ""                                  # quick checks against the running app, e.g. "curl -sf http://localhost:3333/health"
+  e2e: ""                                    # e.g. "pnpm exec playwright test --reporter=line"
+
+# ── runtime verification (optional — /cohorte-verify) ───────────────────────
+# Runs the app between /cohorte-review and /cohorte-ship, through
+# pipeline/scripts/verify-run.sh. See `<core>/pipeline/schema/verify.md`.
+verify:
+  enabled: true                               # false ⇒ /cohorte-verify is a no-op and /cohorte-ship never asks
+  db: local                                   # local = the dev DB is yours to migrate and roll back;
+                                              #   shared = others use it ⇒ migrations refused unless
+                                              #   isolation.db_per_worktree and run in a feature worktree
+  ready_timeout_seconds: 90
+  check_timeout_seconds: 600
+  screenshots: auto                           # auto = with a local Playwright CLI (node_modules/.bin/playwright) · off
+  surfaces: {}                                # per-surface hints, keyed by surfaces[].key, e.g.
+                                              #   frontend: { base_url: "http://localhost:5173", paths: [/, /settings], smoke: "" }
 
 # ── rbac (optional) ─────────────────────────────────────────────────────────
 rbac:

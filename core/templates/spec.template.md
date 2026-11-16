@@ -1,9 +1,10 @@
 ---
 feature_id: <slug>
 title: <Feature title>
-status: draft # draft → frozen → in-progress → in-review → shipped → merged · blocked · abandoned (see SCHEMA.md §Spec status)
+status: draft # draft → frozen → in-progress → in-review → shipped → merged · blocked · abandoned (see `<core>/pipeline/schema/spec-status.md`)
 branch: <feature_branch_prefix><slug>
 created: <YYYY-MM-DD>
+migrations: false # true when §4 adds/changes a migration — ## Rollback becomes mandatory, /cohorte-verify runs it on the dev DB (`<core>/pipeline/schema/verify.md`)
 reviewed_base: # merge-base sha at the last SHIP verdict — freshness-gate anchor (written by /cohorte-review)
 reviewed_digest: # sha256 (16 hex) of the reviewed source diff vs reviewed_base, specs excluded — /cohorte-ship re-checks
 design_files: [] # design page links — full URLs of the form https://claude.ai/design/p/<projectId>?file=<file> (each carries its own project + page); blank until designed; omit if no UI
@@ -72,15 +73,35 @@ design_files: [] # design page links — full URLs of the form https://claude.ai
 
 ## 9. Acceptance criteria / DoD
 
+> Defaults follow `PIPELINE.md` `project.kind` (absent ⇒ `web`). `web` ⇒ keep the five lines below
+> as they are. Any other kind ⇒ read only its `## <kind>` section of
+> `<core>/pipeline/schema/project-kinds.md` and apply its **DoD** line: add the lines it lists, drop
+> the ones it drops (mobile-first outside `web`/`mobile`). Then add this feature's own criteria.
+
 - [ ] Every contract endpoint/interface implemented exactly
 - [ ] Each surface's tests (TDD) green
 - [ ] `PIPELINE.md` commands.lint · typecheck · test green
-- [ ] Mobile-first / responsive verified (if UI)
+- [ ] The app starts and the feature's main flow works · runtime: e2e
+- [ ] Migrations apply and roll back on the dev DB (if `migrations: true`) · runtime: rollback
+- [ ] Mobile-first / responsive verified (if UI) · runtime
 - [ ] User-facing copy in `ui_language`
+
+> `· runtime: <check>` marks an item only a running app can prove: `/cohorte-verify` ticks it when its
+> check (`smoke`, `e2e`, `rollback`, `smoke:<surface>`…) passed. A bare `· runtime` needs a human eye.
 
 ## 10. Assumptions & open questions
 
 - …
+
+## Rollback
+
+> Mandatory when `migrations: true` (`/cohorte-ship` refuses the spec while this holds only stubs);
+> otherwise optional. `/cohorte-revert` follows it, and its PR body carries it to whoever rolls back
+> production. Each line concrete — a command, a table, a flag.
+
+- **Revert:** … <!-- what goes back: the merge commit, a feature flag to flip first, a config to restore -->
+- **Data:** … <!-- what is lost or irreversible: rows written since, a dropped column's values, backfills -->
+- **Migration down:** … <!-- the exact step on the dev DB, e.g. `commands.migrate_down`; order vs. the code revert -->
 
 ## Remediation
 

@@ -36,6 +36,19 @@ branch (local or `origin/`, whichever is newer), so commits landing on `main` me
 as deletions. `.claude/` and `specs/` are excluded. Exit 3 means the base could not be resolved;
 callers stop rather than fall back to a plain `git diff`.
 
+## `verify-run.sh` — the runtime check behind `/cohorte-verify`
+
+Owns everything a prompt must not improvise about processes: starts `commands.dev` in its own process
+group, waits for `commands.dev_ready` (a URL or a probe), runs the smoke / e2e checks under timeouts,
+optionally screenshots (a local Playwright only), runs migrations up — and down-then-up when
+`commands.migrate_down` is set — **only on a dev database** (`verify.db: shared` is refused unless the
+worktree has its own DB), and **stops the server on every exit path**. Writes
+`specs/reports/<id>.verify.json` (`PASS`/`FAIL`/`SKIPPED`, checks, evidence, the digest of the tree it
+verified — `/cohorte-ship` compares it). Every command it is handed is judged by the gate first; the
+gate also inspects its arguments directly, so a denied command never runs. `verify-run.sh stop <id>`
+reaps a server a killed run left behind; `rollback-check <spec>` exits 1 when `migrations: true` and
+`## Rollback` is empty.
+
 ## `kanban-move.sh` — board updates outside agent context
 
 ```sh

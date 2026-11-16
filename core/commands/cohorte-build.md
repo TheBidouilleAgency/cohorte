@@ -17,7 +17,7 @@ builds itself. Say which mode you ran in your last line.
 > dispatch + their agent names), `contract` (mechanism + path), and the `design` flag. _Skip the
 > re-read if it's already in your context this session and unmodified since._
 >
-> **Kanban** (SCHEMA.md §Kanban): once §1 confirms the frozen spec, run
+> **Kanban** (`<core>/pipeline/schema/kanban.md`): once §1 confirms the frozen spec, run
 > `<core>/pipeline/scripts/kanban-move.sh auto $ARGUMENTS building`. `auto` resolves the board from the config itself and
 > exits 0 with a `kanban: <reason>` line when there is none — so **never decide "no board is
 > configured" without running it**. That inference, not a missing board, is what used to freeze
@@ -27,7 +27,7 @@ builds itself. Say which mode you ran in your last line.
 
 - Check the spec front-matter FIRST — `grep '^status:' specs/$ARGUMENTS.md` (or Read with a ~15-line
   limit) — before any full read. Buildable statuses are `frozen`, `in-review` and `in-progress`
-  (SCHEMA.md §Spec status). `blocked` means a loop round gave up here: say so with the `reason` from
+  (`<core>/pipeline/schema/spec-status.md`). `blocked` means a loop round gave up here: say so with the `reason` from
   `specs/reports/$ARGUMENTS.loop.json` (a reason with no `outcome` is a resumable stop — re-running the
   loop workflow resumes it), and route by the spec's `## Remediation` — open items ⇒ `/cohorte-fix`
   (or `--readiness-only`, to hand them back to the loop), none ⇒ continue this build. `shipped` / `merged` / `abandoned` ⇒ done, say so and stop. Anything
@@ -40,6 +40,8 @@ builds itself. Say which mode you ran in your last line.
   on `<default_branch>` run `git switch <prefix>$ARGUMENTS 2>/dev/null || git switch -c <prefix>$ARGUMENTS`
   (uncommitted work carries over). `<prefix>` = `vcs.patch_branch_prefix` (else `fix/`) for
   `kind: patch`, `vcs.feature_branch_prefix` otherwise. On some *other* branch ⇒ say which and ask.
+- **`kind: refactor` ⇒ stop.** `/cohorte-refactor` already built it; it has no contract to author
+  and no implementer to dispatch. Say so and route to `/cohorte-review $ARGUMENTS`.
 - **`kind: patch` in the front-matter ⇒ this is a bug fix** frozen by `/cohorte-patch`, and it is
   built by this command like any other spec, with two differences called out where they apply: §1.6
   judges it against its regression test instead of a contract, and §2 authors no contract unless §5
@@ -71,19 +73,21 @@ Map every area the spec touches (§5 contract + each surface's tasks + touched p
   has no owner. Auto-detect it and propose a new surface for it.
 - **Bottleneck area → specialize.** If one existing surface carries a large, cleanly-separable chunk of
   this feature (e.g. a whole new feature-module) that would dominate build time, propose splitting that
-  chunk into its own specialized surface. Use the heuristic in SCHEMA.md §Specialization — only when the
+  chunk into its own specialized surface. Use the heuristic in `<core>/pipeline/schema/specialization.md` — only when the
   boundary is clean; skip when tangled or tiny.
 
 For each surface to add: infer its `key`, `path`, `label`, `agent`, `tools`, `model`, `*_cmd`s, and
 `uses_design` (mirror a sibling surface), show the human a one-line proposal, and on go-ahead **render it now** per
-SCHEMA.md §"Rendering / reconciling a surface agent" — write the `surfaces[]` entry + §Conventions/§Testing
+`<core>/pipeline/schema/rendering.md` — write the `surfaces[]` entry + §Conventions/§Testing
 stanza into `PIPELINE.md`, render `<agents>/<agent>.md` from the implementer template, applying the
-shared-code rule (shared trees get a single-owner surface; cross-slice shapes go through the contract).
+shared-code rule (shared trees get a single-owner surface; cross-slice shapes go through the contract),
+then run `<sync>` — implementers read `<state>/profile.json`, and until it is regenerated it lacks
+the new surface.
 This is the automatic path: you don't send the human back to `/cohorte-init-pipeline`. If nothing new is needed,
 say so and continue. Dispatch (§3) then covers the reconciled surface list.
 
 **Adding or splitting a surface is an architectural decision** — append ONE line for it to
-`specs/_decisions.md` §Live (SCHEMA.md §Decisions; create from `<core>/templates/decisions.template.md`
+`specs/_decisions.md` §Live (`<core>/pipeline/schema/decisions.md`; create from `<core>/templates/decisions.template.md`
 if absent), area `surfaces`, e.g.
 `- <date> · surfaces · <key> owns <path>, single owner of <what> — because <the boundary reason> · $ARGUMENTS`.
 One `>>` in the Bash call you're already making. Nothing added ⇒ nothing to append.
@@ -200,7 +204,7 @@ tree. For each surface in `surfaces`:
 
 A surface's work can die: a rate limit mid-run, a transport error after retries, context exhausted.
 When it does, it returns **nothing** — and nothing is byte-identical to "a clean surface with nothing
-to report". Silence is not a green light; treat it as the failure it is (SCHEMA.md §Dead agents).
+to report". Silence is not a green light; treat it as the failure it is (`<core>/pipeline/schema/dead-agents.md`).
 
 - **Roll call.** Every surface handled in §3 must come back with a handoff in the format its
   agent instructions define. Missing, empty, or truncated mid-sentence ⇒ that surface is **dead**.
@@ -232,10 +236,13 @@ anything went wrong. In the same call write the machine-readable batch result to
 `specs/reports/$ARGUMENTS.build.json` (overwrite) — the channel an automated driver reads, since it
 never sees your chat:
 `{"id":"$ARGUMENTS","phase":"build","ts":"<ISO>","surfaces":{"<key>":"ok|error|dead",…},"dead":["<key>",…]}`
-— this is the evidence SCHEMA.md §Specialization asks for before splitting a surface.
-Then tell the human: exercise the feature by hand if it's worth it, then run `/cohorte-review $ARGUMENTS` —
+— this is the evidence `<core>/pipeline/schema/specialization.md` asks for before splitting a surface.
+Then tell the human: run `/cohorte-review $ARGUMENTS`, and after its SHIP `/cohorte-verify $ARGUMENTS`
+(when the profile has runtime commands — it runs the app and its migrations; until then exercise it
+by hand if it's worth it) —
 unless a surface is dead, in which case say so first and let them decide whether to re-run `/cohorte-build`
 (a dead surface has no findings, so `/cohorte-fix` has nothing to re-dispatch).
-Do not run the app or migrations yourself here — building is not running.
+Do not run the app or migrations yourself here — building is not running; that is `/cohorte-verify`'s
+job, through its script.
 **Recommend a `/clear` now** — the spec, contract and diff are all on
 disk, and the lead's history is re-sent at input price on every turn it survives.

@@ -67,14 +67,14 @@ For each adopted rule, in this order:
 
 1. Append it to `PIPELINE.md` §Conventions under its stanza (create the `### Surface: <key>`
    stanza if absent; keep it rule-shaped, one line each).
-2. **Re-render every affected surface agent** per SCHEMA.md §Rendering step 2 — the
+2. **Re-render every affected surface agent** per `<core>/pipeline/schema/rendering.md` step 2 — the
    `<SURFACE_CONVENTIONS>` slice is **baked at render time**, so a §Conventions edit without a
    re-render produces the worst outcome available: reviewers (who read the prose live) enforce
    a rule implementers (who carry the stale bake) have never seen, and every future review
    round re-finds the pattern this retro just paid to close. If you cannot re-render on this
    runtime, say so and route to `/cohorte-update-pipeline` (its reconcile step 2 re-renders) —
    but then the rule is **pending**, and you say that too.
-3. Append ONE line per adopted rule to `specs/_decisions.md` §Live (SCHEMA.md §Decisions):
+3. Append ONE line per adopted rule to `specs/_decisions.md` §Live (`<core>/pipeline/schema/decisions.md`):
    `- <date> · conventions · <rule, compressed> — because <kind>×<n> across <features> · retro`.
    A retro rule is a standing decision; the journal is where the next `/cohorte-spec` learns it
    without re-mining the reports.

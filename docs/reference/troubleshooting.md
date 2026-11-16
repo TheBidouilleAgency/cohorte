@@ -107,7 +107,7 @@ explicitly rather than reporting success on registration alone.
 
 **Every Bash call in the project is refused (and edits and agent dispatches with it).**
 The gate is registered fail-closed (`onFailure: block`) on `Bash|Task|Agent` and
-`Write|Edit|MultiEdit`: when the hook itself cannot run, Claude Code refuses every one of those
+`Write|Edit|MultiEdit|NotebookEdit`: when the hook itself cannot run, Claude Code refuses every one of those
 calls. Usual causes: no `python3` on PATH (Python ≥ 3.9 is required — on Windows
 make sure `python3` resolves, not only `py`), or `.claude/hooks/cohorte-gate.py` missing while
 `.claude/settings.json` still registers it (a partial checkout, a deleted file). Fix: install

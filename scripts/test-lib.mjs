@@ -8,14 +8,14 @@
 //   node scripts/test-lib.mjs
 
 import { createRequire } from "node:module";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const root = fileURLToPath(new URL("..", import.meta.url));
-const { parse, parseProfileBlock } = require(join(root, "lib/yaml.js"));
+const { parse, parseProfileBlock, profileJsonText } = require(join(root, "lib/yaml.js"));
 const { state, scanSpecs } = require(join(root, "lib/doctor.js"));
 
 let failures = 0;
@@ -147,7 +147,7 @@ console.log("doctor.js — the /cohorte-doctor port");
   writeFileSync(join(d, ".mcp.json"), JSON.stringify({ mcpServers: { serena: {} } }));
   const hook = { type: "command", command: 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/cohorte-gate.py"' };
   const wired = { hooks: { PreToolUse: [
-    { matcher: "Bash|Task|Agent", hooks: [hook] }, { matcher: "Write|Edit|MultiEdit", hooks: [hook] },
+    { matcher: "Bash|Task|Agent", hooks: [hook] }, { matcher: "Write|Edit|MultiEdit|NotebookEdit", hooks: [hook] },
   ] } };
   writeFileSync(join(d, ".claude", "settings.json"), JSON.stringify(wired));
 
@@ -183,12 +183,12 @@ console.log("doctor.js — the /cohorte-doctor port");
   // The hook check must FAIL each way it can actually break.
   const setHooks = (groups) => writeFileSync(join(d, ".claude", "settings.json"),
     JSON.stringify({ hooks: { PreToolUse: groups } }));
-  setHooks([{ matcher: "Bash|Task", hooks: [hook] }, { matcher: "Write|Edit|MultiEdit", hooks: [hook] }]);
+  setHooks([{ matcher: "Bash|Task", hooks: [hook] }, { matcher: "Write|Edit|MultiEdit|NotebookEdit", hooks: [hook] }]);
   s = await state({ projectRoot: d, globalDir: g, cliVersion: "9.9.9", offline: true });
   check("a matcher without Agent is bad (the phase gate never fires on Claude Code ≥ 2.1.63)",
     by(s.checks, "hooks").status === "bad" && /Agent/.test(by(s.checks, "hooks").detail), by(s.checks, "hooks").detail);
   setHooks([{ matcher: "Bash|Task|Agent", hooks: [hook] }, { matcher: "Bash", hooks: [hook] },
-    { matcher: "Write|Edit|MultiEdit", hooks: [hook] }]);
+    { matcher: "Write|Edit|MultiEdit|NotebookEdit", hooks: [hook] }]);
   s = await state({ projectRoot: d, globalDir: g, cliVersion: "9.9.9", offline: true });
   check("a duplicate Bash registration is flagged (it double-prompts)",
     by(s.checks, "hooks").status === "warn" && /2×/.test(by(s.checks, "hooks").detail), by(s.checks, "hooks").detail);
@@ -241,9 +241,40 @@ console.log("doctor.js — the /cohorte-doctor port");
       && !/cohorte-review/.test(by(s.checks, "agents").detail),
     by(s.checks, "agents").detail);
 
+  // .claude/profile.json freshness: content decides, mtime only names the cause.
+  const pjPath = join(d, ".claude", "profile.json");
+  const mdPath = join(d, "PIPELINE.md");
+  const pjStatus = async () => by((await state({ projectRoot: d, globalDir: g, cliVersion: "9.9.9", offline: true })).checks, "profile-json");
+  rmSync(pjPath, { force: true });
+  let c = await pjStatus();
+  check("profile.json missing ⇒ warn, fixed by cohorte sync", c.status === "warn" && /missing/.test(c.detail) && /sync/.test(c.fix), c.detail);
+  writeFileSync(pjPath, profileJsonText(readFileSync(mdPath, "utf8")));
+  c = await pjStatus();
+  // Not a git repo here, so "committed" is unknown — never reported as a failure.
+  eq("profile.json matching a fresh parse ⇒ ok", c.status, "ok");
+  writeFileSync(pjPath, profileJsonText(readFileSync(mdPath, "utf8")).replace(/\n/g, "\r\n"));
+  c = await pjStatus();
+  eq("CRLF line endings (Windows autocrlf checkout) are not staleness ⇒ ok", c.status, "ok");
+  const mdText = readFileSync(mdPath, "utf8");
+  writeFileSync(mdPath, mdText + "\n## Conventions\n\nprose only\n");
+  const past = new Date(Date.now() - 3600e3);
+  utimesSync(pjPath, past, past);
+  c = await pjStatus();
+  eq("older than PIPELINE.md but identical content (prose edit, fresh clone) ⇒ still ok", c.status, "ok");
+  writeFileSync(mdPath, mdText.replace("name: Proj", "name: Renamed"));
+  utimesSync(pjPath, past, past);
+  c = await pjStatus();
+  check("machine block edited after the last sync ⇒ stale warn", c.status === "warn" && /stale/.test(c.detail), c.detail);
+  writeFileSync(mdPath, mdText);
+  writeFileSync(pjPath, JSON.stringify({ name: "hand-edited" }));
+  c = await pjStatus();
+  check("hand-edited profile.json (newer, different) ⇒ warn", c.status === "warn" && /differs/.test(c.detail), c.detail);
+  writeFileSync(pjPath, profileJsonText(mdText));
+
   const bare = scratch();
   s = await state({ projectRoot: bare, globalDir: g, cliVersion: "9.9.9", offline: true });
   eq("no PIPELINE.md ⇒ profile bad", by(s.checks, "profile").status, "bad");
+  eq("no PIPELINE.md ⇒ the profile.json check is skipped", by(s.checks, "profile-json").status, "skip");
   eq("not a cohorte project ⇒ the hook check is skipped, not failed", by(s.checks, "hooks").status, "skip");
   s = await state({ projectRoot: bare, globalDir: scratch(), cliVersion: "9.9.9", offline: true });
   eq("no core ⇒ core bad", by(s.checks, "core").status, "bad");

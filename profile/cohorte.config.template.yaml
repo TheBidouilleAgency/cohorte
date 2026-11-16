@@ -20,7 +20,7 @@ obsidian:
 # Mirrors /cohorte-brainstorm…/cohorte-ship onto an Obsidian Kanban board — one board per project. The
 # board path points at your PERSONAL vault, so it is machine-specific and lives here (never
 # committed in a repo's PIPELINE.md). /cohorte-init-pipeline + /cohorte-update-pipeline write `boards` for you.
-# See SCHEMA.md §Kanban.
+# See ~/.claude/cohorte/pipeline/schema/kanban.md.
 kanban:
   enabled: false              # cfg:kanban_enabled — master switch for the kanban mirror
   # Default column mapping: pipeline stage → the EXACT board column heading. Shared by every

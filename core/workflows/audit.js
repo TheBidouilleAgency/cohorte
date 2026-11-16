@@ -3,7 +3,7 @@
 //
 // Invoke with args = {target: "<path or domain>"} (optional — default whole repo).
 //
-// Shape (SCHEMA.md §Workflows): profile via profile-reader (phase 0), the
+// Shape (profile/schema/workflows.md): profile via profile-reader (phase 0), the
 // mechanical gates staged to disk by one haiku agent, then ONE auditor per
 // domain (each surface + `shared`) running concurrently — the runtime caps
 // concurrency at 20 (CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS since 2026-08), extra
@@ -144,7 +144,7 @@ const BACKLOG = {
 // ── Phase 0 — profile ────────────────────────────────────────────────────────
 phase('Profile')
 const profile = unwrapProfile(await agent(
-  'Return this project\'s PIPELINE.md `yaml pipeline-profile` block as JSON, per your instructions.',
+  'Return this project\'s profile (the `yaml pipeline-profile` block — `.claude/profile.json`, else PIPELINE.md) as JSON, per your instructions.',
   { agentType: 'cohorte-profile-reader', label: 'profile', schema: PROFILE, effort: 'low' },
 ))
 if (!profile || profile.error) {
@@ -180,7 +180,7 @@ const gates = await agent(
   { model: 'haiku', label: 'gates', schema: GATES, effort: 'low' },
 )
 // A dead gates agent is NOT "zero mechanical failures" — silence would read as the
-// cleanest possible inventory from a phase that never ran (SCHEMA.md §Dead agents).
+// cleanest possible inventory from a phase that never ran (profile/schema/dead-agents.md).
 // The domain auditors still run (they read the staged gates file, which then simply
 // isn't there), but the run must say the mechanical sweep is uncovered.
 const gatesCovered = gates != null
@@ -238,6 +238,11 @@ const oldDomains = (existing && Array.isArray(existing.domains) ? existing.domai
   .filter(d => d && d.key).map(d => ({ key: String(d.key).trim(), lines: Array.isArray(d.lines) ? d.lines : [] }))
 const oldByKey = Object.fromEntries(oldDomains.map(d => [d.key, d.lines]))
 const isOpenDeferred = l => /^- \[ \]/.test(l) && /deferred:\S/.test(l)
+// A ticked item cleared by a refactor round that has not shipped yet: its `refactor:<id>` spec is
+// the review → PR route, and dropping the line would orphan it. Workflow scripts cannot read the
+// spec's status, so the workflow keeps every such line; /cohorte-audit (conversational) prunes the
+// ones whose spec is merged or gone.
+const isRefactorTick = l => /^- \[x\]/.test(l) && /refactor:\S/.test(l)
 let total = 0
 let carried = 0
 const sections = []
@@ -250,7 +255,7 @@ for (const key of order) {
     total += items.length
     const lines = items.map(it => `- [ ] ${it.severity} · ${it.file}:${it.line} · ${it.kind} · ${it.fix}`)
     if (d.overflow) lines.push(`- [ ] (+${d.overflow} more beyond the cap — re-audit ${d.key} after this pass)`)
-    const keep = (oldByKey[key] || []).filter(isOpenDeferred).filter(l => !lines.includes(l))
+    const keep = (oldByKey[key] || []).filter(l => isOpenDeferred(l) || isRefactorTick(l)).filter(l => !lines.includes(l))
     carried += keep.length
     sections.push({ key, lines: lines.concat(keep) })
   } else if (oldByKey[key] && oldByKey[key].length) {

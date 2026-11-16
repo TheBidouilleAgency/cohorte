@@ -5,6 +5,7 @@ Installed per project as `.claude/hooks/cohorte-gate.py` and registered in the p
 `.claude/settings.json` as a PreToolUse hook:
 
     python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/cohorte-gate.py"     matcher: Bash|Task|Agent
+                                                                    and: Write|Edit|MultiEdit
 
 It reads the PreToolUse payload on stdin and either stays silent (allow, exit 0) or prints
 one `hookSpecificOutput.permissionDecision` of "ask" or "deny" (exit 0). Stdlib only,
@@ -30,6 +31,14 @@ What it does, in order of authority:
    These are matched as tokens, not substrings (see "Matching").
 5. Preflight phase gate: a Task/Agent dispatch of a listed subagent needs a fresh
    `.claude/preflight.ok` stamp whose content digest equals the dispatch checkout's.
+6. Surface ownership: a subagent (payload `agent_id`) whose `agent_type` is a surface agent
+   of `.claude/profile.json` is denied a Write/Edit/MultiEdit/NotebookEdit outside its
+   `surfaces[].path` (+ its `owns_also`, + `ownership.shared_writable`) and any write to the
+   contract (`contract.path`/`contract.index`). Its Bash writes get the same check, best
+   effort, through the self-protection target analysis (redirections, cp/mv/rm, tee, sed -i,
+   …). The lead, the fixed cohorte-* agents and unknown agent types are not restricted; no
+   profile.json or `ownership.enforce: false` ⇒ inert. Only targets inside a project
+   checkout are judged.
 
 Matching. The command is lexed like a shell does it: quotes, escapes, `\\`-newline
 continuations, comments, heredocs (bodies are data unless fed to a shell), `$(…)`,
@@ -1174,6 +1183,192 @@ def resolve_roots(cwd):
     return roots, top
 
 
+# ── surface ownership ────────────────────────────────────────────────────────
+# A surface implementer (a subagent whose `agent_type` is a `surfaces[].agent` of the
+# project's `.claude/profile.json`) may only write under its own `surfaces[].path`, plus
+# its `owns_also` and the global `ownership.shared_writable` entries; the frozen contract
+# (`contract.path`, `contract.index`) is read-only to it. The lead (no `agent_id` in the
+# payload), the fixed cohorte-* agents and unknown agent types are never restricted.
+# Inert when profile.json is absent or unreadable, or `ownership.enforce` is false. Only
+# targets inside one of the project's checkouts are judged — /dev/null, $TMPDIR, a file
+# under ~ are not another surface's tree. Nothing here may raise for a malformed profile:
+# hook() turns an exception on a Bash payload into a deny for everyone, the lead included.
+OWNERSHIP_OFF = {"false", "no", "off", "0"}
+GLOB_CHARS = set("*?[")
+
+
+def _profile_str(v):
+    """A usable profile string: not empty, not a `<placeholder>` left by the template."""
+    if not isinstance(v, str):
+        return None
+    v = v.strip()
+    return v if v and not v.startswith("<") else None
+
+
+def _profile_paths(v):
+    if isinstance(v, str):
+        v = [v]
+    if not isinstance(v, list):
+        return []
+    out = []
+    for e in v:
+        e = _profile_str(e)
+        if e:
+            out.append(e)
+    return out
+
+
+def _nearest_dir(p):
+    d = os.path.dirname(p) if not os.path.isdir(p) else p
+    while d and not os.path.isdir(d):
+        parent = os.path.dirname(d)
+        if parent == d:
+            return None
+        d = parent
+    return d or None
+
+
+class Ownership(object):
+    def __init__(self, ctx, agent, mine, surfaces, shared, contract):
+        self.ctx = ctx
+        self.agent = agent
+        self.mine = mine                # [(key, path, owns_also)]
+        self.surfaces = surfaces        # [(key, agent, path)] — every surface, for the message
+        self.shared = shared
+        self.contract = contract
+        self._tops = {}
+
+    @classmethod
+    def load(cls, ctx, payload):
+        """The ownership rules for this payload's agent, or None (not a surface agent, no
+        profile, enforcement off). Never raises."""
+        try:
+            aid, agent = payload.get("agent_id"), payload.get("agent_type")
+            if not (isinstance(aid, str) and aid.strip() and isinstance(agent, str) and agent.strip()):
+                return None
+            prof = None
+            for r in ctx.roots:
+                p = os.path.join(r, ".claude", "profile.json")
+                if os.path.isfile(p):
+                    try:
+                        with open(p, "r", encoding="utf-8") as fh:
+                            prof = json.load(fh)
+                    except Exception as e:
+                        warn("%s is unreadable (%s) — surface ownership is not enforced until "
+                             "`cohorte sync` rewrites it" % (p, e))
+                        return None
+                    break
+            if not isinstance(prof, dict):
+                return None
+            own = prof.get("ownership")
+            own = own if isinstance(own, dict) else {}
+            enforce = own.get("enforce", True)
+            if enforce is False or (isinstance(enforce, str) and enforce.strip().lower() in OWNERSHIP_OFF):
+                return None
+            surfaces, mine = [], []
+            for s in prof.get("surfaces") if isinstance(prof.get("surfaces"), list) else []:
+                if not isinstance(s, dict):
+                    continue
+                key = _profile_str(s.get("key")) or "?"
+                sagent = _profile_str(s.get("agent")) or _profile_str(s.get("key"))
+                path = _profile_str(s.get("path"))
+                if path:
+                    surfaces.append((key, sagent, path))
+                if sagent == agent.strip():
+                    if not path:
+                        warn("surface `%s` has no usable `path` — its agent is not restricted" % key)
+                        return None
+                    mine.append((key, path, _profile_paths(s.get("owns_also"))))
+            if not mine:
+                return None
+            contract = []
+            c = prof.get("contract")
+            if isinstance(c, dict) and c.get("enabled") is not False:
+                contract = [x for x in (_profile_str(c.get("path")), _profile_str(c.get("index"))) if x]
+            return cls(ctx, agent.strip(), mine, surfaces,
+                       _profile_paths(own.get("shared_writable")), contract)
+        except Exception as e:
+            warn("surface ownership skipped: %s: %s" % (type(e).__name__, e))
+            return None
+
+    def _top_of(self, path):
+        d = _nearest_dir(path)
+        if not d:
+            return None
+        if d not in self._tops:
+            top, main = git_top_and_common(d)
+            roots = self.ctx.roots
+            ok = top and (top in roots or (main and os.path.realpath(main) in roots))
+            self._tops[d] = top if ok else None
+        return self._tops[d]
+
+    def base_of(self, real):
+        """The project checkout `real` lives in (its own linked worktree wins over a main
+        checkout that contains it), or None when it is outside every one of them."""
+        cands = list(self.ctx.roots)
+        top = self._top_of(real)
+        if top and top not in cands:
+            cands.append(top)
+        best = None
+        for c in cands:
+            if real == c or real.startswith(c.rstrip(os.sep) + os.sep):
+                if best is None or len(c) > len(best):
+                    best = c
+        return best
+
+    @staticmethod
+    def within(rel, real, base, entry):
+        if os.path.isabs(entry):
+            e = os.path.realpath(entry)
+            return real == e or real.startswith(e.rstrip(os.sep) + os.sep)
+        e = entry.replace("\\", "/").strip()
+        while e.startswith("./"):
+            e = e[2:]
+        e = e.rstrip("/") or "."
+        if e == ".":
+            return True
+        if GLOB_CHARS & set(e):
+            parts = rel.split("/")
+            return any(fnmatch.fnmatchcase("/".join(parts[:k]), e) for k in range(1, len(parts) + 1))
+        e = "/".join(x for x in e.split("/") if x not in ("", "."))
+        if rel == e or rel.startswith(e + "/"):
+            return True
+        target = os.path.realpath(os.path.join(base, e))     # the entry is itself a symlink
+        return real == target or real.startswith(target.rstrip(os.sep) + os.sep)
+
+    def judge(self, path):
+        """None when the agent may write `path` (absolute), else the reason it may not."""
+        real = os.path.realpath(os.path.normpath(path))
+        base = self.base_of(real)
+        if base is None:
+            return None
+        rel = os.path.relpath(real, base).replace(os.sep, "/")
+        if rel == "." or rel.startswith("../"):
+            return None
+        for c in self.contract:
+            if self.within(rel, real, base, c):
+                return ("`%s` is the frozen contract (`contract.path` in PIPELINE.md), read-only for "
+                        "surface agents — the lead authors it. If the contract is wrong, stop and say "
+                        "so in your handoff instead of changing it" % rel)
+        mine = []
+        for key, spath, also in self.mine:
+            mine.append(spath)
+            if self.within(rel, real, base, spath) or any(self.within(rel, real, base, e) for e in also):
+                return None
+        if any(self.within(rel, real, base, e) for e in self.shared):
+            return None
+        owner = None
+        for key, sagent, spath in self.surfaces:
+            if self.within(rel, real, base, spath) and (owner is None or len(spath) > len(owner[2])):
+                owner = (key, sagent, spath)
+        whose = ("it belongs to surface `%s` (agent `%s`)" % (owner[0], owner[1])
+                 if owner else "no surface owns it (it is the lead's)")
+        return ("surface ownership — agent `%s` may only write under `%s` (plus its `owns_also` and "
+                "`ownership.shared_writable`), and `%s` is outside: %s. Don't edit another surface's "
+                "tree — report what you need from it in your handoff and the lead routes it"
+                % (self.agent, "`, `".join(mine), rel, whose))
+
+
 class Ctx(object):
     def __init__(self, cwd, mode):
         self.cwd0 = os.path.realpath(cwd) if cwd and os.path.isdir(cwd) else None
@@ -1225,6 +1420,7 @@ class Ctx(object):
         self._defaults = None
         self._branches = {}
         self._aliases = {}
+        self.owner = None             # Ownership, set by evaluate() for a surface agent
         self._build_protected()
 
     def _build_protected(self):
@@ -1237,7 +1433,9 @@ class Ctx(object):
         for r in self.roots:
             for rel in ((".claude", "gate-config.json"), (".claude", "preflight.ok"),
                         (".claude", "settings.json"), (".claude", "settings.local.json"),
-                        (".claude", "hooks", "cohorte-gate.py"), (".cohorte", "gate-config.json")):
+                        (".claude", "hooks", "cohorte-gate.py"), (".cohorte", "gate-config.json"),
+                        # profile.json drives ownership enforcement: as protected as the config.
+                        (".claude", "profile.json")):
                 add(write, os.path.join(r, *rel))
             add(delete, os.path.join(r, ".claude", "pipeline.json"))
         home = os.path.expanduser("~")
@@ -1570,7 +1768,7 @@ PROTECTED_HINT_RE = re.compile(r"(^|/)\.claude(/|$)|gate-config\.json|preflight\
                                r"settings(\.local)?\.json|cohorte-gate\.py|pipeline\.json|"
                                r"(^|/)\.cohorte(/|$)")
 PROTECTED_NAME_RE = re.compile(r"gate-config\.json|preflight\.ok|\.claude/settings(\.local)?\.json|"
-                               r"cohorte-gate\.py")
+                               r"cohorte-gate\.py|\.claude/profile\.json")
 SPAWN_RE = {
     "py": re.compile(r"\bos\.(system|popen|exec\w*|spawn\w*)|\bsubprocess\b|\bpty\.spawn|"
                      r"\bcommands\.getoutput|\bpexpect\b|\bsh\.\w+\("),
@@ -1580,7 +1778,7 @@ SPAWN_RE = {
                      r"\bshell_exec\b|\bpassthru\b|\bproc_open\b"),
 }
 STRING_LIT_RE = re.compile(r"'((?:[^'\\]|\\.)*)'|\"((?:[^\"\\]|\\.)*)\"")
-PROTECTED_BASENAMES = {"gate-config.json", "preflight.ok", "settings.json", "settings.local.json",
+PROTECTED_BASENAMES = {"gate-config.json", "preflight.ok", "settings.json", "settings.local.json", "profile.json",
                       "cohorte-gate.py", "pipeline.json", ".claude", ".cohorte", "hooks", "~", "",
                       ".", ".."}
 
@@ -2038,6 +2236,9 @@ class Analyzer(object):
         if name == "preflight.sh":
             self.preflight_args(args, state, depth)
             return
+        if name == "verify-run.sh":
+            self.verify_args(args, state, depth)
+            return
         if name == "eval":
             text = " ".join(a.value for a in args)
             if any(a.dynamic for a in args):
@@ -2187,6 +2388,8 @@ class Analyzer(object):
             return
         if cmd_name(script.value) == "preflight.sh":
             self.preflight_args(sargs, state, depth)
+        elif cmd_name(script.value) == "verify-run.sh":
+            self.verify_args(sargs, state, depth)
 
     def preflight_args(self, args, state, depth):
         """preflight.sh <report> "<cmd>"…: it truncates <report>, and runs each cmd via sh -c."""
@@ -2198,6 +2401,31 @@ class Analyzer(object):
                 self.opaque("preflight.sh runs a check command built at run time", a.raw)
             else:
                 self.analyze_text(a.value, state.copy(), depth + 1)
+
+    # verify-run.sh run <id> --dev "<cmd>" --check "<name>=<cmd>" --migrate "<cmd>" …: every
+    # command it is handed runs through a shell, so judge each one here — the script also asks
+    # the gate itself, but its `--confirmed` flag is the lead's word, and a DENIED command must
+    # stay denied whatever the flag says.
+    VERIFY_CMD_FLAGS = {"--dev": False, "--ready": False, "--migrate": False,
+                        "--migrate-down": False, "--check": True}
+
+    def verify_args(self, args, state, depth):
+        k = 0
+        while k < len(args):
+            flag = args[k].value
+            if flag in self.VERIFY_CMD_FLAGS and k + 1 < len(args):
+                a = args[k + 1]
+                if a.dynamic:
+                    self.opaque("verify-run.sh runs a command built at run time", a.raw)
+                else:
+                    cmd = a.value
+                    if self.VERIFY_CMD_FLAGS[flag] and "=" in cmd:
+                        cmd = cmd.split("=", 1)[1]          # --check "<name>=<cmd>"
+                    if not (flag == "--ready" and re.match(r"^https?://", cmd.strip())):
+                        self.analyze_text(cmd, state.copy(), depth + 1)
+                k += 2
+                continue
+            k += 1
 
     def interp_code(self, name, args):
         lang = lang_of(name)
@@ -2313,21 +2541,29 @@ class Analyzer(object):
         if not w.dynamic:
             state.written.add(self.path_key(w, state))
 
+    def known_text(self, w, state):
+        """A run-time word with only the variables the gate can resolve itself
+        ($CLAUDE_PROJECT_DIR, $HOME, $PWD) substituted, or None if anything else is left."""
+        t = w.raw
+        if len(t) >= 2 and t[0] == t[-1] == '"':
+            t = t[1:-1]
+        for var, val in (("CLAUDE_PROJECT_DIR", os.environ.get("CLAUDE_PROJECT_DIR")),
+                         ("HOME", os.path.expanduser("~")),
+                         ("PWD", state.cwd if state.cwd_known else None)):
+            if val:
+                # Forward slashes: a Windows value (C:\\Users\\…) would otherwise read as
+                # shell escapes below and every expanded path would look suspect.
+                val = val.replace("\\", "/")
+                t = t.replace("${%s}" % var, val).replace("$" + var, val)
+        if "$" in t or "`" in t or "'" in t or '"' in t or "\\" in t:
+            return None
+        return t
+
     def classify_path(self, w, state, mode, relocated=False):
         ctx = self.ctx
         if w.dynamic:
-            t = w.raw
-            if len(t) >= 2 and t[0] == t[-1] == '"':
-                t = t[1:-1]
-            for var, val in (("CLAUDE_PROJECT_DIR", os.environ.get("CLAUDE_PROJECT_DIR")),
-                             ("HOME", os.path.expanduser("~")),
-                             ("PWD", state.cwd if state.cwd_known else None)):
-                if val:
-                    # Forward slashes: a Windows value (C:\\Users\\…) would otherwise read as
-                    # shell escapes below and every expanded path would look suspect.
-                    val = val.replace("\\", "/")
-                    t = t.replace("${%s}" % var, val).replace("$" + var, val)
-            if "$" in t or "`" in t or "'" in t or '"' in t or "\\" in t:
+            t = self.known_text(w, state)
+            if t is None:
                 return "suspect" if suspicious(w.value.split(DYN)[-1], w.raw) else None
             w = static_word(t)
         v = os.path.expanduser(w.value)
@@ -2357,7 +2593,33 @@ class Analyzer(object):
                         return "protected" if mode == "delete" else "suspect"
         return None
 
-    def check_path(self, w, state, mode, via, relocated=False):
+    def check_owner(self, w, state, mode, via, relocated=False, existing=False):
+        """Surface ownership for a Bash write — best effort: a target the gate can't resolve
+        statically (a run-time word, a relative path after an unresolvable `cd`) is let
+        through, never asked about (an ask is a deny in unattended runs)."""
+        try:
+            t = self.known_text(w, state) if w.dynamic else w.value
+            if not t:
+                return
+            v = os.path.expanduser(t)
+            if not os.path.isabs(v):
+                if relocated or not state.cwd_known:
+                    return
+                v = os.path.join(state.cwd, v)
+            if existing and not os.path.exists(v):
+                return
+            why = self.ctx.owner.judge(v)
+        except Exception as e:
+            warn("surface ownership could not judge `%s`: %s: %s" % (w.raw, type(e).__name__, e))
+            return
+        if why:
+            verb = {"write": "write", "delete": "delete or move", "recursive": "write into",
+                    "chmod": "change the permissions of"}.get(mode, "write")
+            self.deny("%s would %s `%s`: %s" % (via, verb, w.raw, why))
+
+    def check_path(self, w, state, mode, via, relocated=False, existing=False):
+        if self.ctx.owner is not None:
+            self.check_owner(w, state, mode, via, relocated, existing)
         kind = self.classify_path(w, state, mode, relocated)
         if kind is None:
             return
@@ -2440,8 +2702,11 @@ class Analyzer(object):
                     and "i" in w.value[1:].split(".")[0]))
                 for w in args)
             if inplace:
+                # Only existing files can be edited in place, so for ownership a positional
+                # that names nothing on disk is the sed script (`sed -i 's/a/b/' f`) or a BSD
+                # backup suffix (`sed -i .bak …`), not a target.
                 for p in positionals(args, ("-e", "-f")):
-                    self.check_path(p, state, "write", "`%s -i`" % name, relocated)
+                    self.check_path(p, state, "write", "`%s -i`" % name, relocated, existing=True)
         elif name == "dd":
             for w in args:
                 if w.value.startswith("of="):
@@ -2725,6 +2990,43 @@ def default_cwd():
         return None
 
 
+def edit_targets(ti):
+    """Every path a Write/Edit/MultiEdit/NotebookEdit call names. Only Write and Edit have a
+    documented schema (`file_path`); `notebook_path` and per-edit `file_path`s are read
+    defensively."""
+    out = []
+    for k in ("file_path", "notebook_path"):
+        v = ti.get(k)
+        if isinstance(v, str) and v and v not in out:
+            out.append(v)
+    edits = ti.get("edits")
+    if isinstance(edits, list):
+        for e in edits:
+            v = e.get("file_path") if isinstance(e, dict) else None
+            if isinstance(v, str) and v and v not in out:
+                out.append(v)
+    return out
+
+
+def edit_ownership(ctx, tool, targets):
+    """Surface ownership for an edit tool: a deny, or None. Fails closed — the caller is a
+    known surface agent, so a target the gate can't find or judge is refused."""
+    if not targets:
+        return ("deny", "`%s` by surface agent `%s` names no file path the gate can check "
+                "(surface ownership) — refused" % (tool, ctx.owner.agent))
+    for fp in targets:
+        try:
+            p = os.path.expanduser(fp)
+            if not os.path.isabs(p):
+                p = os.path.join(ctx.cwd0 or os.getcwd(), p)
+            why = ctx.owner.judge(p)
+        except Exception as e:
+            why = "surface ownership could not be checked (%s: %s) — refused" % (type(e).__name__, e)
+        if why:
+            return ("deny", "`%s` of `%s` refused: %s" % (tool, fp, why))
+    return None
+
+
 def evaluate(payload):
     """The decision for one PreToolUse payload: None (allow) or (decision, reason)."""
     tool = payload.get("tool_name")
@@ -2745,6 +3047,8 @@ def evaluate(payload):
     if not isinstance(ti, dict):
         raise PayloadError("tool_input is not an object")
     decision = None
+    if tool == "Bash" or tool in EDIT_TOOLS:
+        ctx.owner = Ownership.load(ctx, payload)
     if tool == "Bash":
         cmd = ti.get("command")
         if not isinstance(cmd, str):
@@ -2759,15 +3063,16 @@ def evaluate(payload):
     elif tool in DISPATCH_TOOLS:
         decision = Dispatch(ctx).evaluate(ti, ctx.cwd0)
     else:
-        fp = ti.get("file_path")
-        if fp is None:
-            fp = ti.get("notebook_path")
-        if isinstance(fp, str) and fp:
+        targets = edit_targets(ti)
+        if ctx.owner is not None:
+            decision = edit_ownership(ctx, tool, targets)
+        for fp in targets if decision is None else ():
             p = fp if os.path.isabs(fp) else os.path.join(ctx.cwd0 or ".", fp)
             p = os.path.expanduser(p)
             if os.path.normpath(p) in ctx.protected or os.path.realpath(p) in ctx.protected:
                 decision = ("ask", "`%s` edits `%s`, a file the Cohorte gate depends on "
                             "(self-protection) — confirm this change is intended" % (tool, fp))
+                break
     if decision is None:
         return None
     level, reason = decision

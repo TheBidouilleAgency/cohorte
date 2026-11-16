@@ -2,7 +2,7 @@
 // Validates the structural invariants of the cohorte core — the things a
 // prose refactor can silently break. Run by CI on every push/PR; run it
 // locally with `node scripts/validate-core.mjs`.
-import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -24,7 +24,7 @@ const frontmatter = (text) => {
 // Interactive commands must stay unpinned (they inherit on purpose).
 const PINNED = ["cohorte-build", "cohorte-review", "cohorte-fix", "cohorte-ship",
   "cohorte-audit", "cohorte-refactor", "cohorte-doctor", "cohorte-align-ds",
-  "cohorte-update-pipeline", "cohorte-fleet"];
+  "cohorte-update-pipeline", "cohorte-fleet", "cohorte-verify", "cohorte-revert"];
 const UNPINNED = ["cohorte-brainstorm", "cohorte-spec", "cohorte-init-pipeline", "cohorte-patch",
   "cohorte-intake", "cohorte-retro"];
 
@@ -186,7 +186,39 @@ for (const path of [...allDocs, ...readdirSync(join(root, "core/workflows")).map
     ["severity.MEDIUM", "must refuse surviving HIGH/MEDIUM"],
     ["feature-diff.sh --base <reviewed_base> --digest", "must recompute the digest with feature-diff.sh"],
     ["verdict.json` is absent", "may treat a missing stamp as legacy ONLY when verdict.json is absent"],
+    ["verify.json", "must read specs/reports/<id>.verify.json (the runtime gate)"],
+    ["`FAIL` ⇒ **refuse**", "must block on a FAIL verify verdict"],
+    ["not verified at runtime", "must ask the human when verify is absent/SKIPPED/stale"],
+    ["verify-run.sh rollback-check", "must refuse a `migrations: true` spec whose ## Rollback is empty"],
   ]) if (!ship.includes(needle)) fail("core/commands/cohorte-ship.md", why);
+}
+
+// ── /cohorte-verify and /cohorte-revert: the script owns processes and databases (3.1.0) ──
+// verify is the one phase that runs the app, and revert the one that runs a down migration. Both
+// are only safe because verify-run.sh owns the server lifecycle (process group, timeouts, stop on
+// every exit), the shared-DB refusal and the gate consult — a prompt that starts `pnpm dev &` itself
+// leaves a stray server whose port answers the NEXT verify's probe. Neither moves a kanban card
+// (no column for it), so neither is in KANBAN_STAGES; say so rather than drift into one.
+{
+  const exec = (p) => process.platform === "win32" || (statSync(join(root, p)).mode & 0o111) !== 0;
+  if (!existsSync(join(root, "scripts/verify-run.sh"))) fail("scripts/verify-run.sh", "missing");
+  else if (!exec("scripts/verify-run.sh")) fail("scripts/verify-run.sh", "not executable (commit it with the exec bit)");
+  for (const [file, needles] of [
+    ["core/commands/cohorte-verify.md", ["<core>/pipeline/scripts/verify-run.sh run", "--digest-base", "verify.json",
+      "· runtime: <check>", "600000", "--confirmed", "<core>/pipeline/schema/verify.md", "No kanban move"]],
+    ["core/commands/cohorte-revert.md", ["--phase revert", "git revert --no-commit", "Never push to the default branch",
+      "never force-push", "## Rollback", "<core>/pipeline/schema/verify.md", "No kanban move", "Never guess"]],
+  ]) {
+    const flat = read(file).replace(/\s+/g, " ");
+    for (const n of needles) if (!flat.includes(n)) fail(file, `lost \`${n}\``);
+    if (/kanban-move\.sh\s+auto/.test(flat)) fail(file, "moves a kanban card — there is no column for this phase");
+  }
+  for (const t of ["core/templates/spec.template.md", "core/templates/patch.template.md"]) {
+    const text = read(t);
+    if (!/^migrations: false\b/m.test(text)) fail(t, "front-matter lacks `migrations: false` (/cohorte-ship and /cohorte-verify route on it)");
+    if (!/^## Rollback$/m.test(text)) fail(t, "lacks the `## Rollback` section verify-run.sh rollback-check reads");
+    if (!/· runtime\b/.test(text)) fail(t, "no `· runtime` DoD tag — /cohorte-verify ticks only tagged items");
+  }
 }
 
 // ── profile ─────────────────────────────────────────────────────────────────
@@ -214,6 +246,94 @@ for (const rel of shipped) {
   if (text.includes("cohorte:if")) fail(rel, "carries a `cohorte:if` conditional — there is one runtime now; resolve it");
   if (/\b(codex|cursor|gemini|opencode)\b/i.test(text.replace(/\s+/g, " ")) || text.includes("~/.cohorte") || text.includes("'.cohorte'"))
     fail(rel, "mentions a dropped runtime (Codex/Cursor/Gemini/OpenCode/.cohorte) — 3.x is Claude Code only");
+}
+
+// ── the schema: an index + one file per topic (3.1.0) ───────────────────────
+// SCHEMA.md used to be ~750 lines (~15k tokens) loaded whole by any prompt that cited one of
+// its sections. It is now a short index of profile/schema/*.md, and every prompt cites the
+// exact file — `<core>/pipeline/schema/<file>.md` in prompts, `profile/schema/<file>.md` in
+// source comments and docs. A citation that resolves nowhere sends the agent hunting (or, worse,
+// loading the whole directory); a bare `SCHEMA.md §X` sends it back to the index for nothing.
+{
+  const schemaDir = join(root, "profile/schema");
+  const topics = existsSync(schemaDir) ? readdirSync(schemaDir).filter((f) => f.endsWith(".md")).sort() : [];
+  if (!topics.length) fail("profile/schema", "missing or empty — the schema topic files ship from here");
+  const index = read("profile/SCHEMA.md");
+  const indexLines = index.split("\n").length;
+  if (indexLines > 80)
+    fail("profile/SCHEMA.md", `is ${indexLines} lines — it must stay a short index (≤ 80); put content in profile/schema/<topic>.md`);
+  for (const f of topics)
+    if (!index.includes(`\`${f}\``)) fail("profile/SCHEMA.md", `index does not list profile/schema/${f}`);
+  for (const m of index.matchAll(/^\| `([a-z0-9-]+\.md)` \|/gm))
+    if (!topics.includes(m[1])) fail("profile/SCHEMA.md", `index lists ${m[1]}, which is not in profile/schema/`);
+
+  const cited = [
+    ...walkAll("core"), ...walkAll("profile"), ...walkAll("lib"), "README.md",
+    ...["docs/guide", "docs/reference"].filter((d) => existsSync(join(root, d))).flatMap(walkAll),
+  ].filter((p) => /\.(md|js|yaml)$/.test(p));
+  for (const rel of cited) {
+    const text = read(rel);
+    for (const m of text.matchAll(/(?:<core>\/pipeline|profile)\/schema\/([a-z0-9-]+\.md)/g))
+      if (!topics.includes(m[1])) fail(rel, `cites schema/${m[1]}, which is not in profile/schema/`);
+    if (rel === "profile/SCHEMA.md") continue;
+    const flat = text.replace(/\s+/g, " ").replace(/ (?:>|\/\/) /g, " ");
+    const bare = flat.match(/SCHEMA(?:\.md)?`? ?§/);
+    if (bare) fail(rel, `cites \`${bare[0]}…\` — cite the topic file (\`<core>/pipeline/schema/<file>.md\`) instead`);
+  }
+}
+
+// ── project.kind presets (3.1.0) ─────────────────────────────────────────────
+// One enum, four places that must agree: the profile-block row, the PIPELINE template, and
+// one `## <kind>` section per value in project-kinds.md — the review agent and /cohorte-spec
+// Grep for exactly that heading and read only its range, so a missing section is a kind whose
+// checks silently never run. The readers must cite the file, or nothing loads it.
+{
+  const KINDS = ["web", "api", "cli", "library", "mobile", "data", "other"];
+  const pk = "profile/schema/project-kinds.md";
+  const text = existsSync(join(root, pk)) ? read(pk) : "";
+  if (!text) fail(pk, "missing");
+  const heads = [...text.matchAll(/^## ([a-z]+)$/gm)].map((m) => m[1]);
+  if (heads.join(",") !== KINDS.join(","))
+    fail(pk, `\`## <kind>\` sections [${heads.join(", ")}] must be exactly [${KINDS.join(", ")}], in that order`);
+  for (const k of KINDS) {
+    const sec = (text.split(`\n## ${k}\n`)[1] || "").split("\n## ")[0];
+    if (!/\*\*DoD[:*]/.test(sec) || !/\*\*Review[:*]/.test(sec))
+      fail(pk, `section \`## ${k}\` lacks its **DoD** or **Review** line`);
+  }
+  const row = (read("profile/schema/profile-block.md").match(/^\| `project\.kind`.*$/m) || [""])[0];
+  if (!row) fail("profile/schema/profile-block.md", "no `project.kind` row");
+  else if (KINDS.some((k) => !row.includes(`\`${k}\``)) || !/absent ⇒ `web`/.test(row))
+    fail("profile/schema/profile-block.md", "the `project.kind` row must list every kind and the `web` default");
+  if (!/^project:\n\s+kind:/m.test(tpl))
+    fail("profile/PIPELINE.template.md", "no `project:` block with `kind:`");
+  for (const rel of ["core/agents/cohorte-review.md", "core/templates/spec.template.md",
+    "core/templates/steps/init-pipeline/01-detect-stack.md", "core/templates/steps/init-pipeline/02-interview-gaps.md"])
+    if (!read(rel).includes("<core>/pipeline/schema/project-kinds.md"))
+      fail(rel, "must cite <core>/pipeline/schema/project-kinds.md — it selects this step's kind-specific behaviour");
+}
+
+// ── refactor delivery: the `kind: refactor` spec, two writers ────────────────
+// /cohorte-refactor §4 and refactor.js both freeze the round as a spec /cohorte-review and
+// /cohorte-ship consume. Same skeleton in both: same DoD lines, the §9 heading ship's DoD gate
+// reads, and no §5 (there is no contract). The reviewer must know the kind, or it hunts for one.
+{
+  const md = read("core/commands/cohorte-refactor.md");
+  const js = read("core/workflows/refactor.js");
+  for (const [rel, t] of [["core/commands/cohorte-refactor.md", md], ["core/workflows/refactor.js", js]]) {
+    if (!t.includes("kind: refactor")) fail(rel, "must freeze the round as a `kind: refactor` spec");
+    if (!t.includes("## 9. Acceptance criteria / DoD"))
+      fail(rel, "the refactor spec must keep the `## 9. Acceptance criteria / DoD` heading /cohorte-ship reads");
+    if (!t.includes("/cohorte-review") || !t.includes("/cohorte-ship"))
+      fail(rel, "must route the refactor spec to /cohorte-review → /cohorte-ship");
+  }
+  const dodJs = [...js.matchAll(/['"]- \[ \] ([^'"]+)['"]/g)].map((m) => m[1]);
+  if (dodJs.length < 5) fail("core/workflows/refactor.js", "the refactor spec's DoD lines are missing");
+  for (const l of dodJs)
+    if (!md.includes(`- [ ] ${l}`)) fail("core/commands/cohorte-refactor.md", `DoD line differs from refactor.js: \`${l}\``);
+  if (/^\s*## 5\./m.test(md.split("## 4. Deliver")[1] || "") || /'## 5\./.test(js))
+    fail("core/commands/cohorte-refactor.md", "the refactor spec carries a §5 — it has no contract");
+  for (const rel of ["core/agents/cohorte-review.md", "core/commands/cohorte-review.md"])
+    if (!read(rel).includes("kind: refactor")) fail(rel, "does not handle a `kind: refactor` spec");
 }
 
 // ── init-pipeline router steps ──────────────────────────────────────────────
@@ -254,7 +374,7 @@ if (/usage ping|telemetry-send|consent/i.test(read(TELEMETRY_SCRUBBER)))
 // having opened neither the config nor PIPELINE.md, and a merged feature's card
 // stayed in "Ready to build". `kanban-move.sh auto` moved resolution into the
 // script; this keeps it there. Prose is not a call site — the literal invocation is.
-const KANBAN_STAGES = ["brainstorm", "spec", "build", "review", "fix", "ship", "patch", "intake"];
+const KANBAN_STAGES = ["brainstorm", "spec", "build", "review", "fix", "ship", "patch", "intake", "refactor"];
 for (const c of KANBAN_STAGES) {
   const path = `core/commands/${PREFIX}${c}.md`;
   const text = read(path);

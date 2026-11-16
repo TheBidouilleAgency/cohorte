@@ -11,7 +11,7 @@ re-supplies everything they need as exact file paths.
 | --- | --- | --- | --- |
 | `cohorte-review` | sonnet | Read, Grep, Glob, `mcp__serena`, `mcp__graphify` | Read-only reviewer / auditor. |
 | `cohorte-release` | haiku | Read, Grep, Glob, Bash | Commit / push / PR ritual at `/cohorte-ship`. |
-| `cohorte-profile-reader` | haiku | Read, Grep, Glob | `PIPELINE.md` machine block → JSON (workflow phase 0). |
+| `cohorte-profile-reader` | haiku | Read, Grep, Glob | `.claude/profile.json` (the parsed `PIPELINE.md` machine block) → JSON (workflow phase 0). |
 
 They were named `review`, `release` and `profile-reader` before 3.0.0; `cohorte update` moves the
 2.x copies out of `~/.claude/agents` (see [Migrating from 2.x](/reference/installers#migrating-from-2-x)).
@@ -59,8 +59,10 @@ runs migrations, never touches `gate.deny` commands.
 
 ### `cohorte-profile-reader`
 
-Reads the fenced `yaml pipeline-profile` block of `PIPELINE.md` and returns it as faithful JSON
-(comments dropped, nothing invented, `<…>` placeholders passed through) — or
+Returns `.claude/profile.json` verbatim — the `yaml pipeline-profile` block `cohorte sync` already
+parsed — so phase 0 costs one small Read. Only when that file is absent does it parse the fenced block
+of `PIPELINE.md` itself, faithfully (comments dropped, nothing invented, `<…>` placeholders passed
+through). Either way it returns the profile or
 `{"error": "…"}` — nothing else. Exists because workflow scripts have no filesystem access;
 it's the mandatory phase 0 of all four workflow scripts.
 
@@ -85,7 +87,8 @@ The rendered implementer:
   the review checks, not a sandbox; never edits the frozen contract
   (mismatch ⇒ report in the handoff, never fix); never runs `gate.deny` commands; migrations
   are append-only.
-- **Reads only the machine block** of `PIPELINE.md` at runtime — its conventions are baked in.
+- **Reads only the machine block** at runtime — `.claude/profile.json`, or the fenced block of
+  `PIPELINE.md` when that file is absent — its conventions are baked in.
   If the bake visibly contradicts the profile, it says so in its handoff (the profile wins; the
   agent needs a re-render via `/cohorte-update-pipeline`).
 - **Walks the minimality ladder** before inventing any helper, wrapper, abstraction or new

@@ -6,8 +6,8 @@ enabled, the middle of this loop — build → review → fix → review — can
 the [loop workflow](/guide/workflows); the conversational path below is the default everywhere.)
 
 ```
-/cohorte-brainstorm → /cohorte-spec → /cohorte-build → /cohorte-review → (/cohorte-fix → /cohorte-review)* → /cohorte-ship
-     ↑ human      ↑ human                          ↑ human
+/cohorte-brainstorm → /cohorte-spec → /cohorte-build → /cohorte-review → (/cohorte-fix → /cohorte-review)* → /cohorte-verify → /cohorte-ship
+     ↑ human      ↑ human                                                                                     ↑ human
 ```
 
 Between every two commands: **`/clear`**. Every handoff is on disk; clearing sheds the lead's
@@ -112,13 +112,13 @@ for it and checks the tree instead (that surface's own quiet commands, output re
 `DEAD — unverified`, records `"<key>":"dead"` in the metrics line and in
 `specs/reports/<id>.build.json`. The batch is never reported as ok. Same rule in `/cohorte-review` (a dead
 reviewer lands in the verdict's `unreviewed[]` and forbids `SHIP`) and in `/cohorte-fix` (a dead agent ticks no
-checkbox). See [§Dead agents](/reference/profile).
+checkbox). See [`profile/schema/dead-agents.md`](https://github.com/TheBidouilleAgency/cohorte/blob/main/profile/schema/dead-agents.md).
 
 ## 4. `/cohorte-review` — audit the diff against the spec
 
-Nothing in the pipeline *runs* the app: the preflight gate (**typecheck + lint + tests via
+The review does not *run* the app (that is `/cohorte-verify`, next): the preflight gate (**typecheck + lint + tests via
 `preflight.sh`; red aborts with the raw failure, zero agents spawned**) is the mechanical proof,
-and anything that needs the app up is yours to exercise by hand before or after this step. Then:
+and anything that needs the app up is `/cohorte-verify`'s, or yours by hand. Then:
 
 1. The lead computes the diff **once**: one `git diff --stat`, grouped by surface path, then a
    full patch staged per touched surface to `specs/reports/<id>.<surface>.diff`. Reviewers are
@@ -160,6 +160,16 @@ files they name. If a finding implies the **contract** must change, the lead re-
 When agents return, the lead ticks `- [x]` what each handoff reports fixed, collapses fully-fixed
 rounds to one summary line (the spec stays bounded), and sends you back to `/cohorte-review` for the
 re-verdict. Kanban → **Fix**, then back to **Review**.
+
+## 5b. `/cohorte-verify` — does it actually work
+
+After the `SHIP` verdict, when the profile has runtime commands (`commands.smoke`, `commands.e2e`,
+or `commands.dev` with a `commands.dev_ready` probe). One script run: the spec's migrations applied
+and rolled back down-then-up on the **dev** database (never a shared one), the app started, probed,
+smoke- and e2e-tested, screenshotted when Playwright is installed, and **always stopped**. It ticks
+only the DoD lines tagged `· runtime: <check>` whose check passed, and writes
+`specs/reports/<id>.verify.json`, which `/cohorte-ship` reads: `FAIL` blocks, no run asks you.
+See [`profile/schema/verify.md`](https://github.com/TheBidouilleAgency/cohorte/blob/main/profile/schema/verify.md).
 
 ## 6. `/cohorte-ship` — the human gate
 
@@ -207,6 +217,23 @@ a fix that needs **new** contract surface area is a feature wearing a bug's clot
 `/cohorte-patch` sends it to `/cohorte-spec` rather than letting two surfaces invent a shape
 independently. Changing an *existing* contract entry is a legitimate §5 delta.
 
+## The way out of a refactor — `kind: refactor`
+
+`/cohorte-refactor` changes code with no spec behind it, and `/cohorte-ship` ships specs. So a
+refactor round that ends green freezes itself as one: `specs/refactor-<domains>-<date>.md`,
+`kind: refactor`, the cleared backlog items as scope, "public behaviour preserved" + "all tests
+green" as DoD, no contract. From there it is the normal tail — `/cohorte-review <id>` →
+`/cohorte-fix`* → `/cohorte-ship <id>` — with the reviewer swapping contract conformance for
+behaviour preservation, and the backlog's ticked lines pointing at the spec (`· refactor:<id>`).
+
+## Not a web app — `project.kind`
+
+The defaults above assume a web app: mobile-first, a design step, RBAC screens. `project.kind` in
+`PIPELINE.md` (`web` · `api` · `cli` · `library` · `mobile` · `data` · `other`; absent ⇒ `web`) is
+detected by `/cohorte-init-pipeline` and selects the spec's DoD defaults (a library states its semver
+impact, a CLI its exit codes, a data job its idempotency), the review's kind-specific checks, and
+whether the design step applies. The per-kind tables live in `profile/schema/project-kinds.md`.
+
 ## The disk artifacts, at a glance
 
 `<state>` is the project's pipeline dir, `.claude/` — committed except for the local-only
@@ -216,6 +243,7 @@ artifacts `cohorte sync` gitignores ([Installers](/reference/installers)).
 | --- | --- | --- |
 | `specs/<id>.md` | `/cohorte-spec` (+ `/cohorte-fix` remediation, `/cohorte-review` DoD + freshness stamp) | everyone |
 | `specs/patch-<slug>.md` | `/cohorte-patch` (same later writers) | everyone — it *is* a spec, `kind: patch` |
+| `specs/refactor-<domains>-<date>.md` | `/cohorte-refactor` §4 (same later writers) | review → ship — a spec, `kind: refactor` |
 | `specs/design/<id>.md` | `/cohorte-spec` | design surfaces, design tools |
 | `<contract.path>/<id>.<ext>` | the lead (`/cohorte-build`, `/cohorte-fix`) | implementers (read-only), reviewers |
 | `specs/reports/<id>.md` | `/cohorte-review` (gitignored buffer) | `/cohorte-fix` after a `/clear` |
@@ -223,6 +251,7 @@ artifacts `cohorte sync` gitignores ([Installers](/reference/installers)).
 | `specs/reports/<id>.preflight.txt` | `preflight.sh` | you, on abort |
 | `specs/reports/<id>.verdict.json` | `/cohorte-review` §3, every run | you; an external driver — the only machine contract |
 | `specs/reports/<id>.readiness.json` | `/cohorte-build` §1.6, every build | you on a `NOT-READY`; an external driver |
+| `specs/reports/<id>.verify.json` | `verify-run.sh` (`/cohorte-verify`), every run | `/cohorte-ship`'s runtime gate; you |
 | `specs/reports/<id>.build.json` | `/cohorte-build` §4, every batch | you; an external driver (dead implementers) |
 | `<state>/pipeline-metrics.jsonl` | `/cohorte-build` `/cohorte-review` `/cohorte-fix` (gitignored) | surface-split decisions, `cohorte metrics` |
 | `specs/refactor-backlog.md` | `/cohorte-audit` + `/cohorte-review`'s deferred findings | `/cohorte-refactor` |

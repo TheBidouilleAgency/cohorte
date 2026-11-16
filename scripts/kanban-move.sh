@@ -1,6 +1,6 @@
 #!/bin/sh
 # kanban-move.sh — move a feature card on an Obsidian Kanban board without
-# loading the board into an agent's context (SCHEMA.md §Kanban "Move a card").
+# loading the board into an agent's context (schema/kanban.md "Move a card").
 #
 #   kanban-move.sh <board.md|auto> <feature-id> <column|stage> [options]
 #   kanban-move.sh --check                 resolve only: print the board this
@@ -30,9 +30,10 @@
 #
 # Exit codes: 0 ok (incl. "kanban not configured" — and, under `auto`, a configured
 # board file that is gone: `kanban: board file not found`) · 2 usage · 3 unknown
-# column, or an EXPLICIT <board.md> path that does not exist. A board that resolved
+# column, or an EXPLICIT <board.md> path that does not exist · 4 the board stayed locked
+# by another move for ~30 s (moves are serialized). A board that resolved
 # but cannot be moved is loud; an unconfigured one is quiet — the pipeline never
-# blocks on the board. (SCHEMA.md §Kanban states the same contract.)
+# blocks on the board. (schema/kanban.md states the same contract.)
 set -eu
 
 usage='usage: kanban-move.sh <board.md|auto> <feature-id> <column|stage> [--pr <num>] [--title <title>] [--project <name>] [--profile <path>]
@@ -226,6 +227,36 @@ EOF
 fi
 
 [ -f "$board" ] || { echo "error: board not found: $board" >&2; exit 3; }
+
+# Serialize the read-modify-write: parallel worktrees (/cohorte-fleet, the loop workflow) move
+# cards on ONE board, and two concurrent rewrites used to lose one of the moves. `mkdir` is
+# atomic on every filesystem, so it is the lock; the holder writes its PID inside. A lock is
+# stale only when that PID is gone (a crashed writer) — never by age: an mtime test (`find
+# -mmin`) misfired on CI runners and broke live locks, letting two writers in at once.
+lock="${board}.lock"
+waited=0
+until mkdir "$lock" 2>/dev/null; do
+  holder=$(cat "$lock/pid" 2>/dev/null || true)
+  if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; then
+    # Dead holder. Remove only if it is still THAT lock (another waiter may have replaced it).
+    if [ "$(cat "$lock/pid" 2>/dev/null || true)" = "$holder" ]; then
+      rm -f "$lock/pid"; rmdir "$lock" 2>/dev/null || true
+    fi
+    continue
+  fi
+  waited=$((waited + 1))
+  if [ "$waited" -gt 300 ]; then
+    echo "error: board is locked by another move ($lock, pid ${holder:-?}) — retry, or remove the lock if no move is running" >&2
+    exit 4
+  fi
+  sleep 0.1 2>/dev/null || sleep 1
+done
+echo $$ > "$lock/pid"
+# Release only our own lock, and never let the release change the exit status.
+release() { [ "$(cat "$lock/pid" 2>/dev/null || true)" = "$$" ] && { rm -f "$lock/pid"; rmdir "$lock" 2>/dev/null; }; return 0; }
+trap release EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 tmp="${board}.kanban-move.$$"
 ID="$id" COL="$col" PR="$pr" TITLE="${title:-$id}" awk '

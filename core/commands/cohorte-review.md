@@ -9,13 +9,13 @@ You are the **lead**. Dispatch the review for feature **$ARGUMENTS**.
 > Read `PIPELINE.md` §`vcs.default_branch` (diff base) and the `surfaces`/`contract`/`commands` fields.
 > _Skip the re-read if it's already in your context this session and unmodified since._
 >
-> **Kanban** (SCHEMA.md §Kanban): run
+> **Kanban** (`<core>/pipeline/schema/kanban.md`): run
 > `<core>/pipeline/scripts/kanban-move.sh auto $ARGUMENTS review`. `auto` resolves the board from the config itself and
 > exits 0 with a `kanban: <reason>` line when there is none — so **never decide "no board is
 > configured" without running it**. _(PR mode — `--pr` below — skips this entirely: an incoming
 > PR is not a pipeline feature and has no card.)_
 >
-> **Workflow variant** (opt-in — SCHEMA.md §Workflows): on Claude Code ≥ 2.1.154 with workflows
+> **Workflow variant** (opt-in — `<core>/pipeline/schema/workflows.md`): on Claude Code ≥ 2.1.154 with workflows
 > enabled, the human can ask to "run the review workflow" (`<core>/workflows/review.js`) instead.
 > This conversational path stays the default and the fallback; `/cohorte-doctor` shows which is available.
 
@@ -36,8 +36,15 @@ metrics line needs it:
 
 ```
 <core>/pipeline/scripts/preflight.sh specs/reports/$ARGUMENTS.preflight.txt \
-  "<commands.typecheck>" "<commands.lint_quiet, else lint>" "<commands.test_quiet, else test>"
+  "<commands.typecheck>" "<commands.lint_quiet, else lint>" "<commands.test_quiet, else test>" \
+  [": cohorte-security-scans" '<commands.security[0]>' '<commands.security[1]>' …]
 ```
+
+The bracketed tail is passed only when `commands.security` (a list, or one string) has entries.
+The marker comes first, then each command in order. Drop empty and `<placeholder>` entries. Any
+command containing `$`, a backtick or `\` is **single-quoted** (a `'` inside becomes `'\''`). In
+double quotes this shell would expand the scan's own variables first. Scans are checks like the
+others: a red one aborts below (`<core>/pipeline/schema/preflight.md` §Security scans).
 
 - **Non-zero exit** ⇒ the script already printed the raw last-40 lines. **STOP: relay them verbatim
   and spawn NO agent** — a compiler/test failure needs `/cohorte-fix` (or the human), not a review that
@@ -47,15 +54,19 @@ metrics line needs it:
   `{"id":"$ARGUMENTS","phase":"review","ts":"<ISO>","aborted":"preflight","verdict":"BLOCK","blocking":null}`
   → `specs/reports/$ARGUMENTS.verdict.json`. One `printf`, in the same Bash call.
 - **Zero exit** ⇒ it stamped `<state>/preflight.ok`, which the gate hook checks before letting
-  `cohorte-review` dispatches through (SCHEMA.md §Preflight). Continue.
-- Script absent (older core) ⇒ run the three commands yourself, each redirected into
-  `specs/reports/$ARGUMENTS.preflight.txt`, aborting on the first failure the same way.
+  `cohorte-review` dispatches through (`<core>/pipeline/schema/preflight.md`). Continue.
+- Script absent (older core) ⇒ run the same commands yourself (marker and security scans
+  included), each appended to `specs/reports/$ARGUMENTS.preflight.txt` after a `$ <cmd>` line,
+  aborting on the first failure the same way.
 
 ## 1. Gather the inputs for stateless reviewers
 
-- Confirm `specs/$ARGUMENTS.md` exists.
+- Confirm `specs/$ARGUMENTS.md` exists. Front-matter **`kind: refactor`** (written by
+  `/cohorte-refactor` at the end of a round) ⇒ no contract: the reviewer checks behaviour
+  preservation, conventions and over-engineering against §6's backlog items instead of a contract
+  (its own check 1). Everything else below is unchanged.
 - **Every diff comes from `<core>/pipeline/scripts/feature-diff.sh`, never a bare `git diff`**
-  (SCHEMA.md §Feature diff): feature work is uncommitted until ship, and `git diff <ref>` drops
+  (`<core>/pipeline/schema/feature-diff.md`): feature work is uncommitted until ship, and `git diff <ref>` drops
   every untracked file and diffs against the branch tip, not the merge-base. Non-zero exit ⇒ **stop
   and relay it** (exit 3 = base unresolvable); script absent ⇒ stop (`cohorte update`). Never fall
   back to `git diff`.
@@ -97,12 +108,15 @@ which sits at the END so every repeat hits the prompt-cache prefix:
 > a finding demands it. Emit the REVIEW REPORT in the capped format your agent instructions define —
 > every finding self-sufficient (`file:line` · severity · type · one-line concrete fix), no code
 > excerpts. — Variable slots: feature `$ARGUMENTS` · scope: the `<surface.key>` surface only · spec:
-> `specs/$ARGUMENTS.md` (source of truth) · contract: `<contract.path>/$ARGUMENTS.<ext>` · staged
-> diff: `specs/reports/$ARGUMENTS.<surface.key>.diff` · changed files: <list>."
+> `specs/$ARGUMENTS.md` (source of truth) · contract: `<contract.path>/$ARGUMENTS.<ext>` (`none` on `kind: refactor`) · staged
+> diff: `specs/reports/$ARGUMENTS.<surface.key>.diff` · changed files: <list>[ · preflight report:
+> `specs/reports/$ARGUMENTS.preflight.txt` (security section from the line `$ : cohorte-security-scans`)]."
+
+The bracketed preflight-report slot is added only when `commands.security` has entries.
 
 ## 3. Merge & relay the verdict
 
-**Roll call FIRST — a dead reviewer is not a clean surface** (SCHEMA.md §Dead agents: its zero
+**Roll call FIRST — a dead reviewer is not a clean surface** (`<core>/pipeline/schema/dead-agents.md`: its zero
 findings are byte-identical to a clean surface's). Every surface dispatched in §2 must come back
 with a REVIEW REPORT:
 
@@ -211,9 +225,10 @@ surviving severity** — exactly one row applies:
   - **Tick the DoD**: in `specs/$ARGUMENTS.md` §`Acceptance criteria / DoD`, flip `- [ ]` → `- [x]`
     for the criteria the pipeline actually verified — spec conformance + `ui_language` copy (this
     review), tests · lint · typecheck (a green `/cohorte-build`), mobile-first as far as the code
-    shows it. **Leave `- [ ]` (and say which) any item no stage verified** — nothing in the pipeline
-    *runs* the feature, so a criterion that needs the app up stays open unless the human says they
-    exercised it by hand. Ticking is the lead's job (the reviewer is read-only).
+    shows it. On `kind: refactor`: behaviour preserved + items cleared (this review), tests · lint ·
+    typecheck green (§0's preflight — no `/cohorte-build` ran). **Leave `- [ ]` (and say which) any item no stage verified** — review never *runs* the
+    feature: a criterion tagged `· runtime` stays open for `/cohorte-verify` (which ticks it on a
+    passing check) or for the human who exercised it by hand. Ticking is the lead's job (the reviewer is read-only).
   - **Stamp the freshness gate** so `/cohorte-ship` can refuse code edited after this verdict:
     `BASE=$(<core>/pipeline/scripts/feature-diff.sh --default <default_branch> --base-only)`, then
     write into the spec front-matter `reviewed_base: $BASE` and

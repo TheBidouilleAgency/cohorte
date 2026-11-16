@@ -17,28 +17,37 @@ Gather evidence, then summarize what you found. Look for:
 - **Split candidates (sub-surface boundaries):** inside each surface, look for a clean internal partition
   — feature modules (`src/features/*`, `src/modules/*`, `app/(group)/*`), or independent services
   (`services/*`, domain folders). Note the surface's rough size (module/file count) so a *large* surface
-  with a *clean* boundary can be proposed as several specialized surfaces in Phase 2. See SCHEMA.md
-  §"Specialization — when to split one surface into more agents" for the heuristic. Don't split yet — just
+  with a *clean* boundary can be proposed as several specialized surfaces in Phase 2. See `<core>/pipeline/schema/specialization.md` for the heuristic. Don't split yet — just
   flag candidates + their would-be shared-code tree.
 - **Per-surface commands:** derive `test`/`lint`/`format`/`typecheck`/`build` from each surface's
   `package.json` scripts + the workspace filter syntax (e.g. `pnpm --filter <pkg> test`).
+- **Project kind (`project.kind`):** match the evidence against the detection table of
+  `<core>/pipeline/schema/project-kinds.md` (read only its `### Detection` table) — first matching row
+  wins: react-native/expo/Swift/Kotlin app ⇒ `mobile`; browser UI deps ⇒ `web`; dbt/Airflow/notebooks ⇒
+  `data`; `bin` entries and no UI deps ⇒ `cli`; a published package with exports and no app ⇒
+  `library`; server-only ⇒ `api`; else `other`. Note the signal that decided it.
 - **Contract mechanism:** a shared types/schema package (`packages/shared-types`, Zod/`z.`),
   an `openapi.*`/`swagger.*` file, `.proto` files, or none.
 - **Release notes / versioning:** a `.changeset/` directory (+ `config.json`, and whether it declares a
   `fixed`/lockstep group — that names the anchor package), `changesets` in devDependencies, or a CI job
   that fails a PR lacking a note (grep `.github/workflows/*` for `changeset`). Also note the root
   `version`: a `0.y.z` product usually forbids `major`. None of these ⇒ `release_notes.enabled: false`.
+- **Security scanners:** which dependency auditor fits each lockfile or manifest (`npm`/`pnpm`/`yarn`
+  audit, `pip-audit`, `govulncheck`, `cargo audit`), and whether each is installed (`command -v`).
+  Also check for a secret scanner on PATH (`gitleaks`, `trufflehog`). Match them against the
+  detected-defaults table in `<core>/pipeline/schema/preflight.md` §Security scans. They feed
+  `commands.security`.
 - **DB / migrations:** migration tooling (`node ace make:migration`, `knex`, `prisma`, `alembic`,
   `golang-migrate`), a `docker-compose.yml`, DB service.
 - **Design system:** an existing `design-reference/` snapshot, `components/ui`, a DesignSync MCP
   connection, Figma links, or none.
 - **Code retrieval:** is the `serena` CLI resolvable (`command -v serena`)? If not, does
-  `~/.local/bin/serena` exist anyway — installed but PATH-broken (see SCHEMA.md §Code retrieval)?
+  `~/.local/bin/serena` exist anyway — installed but PATH-broken (see `<core>/pipeline/schema/retrieval.md`)?
   `graphify`? Is either already registered in this repo's `.mcp.json` or `claude mcp list`? (Feeds
   the retrieval question + Phase 4 wiring — default provider is `serena`.)
 - **VCS:** `git remote -v` → host + `owner/repo`; the default branch (`git symbolic-ref refs/remotes/origin/HEAD` or `git branch`).
 - **Existing `<memory>`** — read it; it may already state stack/conventions to fold in. **Existing
   `PIPELINE.md`** — if present, this is a re-run: load it as the starting draft and only reconcile deltas.
 
-Print a compact **Detection Report**: layout, surfaces (with framework + commands), contract, release
-notes, DB, design, vcs. Mark each field `detected` / `guessed` / `unknown`.
+Print a compact **Detection Report**: layout, project kind, surfaces (with framework + commands),
+contract, release notes, security scanners, DB, design, vcs. Mark each field `detected` / `guessed` / `unknown`.

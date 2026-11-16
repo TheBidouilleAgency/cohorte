@@ -58,11 +58,12 @@ network call (see [The version check](#the-version-check)).
 ~/.claude/cohorte/
   pipeline/      PIPELINE.template.md · SCHEMA.md · cohorte.config.template.yaml ·
                  implementer.template.md · CHANGELOG.md · VERSION
+    schema/      the rulebook, one file per topic (SCHEMA.md is its index)
     scripts/     preflight.sh · kanban-move.sh · new-feature.sh.template · remove-feature.sh.template
   templates/     handoff, review-feedback, spec, patch, design-brief, pr-body, brainstorm-return,
                  decisions + steps/init-pipeline/ (the router's step files)
   hooks/gate.py  the gate's source — copied into each project by `cohorte sync`
-  lib/project.js the self-contained `sync` (runs without the binary on PATH)
+  lib/project.js the self-contained `sync` (runs without the binary on PATH) + lib/yaml.js, its parser
   manifest.json  every file above, with the hash it was written with
 ~/.claude/cohorte.config.yaml            YOUR config — seeded once (a TTY install asks for the vault
                                          path), never overwritten, never in the manifest
@@ -102,7 +103,7 @@ binary on `PATH`. Deterministic and idempotent (a second run prints `already in 
 
 1. copies the gate to **`.claude/hooks/cohorte-gate.py`** (executable);
 2. registers it in **`.claude/settings.json`** as two `PreToolUse` groups — matchers
-   `Bash|Task|Agent` and `Write|Edit|MultiEdit` — exactly once, every other hook kept:
+   `Bash|Task|Agent` and `Write|Edit|MultiEdit|NotebookEdit` — exactly once, every other hook kept:
 
    ```json
    {
@@ -121,11 +122,16 @@ binary on `PATH`. Deterministic and idempotent (a second run prints `already in 
 4. adds `.claude/preflight.ok`, `.claude/pipeline-metrics.jsonl` and `specs/reports/` to
    **`.gitignore`**;
 5. seeds **`specs/_template.md`** if absent;
-6. on a 2.x repo, removes the vendored core (see [Migrating from 2.x](#migrating-from-2-x)) and
+6. writes **`.claude/profile.json`** — the `yaml pipeline-profile` block of `PIPELINE.md` parsed to
+   JSON, which the implementers, the reviewer, the release agent and the workflows' profile-reader
+   read instead of the whole profile. Regenerated on every sync, so every command that edits the
+   machine block re-runs sync after it. No `PIPELINE.md` (or no parseable block) ⇒ nothing is
+   written and sync says so;
+7. on a 2.x repo, removes the vendored core (see [Migrating from 2.x](#migrating-from-2-x)) and
    repoints 2.x permission rules at `~/.claude/cohorte/pipeline/scripts/`.
 
-Commit `.claude/settings.json`, `.claude/hooks/cohorte-gate.py`, `.claude/pipeline.json` and
-`.gitignore` — a teammate who clones is protected before installing anything.
+Commit `.claude/settings.json`, `.claude/hooks/cohorte-gate.py`, `.claude/pipeline.json`,
+`.claude/profile.json` and `.gitignore` — a teammate who clones is protected before installing anything.
 
 `sync` never writes `PIPELINE.md`, the surface agents, `gate-config.json` or the permission rules;
 those are `/cohorte-init-pipeline`'s and `/cohorte-update-pipeline`'s job.
@@ -223,7 +229,7 @@ cohorte uninstall --project [path]     # the gate wiring of one repo
   also removes a 2.x machine-wide gate registration if one is left. Projects are not touched.
 - **`--purge`** additionally deletes your `~/.claude/cohorte.config.yaml`.
 - **`--project`** removes Cohorte's hook registrations from `.claude/settings.json` (foreign hooks
-  kept), `.claude/hooks/cohorte-gate.py` and `.claude/pipeline.json`. It leaves `PIPELINE.md`,
+  kept), `.claude/hooks/cohorte-gate.py`, `.claude/pipeline.json` and `.claude/profile.json`. It leaves `PIPELINE.md`,
   `.claude/gate-config.json`, the surface agents, `specs/` (including `specs/_template.md`), the
   isolation scripts and the `.gitignore` lines — those are yours to delete.
 
@@ -245,6 +251,7 @@ What a healthy report shows, and what to do when a line is not `ok`:
 | --- | --- | --- |
 | Core & pointer | `core 3.x` | not installed ⇒ `cohorte install`; pointer behind ⇒ `cohorte sync` and commit; `mode` in the pointer or a 2.x core ⇒ `/cohorte-update-pipeline` / `cohorte update` |
 | Profile (PIPELINE.md) | surfaces counted | missing ⇒ `/cohorte-init-pipeline` |
+| Profile cache (.claude/profile.json) | `matches PIPELINE.md` | missing, stale (PIPELINE.md edited since the last sync) or differing ⇒ `cohorte sync` and commit; not committed ⇒ `git add .claude/profile.json` |
 | Surfaces ↔ agents | every surface has its `.claude/agents/<agent>.md`, no orphans | `/cohorte-update-pipeline` re-renders |
 | Gate config | `gate-config.json` mirrors the profile | missing or drifted ⇒ regenerate it from the profile's `gate` block (doctor prints the command) |
 | Gate hook | `registered once (Bash\|Task\|Agent + Write\|Edit\|MultiEdit), committed` | not committed ⇒ `git add .claude/hooks/cohorte-gate.py .claude/settings.json`; missing ⇒ `cohorte sync` |
@@ -307,13 +314,13 @@ package.json            npm package (cohorte) — semver source of truth; `npm t
 bin/cli.js              the CLI: install / update / sync / uninstall / doctor / specs / metrics / version
 bin/report.js           the four renderings of `specs` / `doctor` (human, porcelain, json, panel)
 lib/install.js          the machine install: manifest, ownership rules, 2.x migration, uninstall
-lib/project.js          `cohorte sync`: wires one repo (self-contained; also copied into the core)
+lib/project.js          `cohorte sync`: wires one repo (copied into the core with its one sibling, yaml.js)
 lib/render.js           renders core/commands + core/agents for Claude Code (one preamble of path tokens)
 lib/doctor.js           the JS port of /cohorte-doctor, + versions.js / yaml.js. No dependencies.
 install.sh, install.ps1 thin wrappers around bin/cli.js (Node required)
 core/                   rendered (commands, agents) or copied (the rest) into ~/.claude by install
   agents/ commands/ hooks/ templates/ workflows/
-profile/                PIPELINE.template.md · SCHEMA.md · cohorte.config.template.yaml
+profile/                PIPELINE.template.md · SCHEMA.md (index) · schema/ · cohorte.config.template.yaml
 scripts/                shipped preflight/kanban scripts, isolation templates, metrics, the test suites
 docs/                   this site (VitePress → GitHub Pages)
 ```

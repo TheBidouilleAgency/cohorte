@@ -10,7 +10,7 @@ You are the **lead**. Ship feature **$ARGUMENTS**. This is the outward-facing ga
 > §`release_notes`** — §2b below is skipped or required based on it, and skipping it when it is
 > required opens a PR that CI fails on arrival.
 >
-> **Kanban** (SCHEMA.md §Kanban) is mirrored in **explicit steps** below, not as an afterthought:
+> **Kanban** (`<core>/pipeline/schema/kanban.md`) is mirrored in **explicit steps** below, not as an afterthought:
 > §1 moves the card → **Ship**; §4 moves it → **Shipped** and writes the PR number. Both are one
 > call to `<core>/pipeline/scripts/kanban-move.sh auto …`, which resolves the board from the config itself and exits 0 with a
 > `kanban: <reason>` line when there is none. **Never decide "no board is configured" without running
@@ -22,7 +22,7 @@ You are the **lead**. Ship feature **$ARGUMENTS**. This is the outward-facing ga
 `grep '^status:' specs/$ARGUMENTS.md` first. `shipped` means a PR is (or was) open — reconcile it
 instead of shipping twice: `gh pr view <the branch §1 resolves> --json state,mergedAt,url` (no `gh` /
 not github ⇒ ask the human what happened to the PR):
-- `MERGED` ⇒ set `status: merged` (SCHEMA.md §Spec status) and say so; go straight to §5's teardown.
+- `MERGED` ⇒ set `status: merged` (`<core>/pipeline/schema/spec-status.md`) and say so; go straight to §5's teardown.
 - `OPEN` ⇒ nothing to ship again: go to §5's CI watch (a red check routes per §5).
 - `CLOSED` (not merged) ⇒ ask the human: reopen and continue (`/cohorte-fix` on what killed it), or
   drop it — then set `status: abandoned`. Never decide that alone.
@@ -57,7 +57,19 @@ not github ⇒ ask the human what happened to the PR):
   after review — the verdict is **stale**: stop and tell the human to re-run
   `/cohorte-review $ARGUMENTS`. A stamp written before `feature-diff.sh` existed was computed without
   untracked files and will mismatch once — the re-review re-stamps it.
-- **DoD gate (verify, don't tick — `/cohorte-review` owns the ticking).** Read `specs/$ARGUMENTS.md`
+- **Migrations need a way back.** `<core>/pipeline/scripts/verify-run.sh rollback-check specs/$ARGUMENTS.md`
+  — exit 1 (`migrations: true` with an empty `## Rollback`) ⇒ **refuse**: back to `/cohorte-spec` to
+  fill it. No human override: a migration nobody can undo is decided before ship, not at it.
+- **Runtime gate** (`<core>/pipeline/schema/verify.md` §Ship). Not configured — `verify.enabled: false`, or
+  none of `commands.smoke`/`commands.e2e`/`commands.dev`+`commands.dev_ready` (and no `migrations: true`
+  with a `commands.migrate`) ⇒ skip silently. Otherwise read `specs/reports/$ARGUMENTS.verify.json`:
+  - `verdict` `FAIL` ⇒ **refuse**, stale or not, naming the failing checks: `/cohorte-fix`, then
+    `/cohorte-review` and `/cohorte-verify` again. Only a newer run clears it.
+  - `PASS` and its `digest` equals the spec's `reviewed_digest` ⇒ proceed silently.
+  - Absent, `SKIPPED`, or a `PASS` whose `digest` differs ⇒ ask: **"not verified at runtime — ship
+    anyway?"** (say which case, and that `/cohorte-verify $ARGUMENTS` would settle it). Ship only on yes.
+- **DoD gate (verify, don't tick — `/cohorte-review` owns the ticking, `/cohorte-verify` the
+  `· runtime` items).** Read `specs/$ARGUMENTS.md`
   §`Acceptance criteria / DoD`; if any item is still `- [ ]`, list the open ones and ask the human to
   confirm shipping anyway (they may be deferred on purpose — e.g. a UI item on a backend-only feature).
   All `- [x]` ⇒ proceed silently.
@@ -82,7 +94,7 @@ uncommitted after the PR opens). Only flip after the human's "yes"; if they decl
 
 Otherwise **you** write it — never the release agent, never the implementers. Picking the bump is
 project policy and the prose is outward-facing copy; both are the lead's, exactly like the contract.
-See SCHEMA.md §Release notes.
+See `<core>/pipeline/schema/release-notes.md`.
 
 - Write `<release_notes.dir>/<release_notes.filename>` (`<feature_id>` substituted), front-matter
   carrying the **single** key `release_notes.anchor_package` and the chosen level, then the prose body
@@ -145,7 +157,7 @@ under the `shipped` heading — never re-read the whole board into context.
   **except** a red `release_notes.ci_job`: that one is this command's own miss, not a code finding —
   write the note per §2b, commit, push, and re-watch. Never send a missing release note through `/cohorte-fix`.
 - Once the PR is **merged** (the human says so, or §0's `gh pr view` shows `MERGED`): set the spec's
-  `status: merged` and commit that one line on the default branch when the human next commits there
+  `status: merged` (and `pr: <num>` — `/cohorte-revert` finds the merge commit from it) and commit that one line on the default branch when the human next commits there
   (or leave it to `/cohorte-doctor`'s reconcile — it does the same check). If `isolation.enabled`, propose the teardown —
   `scripts/remove-feature.sh $ARGUMENTS` (add `--drop-db` to also drop the feature db; kept by
   default). It removes the worktree, deletes the merged branch, frees the slot. Never run it before

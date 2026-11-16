@@ -7,6 +7,109 @@ short, user-facing, most recent first. One `## <version> — <YYYY-MM-DD>` secti
 > They are history and are deliberately not rewritten — every command gained a `cohorte-` prefix
 > in 2.0.0.
 
+## 3.1.0 — 2026-11-16
+
+- **The schema is split: one file per topic, each command loads only what it cites.**
+  `SCHEMA.md` (≈750 lines, ≈15k tokens) was read whole by any prompt that named one of its
+  sections. Its content now lives, unchanged, in `<core>/pipeline/schema/<topic>.md`
+  (`profile-block`, `spec-status`, `kanban`, `dead-agents`, `reconcile`, `workflows`, …), and
+  every command, agent, template and workflow cites the exact file. `SCHEMA.md` stays as a short
+  index. `validate-core` fails on a citation that resolves nowhere and on any bare `SCHEMA.md §…`.
+- **`.claude/profile.json` — the profile's machine block, parsed once.** `cohorte sync` (and so
+  `/cohorte-init-pipeline` and `/cohorte-update-pipeline`) now writes the `yaml pipeline-profile`
+  block of `PIPELINE.md` to `.claude/profile.json`. **Commit it**; every sync regenerates it, and the
+  commands that edit the machine block (`/cohorte-build` adding a surface, the update's top-up) re-run
+  sync afterwards. No `PIPELINE.md`, or no parseable block ⇒ nothing is written and sync says so.
+  The implementers, `cohorte-review` and `cohorte-release` read it instead of the whole profile
+  (falling back to the fenced block when it is absent), and the workflows' `cohorte-profile-reader`
+  phase 0 is now a single Read of it. `cohorte doctor` gains a `profile-json` row: missing, stale or
+  hand-edited (compared byte for byte with a fresh parse) or uncommitted ⇒ warn, fix `cohorte sync`.
+  The installer ships `lib/yaml.js` next to `lib/project.js` so sync and doctor share one parser.
+- **A refactor now has a way to a PR.** `/cohorte-refactor` (and the refactor workflow) ends a green
+  round by freezing it as one spec, `specs/refactor-<domains>-<date>.md` — `kind: refactor`, the
+  cleared backlog items as scope, "public behaviour preserved" + "all tests green" as DoD, no
+  contract — cuts the feature branch when you are on the default one, and routes to
+  `/cohorte-review <id>` → `/cohorte-ship <id>`. The reviewer checks behaviour preservation,
+  conventions and over-engineering instead of contract conformance. Ticked backlog lines carry
+  `· refactor:<id>`, and `/cohorte-audit` keeps them until that spec merges, so the work is not queued
+  twice. Red gates ⇒ no spec.
+- **Refactor workflow: a retry round no longer turns an ungated domain green.** A domain with no gate
+  commands is unverified; round 1 said so, but the retry round's verifier answer replaced it.
+- **`project.kind` — presets for non-web projects.** `web` · `api` · `cli` · `library` · `mobile` ·
+  `data` · `other`, detected by `/cohorte-init-pipeline` (bin entries, published exports,
+  react-native/expo, dbt/Airflow, server-only…) and confirmed there. It selects the spec's DoD
+  defaults (library: semver impact, no break without a major; cli: `--help`, exit codes,
+  stdout/stderr; data: idempotency, backfill, schema evolution; mobile: platform matrix, offline,
+  permissions), which review checks apply (mobile-first only for web/mobile, RBAC not for
+  cli/library/data, API compatibility for api/library), and whether the design step runs. Tables in
+  `profile/schema/project-kinds.md`; the reviewer reads only its kind's section. **Absent ⇒ `web`** —
+  existing profiles behave exactly as before (`/cohorte-update-pipeline` tops it up as `web`).
+- **Surface ownership is enforced, not just reviewed.** The gate hook reads `.claude/profile.json`.
+  When a call comes from a subagent (its payload carries `agent_id`) whose `agent_type` is a
+  surface's `agent`, a `Write`/`Edit`/`MultiEdit`/`NotebookEdit` outside that surface's `path` is
+  **denied**, and the reason names the surface that owns the file. Two new optional lists widen
+  what it may write: per-surface `owns_also: []` and global `ownership.shared_writable: []` (for
+  lockfiles, say). The contract (`contract.path`, `contract.index`) is read-only to every surface
+  agent. The agent's Bash writes get the same check, **best effort**: redirections,
+  `cp`/`mv`/`rm`, `tee` and `sed -i` are checked, while files a tool or script writes on its own are not.
+  The lead, the fixed `cohorte-*` agents and unknown agent types are never restricted. Without
+  `profile.json`, or with `ownership.enforce: false`, nothing changes. Targets in a linked
+  worktree resolve against that worktree, and paths outside the project (`/dev/null`, `$TMPDIR`)
+  are not judged. It is **on by default** from the first `cohorte sync` after upgrading (that sync
+  also registers the hook for `NotebookEdit`). Verified on Claude Code 2.1.325: a subagent's
+  `Write` reaches the hook with its `agent_id` and `agent_type`. Not verified yet for implementers
+  dispatched by the *workflows* — if they lack those fields, their writes are judged as the lead's.
+  Before upgrading, check what each surface writes outside its tree (root `tests/`, a generated
+  client, the root lockfile): `/cohorte-update-pipeline` proposes them as `owns_also` /
+  `ownership.shared_writable`, and `ownership.enforce: false` turns the check off.
+- **Dependency and secret scans in the review preflight: `commands.security: []`.** The commands
+  run after typecheck, lint and tests, in the same `preflight.sh` call and report, behind a
+  `: cohorte-security-scans` marker. A red scan aborts the review before any agent is spawned,
+  like a red test. On a green run the reviewer's security pass reads the scan output below the
+  threshold. An advisory on a dependency the diff adds or bumps becomes a non-blocking `quality`
+  finding. One on an untouched dependency is ignored. `/cohorte-init-pipeline` detects the scanners and proposes
+  them: `npm`/`pnpm`/`yarn` audit (production deps, high+), `pip-audit`, `govulncheck`,
+  `cargo audit`, and `gitleaks` or `trufflehog` on the added lines of the feature's
+  `feature-diff.sh --patch`, never the history. The workflow now single-quotes any check that
+  contains `$`, so the calling shell no longer expands a check's own variables. The release
+  agent's `.env` check is unchanged.
+
+- **`/cohorte-verify <id>` — the pipeline finally runs the app.** Between the `SHIP` verdict and
+  `/cohorte-ship`: migrations applied (and rolled back down-then-up) on the dev database, the dev
+  server started and probed, `smoke` / `e2e` run, screenshots taken when a local Playwright CLI
+  exists — all through the new shipped `verify-run.sh`, which owns the process group, the timeouts,
+  the shared-DB refusal and the gate consult, and stops the server on every exit path. It writes
+  `specs/reports/<id>.verify.json` and ticks only DoD lines tagged `· runtime: <check>` whose check
+  passed. New profile fields: `commands.dev_ready`, `commands.smoke`, `commands.e2e`,
+  `commands.migrate_down`, and a `verify:` block (`enabled`, `db`, timeouts, `screenshots`,
+  per-surface hints). See `profile/schema/verify.md`.
+- **`/cohorte-ship` gains a runtime gate:** a `FAIL` verify blocks; no run, a `SKIPPED` one or one
+  older than the reviewed code asks "not verified at runtime — ship anyway?". A profile with no
+  runtime commands is not asked — and `commands.dev` alone does not count (it needs a
+  `commands.dev_ready` probe), so upgrading changes nothing until you fill those fields (neither
+  `/cohorte-init-pipeline` nor the reconcile asks for them yet). New specs' DoD carries
+  `· runtime` lines; `/cohorte-spec` drops the ones the project cannot check.
+- **Migrations need a way back.** Specs gain `migrations:` in the front-matter and a `## Rollback`
+  section (revert · data · migration down); `/cohorte-spec` fills it when §4 touches the database,
+  and `/cohorte-ship` refuses a `migrations: true` spec whose Rollback is still the template stub
+  (`verify-run.sh rollback-check`). A rollback command your `gate.deny` blocks is never run — move it
+  to `gate.ask` to let the pipeline check it.
+- **`/cohorte-revert <id>`** turns a merged feature into a revert branch + PR: the merge or squash
+  commit found via `gh`, the down migration run on a dev database while its files still exist, the
+  spec kept as history, `## Rollback` in the PR body. Never pushes to the default branch.
+
+- **Kanban moves no longer get lost in parallel.** Worktrees moving cards on one board at the same
+  time could overwrite each other (2 of 8 concurrent moves vanished in a test); each move now takes a
+  lock on the board holding the writer's PID (a crashed writer's lock is broken as soon as its
+  process is gone; exit 4 if a live move keeps the board locked for ~30 s).
+- **The gate judges what `verify-run.sh` is asked to run**, and now also guards `NotebookEdit`.
+- **An end-to-end test of the deterministic pipeline runs in CI** (install → sync → feature diff
+  with a new file → preflight → gate → kanban → uninstall), so a change on either side of a
+  prompt/script hand-off fails in CI rather than in a session.
+- **Upgrading:** run `/cohorte-update-pipeline` in each project. It asks the three new questions
+  (security scans, runtime verification, project kind), writes `.claude/profile.json` — commit it —
+  and from then on the ownership check is active.
+
 ## 3.0.0 — 2026-11-16
 
 **One install mode, Claude Code only.** The machine gets the commands and the generic core;

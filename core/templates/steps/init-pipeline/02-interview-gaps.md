@@ -4,15 +4,26 @@
 
 Ask ONLY what you couldn't confidently detect. Batch related questions. Cover:
 
+- **Project kind** — always confirm, the detected `project.kind` as the Recommended option with the
+  signal that decided it (`web` · `api` · `cli` · `library` · `mobile` · `data` · `other`). It
+  selects the spec DoD defaults and the review's checks. Where `<core>/pipeline/schema/project-kinds.md`
+  says the kind has no design step, skip the **Design system** question below (`design.enabled: false`,
+  every `uses_design: false`); where it has no RBAC check, default **RBAC** to `enabled: false`.
 - **Surfaces & ownership** — confirm the surface list and each one's path + owning agent name. (If a
   single-app repo, one surface.) Confirm the `tools` each agent needs (add `DesignSync` only to a
   surface with `uses_design: true`), and each surface's `model` tier: `sonnet` (Recommended default —
   implementers mostly apply a frozen contract, which Sonnet handles at a fraction of the Opus-lead
   cost), `haiku` for purely mechanical surfaces (scaffolding), `inherit` only for surfaces with real
   design decisions worth running on the lead's model.
+  **Ownership is enforced** (the gate denies a surface agent's Write/Edit outside its `path`), so
+  check what each surface legitimately writes elsewhere: tests or fixtures in a root folder (`tests/`,
+  `e2e/`, `__tests__/` outside the surface path), a generated client, a shared i18n file. Propose them
+  as that surface's `owns_also: [...]`, and files every surface may touch (root lockfile, root
+  `package.json` workspaces list) as `ownership.shared_writable: [...]`. Unsure ⇒ propose, never skip:
+  a missing entry shows up as a denied write in the first build.
 - **Specialization (only if Phase 1 flagged a large + cleanly-separable surface)** — offer to split it
   into specialized sub-surfaces (e.g. `web-checkout`, `web-billing`) so `/cohorte-build` runs them in parallel,
-  per SCHEMA.md §Specialization. If the human accepts, apply the rules: **shared code (routing, global
+  per `<core>/pipeline/schema/specialization.md`. If the human accepts, apply the rules: **shared code (routing, global
   state, DS kit/tokens) becomes its own single-owner surface**, and cross-slice shapes go through the
   contract. Default to NOT splitting when boundaries are tangled or slices are tiny — coarse is fine.
 - **Quiet commands** (never store a bare `pnpm test` as what agents execute) — for each noisy command
@@ -20,8 +31,20 @@ Ask ONLY what you couldn't confidently detect. Batch related questions. Cover:
   Recommended option: dot/failures-only reporter (`--reporter=dot` vitest/playwright, `--silent`
   jest, `-q` pytest, `--quiet` eslint/ruff — whatever the detected runner supports). These land in
   `test_quiet_cmd`/`lint_quiet_cmd` + `commands.test_quiet`/`lint_quiet` and are what agents and the
-  `/cohorte-review` pre-flight actually run (SCHEMA.md §Output discipline). If the human declines or
+  `/cohorte-review` pre-flight actually run (`<core>/pipeline/schema/output-discipline.md`). If the human declines or
   the runner has no such flag, leave `""` — consumers then fall back to `<cmd> 2>&1 | tail -40`.
+- **Security scans** (only if Phase 1 found an auditor or a secret scanner). Propose the detected
+  commands from `<core>/pipeline/schema/preflight.md` §Security scans as one multi-select. Fill
+  in `--default <default_branch>`. If `CLAUDE_CONFIG_DIR` is set, use its literal value in place
+  of `~/.claude`. Note that a scan red at its threshold blocks every review, so the default branch
+  must pass it today. If it doesn't, offer a higher threshold. The accepted commands go in
+  `commands.security`. None accepted ⇒ `security: []`.
+- **Runtime verification** (`/cohorte-verify`, `<core>/pipeline/schema/verify.md`) — only if Phase 1
+  found a dev server, an e2e runner or migrations. Propose `commands.dev` + `commands.dev_ready` (a URL
+  such as `http://localhost:5173` or a probe command), `commands.smoke` / `commands.e2e` when they
+  exist, and `commands.migrate_down` when migrations do; ask `verify.db`: `local` (the dev DB is the
+  human's own) or `shared` (others use it — migrations are then refused unless isolation gives each
+  worktree its own DB). Declined ⇒ leave `dev_ready` empty: verify stays off and ship never asks.
 - **Contract** — mechanism (`shared-types-zod` / `openapi` / `protobuf` / `json-schema` / `none`) and
   where feature contracts are authored. If `none`, surfaces sync by the spec prose alone.
 - **Release notes (only if Phase 1 found a versioning tool or a note-enforcing CI job)** — confirm the
@@ -33,7 +56,7 @@ Ask ONLY what you couldn't confidently detect. Batch related questions. Cover:
 - **UI language** — language of all user-facing copy.
 - **RBAC** — is there a role hierarchy? If yes, list it highest→lowest.
 - **Design system** — enabled? provider (Claude Design / Figma / none) + project ids + kit/token paths.
-- **Code retrieval** — confirm the provider (see SCHEMA.md §Code retrieval): `serena` (Recommended
+- **Code retrieval** — confirm the provider (see `<core>/pipeline/schema/retrieval.md`): `serena` (Recommended
   default — live LSP symbol navigation, no index to maintain), `graphify` (persistent knowledge graph
   over code + docs — better on very large or mixed code+docs repos, but needs an index step + rescans),
   or `none`. Only demote from `serena` if the human objects or the provider CLI can't be installed.
