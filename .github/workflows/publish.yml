@@ -152,3 +152,25 @@ jobs:
             case "$VERSION" in *-*) flags="--prerelease" ;; esac
             gh release create "v$VERSION" --title "v$VERSION" --generate-notes $flags
           fi
+
+      # The registry answers before its CDN serves the tarball: `npx cohorte@<new>` fails with
+      # "command not found" for a few minutes after every publish. Wait for the tarball, then
+      # install the published package exactly as a user would, in a throwaway home.
+      - name: Smoke-test the published package
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          url="https://registry.npmjs.org/cohorte/-/cohorte-${VERSION}.tgz"
+          for i in $(seq 1 40); do
+            [ "$(curl -s -o /dev/null -w '%{http_code}' -L "$url")" = 200 ] && break
+            sleep 15
+          done
+          scratch=$(mktemp -d)
+          for i in $(seq 1 10); do
+            if HOME="$scratch" CLAUDE_CONFIG_DIR="$scratch/.claude" COHORTE_NO_VERSION_CHECK=1 \
+                npx -y "cohorte@${VERSION}" install </dev/null; then break; fi
+            sleep 30
+          done
+          test "$(cat "$scratch/.claude/cohorte/pipeline/VERSION")" = "$VERSION"
+          test -f "$scratch/.claude/commands/cohorte-build.md"
+          echo "cohorte@${VERSION} installs from the registry."

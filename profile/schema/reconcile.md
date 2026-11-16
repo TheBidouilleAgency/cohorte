@@ -40,6 +40,8 @@ files automatically. It works because every generated artifact is a **determinis
    as "this is still sending", which is the one thing it must not imply. This is the single
    exception to "never rewrite the config": a targeted deletion of a block the core no longer
    defines, never a re-seed.
+5b. **CI doctor pin.** If `.github/workflows/*.yml` runs `npx -y cohorte@<x> doctor`, bump `<x>` (both
+   occurrences) to the installed core version.
 6. **Kanban sync.** Run the §Kanban reconcile (`<core>/pipeline/schema/kanban.md`): link/create the project's board if configured, verify
    its columns, and backfill/sync cards from `specs/*.md`.
 7. **Spec-template top-up.** `specs/_template.md` is seeded once at install and then **never**

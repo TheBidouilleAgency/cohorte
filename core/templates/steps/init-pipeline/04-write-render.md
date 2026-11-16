@@ -83,6 +83,12 @@
     `commands.install`, then `commands.lint` · `commands.typecheck` · `commands.test` (+ per-surface
     `build_cmd`s that are non-empty). Derive the setup steps from the detected stack — mirror what a
     sibling workflow does if one exists. `/cohorte-ship` watches these checks before the merge.
+    Add one more step, so a PR that breaks the pipeline's own wiring (gate unregistered or not
+    committed, stale `profile.json`, a surface without its agent, a tracked preflight stamp) fails
+    in CI instead of in someone's session — pin it to this repo's `core_version`:
+    `npx -y cohorte@<core_version> install && npx -y cohorte@<core_version> doctor`
+    (with `COHORTE_NO_VERSION_CHECK: 1` in its `env`; `doctor` exits 1 on any bad check). On an
+    existing workflow, offer to add just that step. `/cohorte-update-pipeline` bumps the pin.
 11. **Design system:** if `design.enabled` with a snapshot dir, note that `/cohorte-align-ds` is active; else the
     `/cohorte-align-ds` command will no-op with a clear message.
 12. **Kanban** (only if the human opted in at Phase 2): wire it per `<core>/pipeline/schema/kanban.md`, writing into the
