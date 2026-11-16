@@ -234,6 +234,23 @@ console.log("gate.py — indirection (sh -c, eval, pipes, inline code)");
   ]);
 }
 
+// ── verify-run.sh hands commands to a shell: the gate judges each one ────────
+// The script also asks the gate itself, but its --confirmed flag is the lead's word; a denied
+// command must stay denied whatever the flag says.
+console.log("gate.py — verify-run.sh arguments");
+{
+  const feat = scratch({ config: AUDIT_CFG }); gitRepo(feat, "feat");
+  const V = "~/.claude/cohorte/pipeline/scripts/verify-run.sh run x";
+  table("verify-run.sh", feat, [
+    [`${V} --dev "pnpm dev" --ready http://localhost:3000 --check "smoke=pnpm test:smoke"`, "allow"],
+    [`${V} --check "e2e=rm -rf /tmp/e2e-out"`, "deny"],
+    [`${V} --migrate "node ace migration:run" --db local --confirmed`, "ask"],
+    [`${V} --check "smoke=psql -c 'select 1'"`, "ask"],
+    [`${V} --dev "git push -f origin main" --ready "curl -s localhost"`, "deny"],
+    [`bash ${V} --check "lint=git push --force"`, "deny"],
+  ]);
+}
+
 // ── false positives the substring gate had (G11) ─────────────────────────────
 console.log("gate.py — false positives (G11) and the pipeline's own commands");
 {

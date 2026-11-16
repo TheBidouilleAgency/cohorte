@@ -2234,6 +2234,9 @@ class Analyzer(object):
         if name == "preflight.sh":
             self.preflight_args(args, state, depth)
             return
+        if name == "verify-run.sh":
+            self.verify_args(args, state, depth)
+            return
         if name == "eval":
             text = " ".join(a.value for a in args)
             if any(a.dynamic for a in args):
@@ -2383,6 +2386,8 @@ class Analyzer(object):
             return
         if cmd_name(script.value) == "preflight.sh":
             self.preflight_args(sargs, state, depth)
+        elif cmd_name(script.value) == "verify-run.sh":
+            self.verify_args(sargs, state, depth)
 
     def preflight_args(self, args, state, depth):
         """preflight.sh <report> "<cmd>"…: it truncates <report>, and runs each cmd via sh -c."""
@@ -2394,6 +2399,31 @@ class Analyzer(object):
                 self.opaque("preflight.sh runs a check command built at run time", a.raw)
             else:
                 self.analyze_text(a.value, state.copy(), depth + 1)
+
+    # verify-run.sh run <id> --dev "<cmd>" --check "<name>=<cmd>" --migrate "<cmd>" …: every
+    # command it is handed runs through a shell, so judge each one here — the script also asks
+    # the gate itself, but its `--confirmed` flag is the lead's word, and a DENIED command must
+    # stay denied whatever the flag says.
+    VERIFY_CMD_FLAGS = {"--dev": False, "--ready": False, "--migrate": False,
+                        "--migrate-down": False, "--check": True}
+
+    def verify_args(self, args, state, depth):
+        k = 0
+        while k < len(args):
+            flag = args[k].value
+            if flag in self.VERIFY_CMD_FLAGS and k + 1 < len(args):
+                a = args[k + 1]
+                if a.dynamic:
+                    self.opaque("verify-run.sh runs a command built at run time", a.raw)
+                else:
+                    cmd = a.value
+                    if self.VERIFY_CMD_FLAGS[flag] and "=" in cmd:
+                        cmd = cmd.split("=", 1)[1]          # --check "<name>=<cmd>"
+                    if not (flag == "--ready" and re.match(r"^https?://", cmd.strip())):
+                        self.analyze_text(cmd, state.copy(), depth + 1)
+                k += 2
+                continue
+            k += 1
 
     def interp_code(self, name, args):
         lang = lang_of(name)
