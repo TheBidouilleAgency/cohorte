@@ -34,6 +34,10 @@ short, user-facing, most recent first. One `## <version> — <YYYY-MM-DD>` secti
   of 127 KB).
 - **Releases:** every publish is followed by an `npx cohorte@<version> install` from the registry;
   Dependabot keeps the pinned actions current.
+- **Internal:** `gate.py` is built from modules; no behaviour change. The source lives in
+  `core/hooks/gate/*.py`; `scripts/build-gate.mjs` concatenates it into the single committed
+  `core/hooks/gate.py` that installs and `cohorte sync` copy, and validate-core fails if the
+  two drift.
 
 ## 3.1.1 — 2026-11-16
 

@@ -9,7 +9,9 @@ branch: no force push, no deletion, required reviews and checks. Turn it on.
 ## `cohorte-gate.py` — the blocking PreToolUse hook
 
 The installer copies `core/hooks/gate.py` into each project as `.claude/hooks/cohorte-gate.py`
-and registers it in the project's `.claude/settings.json`:
+and registers it in the project's `.claude/settings.json` (`gate.py` is a single stdlib-only file
+built from the modules in `core/hooks/gate/` by `scripts/build-gate.mjs` — see
+[scripts.md](scripts.md)):
 
 ```json
 { "hooks": { "PreToolUse": [

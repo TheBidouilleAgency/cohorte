@@ -904,6 +904,162 @@ console.log("gate.py — cross-worktree stamps");
   }
 }
 
+// gate.py is BUILT from core/hooks/gate/*.py (scripts/build-gate.mjs; validate-core checks the
+// committed file is exactly the build). Once concatenated every module shares one namespace, so
+// a missing or stale `from .x import` line breaks nothing at run time — and a name defined in
+// two modules silently keeps the later one. Hold the source to what a real package would need:
+// every module-level name it reads is imported, every import is used and names a definition,
+// and no top-level name is defined twice. Static (ast) only: nothing is imported or compiled.
+console.log("gate.py — source modules (core/hooks/gate/)");
+{
+  const MODULE_LINT = String.raw`
+import ast, builtins, json, os, sys
+
+SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ListComp, ast.SetComp,
+          ast.DictComp, ast.GeneratorExp)
+FUNCS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
+
+
+def stores(node):
+    out = set()
+    for m in ast.walk(node):
+        if isinstance(m, ast.Name) and isinstance(m.ctx, (ast.Store, ast.Del)):
+            out.add(m.id)
+        elif isinstance(m, ast.ExceptHandler) and m.name:
+            out.add(m.name)
+    return out
+
+
+def binds(scope):
+    """Names bound directly in one function/lambda/comprehension scope, minus 'global' ones."""
+    out, glob = set(), set()
+    if isinstance(scope, FUNCS):
+        a = scope.args
+        out.update(x.arg for x in a.posonlyargs + a.args + a.kwonlyargs + [a.vararg, a.kwarg] if x)
+        todo = list(scope.body) if isinstance(scope.body, list) else [scope.body]
+    else:
+        todo = [g.target for g in scope.generators] + [g.ifs for g in scope.generators]
+        todo = [x for t in todo for x in (t if isinstance(t, list) else [t])]
+    while todo:
+        n = todo.pop()
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            out.add(n.name)
+            continue
+        if isinstance(n, SCOPES):
+            continue
+        if isinstance(n, ast.Name) and isinstance(n.ctx, (ast.Store, ast.Del)):
+            out.add(n.id)
+        elif isinstance(n, ast.ExceptHandler) and n.name:
+            out.add(n.name)
+        elif isinstance(n, ast.Global):
+            glob.update(n.names)
+        todo.extend(ast.iter_child_nodes(n))
+    return out - glob, glob
+
+
+def module_facts(src):
+    """(names the module defines, module-level names it reads, its imports)."""
+    tree = ast.parse(src)
+    defined, imports = set(), {}
+    for n in tree.body:
+        if isinstance(n, ast.Import):
+            for al in n.names:
+                imports[al.asname or al.name] = None
+        elif isinstance(n, ast.ImportFrom) and n.level == 1:
+            for al in n.names:
+                imports[al.asname or al.name] = n.module
+        elif isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            defined.add(n.name)
+        else:
+            defined |= stores(n)
+    reads = set()
+
+    def visit(node, scopes):
+        if isinstance(node, SCOPES):
+            b, g = binds(node)
+            defined.update(g)
+            if isinstance(node, FUNCS):
+                a = node.args
+                for d in a.defaults + [d for d in a.kw_defaults if d is not None]:
+                    visit(d, scopes)
+                for d in getattr(node, "decorator_list", []):
+                    visit(d, scopes)
+                inner = scopes + [b]
+                for s in (node.body if isinstance(node.body, list) else [node.body]):
+                    visit(s, inner)
+                return
+            gens = node.generators
+            visit(gens[0].iter, scopes)          # evaluated in the enclosing scope
+            inner = scopes + [b]
+            for i, gen in enumerate(gens):
+                if i:
+                    visit(gen.iter, inner)
+                for c in gen.ifs:
+                    visit(c, inner)
+            for part in ("elt", "key", "value"):
+                if hasattr(node, part):
+                    visit(getattr(node, part), inner)
+            return
+        if isinstance(node, ast.ClassDef):
+            for d in node.decorator_list + node.bases + [k.value for k in node.keywords]:
+                visit(d, scopes)
+            cls = set()
+            for s in node.body:
+                cls |= {s.name} if isinstance(s, (ast.FunctionDef, ast.ClassDef)) else stores(s)
+            for s in node.body:          # a class body's names are not visible to its methods
+                visit(s, scopes if isinstance(s, (ast.FunctionDef, ast.ClassDef)) else scopes + [cls])
+            return
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+            if not any(node.id in s for s in scopes):
+                reads.add(node.id)
+            return
+        for c in ast.iter_child_nodes(node):
+            visit(c, scopes)
+
+    for n in tree.body:
+        if not isinstance(n, (ast.Import, ast.ImportFrom)):
+            visit(n, [])
+    return defined, reads - set(dir(builtins)), imports
+
+
+d = sys.argv[1]
+mods = sorted(f[:-3] for f in os.listdir(d) if f.endswith(".py") and f != "__init__.py")
+facts = {}
+for m in mods:
+    with open(os.path.join(d, m + ".py"), encoding="utf-8") as fh:
+        facts[m] = module_facts(fh.read())
+problems = []
+owner = {}
+for m in mods:
+    for n in facts[m][0]:
+        if n in owner:
+            problems.append("%s and %s both define '%s' (one namespace once built)" % (owner[n], m, n))
+        owner[n] = m
+for m in mods:
+    defined, reads, imports = facts[m]
+    for n in sorted(reads - defined):
+        if n not in imports:
+            problems.append("%s uses '%s' without importing it (defined in %s)" % (m, n, owner.get(n, "no module")))
+    for n, src in sorted(imports.items()):
+        if n not in reads:
+            problems.append("%s imports '%s' but never uses it" % (m, n))
+        if src is not None and n not in facts.get(src, (set(),))[0]:
+            problems.append("%s imports '%s' from .%s, which does not define it" % (m, n, src))
+print(json.dumps({"modules": mods, "problems": problems}))
+`;
+  // The script goes in on stdin (`-`), not as a `-c` argument: Windows argv quoting.
+  const r = spawnSync(python, ["-I", "-B", "-", join(root, "core", "hooks", "gate")],
+    { encoding: "utf8", input: MODULE_LINT });
+  let res = null;
+  try { res = JSON.parse(r.stdout); } catch { /* reported below */ }
+  check("the module lint ran", r.status === 0 && res !== null, r.stderr || r.stdout);
+  if (res) {
+    check("it saw every module", res.modules.length >= 11, res.modules.join(", "));
+    check("imports between modules are complete, used and accurate; no name is defined twice",
+      res.problems.length === 0, res.problems.join("; "));
+  }
+}
+
 // The hook must never leave bytecode next to itself.
 check("no __pycache__ left next to gate.py", !existsSync(join(root, "core", "hooks", "__pycache__")));
 

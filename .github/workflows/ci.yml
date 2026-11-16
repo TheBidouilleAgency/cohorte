@@ -146,6 +146,9 @@ jobs:
           if grep -qE 'scripts/(test-[a-z-]+|validate-core)\.mjs' /tmp/pack.txt; then
             echo "::error::the npm tarball ships the test suite"; exit 1
           fi
+          if grep -qE 'core/hooks/gate/|scripts/build-gate\.mjs' /tmp/pack.txt; then
+            echo "::error::the npm tarball ships the gate's source modules or its builder — only the built core/hooks/gate.py ships"; exit 1
+          fi
           grep -q 'core/hooks/gate.py' /tmp/pack.txt
           grep -q 'lib/project.js' /tmp/pack.txt
           rm -rf core/hooks/__pycache__

@@ -354,6 +354,7 @@ core/
   agents/               # implementer.template.md (rendered per surface) + cohorte-review / -release / -profile-reader
   commands/             # the 16 /cohorte-* commands
   hooks/gate.py         # the gate (copied into each project as .claude/hooks/cohorte-gate.py)
+  hooks/gate/           # its source modules — gate.py is built from them (scripts/build-gate.mjs)
   templates/            # handoff / brainstorm-return / design-brief / review-feedback / pr-body / spec + step files
   workflows/            # Workflow-runtime scripts: review / audit / refactor (opt-in variants) + loop (workflow-only)
 profile/

@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# GENERATED from core/hooks/gate/*.py by scripts/build-gate.mjs — edit the modules, then run
+# `node scripts/build-gate.mjs`. validate-core fails when this file and the modules disagree.
+# Build order: runtime, shell, git, config, ownership, patterns, context, analyze, preflight,
+# evaluate, main.
 """Cohorte PreToolUse gate for Claude Code (3.0 — Claude Code only).
 
 Installed per project as `.claude/hooks/cohorte-gate.py` and registered in the project's
@@ -109,6 +113,8 @@ import sys
 import tempfile
 import time
 
+
+# ══ core/hooks/gate/runtime.py ═══════════════════════════════════════════════
 # ── time budget ──────────────────────────────────────────────────────────────
 # The hook is registered with onFailure "block": a timeout blocks the tool call. Every git
 # call draws on one global budget, and an exhausted budget answers "ask", never "allow".
@@ -182,6 +188,7 @@ def warn(msg):
         pass
 
 
+# ══ core/hooks/gate/shell.py ═════════════════════════════════════════════════
 # ── lexer ────────────────────────────────────────────────────────────────────
 DYN = "\x00"   # stands for a run-time expansion inside a word's value
 
@@ -840,6 +847,7 @@ def strip_prefixes(words):
     return words[i:], assigns, env_s, relocated, False
 
 
+# ══ core/hooks/gate/git.py ═══════════════════════════════════════════════════
 # ── git ──────────────────────────────────────────────────────────────────────
 GIT_GLOBAL_WITH_ARG = {"-c", "-C", "--git-dir", "--work-tree", "--namespace", "--super-prefix",
                        "--config-env", "--list-cmds", "--attr-source"}
@@ -1048,6 +1056,7 @@ def normalize_ref(name):
     return name
 
 
+# ══ core/hooks/gate/config.py ════════════════════════════════════════════════
 # ── config ───────────────────────────────────────────────────────────────────
 DEFAULT_AGENTS = ["cohorte-review", "review"]
 RENAMED_AGENTS = {"review": "cohorte-review", "release": "cohorte-release",
@@ -1183,6 +1192,7 @@ def resolve_roots(cwd):
     return roots, top
 
 
+# ══ core/hooks/gate/ownership.py ═════════════════════════════════════════════
 # ── surface ownership ────────────────────────────────────────────────────────
 # A surface implementer (a subagent whose `agent_type` is a `surfaces[].agent` of the
 # project's `.claude/profile.json`) may only write under its own `surfaces[].path`, plus
@@ -1369,116 +1379,7 @@ class Ownership(object):
                 % (self.agent, "`, `".join(mine), rel, whose))
 
 
-class Ctx(object):
-    def __init__(self, cwd, mode):
-        self.cwd0 = os.path.realpath(cwd) if cwd and os.path.isdir(cwd) else None
-        self.mode = mode
-        self.roots, self.top0 = resolve_roots(self.cwd0)
-        self.warnings = []
-        self.errors = []
-        self.config_found = False
-        merged = {"deny": [], "ask": [], "ask_on_default_branch": [], "default_branches": [],
-                  "preflight": None}
-        for r in self.roots:
-            for sub in (".claude", ".cohorte"):
-                p = os.path.join(r, sub, "gate-config.json")
-                if not os.path.isfile(p):
-                    continue
-                if sub == ".cohorte" and os.path.isfile(os.path.join(r, ".claude", "gate-config.json")):
-                    self.warnings.append("%s and .claude/gate-config.json both exist; their "
-                                         "rules are combined" % p)
-                self.config_found = True
-                try:
-                    with open(p, "r", encoding="utf-8") as fh:
-                        obj = json.load(fh)
-                    cfg = validate_config(obj, p, self.warnings)
-                except ConfigError as e:
-                    self.errors.append("%s: %s" % (p, e))
-                    continue
-                except Exception as e:
-                    self.errors.append("%s: not valid JSON (%s)" % (p, e))
-                    continue
-                for k in ("deny", "ask", "ask_on_default_branch"):
-                    for pat in cfg[k]:
-                        if pat not in merged[k]:
-                            merged[k].append(pat)
-                if cfg["default_branch"] and cfg["default_branch"] not in merged["default_branches"]:
-                    merged["default_branches"].append(cfg["default_branch"])
-                if merged["preflight"] is None and cfg["preflight"] is not None:
-                    merged["preflight"] = cfg["preflight"]
-        self.cfg = merged
-        self.has_pointer = any(os.path.isfile(os.path.join(r, ".claude", "pipeline.json"))
-                               for r in self.roots)
-        self.active = self.has_pointer or self.config_found
-        for w in self.warnings:
-            warn(w)
-        self.deny_pats = [compile_pattern(p) for p in merged["deny"]]
-        self.ask_pats = [compile_pattern(p) for p in merged["ask"]]
-        self.branch_pats = [compile_pattern(p) for p in merged["ask_on_default_branch"]]
-        self.has_rules = bool(merged["deny"] or merged["ask"] or merged["ask_on_default_branch"]
-                              or self.errors)
-        self._defaults = None
-        self._branches = {}
-        self._aliases = {}
-        self.owner = None             # Ownership, set by evaluate() for a surface agent
-        self._build_protected()
-
-    def _build_protected(self):
-        write, delete = set(), set()
-
-        def add(s, p):
-            s.add(os.path.normpath(p))
-            s.add(os.path.realpath(p))
-
-        for r in self.roots:
-            for rel in ((".claude", "gate-config.json"), (".claude", "preflight.ok"),
-                        (".claude", "settings.json"), (".claude", "settings.local.json"),
-                        (".claude", "hooks", "cohorte-gate.py"), (".cohorte", "gate-config.json"),
-                        # profile.json drives ownership enforcement: as protected as the config.
-                        (".claude", "profile.json")):
-                add(write, os.path.join(r, *rel))
-            add(delete, os.path.join(r, ".claude", "pipeline.json"))
-        home = os.path.expanduser("~")
-        for rel in ("settings.json", "settings.local.json"):
-            add(write, os.path.join(home, ".claude", rel))
-        self.protected = write
-        self.delete_protected = write | delete
-
-    # git state, cached
-    def current_branch(self, cwd):
-        if cwd not in self._branches:
-            r = run_git(["symbolic-ref", "-q", "--short", "HEAD"], cwd)
-            self._branches[cwd] = r[1].strip() if r and r[0] == 0 and r[1].strip() else None
-        return self._branches[cwd]
-
-    def defaults(self):
-        if self._defaults is None:
-            if self.cfg["default_branches"]:
-                self._defaults = list(self.cfg["default_branches"])
-            else:
-                d = ["main", "master"]
-                if self.cwd0:
-                    r = run_git(["symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD"],
-                                self.cwd0)
-                    if r and r[0] == 0 and "/" in r[1].strip():
-                        name = r[1].strip().split("/", 1)[1]
-                        if name not in d:
-                            d.insert(0, name)
-                self._defaults = d
-        return self._defaults
-
-    def is_default(self, branch):
-        return any(fnmatch.fnmatchcase(d, branch) if any(c in branch for c in "*?[") else d == branch
-                   for d in self.defaults())
-
-    def git_alias(self, sub, cwd):
-        key = (sub, cwd)
-        if key not in self._aliases:
-            r = run_git(["config", "--get", "alias." + sub], cwd)
-            self._aliases[key] = r[1].strip() if r and r[0] == 0 and r[1].strip() else None
-        return self._aliases[key]
-
-
+# ══ core/hooks/gate/patterns.py ══════════════════════════════════════════════
 # ── patterns ─────────────────────────────────────────────────────────────────
 class PatSeg(object):
     def __init__(self, name, args, sep):
@@ -1763,6 +1664,119 @@ def match_push(pat_args, cargs, pi):
     return res
 
 
+# ══ core/hooks/gate/context.py ═══════════════════════════════════════════════
+# ── context ──────────────────────────────────────────────────────────────────
+class Ctx(object):
+    def __init__(self, cwd, mode):
+        self.cwd0 = os.path.realpath(cwd) if cwd and os.path.isdir(cwd) else None
+        self.mode = mode
+        self.roots, self.top0 = resolve_roots(self.cwd0)
+        self.warnings = []
+        self.errors = []
+        self.config_found = False
+        merged = {"deny": [], "ask": [], "ask_on_default_branch": [], "default_branches": [],
+                  "preflight": None}
+        for r in self.roots:
+            for sub in (".claude", ".cohorte"):
+                p = os.path.join(r, sub, "gate-config.json")
+                if not os.path.isfile(p):
+                    continue
+                if sub == ".cohorte" and os.path.isfile(os.path.join(r, ".claude", "gate-config.json")):
+                    self.warnings.append("%s and .claude/gate-config.json both exist; their "
+                                         "rules are combined" % p)
+                self.config_found = True
+                try:
+                    with open(p, "r", encoding="utf-8") as fh:
+                        obj = json.load(fh)
+                    cfg = validate_config(obj, p, self.warnings)
+                except ConfigError as e:
+                    self.errors.append("%s: %s" % (p, e))
+                    continue
+                except Exception as e:
+                    self.errors.append("%s: not valid JSON (%s)" % (p, e))
+                    continue
+                for k in ("deny", "ask", "ask_on_default_branch"):
+                    for pat in cfg[k]:
+                        if pat not in merged[k]:
+                            merged[k].append(pat)
+                if cfg["default_branch"] and cfg["default_branch"] not in merged["default_branches"]:
+                    merged["default_branches"].append(cfg["default_branch"])
+                if merged["preflight"] is None and cfg["preflight"] is not None:
+                    merged["preflight"] = cfg["preflight"]
+        self.cfg = merged
+        self.has_pointer = any(os.path.isfile(os.path.join(r, ".claude", "pipeline.json"))
+                               for r in self.roots)
+        self.active = self.has_pointer or self.config_found
+        for w in self.warnings:
+            warn(w)
+        self.deny_pats = [compile_pattern(p) for p in merged["deny"]]
+        self.ask_pats = [compile_pattern(p) for p in merged["ask"]]
+        self.branch_pats = [compile_pattern(p) for p in merged["ask_on_default_branch"]]
+        self.has_rules = bool(merged["deny"] or merged["ask"] or merged["ask_on_default_branch"]
+                              or self.errors)
+        self._defaults = None
+        self._branches = {}
+        self._aliases = {}
+        self.owner = None             # Ownership, set by evaluate() for a surface agent
+        self._build_protected()
+
+    def _build_protected(self):
+        write, delete = set(), set()
+
+        def add(s, p):
+            s.add(os.path.normpath(p))
+            s.add(os.path.realpath(p))
+
+        for r in self.roots:
+            for rel in ((".claude", "gate-config.json"), (".claude", "preflight.ok"),
+                        (".claude", "settings.json"), (".claude", "settings.local.json"),
+                        (".claude", "hooks", "cohorte-gate.py"), (".cohorte", "gate-config.json"),
+                        # profile.json drives ownership enforcement: as protected as the config.
+                        (".claude", "profile.json")):
+                add(write, os.path.join(r, *rel))
+            add(delete, os.path.join(r, ".claude", "pipeline.json"))
+        home = os.path.expanduser("~")
+        for rel in ("settings.json", "settings.local.json"):
+            add(write, os.path.join(home, ".claude", rel))
+        self.protected = write
+        self.delete_protected = write | delete
+
+    # git state, cached
+    def current_branch(self, cwd):
+        if cwd not in self._branches:
+            r = run_git(["symbolic-ref", "-q", "--short", "HEAD"], cwd)
+            self._branches[cwd] = r[1].strip() if r and r[0] == 0 and r[1].strip() else None
+        return self._branches[cwd]
+
+    def defaults(self):
+        if self._defaults is None:
+            if self.cfg["default_branches"]:
+                self._defaults = list(self.cfg["default_branches"])
+            else:
+                d = ["main", "master"]
+                if self.cwd0:
+                    r = run_git(["symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD"],
+                                self.cwd0)
+                    if r and r[0] == 0 and "/" in r[1].strip():
+                        name = r[1].strip().split("/", 1)[1]
+                        if name not in d:
+                            d.insert(0, name)
+                self._defaults = d
+        return self._defaults
+
+    def is_default(self, branch):
+        return any(fnmatch.fnmatchcase(d, branch) if any(c in branch for c in "*?[") else d == branch
+                   for d in self.defaults())
+
+    def git_alias(self, sub, cwd):
+        key = (sub, cwd)
+        if key not in self._aliases:
+            r = run_git(["config", "--get", "alias." + sub], cwd)
+            self._aliases[key] = r[1].strip() if r and r[0] == 0 and r[1].strip() else None
+        return self._aliases[key]
+
+
+# ══ core/hooks/gate/analyze.py ═══════════════════════════════════════════════
 # ── analysis ─────────────────────────────────────────────────────────────────
 PROTECTED_HINT_RE = re.compile(r"(^|/)\.claude(/|$)|gate-config\.json|preflight\.ok|"
                                r"settings(\.local)?\.json|cohorte-gate\.py|pipeline\.json|"
@@ -2814,6 +2828,7 @@ class Analyzer(object):
         return t
 
 
+# ══ core/hooks/gate/preflight.py ═════════════════════════════════════════════
 # ── preflight phase gate ─────────────────────────────────────────────────────
 HEX_RE = re.compile(r"^[0-9a-f]{40}([0-9a-f]{24})?$")
 DIGEST_EXCLUDES = (".claude", "specs")
@@ -2969,7 +2984,8 @@ class Dispatch(object):
                 "(PIPELINE.md gate.preflight)." % (sub, why))
 
 
-# ── entry points ─────────────────────────────────────────────────────────────
+# ══ core/hooks/gate/evaluate.py ══════════════════════════════════════════════
+# ── evaluation ───────────────────────────────────────────────────────────────
 DISPATCH_TOOLS = {"Task", "Agent"}
 EDIT_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
 GATED_TOOLS = {"Bash"} | DISPATCH_TOOLS | EDIT_TOOLS
@@ -3083,6 +3099,8 @@ def evaluate(payload):
     return level, "Cohorte gate: " + reason
 
 
+# ══ core/hooks/gate/main.py ══════════════════════════════════════════════════
+# ── entry points ─────────────────────────────────────────────────────────────
 def emit(decision, reason):
     sys.stdout.write(json.dumps({"hookSpecificOutput": {
         "hookEventName": "PreToolUse",
