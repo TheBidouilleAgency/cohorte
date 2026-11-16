@@ -117,7 +117,7 @@ with its limit and what would trigger the upgrade — not in a comment, and not 
 
 **Run commands bridled — always.** Your surface's `test_quiet_cmd`/`lint_quiet_cmd` in `PIPELINE.md`
 are the forms you execute (dot reporter / failures-only); when a quiet variant is empty or absent,
-run `<full cmd> 2>&1 | tail -40`. Never print a full runner log into your context — redirect to a
+run `set -o pipefail; <full cmd> 2>&1 | tail -40` (without `pipefail` a red run through `| tail` exits 0). Never print a full runner log into your context — redirect to a
 file and grep it if you need more than the tail.
 
 ## Definition of done

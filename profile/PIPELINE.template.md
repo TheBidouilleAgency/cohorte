@@ -68,7 +68,7 @@ surfaces:
     test_cmd: pnpm --filter api test
     # Bridled variants — what agents actually RUN (dot reporter / failures-only /
     # --quiet), so a green run costs lines, not pages. "" ⇒ callers fall back to
-    # `<cmd> 2>&1 | tail -40`. /cohorte-init-pipeline asks for these; never store a bare
+    # `set -o pipefail; <cmd> 2>&1 | tail -40`. /cohorte-init-pipeline asks for these; never store a bare
     # `pnpm test` as the thing agents execute.
     test_quiet_cmd: pnpm --filter api test --reporter=dot
     lint_cmd: pnpm --filter api lint

@@ -90,7 +90,8 @@ rollback_check() {
 # was SIGKILLed (no trap runs) is reaped by `stop` or by the next run from that list.
 spawn() { # spawn <logfile> <cmd> — sets $spawned to the group leader's pid
   set -m
-  sh -c "$2" > "$1" 2>&1 < /dev/null &
+  # pipefail: a check written `<runner> 2>&1 | tail -20` must fail when the runner fails.
+  bash -o pipefail -c "$2" > "$1" 2>&1 < /dev/null &
   spawned=$!
   set +m
   remember "$spawned"

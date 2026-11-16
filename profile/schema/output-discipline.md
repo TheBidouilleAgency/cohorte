@@ -13,8 +13,12 @@ context. The profile therefore stores **two forms of each noisy command**:
 Rules for every consumer (implementers, preflight, `/cohorte-audit` gates, workflow agents):
 
 1. Run the quiet variant when set.
-2. Quiet variant empty/absent (older profile) ⇒ run `<full cmd> 2>&1 | tail -40` — never the bare
-   command into your context.
+2. Quiet variant empty/absent (older profile) ⇒ run `set -o pipefail; <full cmd> 2>&1 | tail -40` —
+   never the bare command into your context. **Never drop the `pipefail`:** a pipeline's exit status
+   is its last command's, so without it a red run through `| tail` exits 0 and reads as green.
+   (`preflight.sh` and `verify-run.sh` always run checks with pipefail; your own Bash calls do not.)
+4. Prefer a runner's own quiet flag (`--reporter=dot`, `-q`, `--silent`) to a `| tail` when you store
+   a quiet variant: it keeps the runner's exit status without relying on the caller's shell options.
 3. Need the full log? Redirect it to a file and grep it; never print it.
 
 `/cohorte-init-pipeline` **asks** for these variants (detected defaults offered first) instead of silently

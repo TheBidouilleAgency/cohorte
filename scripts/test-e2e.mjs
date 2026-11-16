@@ -105,6 +105,10 @@ console.log("4. preflight");
 mkdirSync(join(repo, "specs/reports"), { recursive: true });
 const red = sh(`"${script("preflight.sh")}" specs/reports/mul.preflight.txt "node -e 'process.exit(3)'"`, repo);
 check("a red check exits 1 and writes no stamp", red.status === 1 && !existsSync(join(repo, ".claude/preflight.ok")), red.out);
+// A quiet variant piped into tail: without pipefail the pipeline's status is tail's and a red run
+// stamped GREEN — found by the real-model run (scripts/ci/llm-e2e.sh).
+const redTail = sh(`"${script("preflight.sh")}" specs/reports/mul.preflight.txt "node -e 'process.exit(3)' 2>&1 | tail -5"`, repo);
+check("a red check piped into `| tail` is still red (pipefail)", redTail.status === 1 && !existsSync(join(repo, ".claude/preflight.ok")), redTail.out);
 const green = sh(`"${script("preflight.sh")}" specs/reports/mul.preflight.txt "npm test --silent"`, repo);
 check("a green run stamps .claude/preflight.ok", green.status === 0 && existsSync(join(repo, ".claude/preflight.ok")), green.out);
 

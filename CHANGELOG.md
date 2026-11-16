@@ -9,6 +9,16 @@ short, user-facing, most recent first. One `## <version> — <YYYY-MM-DD>` secti
 
 ## 3.1.2 — 2026-11-16
 
+- **A red test piped into `| tail` no longer passes the preflight.** A quiet variant such as
+  `npm test 2>&1 | tail -20` exits with `tail`'s status, so a failing suite stamped the preflight
+  GREEN and the review could reach SHIP on red code. `preflight.sh` and `verify-run.sh` now run every
+  check with `pipefail`; the doctrine's `| tail -40` fallback is written `set -o pipefail; …`; and
+  `cohorte doctor` warns about a stored command that pipes into `tail`/`head` without it. Found by
+  the new real-model end-to-end run.
+- **A nightly real-model end-to-end run** (`/cohorte-build` then `/cohorte-review` on a toy repo,
+  asserting on the files they write) runs when the `ANTHROPIC_API_KEY` repository secret is set.
+- **`gate.hook_form: exec`** registers the gate without a shell (`python3` + an argument list), for
+  Windows teams without Git Bash. Opt-in: every teammate needs a recent Claude Code.
 - **Ownership covers the workflows too — verified.** A subagent dispatched by a workflow
   (`agent({ agentType })`, as the build, loop and refactor workflows do) reaches the gate with its
   `agent_id` and `agent_type`, exactly like one dispatched by the lead (Claude Code 2.1.325).
