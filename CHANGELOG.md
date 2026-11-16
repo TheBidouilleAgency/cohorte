@@ -7,7 +7,7 @@ short, user-facing, most recent first. One `## <version> — <YYYY-MM-DD>` secti
 > They are history and are deliberately not rewritten — every command gained a `cohorte-` prefix
 > in 2.0.0.
 
-## 3.1.3 — unreleased
+## 3.1.3 — 2026-11-16
 
 - **Kanban moves on macOS use a kernel lock.** macOS has no `flock(1)`, so parallel moves on one
   board fell back to a hand-made `mkdir` lock — and a move killed while holding it left a stale
