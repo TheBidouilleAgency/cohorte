@@ -87,6 +87,9 @@ jobs:
       - name: Metrics collector
         run: node scripts/test-metrics.mjs
 
+      - name: End-to-end (install → sync → feature diff → preflight → gate → kanban → uninstall)
+        run: node scripts/test-e2e.mjs
+
       # install.ps1 runs on Windows PowerShell 5.1 AND PowerShell 7; 5.1 mangles native-argument
       # quoting (the 2.x Node probe reported every Node as v0 there), so run both.
       - name: install.ps1 under Windows PowerShell 5.1
