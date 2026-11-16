@@ -71,7 +71,7 @@ Shared design, all four scripts:
   §Preflight, `<core>/pipeline/schema/preflight.md`) — in unattended runs its asks become denies. Know what that means for edits:
   workflow subagents run in **`acceptEdits` whatever the session mode**, so for the length of a
   run — and `loop.js` runs long, unattended stretches — `hooks/gate.py` is the only brake on
-  what agents write (the project hook also guards the gate's own files on `Write|Edit|MultiEdit`). That is stated here rather than discovered.
+  what agents write (the project hook also guards the gate's own files on `Write|Edit|MultiEdit|NotebookEdit`). That is stated here rather than discovered.
 - **Permissions:** `/cohorte-init-pipeline` and `/cohorte-update-pipeline` extend the generated `settings.json`
   `allow` list with what workflow agents need (the quiet commands, the shipped
   `pipeline/scripts/*.sh`, read-only git incl. `git rev-parse`, and the retrieval provider's MCP

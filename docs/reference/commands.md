@@ -251,7 +251,7 @@ Starts from `cohorte doctor` (the same file-level checks, deterministic), then a
 session can see. Nine check groups, each failure with its exact fix: **1** core & pointer (+ 2.x
 leftovers, shipped scripts present & executable), **2** profile ↔ agents (orphans, tool lists,
 **model pins** on agents and commands), **3** hooks & gate (config drift, the committed
-`cohorte-gate.py` registered once for `Bash|Task|Agent` and `Write|Edit|MultiEdit`, `python3`
+`cohorte-gate.py` registered once for `Bash|Task|Agent` and `Write|Edit|MultiEdit|NotebookEdit`, `python3`
 present), **4** retrieval health, **5** design paths, **6** isolation (rendered scripts, slot table,
 stale slots / zombie worktrees), **7** the kanban board link, **8** workflows (CLI ≥ 2.1.154, the four
 `cohorte-*.js` scripts, `cohorte-profile-reader`, runtime in-session, preflight wiring — with the

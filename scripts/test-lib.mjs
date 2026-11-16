@@ -147,7 +147,7 @@ console.log("doctor.js — the /cohorte-doctor port");
   writeFileSync(join(d, ".mcp.json"), JSON.stringify({ mcpServers: { serena: {} } }));
   const hook = { type: "command", command: 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/cohorte-gate.py"' };
   const wired = { hooks: { PreToolUse: [
-    { matcher: "Bash|Task|Agent", hooks: [hook] }, { matcher: "Write|Edit|MultiEdit", hooks: [hook] },
+    { matcher: "Bash|Task|Agent", hooks: [hook] }, { matcher: "Write|Edit|MultiEdit|NotebookEdit", hooks: [hook] },
   ] } };
   writeFileSync(join(d, ".claude", "settings.json"), JSON.stringify(wired));
 
@@ -183,12 +183,12 @@ console.log("doctor.js — the /cohorte-doctor port");
   // The hook check must FAIL each way it can actually break.
   const setHooks = (groups) => writeFileSync(join(d, ".claude", "settings.json"),
     JSON.stringify({ hooks: { PreToolUse: groups } }));
-  setHooks([{ matcher: "Bash|Task", hooks: [hook] }, { matcher: "Write|Edit|MultiEdit", hooks: [hook] }]);
+  setHooks([{ matcher: "Bash|Task", hooks: [hook] }, { matcher: "Write|Edit|MultiEdit|NotebookEdit", hooks: [hook] }]);
   s = await state({ projectRoot: d, globalDir: g, cliVersion: "9.9.9", offline: true });
   check("a matcher without Agent is bad (the phase gate never fires on Claude Code ≥ 2.1.63)",
     by(s.checks, "hooks").status === "bad" && /Agent/.test(by(s.checks, "hooks").detail), by(s.checks, "hooks").detail);
   setHooks([{ matcher: "Bash|Task|Agent", hooks: [hook] }, { matcher: "Bash", hooks: [hook] },
-    { matcher: "Write|Edit|MultiEdit", hooks: [hook] }]);
+    { matcher: "Write|Edit|MultiEdit|NotebookEdit", hooks: [hook] }]);
   s = await state({ projectRoot: d, globalDir: g, cliVersion: "9.9.9", offline: true });
   check("a duplicate Bash registration is flagged (it double-prompts)",
     by(s.checks, "hooks").status === "warn" && /2×/.test(by(s.checks, "hooks").detail), by(s.checks, "hooks").detail);

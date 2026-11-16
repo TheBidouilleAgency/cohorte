@@ -295,8 +295,8 @@ console.log("sync — wires one project");
   const s = JSON.parse(read(join(d, ".claude/settings.json")));
   const groups = s.hooks.PreToolUse;
   const gateGroups = groups.filter((g) => g.hooks.some((h) => h.command.includes("cohorte-gate.py")));
-  check("registered for Bash|Task|Agent and Write|Edit|MultiEdit",
-    JSON.stringify(gateGroups.map((g) => g.matcher)) === JSON.stringify(["Bash|Task|Agent", "Write|Edit|MultiEdit"]));
+  check("registered for Bash|Task|Agent and Write|Edit|MultiEdit|NotebookEdit",
+    JSON.stringify(gateGroups.map((g) => g.matcher)) === JSON.stringify(["Bash|Task|Agent", "Write|Edit|MultiEdit|NotebookEdit"]));
   check("project-relative, fail-closed command",
     gateGroups.every((g) => g.hooks[0].command === 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/cohorte-gate.py"'
       && g.hooks[0].onFailure === "block"));
@@ -344,9 +344,9 @@ console.log("sync — wires one project");
       ["Bash|Task|Agent", "Bash", { command: "ls" }, "allow"],
       ["Bash|Task|Agent", "Bash", { command: "git push --force" }, "deny"],
       ["Bash|Task|Agent", "Agent", { subagent_type: "backend", prompt: "x" }, "allow"],
-      ["Write|Edit|MultiEdit", "Write", { file_path: join(spaced, "src/a.ts"), content: "x" }, "allow"],
-      ["Write|Edit|MultiEdit", "MultiEdit", { file_path: join(spaced, "src/a.ts"), edits: [{ old_string: "a", new_string: "b" }] }, "allow"],
-      ["Write|Edit|MultiEdit", "Edit", { file_path: join(spaced, ".claude/gate-config.json"), old_string: "a", new_string: "b" }, "ask"],
+      ["Write|Edit|MultiEdit|NotebookEdit", "Write", { file_path: join(spaced, "src/a.ts"), content: "x" }, "allow"],
+      ["Write|Edit|MultiEdit|NotebookEdit", "MultiEdit", { file_path: join(spaced, "src/a.ts"), edits: [{ old_string: "a", new_string: "b" }] }, "allow"],
+      ["Write|Edit|MultiEdit|NotebookEdit", "Edit", { file_path: join(spaced, ".claude/gate-config.json"), old_string: "a", new_string: "b" }, "ask"],
     ];
     for (const [m, tool, input, want] of cases) {
       const r = hook(m, tool, input);

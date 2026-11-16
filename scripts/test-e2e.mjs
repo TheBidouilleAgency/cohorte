@@ -128,8 +128,8 @@ check("a commit on the feature branch is free", hook("Bash|Task|Agent", "Bash", 
 check("the agent cannot rewrite the gate config from the shell",
   hook("Bash|Task|Agent", "Bash", { command: "echo {} > .claude/gate-config.json" }) === "deny");
 check("an Edit of the gate config needs the human",
-  hook("Write|Edit|MultiEdit", "Edit", { file_path: join(repo, ".claude/gate-config.json"), old_string: "a", new_string: "b" }) === "ask");
-check("an ordinary Write passes", hook("Write|Edit|MultiEdit", "Write", { file_path: join(repo, "apps/api/x.js"), content: "x" }) === "allow");
+  hook("Write|Edit|MultiEdit|NotebookEdit", "Edit", { file_path: join(repo, ".claude/gate-config.json"), old_string: "a", new_string: "b" }) === "ask");
+check("an ordinary Write passes", hook("Write|Edit|MultiEdit|NotebookEdit", "Write", { file_path: join(repo, "apps/api/x.js"), content: "x" }) === "allow");
 
 // ── 6. kanban ─────────────────────────────────────────────────────────────────
 console.log("6. kanban");

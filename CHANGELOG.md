@@ -55,7 +55,9 @@ short, user-facing, most recent first. One `## <version> — <YYYY-MM-DD>` secti
   The lead, the fixed `cohorte-*` agents and unknown agent types are never restricted. Without
   `profile.json`, or with `ownership.enforce: false`, nothing changes. Targets in a linked
   worktree resolve against that worktree, and paths outside the project (`/dev/null`, `$TMPDIR`)
-  are not judged.
+  are not judged. It is **on by default** from the first `cohorte sync` after upgrading (that sync
+  also registers the hook for `NotebookEdit`). Not verified yet: whether implementers dispatched by
+  the *workflows* carry `agent_id` — if they don't, their writes are judged as the lead's.
 - **Dependency and secret scans in the review preflight: `commands.security: []`.** The commands
   run after typecheck, lint and tests, in the same `preflight.sh` call and report, behind a
   `: cohorte-security-scans` marker. A red scan aborts the review before any agent is spawned,

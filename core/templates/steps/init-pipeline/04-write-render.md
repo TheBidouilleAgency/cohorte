@@ -65,7 +65,7 @@
    AFTER step 1 wrote `PIPELINE.md`, never before: it parses the machine block into
    `<state>/profile.json`, the file the agents read instead of `PIPELINE.md`. It is
    deterministic and idempotent: it copies the gate to `.claude/hooks/cohorte-gate.py`, registers it
-   in `.claude/settings.json` (matchers `Bash|Task|Agent` and `Write|Edit|MultiEdit`, exactly once,
+   in `.claude/settings.json` (matchers `Bash|Task|Agent` and `Write|Edit|MultiEdit|NotebookEdit`, exactly once,
    every other hook kept), writes the `<state>/pipeline.json` pointer, adds
    `<state>/preflight.ok`, `<state>/pipeline-metrics.jsonl` and `specs/reports/` to `.gitignore`, and
    seeds `specs/_template.md`, and writes `<state>/profile.json` (it says so if the block does not

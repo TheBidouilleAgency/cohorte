@@ -15,7 +15,7 @@ and registers it in the project's `.claude/settings.json`:
 { "hooks": { "PreToolUse": [
   { "matcher": "Bash|Task|Agent", "hooks": [
     { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/cohorte-gate.py\"", "onFailure": "block" } ] },
-  { "matcher": "Write|Edit|MultiEdit", "hooks": [
+  { "matcher": "Write|Edit|MultiEdit|NotebookEdit", "hooks": [
     { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/cohorte-gate.py\"", "onFailure": "block" } ] }
 ] } }
 ```

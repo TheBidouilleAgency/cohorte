@@ -58,7 +58,7 @@ fix only with the human's go-ahead (or hand them the command).
    (`git ls-files --error-unmatch .claude/hooks/cohorte-gate.py`), and `.claude/settings.json`
    registers it exactly once per matcher group — `Bash|Task|Agent` (shell + subagent dispatches; the
    preflight phase gate keys off dispatches, and `Agent` is the tool's name since Claude Code 2.1.63)
-   and `Write|Edit|MultiEdit` (self-protection of the gate's own files). A registration whose file is
+   and `Write|Edit|MultiEdit|NotebookEdit` (self-protection of the gate's own files). A registration whose file is
    missing is ❌ — with `onFailure: block` it refuses every Bash call; fix: `<sync>`. A second gate
    registered in `~/.claude/settings.json` (2.x) is ⚠️ — it double-prompts; fix: `cohorte update`.
    Test the evaluator too: `python3 .claude/hooks/cohorte-gate.py --check "<a pattern from the ask list>"`

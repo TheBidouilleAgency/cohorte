@@ -103,7 +103,7 @@ binary on `PATH`. Deterministic and idempotent (a second run prints `already in 
 
 1. copies the gate to **`.claude/hooks/cohorte-gate.py`** (executable);
 2. registers it in **`.claude/settings.json`** as two `PreToolUse` groups — matchers
-   `Bash|Task|Agent` and `Write|Edit|MultiEdit` — exactly once, every other hook kept:
+   `Bash|Task|Agent` and `Write|Edit|MultiEdit|NotebookEdit` — exactly once, every other hook kept:
 
    ```json
    {
