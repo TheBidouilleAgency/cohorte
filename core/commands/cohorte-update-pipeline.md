@@ -78,7 +78,7 @@ Four of the §Reconcile steps matter specifically here:
 
 - **Spec-template top-up** (§Reconcile step 7): `specs/_template.md` was seeded at install and never
   refreshed since, so add the front-matter fields the current `templates/spec.template.md` has and the
-  repo's copy lacks — and drop `loop_pass`/`loop_phase`, retired with `/cohorte-loop` in 2.2.0 —
+  repo's copy lacks — and drop `loop_pass`/`loop_phase`, retired with the 2.2.0 conversational loop driver —
   front-matter only, never the body.
 
 - **Global config seed** (§Reconcile step 5): if `<config>` is absent, seed it

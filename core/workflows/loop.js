@@ -1,4 +1,6 @@
-// cohorte — /cohorte-loop: build → review → [fix → review]* for ONE feature, unattended.
+// cohorte — the loop workflow (cohorte-loop.js): build → review → [fix → review]* for ONE
+// feature, unattended. There is no /cohorte-loop slash command — the human asks for "the
+// loop workflow" and the Workflow tool runs this file by its meta.name.
 //
 // WORKFLOW-ONLY, on purpose: there is no core/commands/cohorte-loop.md and there must never
 // be one (validate-core.mjs enforces it). If the Workflow runtime is unavailable, this

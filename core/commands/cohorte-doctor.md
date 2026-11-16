@@ -27,11 +27,12 @@ fix only with the human's go-ahead (or hand them the command).
    project in `~/.claude/agents/` ⇒ re-render them into `<agents>/` (§Rendering) and delete the global
    copies. The router commands' step files are present — `<core>/templates/steps/init-pipeline/`
    non-empty. **Shipped scripts present and executable** in `<core>/pipeline/scripts/`:
-   `kanban-move.sh`, `preflight.sh`; the `new-feature.sh.template` and
+   `kanban-move.sh`, `preflight.sh`, `feature-diff.sh`; the `new-feature.sh.template` and
    `remove-feature.sh.template` sources must be readable — ❌ any missing one.
-   Every caller chains these with `|| true`, so an absent script is a **silent**
-   no-op (no kanban card moves, no error anywhere) — this check is the only thing
-   that sees it.
+   Kanban callers chain with `|| true`, so an absent `kanban-move.sh` is a **silent**
+   no-op (no card moves, no error anywhere) — this check is the only thing that sees it;
+   an absent `feature-diff.sh` stops every review and ship (they refuse to fall back to a
+   bare `git diff`, which misses untracked files).
 2. **Profile.** `PIPELINE.md` exists and its `yaml pipeline-profile` block parses. Every
    `surfaces[].agent` has its `<agents>/<agent>.md` and every agent file has its `surfaces[]`
    entry — **no orphans either way** (SCHEMA.md rule). Each rendered agent's frontmatter `tools`
@@ -94,10 +95,9 @@ fix only with the human's go-ahead (or hand them the command).
    - **Claude Code version** ≥ 2.1.154 (`claude --version 2>/dev/null | head -1`) — older or no CLI
      on PATH ⇒ conversational only. This is the **workflow** floor and the only one that gates this
      check; do NOT raise it to match a newer feature's floor, or every install between the two
-     versions reads as broken while its workflows run fine. When `design.inline` is on, report the
-     design floor (≥ 2.1.234) as its own line under check 9 — separate prerequisite, separate verdict.
+     versions reads as broken while its workflows run fine.
    - **Scripts present:** `<workflows>/cohorte-review.js` + `cohorte-audit.js` + `cohorte-refactor.js` + `cohorte-loop.js` —
-     missing on a current core ⇒ half-done install, re-run install/update. (`/cohorte-loop` is
+     missing on a current core ⇒ half-done install, re-run install/update. (The loop workflow (`cohorte-loop.js`) is
      **workflow-only** — no command file exists on purpose; without this runtime it refuses
      rather than degrading to a conversational loop.)
    - **Phase-0 agent present:** `<fixed-agents>/cohorte-profile-reader.md` — the workflows abort without it.
@@ -108,30 +108,19 @@ fix only with the human's go-ahead (or hand them the command).
    End the check with ONE summary line, e.g.
    `workflows: available (opt-in — ask to "run the review workflow")` or
    `workflows: unavailable (<first failing prerequisite>) — conversational commands (the default)`.
-9. **Inline design** (`design.inline: true` — the `/design` artboard step between spec and build).
-   A research preview, so every failure here is ⚠️, never ❌: the design brief still exists on disk
-   at `specs/design/<feature_id>.md` and can be carried to the design tool by hand, which is what
-   every install did before this flag. Report:
-   - **Claude Code version** ≥ 2.1.234 — `/design` ships as a skill and is simply absent below it.
-     Older CLI ⇒ say so and name the fix, `claude update`.
-   - **The `/design` skill resolves in this session** — absent ⇒ the preview is off for this account
-     or plan (Pro/Max/Team/Enterprise are the eligible ones), not a cohorte defect.
-   - **`design.enabled` is true and `provider` is `claude-design`** — `inline` on top of a `figma` or
-     `none` provider is a profile contradiction; name it and point at `/cohorte-update-pipeline`.
-   - **Artboards are not persisted for you.** State it every run, unconditionally, even when all
-     three checks pass: the preview hands designs to the build step but does not save them, so an
-     artboard nobody exported dies with the session. This is the single thing most likely to lose
-     work, and it is not detectable after the fact.
-   One summary line: `inline design: available (preview — export artboards yourself)` or
-   `inline design: unavailable (<first failing prerequisite>) — design brief on disk, carry it over by hand`.
-10. **Specs & metrics.** Every `specs/*.md` front-matter `status` is a valid stage — one of
-   `draft · frozen · in-progress · in-review · shipped · blocked` (SCHEMA.md §Spec status) — excluding
+9. **Specs & metrics.** Every `specs/*.md` front-matter `status` is a valid stage — one of
+   `draft · frozen · in-progress · in-review · blocked · shipped · merged · abandoned` (SCHEMA.md
+   §Spec status) — excluding
    `_`-prefixed files (the spec template and `specs/_decisions.md`, the decision journal) and
    `specs/refactor-backlog.md`, which `/cohorte-audit` writes as a backlog, not a
    spec, and which has no front-matter to check. A spec left `in-progress` or `blocked` is a round
    that never finished ⇒ say so and route it: open `## Remediation` items ⇒ `/cohorte-fix`, none ⇒
-   `/cohorte-build`. `shipped` specs
-   with a live worktree flagged (see 6). `<state>/pipeline-metrics.jsonl` and `specs/reports/` (the
+   `/cohorte-build` (a `blocked` spec whose `specs/reports/<id>.loop.json` has a `reason` and no
+   `outcome` is a resumable stop — re-running the loop workflow resumes it). **Reconcile `shipped`
+   specs with their PR** (when `vcs.host: github` and `gh` is available — one
+   `gh pr view <branch> --json state` per shipped spec, never more than the shipped ones): `MERGED` ⇒
+   ⚠️ with the fix `set status: merged` (offer to apply it); `CLOSED` unmerged ⇒ ⚠️ — ask the human:
+   reopen, or `status: abandoned`. `shipped`/`merged` specs with a live worktree flagged (see 6). `<state>/pipeline-metrics.jsonl` and `specs/reports/` (the
    `/cohorte-review` report buffer that lets a `/cohorte-fix` survive a `/clear`) are gitignored. Metrics
    belong to the **main checkout** — a `pipeline-metrics.jsonl` inside a live feature worktree is a
    stale-core sign (its lines die at teardown) ⇒ suggest appending its lines to the main checkout's

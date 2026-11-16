@@ -90,10 +90,17 @@ for (const f of readdirSync(join(root, "core/agents"))) {
 // ── cross-references ────────────────────────────────────────────────────────
 // Any `<core>/templates/<x>.md` referenced by a command or agent must exist in
 // core/templates (it resolves to the installed copy of exactly that file).
-const allDocs = [];
-for (const dir of ["core/commands", "core/agents", "core/templates"])
-  for (const f of readdirSync(join(root, dir)))
-    if (f.endsWith(".md")) allDocs.push(`${dir}/${f}`);
+// Recursive: the step files under core/templates/steps/** are prompts too (loaded by a
+// router command), and a reference inside one rots exactly like one in a command.
+const mdUnder = (dir) => readdirSync(join(root, dir), { withFileTypes: true }).flatMap((e) =>
+  e.isDirectory() ? mdUnder(`${dir}/${e.name}`) : e.name.endsWith(".md") ? [`${dir}/${e.name}`] : []);
+const allDocs = ["core/commands", "core/agents", "core/templates"].flatMap(mdUnder);
+// A dispatch names either a shipped agent or the one placeholder the lead resolves from the
+// profile (`<surface.agent>`). Anything else — a typo, a pre-3.0 name like `review` — reaches
+// the Agent tool as an unknown type and the dispatch fails (or worse, falls back to a default).
+const SUBAGENT_PLACEHOLDERS = ["<surface.agent>"];
+const shippedScripts = new Set(readdirSync(join(root, "scripts"))
+  .filter((f) => /\.sh(\.template)?$/.test(f)).map((f) => f.replace(/\.template$/, "")));
 
 for (const path of allDocs) {
   const text = read(path);
@@ -101,12 +108,85 @@ for (const path of allDocs) {
     if (!existsSync(join(root, "core/templates", m[1])))
       fail(path, `references <core>/templates/${m[1]} which is not in core/templates/`);
   }
-  for (const m of text.matchAll(/subagent_type:\s*(?:`|)([a-z-]+)(?:`|)/g)) {
+  for (const m of text.matchAll(/subagent_type:\s*`?(<[^>`\s]+>|[A-Za-z][\w.-]*)/g)) {
     const t = m[1];
-    if (t.startsWith("<")) continue; // <surface.agent> placeholder
+    if (t.startsWith("<")) {
+      if (!SUBAGENT_PLACEHOLDERS.includes(t))
+        fail(path, `dispatches subagent_type ${t} — the only placeholder the lead resolves is ${SUBAGENT_PLACEHOLDERS.join(", ")}`);
+      continue;
+    }
     if (!existsSync(join(root, "core/agents", `${t}.md`)))
       fail(path, `dispatches subagent_type ${t} with no core/agents/${t}.md`);
   }
+  // `<core>/pipeline/scripts/<x>.sh` resolves to the installed copy of scripts/<x>.sh — it
+  // must ship (lib/install.js copies every scripts/*.sh and *.sh.template).
+  for (const m of text.matchAll(/<core>\/pipeline\/scripts\/([a-z0-9-]+\.sh)\b/g)) {
+    if (!shippedScripts.has(m[1]))
+      fail(path, `references <core>/pipeline/scripts/${m[1]} which is not in scripts/`);
+  }
+}
+
+// Workflow scripts dispatch by `agentType: '<literal>'` (or a surface's `.agent` from the
+// profile, which is not a literal). Every literal must be a shipped agent.
+for (const f of readdirSync(join(root, "core/workflows")).filter((f) => f.endsWith(".js"))) {
+  const text = read(`core/workflows/${f}`);
+  for (const m of text.matchAll(/agentType:\s*'([^']+)'/g))
+    if (!existsSync(join(root, "core/agents", `${m[1]}.md`)))
+      fail(`core/workflows/${f}`, `agentType '${m[1]}' has no core/agents/${m[1]}.md`);
+  for (const m of text.matchAll(/<core>\/pipeline\/scripts\/([a-z0-9-]+\.sh)\b/g))
+    if (!shippedScripts.has(m[1]))
+      fail(`core/workflows/${f}`, `references <core>/pipeline/scripts/${m[1]} which is not in scripts/`);
+}
+
+// ── the review report shape, three copies ────────────────────────────────────
+// The authoritative REVIEW REPORT shape is the fenced template in the review agent; the
+// human reference copy (templates/review-feedback.md) and the workflow's merged report
+// (review.js) must carry the same sections in the same order — `## Deferred` once went
+// missing from the reference copy while the agent and the workflow both emitted it.
+{
+  const agentText = read("core/agents/cohorte-review.md");
+  const fence = (agentText.split("## Your return")[1] || "").match(/```\n([\s\S]*?)```/);
+  const heads = (t) => [...t.matchAll(/^## ([A-Z][\w ]*)$/gm)].map((m) => m[1].trim());
+  if (!fence) fail("core/agents/cohorte-review.md", "no fenced REVIEW REPORT template under §Your return");
+  else {
+    const want = heads(fence[1]);
+    const ref = heads(read("core/templates/review-feedback.md"));
+    if (want.join("|") !== ref.join("|"))
+      fail("core/templates/review-feedback.md", `sections [${ref.join(", ")}] differ from the review agent's template [${want.join(", ")}]`);
+    for (const marker of ["| Severity | Count |", "Verdict: <SHIP | REVISE | BLOCK>", "feature_id: <feature_id> · scope: <surface.key>"])
+      if (fence[1].includes(marker) && !read("core/templates/review-feedback.md").includes(marker))
+        fail("core/templates/review-feedback.md", `missing the agent template's \`${marker}\` line`);
+    const wf = read("core/workflows/review.js");
+    for (const h of want.filter((h) => h !== "Notes"))   // Notes is optional by the agent's own rule
+      if (!wf.includes(`'## ${h}'`))
+        fail("core/workflows/review.js", `the merged report lacks the agent template's \`## ${h}\` section`);
+  }
+}
+
+// ── every pipeline diff goes through feature-diff.sh ─────────────────────────
+// A bare `git diff <default_branch>` (or `${base}` / `$BASE`) misses every untracked file —
+// and feature work is uncommitted until ship — and diffs against the branch TIP rather than
+// the merge-base. That reviewed adds-only features as an empty diff and scored them SHIP.
+// The one legitimate bare diff is PR mode's three-dot diff of committed PR history.
+for (const path of [...allDocs, ...readdirSync(join(root, "core/workflows")).map((f) => `core/workflows/${f}`)]) {
+  const flat = read(path).replace(/\s+/g, " ");
+  const m = flat.match(/git diff (?:--stat )?(?:<default_branch>|\$\{base\}|\$BASE\b|<reviewed_base>)/);
+  if (m) fail(path, `\`${m[0]}\` — pipeline diffs must use <core>/pipeline/scripts/feature-diff.sh (untracked files, merge-base)`);
+}
+
+// ── /cohorte-ship gates on the machine verdict, not on prose ─────────────────
+// ship used to read "the latest review returned SHIP" from the conversation and treat a
+// missing freshness stamp as "legacy spec ⇒ skip" — which shipped known HIGH/MEDIUMs (the
+// review withholds the stamp exactly then) and an empty-diff "SHIP".
+{
+  const ship = read("core/commands/cohorte-ship.md").replace(/\s+/g, " ");
+  for (const [needle, why] of [
+    ["verdict.json", "must read specs/reports/<id>.verdict.json"],
+    ["`unreviewed` is `[]`", "must require unreviewed == []"],
+    ["severity.MEDIUM", "must refuse surviving HIGH/MEDIUM"],
+    ["feature-diff.sh --base <reviewed_base> --digest", "must recompute the digest with feature-diff.sh"],
+    ["verdict.json` is absent", "may treat a missing stamp as legacy ONLY when verdict.json is absent"],
+  ]) if (!ship.includes(needle)) fail("core/commands/cohorte-ship.md", why);
 }
 
 // ── profile ─────────────────────────────────────────────────────────────────

@@ -28,9 +28,11 @@
 #   - duplicates ⇒ keeps the first, drops the rest
 #   - never touches the front-matter or the trailing `%% kanban:settings %%` block
 #
-# Exit codes: 0 ok (incl. "kanban not configured") · 2 usage · 3 board/column
-# not found. A configured board that cannot be moved is loud; an unconfigured
-# one is quiet — the pipeline never blocks on the board.
+# Exit codes: 0 ok (incl. "kanban not configured" — and, under `auto`, a configured
+# board file that is gone: `kanban: board file not found`) · 2 usage · 3 unknown
+# column, or an EXPLICIT <board.md> path that does not exist. A board that resolved
+# but cannot be moved is loud; an unconfigured one is quiet — the pipeline never
+# blocks on the board. (SCHEMA.md §Kanban states the same contract.)
 set -eu
 
 usage='usage: kanban-move.sh <board.md|auto> <feature-id> <column|stage> [--pr <num>] [--title <title>] [--project <name>] [--profile <path>]

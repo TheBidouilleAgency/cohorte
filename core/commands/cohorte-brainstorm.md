@@ -57,8 +57,11 @@ When the human is satisfied, produce the **brainstorm return** by filling
 when invoked with no paste). In chat print only a 3-line summary + the path. Tell them to run `/cohorte-spec`
 — **recommend a `/clear` first**, the return is staged on disk (pasting it remains a fallback).
 
-**Kanban:** settle the `feature_id` (kebab-case slug) the return carries — it is the card's join key
-downstream. Then, in this order:
+**Settle the `feature_id` first and write it into the return's front-matter** — it is the card's join
+key and `/cohorte-spec` takes it from there verbatim. Started from an `/cohorte-intake` seed
+(`specs/reports/intake-<slug>.md`, or a bare slug as the idea)? **Keep that slug** — intake already
+created the card `#<slug>`; a new id would strand it and fork a second card. Otherwise derive a
+kebab-case slug and confirm it. Then, in this order:
 
 1. **If the human picked an Ideas card, tag it first.** Ideas cards are free text a human typed, with
    no `#<feature_id>` on them, and the move script joins on that tag: move before tagging and it

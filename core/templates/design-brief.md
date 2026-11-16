@@ -3,15 +3,8 @@
 > The "spec return". This is §8 of the frozen spec, standalone — `/cohorte-spec` writes it to
 > `specs/design/<feature_id>.md` on freeze. Omit entirely if the project has no UI.
 >
-> **Getting it into the design tool.** By default: paste it there yourself (see `PIPELINE.md` §design).
-> With `design.inline: true`, `/cohorte-spec` instead offers to hand this file straight to `/design`,
-> which reads the codebase, matches the existing UI style, and returns editable artboards in-session.
->
-> Inline changes who does the pasting, and nothing else. This file is still written to disk first and
-> is still what `/cohorte-build` reads — the artboards are an aid to the human, not an input to the
-> pipeline, and `/design` is a research preview that does not save them for you. Export anything worth
-> keeping before the session ends. If the design floor is unmet, the flag degrades to the paste-it-
-> yourself path with a note, never to an error: a brief that exists is worth more than a step that ran.
+> **Getting it into the design tool:** paste it there yourself (see `PIPELINE.md` §design). This file
+> stays the source of truth — it is what `/cohorte-build` reads.
 
 **Goal:** <one line — what the user accomplishes>
 

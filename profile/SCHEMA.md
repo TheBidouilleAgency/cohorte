@@ -49,7 +49,6 @@ generic pipeline uses it, so a stateless agent can read/regenerate the profile c
 | `rbac.hierarchy`                     | list         | review                            | Highest→lowest role list.                                     |
 | `design.enabled`                     | bool         | build, frontend, align-ds         | `false` ⇒ design steps are no-ops.                            |
 | `design.provider`                    | enum         | frontend, align-ds                | `claude-design`/`figma`/`none`.                               |
-| `design.inline`                      | bool         | spec, build, doctor               | Default `false`. `true` ⇒ `/cohorte-spec` offers the `/design` artboard step after freezing the brief, instead of ending at "paste this into the design tool". Requires `provider: claude-design`, the `inline_design` runtime capability, and Claude Code ≥ 2.1.234. **A research preview: artboards are not persisted for you.** The brief on disk stays the source of truth either way, so `false` loses nothing but the round trip. |
 | `design.design_system_project`       | id           | align-ds, frontend                | UI-kit source of truth.                                       |
 | `design.design_project`              | id           | build, frontend                   | Legacy fallback for bare-filename `design_files` only; default `none`. New specs use full `…/design/p/<projectId>?file=<file>` links that carry their own project + page (nothing to go stale on a DS rebuild). |
 | `design.snapshot_dir`                | path         | align-ds                          | Committed DS snapshot for diffing.                            |
@@ -160,6 +159,10 @@ the frozen contract as the only cross-surface channel**. So specialization means
 
 **Rules when splitting (non-negotiable — they preserve the invariant):**
 
+- **One owner per tree is a convention, not a sandbox.** Nothing mechanical enforces it: an agent's
+  `tools:` frontmatter names tools, not paths, and implementers have Write/Edit/Bash on the whole
+  repo. It holds because each dispatch names one tree ("Touch only `<surface.path>`"), the rendered
+  agent says the same, and review reads the diff per surface — so a stray write shows up there.
 - **Shared code gets its own surface with a single owner.** Anything two slices both touch — routing,
   global state/store, the design-system kit + tokens, shared utils — becomes its OWN surface (e.g.
   `web-shared`), owned by exactly one agent. Never let two feature-slice agents both edit shared trees.
@@ -231,7 +234,7 @@ storing a bare `pnpm test` as the thing agents execute; `/cohorte-update-pipelin
 ## Spec status — the lifecycle state machine
 
 A spec's front-matter `status` is not a label, it is the pipeline's **state**: every command routes on
-it, `cohorte specs` boards on it, and the kanban backfill maps it to a column. Six states:
+it, `cohorte specs` boards on it, and the kanban backfill maps it to a column. Eight states:
 
 | status | meaning | written by | who may build it |
 | --- | --- | --- | --- |
@@ -241,14 +244,27 @@ it, `cohorte specs` boards on it, and the kanban backfill maps it to a column. S
 | `in-review` | reviewed / awaiting the next round or `/cohorte-ship` | `/cohorte-spec` Mode B, `/cohorte-fix` | yes |
 | `blocked` | a round gave up here (non-convergent, no verdict, not implementable) | an automated driver, if any | yes, with the reason named |
 | `shipped` | the PR is open; the status flip is part of the release commit | `/cohorte-ship` | no |
+| `merged` | the PR merged — reconciled from `gh pr view`, never assumed | `/cohorte-ship` §0/§5, `/cohorte-doctor` reconcile | no |
+| `abandoned` | the feature was dropped (PR closed unmerged, or never shipped) — the human's call | `/cohorte-ship` §0, the human | no |
+
+**`merged` and `abandoned` close the lifecycle.** `shipped` only says a PR was opened; whether it
+landed is a fact on the host, so it is **reconciled**, not guessed: `/cohorte-ship` re-entered on a
+`shipped` spec and `/cohorte-doctor` both run `gh pr view <branch> --json state` — `MERGED` ⇒
+`merged`; `CLOSED` unmerged ⇒ the human decides (reopen and continue, or `abandoned`). Both are
+terminal: every builder refuses them, the kanban backfill maps them to `shipped`, and a worktree
+still alive for one is a teardown candidate.
 
 **`in-progress` and `blocked` are driver states.** No conversational command writes them — the
-human-driven cycle moves `frozen` → `in-review` → `shipped`. Their producer is the **loop
-workflow** (`core/workflows/loop.js`, `/cohorte-loop` — the successor of the 2.2.0-retired
-conversational driver): it stamps `in-progress` at each round, `in-review` when a run ends at
-zero blocking findings, and `blocked` when a round gives up (non-convergent, unreviewed
-surfaces, dead implementers, a contract-change finding), with the reason in
-`specs/reports/<id>.loop.json`. External drivers may write them too. Every reader routes on
+human-driven cycle moves `frozen` → `in-review` → `shipped` → `merged`. Their producer is the
+**loop workflow** (`cohorte-loop.js`, from `core/workflows/loop.js` — the successor of the
+2.2.0-retired conversational driver): it stamps `in-progress` at each round, `in-review` when a
+run ends at zero blocking findings, and `blocked` when a round gives up, with the reason in
+`specs/reports/<id>.loop.json`. A **resumable** stop (a dead agent, a red preflight, an
+unreviewed surface, a report that never landed) writes `reason` and **no** `outcome`, and
+re-invoking the loop resumes at that round; a **terminal** one (treading water, max rounds, a
+contract-change finding) writes both, and the next run starts fresh once a human re-entered
+through `/cohorte-fix` or `/cohorte-build` (which rewrites `readiness.json` after `loop.json`).
+External drivers may write these states too. Every reader routes on
 them either way, and a stamp on a spec with no front-matter stays a silent no-op — no driver
 dies over a status line.
 
@@ -277,8 +293,10 @@ Corollaries worth knowing:
   loop must never die over a status line.
 - Child commands write `status` too (`/cohorte-fix` sets `in-review`); re-stamping before each phase is what
   keeps `in-progress` true for the duration of the run rather than for its first phase.
-- `blocked` is not a failure to hide: it is the resumable state. `/cohorte-build` accepts it, names it, and
-  routes by the spec's `## Remediation` (open items ⇒ `/cohorte-fix`).
+- `blocked` is not a failure to hide: `/cohorte-build` accepts it, names the `loop.json` reason, routes
+  by the spec's `## Remediation` (open items ⇒ `/cohorte-fix`), and sets `in-review` once its readiness
+  verdict is written. `/cohorte-build <id> --readiness-only` does that re-entry (checks, readiness,
+  contract) without dispatching anything — the loop then builds.
 
 ## Dead agents — silence is not a green light
 
@@ -345,8 +363,9 @@ own out-of-scope reason.
   `## <domain>` heading of the owning surface, tagged `deferred:<feature_id>` — the same grouping
   `/cohorte-audit` writes, so `/cohorte-refactor <domain>` picks them up with no extra plumbing. Never into the spec's
   `## Remediation`, which is what `/cohorte-fix` re-dispatches.
-- `/cohorte-audit` **carries open `deferred:` items over** when it rewrites the backlog; overwriting them away
-  is the one way they silently vanish.
+- `/cohorte-audit` (both paths) **rewrites only the sections of the domains it audited**, carrying their
+  open `deferred:` items over, and leaves every other domain's section untouched — overwriting the
+  file with one run's items is the one way they silently vanish.
 - The verdict JSON carries `deferred: <n>` (informational, outside `blocking`), so a driver can name
   them in its closing line without reading a report.
 
@@ -373,6 +392,27 @@ project has *decided*. Without somewhere for those, every `/cohorte-spec` re-dis
   for a fact they cannot act on. This is what keeps the journal cheap enough to be worth having.
 - The `_` prefix is load-bearing: `/cohorte-doctor`, the `cohorte specs` scanner and the kanban backfill all skip
   `specs/_*.md`, so the journal is never mistaken for a spec (no phantom card, no bogus stage).
+
+## Feature diff — what "the feature changed" means
+
+Every diff the pipeline reads — the review's changed-path list and per-surface hunks, an
+implementer's self-diff, the freshness digest `/cohorte-review` stamps and `/cohorte-ship` re-checks —
+comes from ONE shipped script, `<core>/pipeline/scripts/feature-diff.sh`, never a bare `git diff`:
+
+```
+feature-diff.sh --default <default_branch> (--numstat|--name-only|--patch|--digest|--base-only) [-- <pathspec>…]
+feature-diff.sh --base <sha>               (same modes)
+```
+
+- **Untracked files are in.** Feature work stays uncommitted until `/cohorte-ship`, and `git diff <ref>`
+  never shows an untracked file — new modules escaped review, and an adds-only feature reviewed as an
+  empty diff that scored SHIP. The script diffs a **throwaway index** (seeded from the real one,
+  `git add -A` on the copy); the human's index and what they staged are never touched.
+- **The base is the merge-base**, not the default branch's tip (which blames the feature for every
+  file `main` gained since). Local `<branch>` and `origin/<branch>` are both tried; the newer
+  merge-base wins (fleet worktrees branch off the remote ref).
+- **`.claude/` and `specs/` are always excluded** (the pipeline's own writes), gitignored files never
+  enter. Exit 3 = the base cannot be resolved: the caller stops — it never falls back to `git diff`.
 
 ## Preflight — the deterministic phase gate
 
@@ -519,8 +559,8 @@ files automatically. It works because every generated artifact is a **determinis
    refreshed, so a repo keeps whatever front-matter the core shipped the day it was installed (a
    pre-1.6 copy's `status` comment still lists four states). Top it up the same way as the profile:
    add the **front-matter fields** the current `templates/spec.template.md` has and the repo's copy
-   lacks, with their documented defaults, drop `loop_pass`/`loop_phase` (retired with
-   `/cohorte-loop` in 2.2.0), and refresh the `status:` comment. Never rewrite its body — the section list is the human's to shape,
+   lacks, with their documented defaults, drop `loop_pass`/`loop_phase` (retired with the 2.2.0
+   conversational loop driver), and refresh the `status:` comment. Never rewrite its body — the section list is the human's to shape,
    and some repos have deliberately trimmed it. Nothing breaks without this (the fields are written on
    demand when a driver needs them); it just keeps a new spec's front-matter honest about the states
    the pipeline can put it in.
@@ -540,8 +580,8 @@ itself changes in ways `/cohorte-build` §1.5 can't auto-grow (e.g. package mana
 
 Four scripts run under the Claude Code Workflow runtime instead of the lead reasoning out the
 fan-out turn by turn: `<workflows>/cohorte-review.js`, `cohorte-audit.js`, `cohorte-refactor.js` — each the
-**workflow variant** of its same-named conversational command — plus `cohorte-loop.js`
-(`/cohorte-loop`), which has **no conversational form at all** (below). For the variant pairs,
+**workflow variant** of its same-named conversational command — plus **the loop workflow**
+(`cohorte-loop.js`), which has **no conversational form at all** (below). For the variant pairs,
 the conversational commands (`/cohorte-review`, `/cohorte-audit`, `/cohorte-refactor`)
 **remain the default path and the fallback** — a workflow runs only when the human explicitly asks
 for it ("run the review workflow"), and requires Claude Code ≥ **2.1.154** with workflows
@@ -549,7 +589,7 @@ enabled.
 `/cohorte-doctor` reports which path a session will take. The interactive commands (`/cohorte-init-pipeline`,
 `/cohorte-brainstorm`, `/cohorte-spec`) and the dispatch-only ones (`/cohorte-build`, `/cohorte-ship`) have **no** workflow variant on
 purpose: they're interviews or already a single parallel dispatch — a script adds nothing.
-`/cohorte-loop` does not change that: it **consumes** `/cohorte-build`'s outputs (the frozen
+The loop workflow does not change that: it **consumes** `/cohorte-build`'s outputs (the frozen
 spec, `readiness.json`, the lead-authored contract, `build.json`) — it is not a build variant,
 and adding one would put the lead-only steps (§1.5 reconcile, §2 contract authoring) inside a
 script that cannot ask.
@@ -574,15 +614,20 @@ Shared design, all four scripts:
   The conversational commands enforce the same rule by roll call (§Dead agents); it was the workflows
   that had it first, and for three releases they had it **alone** — the same crash on the
   conversational path went unreported.
-- **`review.js`** — preflight gate (aborts red, zero agents), one `git diff --stat` staged per
-  touched surface, one reviewer per surface in parallel, then an **adversarial cross-check** phase
-  that tries to refute each CRITICAL/security finding before it can trigger a fix loop.
+- **`review.js`** — preflight gate (aborts red, zero agents), the changed paths listed once and the
+  hunks staged per touched surface (§Feature diff — an empty diff aborts, it is never a SHIP), one
+  reviewer per surface in parallel (a dead one retried once), then an **adversarial cross-check**
+  phase that tries to refute each CRITICAL/security finding before it can trigger a fix loop. The
+  verdict — merged and per surface — is recomputed from the surviving findings by the review
+  agent's one rule.
 - **`audit.js`** — one auditor per domain (each surface + `shared`), concurrency capped by the
-  runtime (~16), merged into the prioritized `specs/refactor-backlog.md`.
+  runtime (~16), merged into `specs/refactor-backlog.md` — only the audited domains' sections are
+  rewritten (§Deferred findings).
 - **`refactor.js`** — big domains only (it skips domains with a handful of open items — the
-  conversational `/cohorte-refactor` is cheaper there): `shared` first and alone, then the other domains'
+  conversational `/cohorte-refactor` is cheaper there): `shared` first and alone (verified with the
+  repo-wide commands — it has no surface commands of its own), then the other domains'
   implementers in parallel, each verified per-domain.
-- **`loop.js`** (`/cohorte-loop`) — build → review → [fix → review]* for ONE feature, unattended and
+- **`loop.js`** (the loop workflow, `cohorte-loop.js`) — build → review → [fix → review]* for ONE feature, unattended and
   resumable. Preconditions it verifies and refuses to work around: frozen/`in-review` spec, a fresh
   `readiness.json` at `READY`/`RESERVATIONS`, the contract on disk, every readiness surface owned by
   the profile. Round exits, in order: child abort relayed → `unreviewed` non-empty → `blocking == 0`
@@ -590,7 +635,10 @@ Shared design, all four scripts:
   (default 5). A blocking finding on the contract file aborts (`contract-change` — lead-only, per
   `/cohorte-fix` §1). It calls the review **workflow** per round and reads the same `verdict.json`
   contract the conversational `/cohorte-review` §3 writes; it stamps `in-progress` while running,
-  `in-review` on ship, `blocked` on a give-up. **Workflow-only, no command file, ever**
+  `in-review` on ship, `blocked` on a give-up (resumable or terminal — §Spec status). The review runs
+  as a child via `workflow('cohorte-review', {feature})`, the runtime's one-level nesting call; a
+  throw (runtime or script missing) closes the run as `review-workflow-unavailable`, resumable.
+  **Workflow-only, no command file, ever**
   (`validate-core.mjs` pins it): if the runtime is unavailable it refuses explicitly rather than
   degrading to a lead re-reasoning the fan-out every round at session-model prices.
 - **No input mid-run.** A workflow runs to completion without questions; anything interactive
@@ -652,8 +700,10 @@ non-pipeline moves.
 **Never conclude "no board is configured" without running it.** The command that resolves nothing
 prints `kanban: <reason>` — naming the missing link (no config file, `enabled: false`, no entry for
 this project, vault unset, board file gone) — and exits **0**. A configured board that cannot be
-moved is loud instead: exit 2 on usage, exit 3 on a missing board file or an unknown column. Both
-readings are on stdout, so a caller reports which one it got. This exists because inference was the
+moved is loud instead: exit 2 on usage, exit 3 on an unknown column — or on an explicit
+`<board.md>` path that does not exist (under `auto`, a configured board file that is gone is one of
+the `kanban: board file not found` no-ops above, exit 0). Both readings are printed, so a caller
+reports which one it got. This exists because inference was the
 actual failure mode: with only "no-op silently if no board" to go on, a fresh phase session (every
 phase runs after a `/clear`) decided there was no board without ever opening the config, and cards
 stopped moving mid-pipeline while every command still reported success.
@@ -679,14 +729,15 @@ Ideas — so `/cohorte-brainstorm` appends the tag to the picked line before its
 | `/cohorte-build`                                | `building`      |
 | `/cohorte-review`                               | `review`        |
 | `/cohorte-fix`                                  | `fix`           |
-| a round is under way (`in-progress`)    | `building`      |
+| loop workflow, per phase (`in-progress`) | `building` → `review` → `fix`, as each phase starts |
 | a round gave up (`blocked`)             | `fix`           |
 | `/cohorte-ship` starts                          | `ship`          |
 | PR opened (`status: shipped`)           | `shipped` (+ `PR #<num>` on the card) |
 
 **Backfill / sync from specs (reconcile).** `specs/*.md` is the source of truth. For each spec, read its
 `feature_id` (front-matter or filename) and `status`, map `status`→column — `frozen`→`ready`,
-`in-progress`→`building`, `in-review`→`review`, `blocked`→`fix`, `shipped`→`shipped`, anything else / a spec with no
+`in-progress`→`building` (the phase is unknown from the status alone; the next live move corrects it),
+`in-review`→`review`, `blocked`→`fix`, `shipped`/`merged`/`abandoned`→`shipped`, anything else / a spec with no
 status→`spec` — then **full
 sync**: card absent ⇒ add it in that column; card present ⇒ **move it** to that column so the board
 always reflects the specs (this repositions cards the human may have moved by hand). Report cards
