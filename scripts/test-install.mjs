@@ -488,6 +488,24 @@ console.log("sync — exec-form hook registration");
   check("the exec-form command runs the committed gate", r.status === 0, r.stderr);
 }
 
+console.log("doctor — folder trust (project allow rules are ignored under claude -p until trusted)");
+{
+  const sb = sandbox();
+  cli(sb, "install");
+  const { d } = gitRepo();
+  write(join(d, "PIPELINE.md"), "```yaml pipeline-profile\nname: x\n```\n");
+  cli(sb, "sync", d);
+  const trust = () => JSON.parse(cli(sb, "doctor", d, "--json").out).checks.find((c) => c.id === "trust");
+  check("no user store ⇒ skip", trust().status === "skip", JSON.stringify(trust()));
+  const store = join(sb.g, ".claude.json");
+  write(store, JSON.stringify({ projects: { [d]: { hasTrustDialogAccepted: false } } }));
+  const untrusted = trust();
+  check("untrusted ⇒ warn, naming -p and the fix", untrusted.status === "warn" && /claude -p/.test(untrusted.detail) && /trust dialog/.test(untrusted.fix || ""), JSON.stringify(untrusted));
+  write(store, JSON.stringify({ projects: { [dirname(d)]: { hasTrustDialogAccepted: true } } }));
+  const parent = trust();
+  check("a trusted parent folder counts", parent.status === "ok" && /through/.test(parent.detail), JSON.stringify(parent));
+}
+
 // ── H2. sync — a 2.x bundled repo ─────────────────────────────────────────────
 console.log("sync — migrates a 2.x bundled repo");
 {

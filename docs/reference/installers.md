@@ -255,6 +255,7 @@ What a healthy report shows, and what to do when a line is not `ok`:
 | Surfaces ↔ agents | every surface has its `.claude/agents/<agent>.md`, no orphans | `/cohorte-update-pipeline` re-renders |
 | Gate config | `gate-config.json` mirrors the profile | missing or drifted ⇒ regenerate it from the profile's `gate` block (doctor prints the command) |
 | Gate hook | `registered once (Bash\|Task\|Agent + Write\|Edit\|MultiEdit), committed` | not committed ⇒ `git add .claude/hooks/cohorte-gate.py .claude/settings.json`; missing ⇒ `cohorte sync` |
+| Folder trust | `trusted` (or `trusted through <parent>`) | not trusted ⇒ open `claude` once in the repo (or a parent folder) and accept the trust dialog — until then `claude -p` (CI, francois) ignores the project's `permissions.allow` |
 | Local artifacts | all gitignored | a tracked `preflight.ok` ⇒ `git rm --cached .claude/preflight.ok` |
 | Workflows | scripts + `cohorte-profile-reader` installed | `cohorte update` |
 

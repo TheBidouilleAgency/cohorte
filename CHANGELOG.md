@@ -7,6 +7,19 @@ short, user-facing, most recent first. One `## <version> — <YYYY-MM-DD>` secti
 > They are history and are deliberately not rewritten — every command gained a `cohorte-` prefix
 > in 2.0.0.
 
+## 3.1.3 — unreleased
+
+- **Kanban moves no longer get lost after a crashed move (macOS).** Without `flock` (stock macOS),
+  a move killed while holding the board lock leaves a stale lock; the waiters that all saw it each
+  removed "the" lock, the second one removing the fresh lock a third had just taken — two writers
+  at once, one move lost (about half the runs with a dozen parallel moves, on macOS and Linux).
+  Breaking a stale lock is now serialized. The lock is also keyed by the board's physical path.
+- **`cohorte doctor` reports folder trust.** Claude Code ignores a project's `permissions.allow`
+  until its folder has been trusted (the dialog an interactive `claude` shows once); under
+  `claude -p` — CI, francois — every pipeline script then asks or is refused. Doctor now warns and
+  says how to fix it. The gate itself runs either way.
+- **The nightly real-model run is gone.** `scripts/ci/llm-e2e.sh` stays, to run by hand.
+
 ## 3.1.2 — 2026-11-16
 
 - **A red test piped into `| tail` no longer passes the preflight.** A quiet variant such as

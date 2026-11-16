@@ -325,6 +325,28 @@ if (process.platform !== "win32") {
       `${moved.length}/8 in Building · exits ${JSON.stringify(results.filter((r) => r.code !== 0))}\n${readFileSync(b, "utf8")}`);
     check(`${label}: nothing is left next to the board`, readdirSync(d).every((f) => f === "Tasks.md"), readdirSync(d).join(", "));
   }
+  // A crashed writer's stale lock, with many waiters: they all saw the same dead holder, and each
+  // used to remove "the" lock — the second removing the fresh one a third had just taken, so two
+  // writers ran at once (about half the runs lost a move). Breaking is now serialized.
+  {
+    const deadPid = spawnSync(process.execPath, ["-e", "process.stdout.write(String(process.pid))"], { encoding: "utf8" }).stdout;
+    let lost = 0, leftovers = "";
+    for (let round = 0; round < 8; round++) {
+      const d = scratch();
+      const ids = Array.from({ length: 12 }, (_, i) => `st-${i}`);
+      const b = board(d, { Ideas: ids.map((id) => `- [ ] ${id} #${id}`) });
+      mkdirSync(b + ".lock");
+      writeFileSync(join(b + ".lock", "pid"), deadPid + "\n");
+      await Promise.all(ids.map((id) => new Promise((res) => {
+        spawn("sh", [SCRIPT, b, id, "Building"], { stdio: "ignore", env: { ...process.env, COHORTE_KANBAN_NO_FLOCK: "1" } }).on("close", res);
+      })));
+      if (ids.filter((id) => columnOf(b, id) === "Building").length !== ids.length) lost++;
+      const extra = readdirSync(d).filter((f) => f !== "Tasks.md");
+      if (extra.length) leftovers = extra.join(", ");
+    }
+    check("fallback: a stale lock with 12 concurrent waiters loses no move (8 rounds)", lost === 0, `${lost}/8 rounds lost a move`);
+    check("fallback: …and leaves no lock or breaker behind", !leftovers, leftovers);
+  }
   // The fallback's crashed writer: its lock holds a PID that no longer exists.
   const d = scratch();
   const b = board(d, { Ideas: ["- [ ] par-0 #par-0"] });

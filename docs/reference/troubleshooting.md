@@ -144,6 +144,13 @@ invalidates it.
 By design: in `bypassPermissions` there's nobody to answer an "ask", so the gate escalates it to
 a clear deny. Run that operation interactively instead.
 
+**Under `claude -p` (CI, francois, a script), every pipeline script asks for permission.**
+Claude Code ignores a project's `permissions.allow` until its folder has been trusted — the dialog
+an interactive `claude` shows the first time — and a headless run never shows it (it prints
+`Ignoring N permissions.allow entries … this workspace has not been trusted`). Open `claude` once in
+the repo, or in a parent folder, and accept the dialog; `cohorte doctor` reports it as
+**Folder trust**. Hooks are not affected: the gate runs either way.
+
 **Something got past the gate.**
 The gate matches the project's patterns against parsed commands; a pattern list cannot anticipate
 every spelling of a destructive operation, and it is not a sandbox against a process that wants

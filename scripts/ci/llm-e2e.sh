@@ -7,8 +7,8 @@
 #
 #   ANTHROPIC_API_KEY=… scripts/ci/llm-e2e.sh            (or a logged-in `claude` CLI)
 #
-# Costs a few dollars per run (two Sonnet-pinned commands + their subagents). Runs nightly in
-# .github/workflows/llm-e2e.yml when the ANTHROPIC_API_KEY secret is set; skipped otherwise.
+# Costs a few dollars per run (two Sonnet-pinned commands + their subagents). Not in CI: run it by
+# hand before a release that changes the commands' prompts.
 
 set -uo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd)
