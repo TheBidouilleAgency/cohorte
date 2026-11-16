@@ -1,0 +1,48 @@
+name: Real-model end-to-end
+
+# Drives /cohorte-build and /cohorte-review with a real model on a toy repo and asserts on the
+# files they leave (scripts/ci/llm-e2e.sh) — the one test that can catch a regression in the
+# prompts themselves. A few dollars per run, so: nightly and on demand, never on every push.
+# Needs the ANTHROPIC_API_KEY repository secret; without it the job says so and stops.
+
+on:
+  schedule:
+    - cron: '41 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  llm-e2e:
+    name: Real-model end-to-end
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      CLAUDE_CODE_VERSION: 2.1.325
+    steps:
+      - name: Skip without an API key
+        if: env.ANTHROPIC_API_KEY == ''
+        run: echo "::notice::ANTHROPIC_API_KEY is not set — the real-model end-to-end run is skipped."
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        if: env.ANTHROPIC_API_KEY != ''
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        if: env.ANTHROPIC_API_KEY != ''
+        with:
+          node-version: 24
+      - name: Install Claude Code (pinned)
+        if: env.ANTHROPIC_API_KEY != ''
+        run: npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+      - name: Build and review a feature with a real model
+        if: env.ANTHROPIC_API_KEY != ''
+        run: LLM_E2E_DIR="$RUNNER_TEMP/llm-e2e" bash scripts/ci/llm-e2e.sh
+      - name: Keep the logs
+        if: always() && env.ANTHROPIC_API_KEY != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: llm-e2e-logs
+          path: |
+            ${{ runner.temp }}/llm-e2e/logs
+            ${{ runner.temp }}/llm-e2e/repo/specs
+          if-no-files-found: ignore

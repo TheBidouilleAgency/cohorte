@@ -22,7 +22,7 @@ files automatically. It works because every generated artifact is a **determinis
    `<agents>/<agent>.md` from the current `implementer.template.md` per §Rendering (`<core>/pipeline/schema/rendering.md`). Safe by
    doctrine: rendered agents are regenerable artifacts — hand-written rules belong in `PIPELINE.md`
    §Conventions (which reconcile never touches), NOT in agent files, where they'd be clobbered here.
-3. **Additive settings patch.** Run `<sync>` (it owns the gate hook, the pointer,
+3. **Additive settings patch.** Run `<sync>` (it owns the gate hook, the pipeline's own `allow` rules, the pointer,
    `<state>/profile.json` and the `.gitignore` entries — so it runs AFTER step 1's top-up, and again
    if anything later edits the machine block), then bring `<state>/gate-config.json` and the `settings.json` permissions up
    to the current init spec (missing `allow` entries): add what's missing, never remove or rewrite
@@ -40,6 +40,8 @@ files automatically. It works because every generated artifact is a **determinis
    as "this is still sending", which is the one thing it must not imply. This is the single
    exception to "never rewrite the config": a targeted deletion of a block the core no longer
    defines, never a re-seed.
+5b. **CI doctor pin.** If `.github/workflows/*.yml` runs `npx -y cohorte@<x> doctor`, bump `<x>` (both
+   occurrences) to the installed core version.
 6. **Kanban sync.** Run the §Kanban reconcile (`<core>/pipeline/schema/kanban.md`): link/create the project's board if configured, verify
    its columns, and backfill/sync cards from `specs/*.md`.
 7. **Spec-template top-up.** `specs/_template.md` is seeded once at install and then **never**

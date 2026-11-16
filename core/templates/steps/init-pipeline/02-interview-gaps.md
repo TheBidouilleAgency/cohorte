@@ -32,7 +32,8 @@ Ask ONLY what you couldn't confidently detect. Batch related questions. Cover:
   jest, `-q` pytest, `--quiet` eslint/ruff — whatever the detected runner supports). These land in
   `test_quiet_cmd`/`lint_quiet_cmd` + `commands.test_quiet`/`lint_quiet` and are what agents and the
   `/cohorte-review` pre-flight actually run (`<core>/pipeline/schema/output-discipline.md`). If the human declines or
-  the runner has no such flag, leave `""` — consumers then fall back to `<cmd> 2>&1 | tail -40`.
+  the runner has no such flag, leave `""` — consumers then fall back to `set -o pipefail; <cmd> 2>&1 | tail -40`.
+  Never store a quiet variant that pipes into `tail`/`head` without `set -o pipefail;` in front.
 - **Security scans** (only if Phase 1 found an auditor or a secret scanner). Propose the detected
   commands from `<core>/pipeline/schema/preflight.md` §Security scans as one multi-select. Fill
   in `--default <default_branch>`. If `CLAUDE_CONFIG_DIR` is set, use its literal value in place

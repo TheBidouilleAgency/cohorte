@@ -1,0 +1,19 @@
+# Actions are pinned to commit SHAs (validate-core enforces it) — Dependabot keeps those pins
+# current, one PR per week, with the tag in the PR title so a reviewer sees what moved.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+  # The docs site's toolchain (VitePress). The CLI itself has no dependencies.
+  - package-ecosystem: npm
+    directory: /docs
+    schedule:
+      interval: monthly
+    groups:
+      docs:
+        patterns: ["*"]

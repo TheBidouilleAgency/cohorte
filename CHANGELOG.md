@@ -7,6 +7,38 @@ short, user-facing, most recent first. One `## <version> — <YYYY-MM-DD>` secti
 > They are history and are deliberately not rewritten — every command gained a `cohorte-` prefix
 > in 2.0.0.
 
+## 3.1.2 — 2026-11-16
+
+- **A red test piped into `| tail` no longer passes the preflight.** A quiet variant such as
+  `npm test 2>&1 | tail -20` exits with `tail`'s status, so a failing suite stamped the preflight
+  GREEN and the review could reach SHIP on red code. `preflight.sh` and `verify-run.sh` now run every
+  check with `pipefail`; the doctrine's `| tail -40` fallback is written `set -o pipefail; …`; and
+  `cohorte doctor` warns about a stored command that pipes into `tail`/`head` without it. Found by
+  the new real-model end-to-end run.
+- **A nightly real-model end-to-end run** (`/cohorte-build` then `/cohorte-review` on a toy repo,
+  asserting on the files they write) runs when the `ANTHROPIC_API_KEY` repository secret is set.
+- **`cohorte sync` writes the pipeline's own permissions** (its scripts, read-only git, `git switch`,
+  `date`) into `.claude/settings.json`. `/cohorte-update-pipeline` used to Edit that file for them,
+  which the gate (rightly) asks about — a hard stop in a headless run. Found by running the update
+  on a real 2.x project.
+- **`gate.hook_form: exec`** registers the gate without a shell (`python3` + an argument list), for
+  Windows teams without Git Bash. Opt-in: every teammate needs a recent Claude Code.
+- **Ownership covers the workflows too — verified.** A subagent dispatched by a workflow
+  (`agent({ agentType })`, as the build, loop and refactor workflows do) reaches the gate with its
+  `agent_id` and `agent_type`, exactly like one dispatched by the lead (Claude Code 2.1.325).
+- **The security-scan recipes are checked against the real tools** every week (gitleaks,
+  trufflehog, npm/pnpm audit, pip-audit, govulncheck, cargo audit).
+- **Generated project CI runs `cohorte doctor`**, pinned to the project's core version, so a PR that
+  breaks the pipeline's wiring fails in CI.
+- **The installed changelog is slimmer** (the current major's sections plus a link: 16 KB instead
+  of 127 KB).
+- **Releases:** every publish is followed by an `npx cohorte@<version> install` from the registry;
+  Dependabot keeps the pinned actions current.
+- **Internal:** `gate.py` is built from modules; no behaviour change. The source lives in
+  `core/hooks/gate/*.py`; `scripts/build-gate.mjs` concatenates it into the single committed
+  `core/hooks/gate.py` that installs and `cohorte sync` copy, and validate-core fails if the
+  two drift.
+
 ## 3.1.1 — 2026-11-16
 
 - **An install that fails half-way is rolled back.** `cohorte install` / `update` journal every file
@@ -74,8 +106,8 @@ short, user-facing, most recent first. One `## <version> — <YYYY-MM-DD>` secti
   worktree resolve against that worktree, and paths outside the project (`/dev/null`, `$TMPDIR`)
   are not judged. It is **on by default** from the first `cohorte sync` after upgrading (that sync
   also registers the hook for `NotebookEdit`). Verified on Claude Code 2.1.325: a subagent's
-  `Write` reaches the hook with its `agent_id` and `agent_type`. Not verified yet for implementers
-  dispatched by the *workflows* — if they lack those fields, their writes are judged as the lead's.
+  `Write` reaches the hook with its `agent_id` and `agent_type` — and, verified since (3.1.2), so
+  does one dispatched by a workflow.
   Before upgrading, check what each surface writes outside its tree (root `tests/`, a generated
   client, the root lockfile): `/cohorte-update-pipeline` proposes them as `owns_also` /
   `ownership.shared_writable`, and `ownership.enforce: false` turns the check off.

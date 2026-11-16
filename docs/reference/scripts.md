@@ -133,3 +133,30 @@ Node 20–24 and Python 3.9–3.13.
   waits for a maintainer's approval (the `npm-publish` environment) before `npm publish
   --provenance` (token-less OIDC trusted publishing; `next` dist-tag for a pre-release), the
   `vX.Y.Z` tag and the GitHub release.
+
+### `scripts/build-gate.mjs` — builds the gate from its modules
+
+```sh
+node scripts/build-gate.mjs           # write core/hooks/gate.py
+node scripts/build-gate.mjs --check   # exit 1 if core/hooks/gate.py is stale (writes nothing)
+```
+
+The gate ships as **one** stdlib-only file, `core/hooks/gate.py`: `lib/install.js` copies it to
+`<core>/hooks/gate.py` and `cohorte sync` into each project as `.claude/hooks/cohorte-gate.py`.
+Its source is split into modules under `core/hooks/gate/` — `runtime` (time budget, git runner),
+`shell` (lexer, prefix stripping), `git` (global options, push semantics), `config`
+(gate-config.json validation, project roots), `ownership` (profile.json surfaces), `patterns`
+(pattern matching), `context` (`Ctx`), `analyze` (the Bash analyzer: indirection,
+self-protection, branch-aware rules), `preflight` (the stamp/digest phase gate), `evaluate` (one
+payload's decision), `main` (output envelope, hook and `--check` entry points); `__init__.py`
+holds the gate's docstring. The builder concatenates them in that fixed order: each module's
+`import <stdlib>` lines are hoisted to the top (deduplicated, sorted), its `from .<module> import …`
+lines are stripped (they may only name a module built earlier), and the rest is copied
+verbatim. It fails on an unlisted or missing module, an unsupported import form, or a top-level
+name defined in two modules. The output is deterministic (no timestamps, LF).
+
+**Edit the modules, then rebuild, and commit both** — `core/hooks/gate.py` stays committed
+because the installers and the npm package read it directly (nothing is built at install time).
+`validate-core` rebuilds it in memory and fails when the committed file differs, and
+`test-gate` checks the modules' import lines are complete and accurate. The modules and the
+builder are excluded from the npm tarball.

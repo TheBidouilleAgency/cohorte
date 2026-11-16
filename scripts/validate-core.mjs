@@ -509,6 +509,23 @@ for (const negation of ["!core/hooks/__pycache__", "!**/*.pyc"])
 if (!read("lib/install.js").includes("__pycache__"))
   fail("lib/install.js", "the core copy never excludes __pycache__");
 
+// ── the gate is built from its modules ─────────────────────────────────────
+// core/hooks/gate.py is GENERATED from core/hooks/gate/*.py by scripts/build-gate.mjs and
+// committed, because the installers and the npm package ship that one file as is. Rebuild it
+// in memory: a hand edit of the generated file, or a module edit without a rebuild, ships a
+// gate that is not the reviewed source. The sources and the builder stay out of the tarball.
+try {
+  const { buildGate, OUT } = await import("./build-gate.mjs");
+  if (buildGate(root) !== read(OUT).replace(/\r\n?/g, "\n"))
+    fail(OUT, "is not what scripts/build-gate.mjs builds from core/hooks/gate/*.py — edit the modules, " +
+      "then run `node scripts/build-gate.mjs` (never edit the generated file)");
+} catch (e) {
+  fail("core/hooks/gate", `scripts/build-gate.mjs cannot build the gate: ${e.message}`);
+}
+for (const negation of ["!core/hooks/gate", "!scripts/build-gate.mjs"])
+  if (!(pkg.files || []).includes(negation))
+    fail("package.json", `\`files\` must carry the ${negation} negation — the gate ships as the built core/hooks/gate.py only`);
+
 // ── workflow supply chain: every action pinned to a commit ─────────────────────
 // A tag (`@v5`) can be moved by whoever controls the action's repo; publish.yml runs with a
 // token that can publish to npm. Pin the 40-hex commit, keep the tag as a comment.

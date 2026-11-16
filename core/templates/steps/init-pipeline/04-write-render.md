@@ -24,13 +24,10 @@
    `allow` list of the project's read-only / verification commands** so agents don't stall on
    permission prompts — including mid-workflow, where nobody is watching a prompt: the detected
    per-surface `test_cmd`/`lint_cmd`/`typecheck_cmd`/`build_cmd` **and their `*_quiet_cmd`
-   variants** and repo-wide `commands.*` equivalents as `Bash(<cmd>:*)` rules, plus read-only git —
-   `Bash(git status:*)`, `Bash(git diff:*)`, `Bash(git log:*)`, `Bash(git rev-parse:*)`, plus
-   `Bash(git switch:*)` and `Bash(date:*)` (the refactor workflow cuts its branch and dates its spec) — plus the
-   shipped pipeline scripts (`Bash(<core>/pipeline/scripts/:*)` — preflight, kanban-move;
-   a prefix rule matches a command *starting* with that path, so a `bash <path>`
-   invocation would need its own entry), and the
-   retrieval provider's MCP tools when wired (e.g. `mcp__serena`). Never allowlist anything matching
+   variants** and repo-wide `commands.*` equivalents as `Bash(<cmd>:*)` rules, and the
+   retrieval provider's MCP tools when wired (e.g. `mcp__serena`). The pipeline's own rules — its
+   scripts (`Bash(<core>/pipeline/scripts/:*)`), read-only git, `git switch`, `date` — are written by
+   `<sync>` (step 8), never by hand: the gate asks before any edit of `settings.json`. Never allowlist anything matching
    a `gate.ask`/`gate.deny` pattern. Mention the human can widen it later with
    `/fewer-permission-prompts`) + the PostToolUse formatter hook (detected formatter). Do **not**
    write the gate hook here — step 8 (`<sync>`) registers it.
@@ -83,6 +80,12 @@
     `commands.install`, then `commands.lint` · `commands.typecheck` · `commands.test` (+ per-surface
     `build_cmd`s that are non-empty). Derive the setup steps from the detected stack — mirror what a
     sibling workflow does if one exists. `/cohorte-ship` watches these checks before the merge.
+    Add one more step, so a PR that breaks the pipeline's own wiring (gate unregistered or not
+    committed, stale `profile.json`, a surface without its agent, a tracked preflight stamp) fails
+    in CI instead of in someone's session — pin it to this repo's `core_version`:
+    `npx -y cohorte@<core_version> install && npx -y cohorte@<core_version> doctor`
+    (with `COHORTE_NO_VERSION_CHECK: 1` in its `env`; `doctor` exits 1 on any bad check). On an
+    existing workflow, offer to add just that step. `/cohorte-update-pipeline` bumps the pin.
 11. **Design system:** if `design.enabled` with a snapshot dir, note that `/cohorte-align-ds` is active; else the
     `/cohorte-align-ds` command will no-op with a clear message.
 12. **Kanban** (only if the human opted in at Phase 2): wire it per `<core>/pipeline/schema/kanban.md`, writing into the

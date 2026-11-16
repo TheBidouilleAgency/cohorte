@@ -78,6 +78,7 @@ generic pipeline uses it, so a stateless agent can read/regenerate the profile c
 | `gate.preflight.enabled`             | bool         | hooks/gate.py, review             | Phase gate: review dispatches need a fresh preflight stamp. See §Preflight (`<core>/pipeline/schema/preflight.md`). |
 | `gate.preflight.agents[]`            | list         | hooks/gate.py                     | `subagent_type`s the stamp gates (default `[cohorte-review]`; `review` still accepted). |
 | `gate.preflight.max_age_minutes`     | number       | hooks/gate.py                     | Stamp freshness window (default 30).                          |
+| `gate.hook_form`                     | enum         | sync                              | `shell` (default) — the hook is one command line run by a POSIX shell. `exec` — `python3` + an `args` list, `${CLAUDE_PROJECT_DIR}` substituted by Claude Code, no shell: for Windows teams without Git Bash. Needs a recent Claude Code on every machine (verified on 2.1.325). |
 
 ## Prose sections
 

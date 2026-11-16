@@ -9,7 +9,9 @@ branch: no force push, no deletion, required reviews and checks. Turn it on.
 ## `cohorte-gate.py` — the blocking PreToolUse hook
 
 The installer copies `core/hooks/gate.py` into each project as `.claude/hooks/cohorte-gate.py`
-and registers it in the project's `.claude/settings.json`:
+and registers it in the project's `.claude/settings.json` (`gate.py` is a single stdlib-only file
+built from the modules in `core/hooks/gate/` by `scripts/build-gate.mjs` — see
+[scripts.md](scripts.md)):
 
 ```json
 { "hooks": { "PreToolUse": [
@@ -23,8 +25,13 @@ and registers it in the project's `.claude/settings.json`:
 It reads the PreToolUse payload on stdin and answers with Claude Code's
 `hookSpecificOutput.permissionDecision` (`ask` or `deny`, exit 0), or stays silent (allow). It
 handles `Bash`, the subagent tool under either name (`Task` or `Agent`), and
-`Write`/`Edit`/`MultiEdit` (it also understands `NotebookEdit`, which `cohorte sync` does not
-register). It uses only the standard library and needs Python ≥ 3.8.
+`Write`/`Edit`/`MultiEdit`/`NotebookEdit`. It uses only the standard library and needs Python ≥ 3.9.
+
+With `gate.hook_form: exec` in the profile (for Windows teams without Git Bash), `cohorte sync`
+writes the same registration without a shell — `"command": "python3", "args":
+["${CLAUDE_PROJECT_DIR}/.claude/hooks/cohorte-gate.py"]` — and Claude Code substitutes the
+placeholder itself. Verified on Claude Code 2.1.325; every teammate needs a recent client, since an
+old one that ignores `args` would run a bare `python3`. `cohorte doctor` recognizes both forms.
 
 ### When it acts
 

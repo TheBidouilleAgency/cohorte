@@ -85,9 +85,10 @@ The core never hardcodes stack facts. Two mechanisms keep it generic:
 - **Node ≥ 20 + npm** — for the `cohorte` CLI.
 - **Python ≥ 3.9** as `python3` — the gate hook every project commits runs on it. The hook is
   fail-closed: without Python, Claude Code refuses every Bash call in a Cohorte project.
-  **Windows:** the committed hook is `python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/cohorte-gate.py"`, so
-  each teammate needs `python3` on `PATH` and Claude Code running hooks through a POSIX shell (Git
-  Bash); this setup is not covered by CI yet.
+  **Windows:** the committed hook is `python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/cohorte-gate.py"`, run
+  through a POSIX shell (Git Bash). Without one, set `gate.hook_form: exec` in `PIPELINE.md` and run
+  `cohorte sync`: the hook becomes `python3` + an argument list that Claude Code launches directly
+  (every teammate then needs a recent Claude Code). `python3` must be on `PATH` either way.
 - **Claude Code** — workflows (the opt-in deterministic runs) need ≥ 2.1.154; the hook's
   fail-closed `onFailure` setting is honoured from 2.1.295 (older clients ignore it and fail open).
 - **[`uv`](https://docs.astral.sh/uv/) + the Serena CLI** — _optional_, the default code-retrieval
@@ -353,6 +354,7 @@ core/
   agents/               # implementer.template.md (rendered per surface) + cohorte-review / -release / -profile-reader
   commands/             # the 16 /cohorte-* commands
   hooks/gate.py         # the gate (copied into each project as .claude/hooks/cohorte-gate.py)
+  hooks/gate/           # its source modules — gate.py is built from them (scripts/build-gate.mjs)
   templates/            # handoff / brainstorm-return / design-brief / review-feedback / pr-body / spec + step files
   workflows/            # Workflow-runtime scripts: review / audit / refactor (opt-in variants) + loop (workflow-only)
 profile/

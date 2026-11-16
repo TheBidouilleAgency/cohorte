@@ -9,7 +9,8 @@
 #
 #   preflight.sh <report-file> "<cmd>" ["<cmd>"...]
 #
-# - Each command runs through `sh -c`, all output appended to <report-file> — the bulk
+# - Each command runs through `bash -o pipefail -c` (sh with pipefail when bash is absent), all
+#   output appended to <report-file> — a `| tail` in a check can no longer hide its failure; the bulk
 #   never enters the calling agent's context.
 # - First failure: prints the last 40 lines of the report raw to stderr and exits 1.
 #   The caller must stop there — no agents.
@@ -31,12 +32,21 @@ shift
 mkdir -p "$(dirname "$report")" 2>/dev/null || true
 : > "$report"
 
+# pipefail: a quiet variant is often `<runner> 2>&1 | tail -20`, and without it a pipeline's status
+# is tail's — a red test run stamped GREEN (found by the real-model end-to-end run). bash when it
+# exists; otherwise sh, which honours `set -o pipefail` on dash ≥ 0.5.11, busybox and bash-as-sh.
+if command -v bash >/dev/null 2>&1; then
+  run_check() { bash -o pipefail -c "$1"; }
+else
+  run_check() { sh -c "set -o pipefail 2>/dev/null; $1"; }
+fi
+
 n=0
 for cmd in "$@"; do
   [ -n "$cmd" ] || continue
   n=$((n + 1))
   printf '\n$ %s\n' "$cmd" >> "$report"
-  if ! sh -c "$cmd" >> "$report" 2>&1; then
+  if ! run_check "$cmd" >> "$report" 2>&1; then
     echo "PREFLIGHT FAIL — $cmd" >&2
     echo "--- last 40 lines of $report ---" >&2
     tail -40 "$report" >&2
