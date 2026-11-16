@@ -5,8 +5,6 @@
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
-const { applyConditionals, loadRuntime } = createRequire(import.meta.url)('../core/adapter/render.js');
 
 // fileURLToPath, not .pathname — on Windows the latter yields "/C:/…", which
 // join() then resolves against the cwd drive ("C:\C:\…") and every read ENOENTs.
@@ -59,17 +57,12 @@ for (const f of readdirSync(join(root, "core/commands"))) {
 }
 
 // ── fixed agents ────────────────────────────────────────────────────────────
-// Every non-template agent needs name/tools/model, and every one must be
-// ASSERTED by the ci.yml install dry-run (a new agent the CLI's copy rules miss
-// would otherwise never reach an install and nothing would notice — the exact
-// bug that motivated this check). The old form grepped install.sh/install.ps1
-// for copy commands, but those scripts have been thin delegators to bin/cli.js
-// since 2.2.0 — the text being matched was unreachable dead code, so the check
-// passed vacuously. CI postconditions test the copy that actually runs.
-const AGENT_MODEL = { review: "sonnet", release: "haiku",
-  "profile-reader": "haiku" };
-const ciYmlText = existsSync(join(root, ".github/workflows/ci.yml"))
-  ? read(".github/workflows/ci.yml") : "";
+// Every non-template agent needs name/tools/model and the `cohorte-` prefix: they are
+// installed into the user's shared ~/.claude/agents, where a bare `review.md` would
+// collide with (and, in 2.x, overwrite) the user's own agent of that name.
+// scripts/test-install.mjs asserts each one actually reaches an install.
+const AGENT_MODEL = { "cohorte-review": "sonnet", "cohorte-release": "haiku",
+  "cohorte-profile-reader": "haiku" };
 
 for (const f of readdirSync(join(root, "core/agents"))) {
   const path = `core/agents/${f}`;
@@ -84,20 +77,19 @@ for (const f of readdirSync(join(root, "core/agents"))) {
     continue;
   }
   const name = f.replace(/\.md$/, "");
-  if (!/^name:\s*\S/m.test(fm)) fail(path, "frontmatter lacks name");
+  if (!name.startsWith(PREFIX)) fail(path, `fixed agent lacks the \`${PREFIX}\` prefix — it would collide with a user agent in ~/.claude/agents`);
+  if (!new RegExp(`^name:\\s*${name}\\s*$`, "m").test(fm)) fail(path, `frontmatter name must equal the file name (${name})`);
   if (!/^tools:\s*\S/m.test(fm)) fail(path, "frontmatter lacks tools");
   const want = AGENT_MODEL[name];
   if (want && !new RegExp(`^model:\\s*${want}\\s*$`, "m").test(fm))
     fail(path, `frontmatter must pin \`model: ${want}\``);
   if (text.includes("<SURFACE_"))
     fail(path, "unrendered <SURFACE_*> placeholder in a non-template agent");
-  if (ciYmlText && !ciYmlText.includes(`agents/${f}`))
-    fail(".github/workflows/ci.yml", `install dry-run never asserts .claude/agents/${f} — a fixed agent the CLI's copy rules miss would ship silently`);
 }
 
 // ── cross-references ────────────────────────────────────────────────────────
-// Any `.claude/templates/<x>.md` referenced by a command or agent must exist
-// in core/templates (they resolve to the installed copy of exactly that file).
+// Any `<core>/templates/<x>.md` referenced by a command or agent must exist in
+// core/templates (it resolves to the installed copy of exactly that file).
 const allDocs = [];
 for (const dir of ["core/commands", "core/agents", "core/templates"])
   for (const f of readdirSync(join(root, dir)))
@@ -105,13 +97,12 @@ for (const dir of ["core/commands", "core/agents", "core/templates"])
 
 for (const path of allDocs) {
   const text = read(path);
-  for (const m of text.matchAll(/\.claude\/templates\/([a-z0-9.-]+\.md)/g)) {
+  for (const m of text.matchAll(/<core>\/templates\/([a-z0-9./-]+\.md)/g)) {
     if (!existsSync(join(root, "core/templates", m[1])))
-      fail(path, `references .claude/templates/${m[1]} which is not in core/templates/`);
+      fail(path, `references <core>/templates/${m[1]} which is not in core/templates/`);
   }
   for (const m of text.matchAll(/subagent_type:\s*(?:`|)([a-z-]+)(?:`|)/g)) {
     const t = m[1];
-    if (["review", "release", "profile-reader"].includes(t)) continue;
     if (t.startsWith("<")) continue; // <surface.agent> placeholder
     if (!existsSync(join(root, "core/agents", `${t}.md`)))
       fail(path, `dispatches subagent_type ${t} with no core/agents/${t}.md`);
@@ -123,14 +114,27 @@ for (const p of ["profile/PIPELINE.template.md", "profile/SCHEMA.md",
   "profile/cohorte.config.template.yaml"])
   if (!existsSync(join(root, p))) fail(p, "missing");
 
-const tpl = applyConditionals(read("profile/PIPELINE.template.md"), loadRuntime('claude'));
+const tpl = read("profile/PIPELINE.template.md");
 if (/^\s*model:\s*inherit\b/m.test(tpl))
   fail("profile/PIPELINE.template.md",
     "a surfaces[] example pins `model: inherit` — examples must default to sonnet " +
     "(inherit bills at the lead session's model)");
-const codexTpl = applyConditionals(read('profile/PIPELINE.template.md'), loadRuntime('codex'));
-if (/^\s*model:\s*(sonnet|haiku|opus)\b/m.test(codexTpl))
-  fail('profile/PIPELINE.template.md', 'Codex examples must not pin Anthropic model aliases');
+
+// ── Claude Code only (3.0.0) ────────────────────────────────────────────────
+// The multi-runtime adapter and its `<!-- cohorte:if … -->` conditionals were removed
+// (archived on the archive/multi-runtime branch). A conditional left in a prompt reaches
+// the model as noise, and a runtime-specific path tells it to write where nothing reads.
+const walkAll = (dir) => readdirSync(join(root, dir), { withFileTypes: true }).flatMap((e) =>
+  e.isDirectory() ? walkAll(`${dir}/${e.name}`) : [`${dir}/${e.name}`]);
+const shipped = [...walkAll("core"), ...walkAll("profile"), ...walkAll("lib"),
+  ...readdirSync(join(root, "scripts")).filter((f) => /\.(sh|template)$/.test(f)).map((f) => `scripts/${f}`)]
+  .filter((p) => /\.(md|js|py|sh|yaml|template)$/.test(p));
+for (const rel of shipped) {
+  const text = read(rel);
+  if (text.includes("cohorte:if")) fail(rel, "carries a `cohorte:if` conditional — there is one runtime now; resolve it");
+  if (/\b(codex|cursor|gemini|opencode)\b/i.test(text.replace(/\s+/g, " ")) || text.includes("~/.cohorte") || text.includes("'.cohorte'"))
+    fail(rel, "mentions a dropped runtime (Codex/Cursor/Gemini/OpenCode/.cohorte) — 3.x is Claude Code only");
+}
 
 // ── init-pipeline router steps ──────────────────────────────────────────────
 const steps = join(root, "core/templates/steps/init-pipeline");
@@ -183,17 +187,7 @@ for (const c of KANBAN_STAGES) {
     fail(path, "no instruction to run the resolver before concluding there is no board");
 }
 
-// ── shipped scripts + thin installers ───────────────────────────────────────
-// Every shipped scripts/*.sh must be asserted by the ci.yml install dry-run —
-// bin/cli.js copies by rule rather than by name, so only a postcondition on the
-// copy that actually runs can catch a rule that misses a new script. Callers
-// chain these with `|| true`, so a missing one is a silent no-op forever.
-// A `<name>.sh` with a `<name>.sh.template` sibling is a locally-rendered artifact
-// (this repo dogfoods its own /cohorte-init-pipeline), not a core asset — skip those.
-const shipped = readdirSync(join(root, "scripts"));
-for (const f of shipped.filter((f) => f.endsWith(".sh") && !shipped.includes(`${f}.template`)))
-  if (ciYmlText && !ciYmlText.includes(`pipeline/scripts/${f}`))
-    fail(".github/workflows/ci.yml", `install dry-run never asserts pipeline/scripts/${f} (a copy rule that misses it is a silent no-op at runtime)`);
+// ── thin installers ─────────────────────────────────────────────────────────
 // The shell installers are THIN DELEGATORS to bin/cli.js — their legacy copy-verbatim
 // path was unreachable dead code from 2.2.0 (removed in 2.7.0), and its text was what
 // this file's copy checks used to vacuously match. Pin the shape: both must hand off
@@ -223,7 +217,7 @@ else for (const f of readdirSync(workflowsDir)) {
   const text = read(path);
   if (!/^export const meta = \{/m.test(text))
     fail(path, "missing the `export const meta = {…}` literal");
-  if (!text.includes("agentType: 'profile-reader'"))
+  if (!text.includes("agentType: 'cohorte-profile-reader'"))
     fail(path, "phase 0 must read the profile via the profile-reader agent");
   if (/\bDate\.now\(\)|\bMath\.random\(\)|new Date\(\)/.test(text))
     fail(path, "Date.now()/Math.random()/new Date() are unavailable in workflow scripts");
@@ -267,8 +261,6 @@ if (existsSync(join(root, "core/commands/cohorte-loop.md")))
   fail("core/commands/cohorte-loop.md", "must not exist — /cohorte-loop is workflow-only " +
     "(no conversational fallback, by decision; see core/workflows/loop.js header)");
 
-// The workflows dir reaching installs is covered per-file by the ci.yml dry-run
-// assertions checked just below (the shell installers delegate to bin/cli.js).
 
 // A new workflow script must also be KNOWN to the things that check for it, or it
 // ships and nothing notices when an installer stops copying it. This check exists
@@ -280,10 +272,8 @@ const workflowNames = existsSync(workflowsDir)
 const ci = existsSync(join(root, ".github/workflows/ci.yml")) ? read(".github/workflows/ci.yml") : "";
 const libDoctor = read("lib/doctor.js");
 for (const f of workflowNames) {
-  if (!ci.includes(`workflows/${f}`))
-    fail(".github/workflows/ci.yml", `install dry-run never asserts .claude/workflows/${f}`);
-  if (!libDoctor.includes(`'${f}'`))
-    fail("lib/doctor.js", `checkWorkflows() does not list ${f}`);
+  if (!libDoctor.includes(`'cohorte-${f}'`))
+    fail("lib/doctor.js", `checkWorkflows() does not list cohorte-${f}`);
 }
 
 // ── every test suite must run in BOTH workflows ──────────────────────────────
@@ -311,10 +301,8 @@ const pkg = JSON.parse(read("package.json"));
 for (const negation of ["!core/hooks/__pycache__", "!**/*.pyc"])
   if (!(pkg.files || []).includes(negation))
     fail("package.json", `\`files\` must carry the ${negation} negation (.npmignore cannot do this)`);
-if (!read("bin/cli.js").includes("__pycache__"))
-  fail("bin/cli.js", "copyCore() never excludes __pycache__ from the hooks copy");
-if (ciYmlText && !ciYmlText.includes("hooks/__pycache__"))
-  fail(".github/workflows/ci.yml", "install dry-run never asserts hooks/__pycache__ is absent — a compiled cache would ride into the user's .claude unnoticed");
+if (!read("lib/install.js").includes("__pycache__"))
+  fail("lib/install.js", "the core copy never excludes __pycache__");
 
 // ── report ──────────────────────────────────────────────────────────────────
 if (errors.length) {

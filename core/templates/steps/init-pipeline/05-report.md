@@ -2,8 +2,7 @@
 
 ### Phase 5 — Report
 
-Print: the install mode (bundled core under `.claude/` vs global core in `~/.claude/` + the committed
-`<state>/pipeline.json` pointer), the files written/rendered, the surface→agent mapping, and the
+Print: the core version (`<core>/pipeline/VERSION`), the `<sync>` output, the files written/rendered, the surface→agent mapping, and the
 tailored workflow line, e.g.
 `/cohorte-brainstorm → /cohorte-spec → (design) → /cohorte-build <id> → test → /cohorte-review → /cohorte-ship`. Tell the human to sanity-check
 `PIPELINE.md`, commit it, and run `/cohorte-brainstorm` to start a feature. Note that this was the one-time

@@ -64,7 +64,7 @@ const wanted = (() => {
 // Declaring the shape gives the tool layer something to validate and the agent something to
 // aim at; unwrapProfile() salvages a wrapped return that still gets through; and the
 // zero-surface abort below makes the silent-success path impossible either way.
-// See also the structured-output section of core/agents/profile-reader.md.
+// See also the structured-output section of core/agents/cohorte-profile-reader.md.
 const PROFILE = {
   type: 'object', additionalProperties: true,
   properties: {
@@ -127,7 +127,7 @@ const VERIFY = {
 phase('Profile')
 const profile = unwrapProfile(await agent(
   'Return this project\'s PIPELINE.md `yaml pipeline-profile` block as JSON, per your instructions.',
-  { agentType: 'profile-reader', label: 'profile', schema: PROFILE, effort: 'low' },
+  { agentType: 'cohorte-profile-reader', label: 'profile', schema: PROFILE, effort: 'low' },
 ))
 if (!profile || profile.error) {
   return { error: `profile unreadable: ${(profile && profile.error) || 'profile-reader returned nothing'}` }

@@ -1,7 +1,7 @@
 # REVIEW REPORT
 
 <!-- REFERENCE COPY — not read at runtime. The AUTHORITATIVE shape is inlined in
-     core/agents/review.md (§"Your return"), because an agent must not need a second
+     core/agents/cohorte-review.md (§"Your return"), because an agent must not need a second
      file read to know its own output format. This file exists for humans reading the
      core; keep it byte-aligned with the agent, or delete both together.
 

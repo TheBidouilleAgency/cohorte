@@ -15,11 +15,9 @@ You are the **lead**. Dispatch the review for feature **$ARGUMENTS**.
 > configured" without running it**. _(PR mode — `--pr` below — skips this entirely: an incoming
 > PR is not a pipeline feature and has no card.)_
 >
-<!-- cohorte:if workflows -->
 > **Workflow variant** (opt-in — SCHEMA.md §Workflows): on Claude Code ≥ 2.1.154 with workflows
 > enabled, the human can ask to "run the review workflow" (`<core>/workflows/review.js`) instead.
 > This conversational path stays the default and the fallback; `/cohorte-doctor` shows which is available.
-<!-- cohorte:endif -->
 
 ## PR mode — review an INCOMING pull request (`--pr <num>` or a PR URL)
 
@@ -90,14 +88,8 @@ metrics line needs it:
   rather than silence:
   `{"id":"$ARGUMENTS","phase":"review","ts":"<ISO>","aborted":"preflight","verdict":"BLOCK","blocking":null}`
   → `specs/reports/$ARGUMENTS.verdict.json`. One `printf`, in the same Bash call.
-<!-- cohorte:if hooks -->
 - **Zero exit** ⇒ it stamped `<state>/preflight.ok`, which the gate hook checks before letting
-  `review` dispatches through (SCHEMA.md §Preflight). Continue.
-<!-- cohorte:else -->
-- **Zero exit** ⇒ it stamped `<state>/preflight.ok`. Nothing enforces that stamp on this runtime, so
-  §2 does not start until you have seen this line: a review of red code is the one failure mode this
-  step exists to prevent, and here only you can prevent it (SCHEMA.md §Preflight). Continue.
-<!-- cohorte:endif -->
+  `cohorte-review` dispatches through (SCHEMA.md §Preflight). Continue.
 - Script absent (older core) ⇒ run the three commands yourself, each redirected into
   `specs/reports/$ARGUMENTS.preflight.txt`, aborting on the first failure the same way.
 
@@ -120,7 +112,7 @@ metrics line needs it:
 
 ## 2. Dispatch review agents — one per touched surface, IN PARALLEL
 
-Spawn ONE `review` agent per surface that has changed files, in a **single message** (one dispatch
+Spawn ONE `cohorte-review` agent per surface that has changed files, in a **single message** (one dispatch
 each, like `/cohorte-build`) so they run concurrently — NEVER serially: review wall-clock must be the
 slowest surface, not the sum. A diff touching a single surface ⇒ a single reviewer.
 
@@ -134,7 +126,7 @@ reviewed surface:
 Keep the dispatch prompt **byte-identical across features and rounds** except the variable block,
 which sits at the END so every repeat hits the prompt-cache prefix:
 
-> `subagent_type: review` (or this runtime's equivalent) — "Review one feature surface against its frozen spec. Read `PIPELINE.md`
+> `subagent_type: cohorte-review` — "Review one feature surface against its frozen spec. Read `PIPELINE.md`
 > first (flags + the §Conventions/§Testing slice for your scope). Check spec conformance first, then
 > correctness, security, conventions, RBAC/mobile-first _if the profile enables them_, and TDD
 > coverage. Your dispatch names a staged diff file — read it FIRST; open a full source file only when

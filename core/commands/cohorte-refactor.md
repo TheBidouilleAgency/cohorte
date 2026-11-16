@@ -8,12 +8,10 @@ You are the **lead**. Refactor domain **$ARGUMENTS** to match `PIPELINE.md`, usi
 
 > Read `PIPELINE.md` §`surfaces` (map the domain → a surface + its agent + commands) and §`contract`.
 >
-<!-- cohorte:if workflows -->
 > **Workflow variant** (opt-in — SCHEMA.md §Workflows): for BIG domains (many open backlog items
 > across several surfaces), on Claude Code ≥ 2.1.154 with workflows enabled, the human can ask to
 > "run the refactor workflow" (`<core>/workflows/refactor.js`). For a handful of items this
 > conversational path is cheaper — and it stays the default and the fallback.
-<!-- cohorte:endif -->
 
 ## 1. Gather
 

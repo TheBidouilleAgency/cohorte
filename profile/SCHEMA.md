@@ -64,7 +64,7 @@ generic pipeline uses it, so a stateless agent can read/regenerate the profile c
 | `gate.ask_on_default_branch[]`       | list         | hooks/gate.py                     | Confirm ONLY on `default_branch`; free on feature branches.   |
 | `gate.default_branch`                | string       | hooks/gate.py                     | Protected branch (default `main`); gate resolves via git.     |
 | `gate.preflight.enabled`             | bool         | hooks/gate.py, review             | Phase gate: review dispatches need a fresh preflight stamp. See §Preflight. |
-| `gate.preflight.agents[]`            | list         | hooks/gate.py                     | `subagent_type`s the stamp gates (default `[review]`).        |
+| `gate.preflight.agents[]`            | list         | hooks/gate.py                     | `subagent_type`s the stamp gates (default `[cohorte-review]`; `review` still accepted). |
 | `gate.preflight.max_age_minutes`     | number       | hooks/gate.py                     | Stamp freshness window (default 30).                          |
 
 ## Prose sections
@@ -100,28 +100,6 @@ follow is provider-agnostic: _"prefer the retrieval MCP tools over Grep/Glob + w
 
 **Wiring (done by `/cohorte-init-pipeline`, or `/cohorte-update-pipeline` retroactively):**
 
-<!-- cohorte:if runtime:codex -->
-For `serena`, install its CLI if missing (`uv tool install -p 3.13 serena-agent`), then merge
-this project-scoped table into `.codex/config.toml`, preserving all existing settings:
-
-```toml
-[mcp_servers.serena]
-command = "sh"
-args = ["-c", 'exec "$(command -v serena || echo "$HOME/.local/bin/serena")" start-mcp-server --context codex --project-from-cwd --open-web-dashboard False']
-```
-
-On Windows without `sh`, use `command = "serena"` and the server arguments directly; ensure
-the CLI is on PATH. Gitignore `.serena/`. Keep `CODEX_HOME` at its normal user location;
-the project table is discovered natively once the project is trusted.
-For `graphify`, install its CLI and build/update the graph according to the provider's instructions;
-verify any required MCP registration in `.codex/config.toml` rather than `.mcp.json`.
-
-**Health check:** verify (1) `command -v serena`, (2) the `[mcp_servers.serena]` table,
-(3) `.serena/` ignored, (4) actual tools in the session. `codex mcp list` inspects registration,
-but is not proof of a live connection; restart the session when needed and report that limitation.
-Codex agents inherit MCP configuration; do not write a Claude `tools:` allowlist.
-Teammates receive `.codex/config.toml` and need the provider CLI installed and the project trusted.
-<!-- cohorte:else -->
 - `serena` — requires the `serena` CLI (`uv tool install -p 3.13 serena-agent`). For day-to-day CLI
   use it should also be on PATH (`uv tool update-shell`; uv installs to `~/.local/bin`). Register at
   **project scope** so the registration is committed and portable (`--project-from-cwd` resolves the
@@ -165,7 +143,6 @@ Report each check's result; never report Serena "wired" on registration alone.
 Teammates cloning the repo get the committed `.mcp.json` and only need the provider CLI installed
 and on PATH — if either is missing, the MCP server fails to start and agents silently fall back to
 Grep/Read; the health check above is the diagnostic.
-<!-- cohorte:endif -->
 
 ## Specialization — when to split one surface into more agents
 
@@ -412,13 +389,13 @@ variants) with all output redirected to `specs/reports/<id>.preflight.txt`:
   into every clone and worktree, which breaks the gate both ways).
 
 `hooks/gate.py` enforces the stamp as a **phase gate** (the `preflight` block of `gate-config.json`,
-generated from `gate.preflight`): a Task dispatch of a listed `subagent_type` (default
-`review`) with a missing/stale stamp — older than `max_age_minutes`, or the digest no longer
-matches the working tree (`.claude`, `.cohorte` and `specs` excluded, so the pipeline's own writes and a
+generated from `gate.preflight`): an `Agent` (formerly `Task`) dispatch of a listed `subagent_type` (default
+`cohorte-review`) with a missing/stale stamp — older than `max_age_minutes`, or the digest no longer
+matches the working tree (`.claude` and `specs` excluded, so the pipeline's own writes and a
 commit of already-verified code do not invalidate it) — gets an
 "ask", so a lead can't accidentally skip the gate but a human can consciously override it. The gate
 hook fires for **every** agent in the session, including subagents spawned by the Workflow runtime
-(they run in `acceptEdits` whatever the session mode — Write/Edit auto-approved — but Bash and Task
+(they run in `acceptEdits` whatever the session mode — Write/Edit auto-approved — but Bash and Agent
 still pass through hooks). In `bypassPermissions` (headless runs) every gate "ask" is escalated to a
 hard deny, because nobody is there to answer a prompt.
 
@@ -435,11 +412,6 @@ this exact procedure so a surface is always defined the same way. To add surface
    scaffolding; `inherit` only when the surface makes real design decisions worth the lead's model),
    the five `*_cmd`s (derive from the surface's `package.json` / workspace
    filter, mirroring a sibling surface), and `uses_design`.
-<!-- cohorte:if runtime:codex -->
-   **Codex model policy:** use `model: inherit` by default, or a model explicitly selected for
-   Codex. Legacy `sonnet`/`haiku` values are not executable Codex pins: omit them in the rendered
-   agent and report inheritance. Preserve explicit Codex `model`/`model_reasoning_effort` choices.
-<!-- cohorte:endif -->
 2. **Render the agent file** `<agents>/<agent>.md` from `<core>/pipeline/implementer.template.md`
    — the template is already rendered for this runtime, so only the placeholders are yours to fill —
    substituting `<SURFACE_AGENT>`, `<SURFACE_LABEL>`,
@@ -468,16 +440,6 @@ this exact procedure so a surface is always defined the same way. To add surface
      says `none`): `DesignSync get_file(<projectId>, <file>)` for each link in the slot and translate
      each into the code design system (`@/components/ui/*`, `cn()` + CVA), mobile-first — never ad-hoc
      CSS. Then:"_
-<!-- cohorte:if runtime:codex -->
-   **Codex destination and format:** always write `.codex/agents/<agent>.toml` in the current
-   project, including with a global core. The source template has a `.md` filename but contains
-   TOML for this runtime. Validate TOML after substitutions; keep `name`, `description`, and
-   `developer_instructions`. Do not add Claude `tools:`/`model: sonnet` frontmatter.
-   Keep generic agents under `<fixed-agents>/`; never write surface agents there in global mode.
-   No `CODEX_HOME` override, auth symlink or per-project launcher is needed. When migrating an
-   old global surface agent, compare ownership/content with this project's profile before
-   removing its old copy; do not overwrite local customizations or touch other projects' agents.
-<!-- cohorte:endif -->
 3. **Add a §Conventions + §Testing stanza** for `S` in `PIPELINE.md` (mirror a sibling surface; keep it
    rule-shaped). If `S` is a shared-code surface, its convention is "single owner of shared X; slices
    consume, never redefine."
@@ -534,9 +496,10 @@ files automatically. It works because every generated artifact is a **determinis
    `<agents>/<agent>.md` from the current `implementer.template.md` per §Rendering above. Safe by
    doctrine: rendered agents are regenerable artifacts — hand-written rules belong in `PIPELINE.md`
    §Conventions (which reconcile never touches), NOT in agent files, where they'd be clobbered here.
-3. **Additive settings patch.** Bring `<state>/gate-config.json` — and, on a runtime with a settings
-   file the pipeline generates, that too — up to the current init spec (missing `allow` entries,
-   hooks per install mode): add what's missing, never remove or rewrite existing/custom keys.
+3. **Additive settings patch.** Run `<sync>` (it owns the gate hook, the pointer and the
+   `.gitignore` entries), then bring `<state>/gate-config.json` and the `settings.json` permissions up
+   to the current init spec (missing `allow` entries): add what's missing, never remove or rewrite
+   existing/custom keys.
 4. **Capability wiring.** If a top-up added a capability needing external setup (e.g. a `retrieval`
    provider whose MCP server isn't registered yet), run its wiring step from `/cohorte-init-pipeline` Phase 4.
    Even when nothing new was added, re-run the provider's health check (§Code retrieval) — wiring
@@ -576,8 +539,8 @@ itself changes in ways `/cohorte-build` §1.5 can't auto-grow (e.g. package mana
 ## Workflows — deterministic multi-agent runs (opt-in)
 
 Four scripts run under the Claude Code Workflow runtime instead of the lead reasoning out the
-fan-out turn by turn: `<core>/workflows/review.js`, `audit.js`, `refactor.js` — each the
-**workflow variant** of its same-named conversational command — plus `loop.js`
+fan-out turn by turn: `<workflows>/cohorte-review.js`, `cohorte-audit.js`, `cohorte-refactor.js` — each the
+**workflow variant** of its same-named conversational command — plus `cohorte-loop.js`
 (`/cohorte-loop`), which has **no conversational form at all** (below). For the variant pairs,
 the conversational commands (`/cohorte-review`, `/cohorte-audit`, `/cohorte-refactor`)
 **remain the default path and the fallback** — a workflow runs only when the human explicitly asks
@@ -593,8 +556,8 @@ script that cannot ask.
 
 Shared design, all four scripts:
 
-- **Phase 0 is always `profile-reader`** — workflow scripts have no filesystem or shell access, so a
-  dedicated agent (`core/agents/profile-reader.md`, haiku, read-only) reads `PIPELINE.md` and returns
+- **Phase 0 is always `cohorte-profile-reader`** — workflow scripts have no filesystem or shell access, so a
+  dedicated agent (`core/agents/cohorte-profile-reader.md`, haiku, read-only) reads `PIPELINE.md` and returns
   the `yaml pipeline-profile` block as JSON. Every later phase is parameterized from that object.
 - **Mechanical phases run on haiku** (profile read, preflight, diff staging, report merging/writing);
   judgment phases dispatch the same pinned agents the commands use (`review` at sonnet, the surface
@@ -636,7 +599,7 @@ Shared design, all four scripts:
   §Preflight) — in unattended runs its asks become denies. Know what that means for edits:
   workflow subagents run in **`acceptEdits` whatever the session mode**, so for the length of a
   run — and `loop.js` runs long, unattended stretches — `hooks/gate.py` is the only brake on
-  what agents write. That is stated here rather than discovered.
+  what agents write (the project hook also guards the gate's own files on `Write|Edit|MultiEdit`). That is stated here rather than discovered.
 - **Permissions:** `/cohorte-init-pipeline` and `/cohorte-update-pipeline` extend the generated `settings.json`
   `allow` list with what workflow agents need (the quiet commands, the shipped
   `pipeline/scripts/*.sh`, read-only git incl. `git rev-parse`, and the retrieval provider's MCP

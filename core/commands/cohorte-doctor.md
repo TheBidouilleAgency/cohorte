@@ -12,42 +12,27 @@ fix only with the human's go-ahead (or hand them the command).
 
 ## Checks, in order
 
-0. **Runtime.** Say which coding agent you are running as and what it can enforce — every check
-   below is read through it. **You already know which one**: the Runtime preamble at the top of
-   this file names it. Read `<core>/pipeline/runtimes.json` for the details — a map of every
-   runtime installed against this core, since they share one core. Report one line:
-   `runtime: <label> · scope <global|project> · hooks <yes|no> · workflows <yes|no>`,
-   and name the other installed runtimes if there are any (they share `<state>` and `<config>`, so
-   a board or a gate config wired from one is seen by all — that is intended, and worth stating).
-   File absent ⇒ a core installed before the adapter existed ⇒ ⚠️, fix by re-running the installer.
-   A runtime without hooks makes check 3's gate **advisory** — say so there rather than
-   reporting a false ✅.
-1. **Core & pointer.** A core exists (`<core>/pipeline/VERSION`); `<state>/pipeline.json` names a mode + `core_version`
-   coherent with the VERSION file. A **global**-mode pointer lagging the VERSION file is ⚠️, not ❌:
-   nothing bumped that field before 1.2.5, so the core itself is fine and only the pointer is stale
-   ⇒ fix by running `/cohorte-update-pipeline` (§3 syncs it now), or by editing the one field. Compare
-   against `npm view cohorte version` — behind ⇒ suggest `/cohorte-update-pipeline`. Read `pipeline/CHANGELOG.md` for what they're missing. The router
-   commands' step files are present — `templates/steps/init-pipeline/` non-empty (a router whose
-   `templates/steps/<cmd>/` dir is missing is a partial/stale install ⇒
-   re-run install/update). **Shipped scripts present and executable** in `<core>/pipeline/scripts/`:
+0. **Fast path.** Run `cohorte doctor` (or `npx cohorte doctor` if the binary is not on PATH) and
+   use its output as the baseline: it runs every file-level check below deterministically. Then add
+   what only a live session can see (MCP connectivity, the `Workflow` tool, the `/design` skill).
+1. **Core & pointer.** The machine-wide core exists (`<core>/pipeline/VERSION`) and its
+   `<core>/manifest.json` too (absent ⇒ ⚠️ a copied-by-hand core; fix `cohorte update`).
+   `<state>/pipeline.json` names a `core_version`; one lagging the VERSION file is ⚠️ ⇒ run `<sync>`
+   and commit the pointer. A pointer that still carries `mode: bundled|global` predates 3.0 ⇒ ⚠️ ⇒
+   `/cohorte-update-pipeline` (it migrates the repo). Compare against `npm view cohorte version` —
+   behind ⇒ suggest `cohorte update`. Read `<core>/pipeline/CHANGELOG.md` for what they're missing.
+   **2.x leftovers are ⚠️ with a named fix:** a vendored core in this repo (`.claude/pipeline/VERSION`,
+   `.claude/hooks/gate.py`) ⇒ `<sync>` removes it; a 2.x core in `~/.claude/pipeline/` or a gate
+   registered in `~/.claude/settings.json` ⇒ `cohorte update` migrates it; surface agents for this
+   project in `~/.claude/agents/` ⇒ re-render them into `<agents>/` (§Rendering) and delete the global
+   copies. The router commands' step files are present — `<core>/templates/steps/init-pipeline/`
+   non-empty. **Shipped scripts present and executable** in `<core>/pipeline/scripts/`:
    `kanban-move.sh`, `preflight.sh`; the `new-feature.sh.template` and
-   `remove-feature.sh.template` sources must be readable, not executable — ❌ any missing one.
+   `remove-feature.sh.template` sources must be readable — ❌ any missing one.
    Every caller chains these with `|| true`, so an absent script is a **silent**
    no-op (no kanban card moves, no error anywhere) — this check is the only thing
-   that sees it. Also flag ❌ a `VERSION` **newer than** the other `pipeline/` files (compare mtimes):
-   a version bumped without a full re-copy is a half-done update ⇒ re-run install/update.
+   that sees it.
 2. **Profile.** `PIPELINE.md` exists and its `yaml pipeline-profile` block parses. Every
-<!-- cohorte:if runtime:codex -->
-   `surfaces[].agent` has a valid `.codex/agents/<agent>.toml` in this project, regardless of
-   core scope. Check `name`, `description`, `developer_instructions` and no unfilled placeholders.
-   Reconcile only this project's agents; never treat unrelated global agents as orphans.
-   Generic `review.toml`, `release.toml`, `profile-reader.toml` live under `<fixed-agents>/`.
-   The read-only generic agents must carry `sandbox_mode = "read-only"`.
-   Missing `model` means inheritance, not an error. Reject Anthropic aliases; compare explicit
-   Codex model pins with the profile when supplied. Claude `tools:` is not a Codex TOML field.
-   Flag project launchers that redefine `CODEX_HOME` just to discover local agents; native
-   project discovery needs no auth symlink. Do not delete global agents without checking ownership.
-<!-- cohorte:else -->
    `surfaces[].agent` has its `<agents>/<agent>.md` and every agent file has its `surfaces[]`
    entry — **no orphans either way** (SCHEMA.md rule). Each rendered agent's frontmatter `tools`
    matches its surface's `tools` (incl. `DesignSync` iff `uses_design`, retrieval MCP tools iff
@@ -55,59 +40,33 @@ fix only with the human's go-ahead (or hand them the command).
    its `surfaces[].model` — ❌ if missing, mismatched, or a literal `<SURFACE_MODEL>` placeholder
    (all three silently fall back to inheriting the lead session's model — often Opus — on every
    dispatch); ⚠️ any `inherit` with the note that it bills at the lead's tier. The generic agents
-   (`review.md`, `release.md`, `profile-reader.md` in `<agents>/`) must
+   (`cohorte-review.md`, `cohorte-release.md`, `cohorte-profile-reader.md` in `<fixed-agents>/`) must
    each carry their `model:` line too (sonnet/haiku/haiku).
-<!-- cohorte:endif -->
-<!-- cohorte:if runtime:claude -->
    **Command pins:** every mechanical command file
    (`build`, `review`, `fix`, `ship`, `audit`, `refactor`, `doctor`, `align-ds`,
-   `update-pipeline` — in `<commands>/`) carries `model: sonnet` in
+   `update-pipeline`, `fleet` — `cohorte-<name>.md` in `~/.claude/commands/`) carries `model: sonnet` in
    its frontmatter — ⚠️ if missing (the lead's orchestration turn then bills at the session model,
    e.g. Opus/Fable). `brainstorm`, `spec`, `patch`, and `init-pipeline` are intentionally unpinned
    (interactive — they inherit the session model).
-<!-- cohorte:endif -->
 
 3. **Hooks & gate.** `<state>/gate-config.json` exists and mirrors the profile's `gate` block
-   (regenerate if drifted).
-<!-- cohorte:if hooks -->
-   The gate hook is registered **once** in the config file the Runtime preamble names — flag a
-   double registration, it double-prompts — and its `command` points at a `gate.py` that exists.
-   Check the **matcher** actually covers what it must: on Claude Code that means both `Bash` and
-   `Task`, since the preflight phase gate keys off `Task` dispatches and a `Bash`-only matcher
-   leaves it silently dead (the 1.3.0–1.3.1 regression).
-<!-- cohorte:if runtime:codex -->
-   Codex's matcher must cover `Bash` plus `spawn_agent`/`Agent`, and
-   `gate.py` must read `tool_input.agent_type`. With preflight enabled and no fresh stamp,
-   a synthetic `spawn_agent` review payload must be denied. Check client hook enablement/trust
-   separately; a direct script check is not proof the client invoked it.
-<!-- cohorte:endif -->
-   Test the evaluator too: `python3 <core>/hooks/gate.py --check "<a pattern from the ask list>"` must
-   return a non-`allow` verdict. If the Runtime preamble said this runtime has **no confirmation
-   tier**, state it here too: every `ask` pattern behaves as a `deny`, which is safe but stricter
-   than the profile reads, and a human who expects a prompt will read the refusal as a bug.
-<!-- cohorte:endif -->
-<!-- cohorte:if !hooks -->
-   This runtime has **no blocking hook**, so the gate is **advisory**: it only fires when the agent
-   calls it. Say that in one line rather than reporting ✅ — the enforcement property genuinely is
-   weaker here, and a human who thinks otherwise will approve less carefully. Verify what CAN be
-   verified: `<core>/hooks/gate.py` exists and `python3 <core>/hooks/gate.py --check "git push"`
-   returns a verdict line (a non-`allow` on a gated pattern proves config + script are wired). ❌ if
-   the script is missing or errors; ℹ️ "advisory (this runtime has no hooks)" otherwise.
-<!-- cohorte:endif -->
+   (regenerate if drifted). `.claude/hooks/cohorte-gate.py` exists **and is committed**
+   (`git ls-files --error-unmatch .claude/hooks/cohorte-gate.py`), and `.claude/settings.json`
+   registers it exactly once per matcher group — `Bash|Task|Agent` (shell + subagent dispatches; the
+   preflight phase gate keys off dispatches, and `Agent` is the tool's name since Claude Code 2.1.63)
+   and `Write|Edit|MultiEdit` (self-protection of the gate's own files). A registration whose file is
+   missing is ❌ — with `onFailure: block` it refuses every Bash call; fix: `<sync>`. A second gate
+   registered in `~/.claude/settings.json` (2.x) is ⚠️ — it double-prompts; fix: `cohorte update`.
+   Test the evaluator too: `python3 .claude/hooks/cohorte-gate.py --check "<a pattern from the ask list>"`
+   must return a non-`allow` verdict (exit 1 ask / 2 deny).
    Then the **preflight stamp is local, never versioned**: `git ls-files --error-unmatch
    <state>/preflight.ok` must miss, and `.gitignore` must cover it. A tracked stamp is a ❌ (not a
    ⚠️) — it records the tree it verified, the commit that carries it moves HEAD past that tree, and
    the committed copy lands in every clone and new worktree; the gate then blocks clean trees and
    greens unchecked ones. fix: `git rm --cached <state>/preflight.ok` + add it to `.gitignore`.
 4. **Retrieval** (if `retrieval.provider` ≠ `none`). Run the SCHEMA.md §Code retrieval health
-<!-- cohorte:if runtime:codex -->
-   check: CLI resolvable from PATH, `[mcp_servers.<provider>]` in `.codex/config.toml`,
-   `.serena/` gitignored, and tools actually connected in this session. A standalone
-   `.mcp.json` is not Codex project registration.
-<!-- cohorte:else -->
    check: CLI resolvable from PATH, `.mcp.json` entry present in PATH-proof launcher form,
    `.serena/` gitignored, server actually connects.
-<!-- cohorte:endif -->
 5. **Design** (if `design.enabled`). `snapshot_dir` exists and is committed; `ui_kit_path` +
    `tokens_path` exist; if `provider: claude-design`, `DesignSync` responds (`list_files` on the `design_system_project`) and
    `design_system_project` is reachable. Recall: spec `design_files` are full
@@ -129,7 +88,6 @@ fix only with the human's go-ahead (or hand them the command).
    other key whose board file exists (a **rename** orphaned the link — re-key it via
    `/cohorte-update-pipeline`), and an entry whose board file no longer exists at
    `vault_path`-relative `board` (moved or renamed in the vault).
-<!-- cohorte:if workflows -->
 8. **Workflows** (the opt-in execution path — SCHEMA.md §Workflows; the conversational commands
    stay the default, so failures here are ⚠️ at most, never ❌). Report which path this machine will
    take and why:
@@ -137,26 +95,25 @@ fix only with the human's go-ahead (or hand them the command).
      on PATH ⇒ conversational only. This is the **workflow** floor and the only one that gates this
      check; do NOT raise it to match a newer feature's floor, or every install between the two
      versions reads as broken while its workflows run fine. When `design.inline` is on, report the
-     design floor (≥ 2.1.234) as its own line under check 8b — separate prerequisite, separate verdict.
-   - **Scripts present:** `<core>/workflows/review.js` + `audit.js` + `refactor.js` + `loop.js` —
+     design floor (≥ 2.1.234) as its own line under check 9 — separate prerequisite, separate verdict.
+   - **Scripts present:** `<workflows>/cohorte-review.js` + `cohorte-audit.js` + `cohorte-refactor.js` + `cohorte-loop.js` —
      missing on a current core ⇒ half-done install, re-run install/update. (`/cohorte-loop` is
      **workflow-only** — no command file exists on purpose; without this runtime it refuses
      rather than degrading to a conversational loop.)
-   - **Phase-0 agent present:** `<agents>/profile-reader.md` — the workflows abort without it.
+   - **Phase-0 agent present:** `<fixed-agents>/cohorte-profile-reader.md` — the workflows abort without it.
    - **Workflows enabled in this session** — the `Workflow` tool is in your own toolset right now;
      absent ⇒ disabled for this session (a setting or an old client), conversational path.
-   - **Preflight wiring** (used by both paths): `pipeline/scripts/preflight.sh` executable and
+   - **Preflight wiring** (used by both paths): `<core>/pipeline/scripts/preflight.sh` executable and
      `gate-config.json` carries the `preflight` block — mismatch ⇒ regenerate from the profile.
    End the check with ONE summary line, e.g.
    `workflows: available (opt-in — ask to "run the review workflow")` or
    `workflows: unavailable (<first failing prerequisite>) — conversational commands (the default)`.
-<!-- cohorte:if inline_design -->
-8b. **Inline design** (`design.inline: true` — the `/design` artboard step between spec and build).
+9. **Inline design** (`design.inline: true` — the `/design` artboard step between spec and build).
    A research preview, so every failure here is ⚠️, never ❌: the design brief still exists on disk
    at `specs/design/<feature_id>.md` and can be carried to the design tool by hand, which is what
    every install did before this flag. Report:
    - **Claude Code version** ≥ 2.1.234 — `/design` ships as a skill and is simply absent below it.
-     Older CLI ⇒ say so and name `npm i -g cohorte@latest`'s sibling, `claude update`.
+     Older CLI ⇒ say so and name the fix, `claude update`.
    - **The `/design` skill resolves in this session** — absent ⇒ the preview is off for this account
      or plan (Pro/Max/Team/Enterprise are the eligible ones), not a cohorte defect.
    - **`design.enabled` is true and `provider` is `claude-design`** — `inline` on top of a `figma` or
@@ -167,14 +124,7 @@ fix only with the human's go-ahead (or hand them the command).
      work, and it is not detectable after the fact.
    One summary line: `inline design: available (preview — export artboards yourself)` or
    `inline design: unavailable (<first failing prerequisite>) — design brief on disk, carry it over by hand`.
-<!-- cohorte:endif -->
-<!-- cohorte:else -->
-8. **Preflight wiring.** `<core>/pipeline/scripts/preflight.sh` is executable and
-   `gate-config.json` carries the `preflight` block — mismatch ⇒ regenerate from the profile.
-   (The workflow execution path does not exist on this runtime; the conversational commands are
-   the only path, which is also the default everywhere else. Not a defect — state it and move on.)
-<!-- cohorte:endif -->
-9. **Specs & metrics.** Every `specs/*.md` front-matter `status` is a valid stage — one of
+10. **Specs & metrics.** Every `specs/*.md` front-matter `status` is a valid stage — one of
    `draft · frozen · in-progress · in-review · shipped · blocked` (SCHEMA.md §Spec status) — excluding
    `_`-prefixed files (the spec template and `specs/_decisions.md`, the decision journal) and
    `specs/refactor-backlog.md`, which `/cohorte-audit` writes as a backlog, not a

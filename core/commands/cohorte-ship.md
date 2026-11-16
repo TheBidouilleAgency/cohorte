@@ -76,9 +76,9 @@ See SCHEMA.md §Release notes.
 > moved to **Shipped** — and CI red on a job nobody watched. The feature reads as shipped while being
 > unmergeable.
 
-## 3. Dispatch the `release` agent
+## 3. Dispatch the `cohorte-release` agent
 
-Spawn one agent (`subagent_type: release`, or the equivalent dispatch for this runtime):
+Spawn one agent (`subagent_type: cohorte-release`):
 "Release feature `$ARGUMENTS` on branch
 `<the branch §1 resolved>`. Read `PIPELINE.md` §vcs first. Spec: `specs/$ARGUMENTS.md` (already
 `status: shipped` — stage it). Write conventional commit(s), push (no force), open the PR (use `gh` if

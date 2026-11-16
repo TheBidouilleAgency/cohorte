@@ -1,7 +1,7 @@
 {
   "name": "cohorte",
-  "version": "2.10.2",
-  "description": "Portable, stack-agnostic multi-agent development pipeline for Claude Code, Codex CLI, Cursor, Gemini CLI and OpenCode — install the core, run /cohorte-init-pipeline, and it adapts to your project's stack.",
+  "version": "3.0.0",
+  "description": "Multi-agent development pipeline for Claude Code — install it once, run /cohorte-init-pipeline in a repo, and it adapts to that project's stack.",
   "bin": {
     "cohorte": "bin/cli.js"
   },
@@ -14,14 +14,19 @@
     "!scripts/new-feature.sh",
     "!scripts/remove-feature.sh",
     "!scripts/demo",
+    "!scripts/test-*.mjs",
+    "!scripts/validate-core.mjs",
     "!core/hooks/__pycache__",
     "!**/*.pyc",
     "install.sh",
     "install.ps1",
     "CHANGELOG.md"
   ],
+  "scripts": {
+    "test": "node scripts/validate-core.mjs && node scripts/test-install.mjs && node scripts/test-gate.mjs && node scripts/test-lib.mjs && node scripts/test-workflows.mjs && node scripts/test-kanban.mjs && node scripts/test-metrics.mjs"
+  },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "repository": {
     "type": "git",
@@ -33,12 +38,11 @@
   "keywords": [
     "claude",
     "claude-code",
-    "codex",
-    "cursor",
-    "gemini-cli",
-    "opencode",
     "agents",
+    "subagents",
     "pipeline",
-    "multi-agent"
+    "multi-agent",
+    "tdd",
+    "code-review"
   ]
 }

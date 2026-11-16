@@ -10,7 +10,7 @@
 // per touched surface, one reviewer runs per surface in parallel, an adversarial
 // cross-check tries to refute every CRITICAL/security finding, and only the
 // merged verdict comes back — the full report is staged to specs/reports/.
-// Mechanical phases run on haiku; reviewers run the pinned `review` agent (sonnet).
+// Mechanical phases run on haiku; reviewers run the pinned `cohorte-review` agent (sonnet).
 
 export const meta = {
   name: 'cohorte-review',
@@ -72,7 +72,7 @@ if (!isSlug(feature)) {
 // Declaring the shape gives the tool layer something to validate and the agent something to
 // aim at; unwrapProfile() salvages a wrapped return that still gets through; and the
 // zero-surface abort below makes the silent-success path impossible either way.
-// See also the structured-output section of core/agents/profile-reader.md.
+// See also the structured-output section of core/agents/cohorte-profile-reader.md.
 const PROFILE = {
   type: 'object', additionalProperties: true,
   properties: {
@@ -145,7 +145,7 @@ const FINDING = {
 // A DEFERRED finding is real but out of this feature's scope (pre-existing code the
 // diff never touched). It carries its own out-of-scope reason, counts in no severity
 // row, is never cross-checked, and can never move the verdict — it is routed to
-// specs/refactor-backlog.md so /cohorte-refactor owns it. See core/agents/review.md §Deferred.
+// specs/refactor-backlog.md so /cohorte-refactor owns it. See core/agents/cohorte-review.md §Deferred.
 const DEFERRED = {
   type: 'object', required: ['severity', 'file', 'line', 'kind', 'problem', 'fix', 'outOfScope'],
   additionalProperties: false,
@@ -182,7 +182,7 @@ const VERDICT = {
 phase('Profile')
 const profile = unwrapProfile(await agent(
   'Return this project\'s PIPELINE.md `yaml pipeline-profile` block as JSON, per your instructions.',
-  { agentType: 'profile-reader', label: 'profile', schema: PROFILE, effort: 'low' },
+  { agentType: 'cohorte-profile-reader', label: 'profile', schema: PROFILE, effort: 'low' },
 ))
 if (!profile || profile.error) {
   return { verdict: 'ABORTED', aborted: 'profile', reason: `profile unreadable: ${(profile && profile.error) || 'profile-reader returned nothing'}` }
@@ -206,8 +206,8 @@ const pre = await agent(
   `Run the cohorte deterministic pre-flight for feature ${feature} in ONE Bash call:\n` +
   `<core>/pipeline/scripts/preflight.sh specs/reports/${feature}.preflight.txt ` +
   checks.map(c => JSON.stringify(c)).join(' ') + '\n' +
-  '(<core> = .claude if .claude/pipeline/scripts/preflight.sh exists, else ~/.claude — probe with test -x. ' +
-  'Script absent on both: run the quoted commands yourself, each appended to the same report file, stopping at the first failure.) ' +
+  '(<core> = "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/cohorte". ' +
+  'Script absent: run the quoted commands yourself, each appended to the same report file, stopping at the first failure.) ' +
   'Return pass=true only on a fully green run. On failure set pass=false, put the raw last 40 lines of the report ' +
   'in `tail` — verbatim, no summarizing — and in the same Bash call write the degraded machine verdict the ' +
   `conversational /cohorte-review §0 writes, so an automated driver gets a diagnosis rather than silence: ` +
@@ -280,7 +280,7 @@ const reviewed = await pipeline(
     '(max 10, each with its out-of-scope reason) per your §Deferred rules — never in `findings`. — Variable slots: ' +
     `feature ${feature} · scope: the ${s.key} surface only · spec: specs/${feature}.md · ` +
     `staged diff: ${s.diff} · changed files: ${s.files.join(', ')}`,
-    { agentType: 'review', label: `review:${s.key}`, phase: 'Review', schema: REPORT },
+    { agentType: 'cohorte-review', label: `review:${s.key}`, phase: 'Review', schema: REPORT },
   ),
   async (report, s) => {
     if (!report) return null
@@ -296,7 +296,7 @@ const reviewed = await pipeline(
       'finding does not hold. Uncertain ⇒ refuted=false (a real CRITICAL must not die on doubt). — ' +
       `Finding: [${f.severity}/${f.kind}] ${f.file}:${f.line} — ${f.problem} (proposed fix: ${f.fix}). ` +
       `Feature ${feature} · spec: specs/${feature}.md · staged diff: ${s.diff}`,
-      { agentType: 'review', label: `verify:${s.key}`, phase: 'Cross-check', schema: VERDICT },
+      { agentType: 'cohorte-review', label: `verify:${s.key}`, phase: 'Cross-check', schema: VERDICT },
     ).then(v => ({ f, refuted: !!(v && v.refuted), reason: v ? v.reason : 'verifier died — kept' }))))
     const checkedVotes = votes.filter(Boolean)
     return {

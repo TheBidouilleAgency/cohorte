@@ -51,7 +51,7 @@ const target = ARGS.target || ''
 // Declaring the shape gives the tool layer something to validate and the agent something to
 // aim at; unwrapProfile() salvages a wrapped return that still gets through; and the
 // zero-surface abort below makes the silent-success path impossible either way.
-// See also the structured-output section of core/agents/profile-reader.md.
+// See also the structured-output section of core/agents/cohorte-profile-reader.md.
 const PROFILE = {
   type: 'object', additionalProperties: true,
   properties: {
@@ -125,7 +125,7 @@ const BACKLOG = {
 phase('Profile')
 const profile = unwrapProfile(await agent(
   'Return this project\'s PIPELINE.md `yaml pipeline-profile` block as JSON, per your instructions.',
-  { agentType: 'profile-reader', label: 'profile', schema: PROFILE, effort: 'low' },
+  { agentType: 'cohorte-profile-reader', label: 'profile', schema: PROFILE, effort: 'low' },
 ))
 if (!profile || profile.error) {
   return { error: `profile unreadable: ${(profile && profile.error) || 'profile-reader returned nothing'}` }
@@ -185,7 +185,7 @@ const audited = await parallel(domains.map(d => () => agent(
   'read specs/reports/audit-gates.txt and fold the ones in your domain in. Return the prioritized items, ' +
   'capped at 30, one line each, no code excerpts. — Variable slots: domain: ' +
   `${d.key} · tree: ${d.path}${target ? ` · human-requested target: ${target}` : ''}`,
-  { agentType: 'review', label: `audit:${d.key}`, schema: BACKLOG },
+  { agentType: 'cohorte-review', label: `audit:${d.key}`, schema: BACKLOG },
 ).then(r => r && { key: d.key, items: r.items, overflow: r.overflow || 0 })))
 const perDomain = audited.filter(Boolean)
 // A dead auditor returns null, and a domain with no result is indistinguishable

@@ -11,11 +11,9 @@ analyze only — no fixes (those go through `/cohorte-refactor`).
 > `specs/_decisions.md` §Live if it exists (SCHEMA.md §Decisions): those standing decisions are part
 > of the rulebook you audit against, and code that contradicts one is a finding like any other.
 >
-<!-- cohorte:if workflows -->
 > **Workflow variant** (opt-in — SCHEMA.md §Workflows): on Claude Code ≥ 2.1.154 with workflows
 > enabled, the human can ask to "run the audit workflow" (`<core>/workflows/audit.js` — one auditor
 > per domain, concurrent). This conversational path stays the default and the fallback.
-<!-- cohorte:endif -->
 
 ## 1. Mechanical gates (you run these — Bash)
 
@@ -28,9 +26,9 @@ bulk never sits in your history, then grep it for the `file:line` of every failu
 `commands.format` in check mode (e.g. `prettier --check .` / `ruff format --check`),
 `commands.lint`, `commands.typecheck`, `commands.test`.
 
-## 2. Convention + TDD audit (dispatch `review` in audit mode)
+## 2. Convention + TDD audit (dispatch `cohorte-review` in audit mode)
 
-Dispatch `review` (read-only; static prompt first, variable slot last — prompt-cache prefix):
+Dispatch `cohorte-review` (read-only; static prompt first, variable slot last — prompt-cache prefix):
 "Audit a target against `PIPELINE.md` (no spec — **audit mode**). Check conventions (§Conventions
 per surface), TDD coverage (untested entry points / modules per surface), over-engineering (§8,
 widened per your audit-mode rules — ranked biggest cut first, closing `net:` line), and — if the

@@ -225,15 +225,15 @@ const spent = () => {
 
 // kanban-move.sh is optional infrastructure — every prompt that runs it defines <core>
 // and tolerates its absence, per SCHEMA.md §Kanban.
-const CORE_DEF = '(<core> = .claude if .claude/pipeline/scripts/kanban-move.sh exists, else ~/.claude — ' +
-  'probe with test -f; absent on both ⇒ skip the kanban step, the board is optional.)'
+const CORE_DEF = '(<core> = "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/cohorte" — ' +
+  'script absent ⇒ skip the kanban step, the board is optional.)'
 const METRICS_PATH = '$(dirname "$(git rev-parse --git-common-dir)")/.claude/pipeline-metrics.jsonl'
 
 // ── Phase 0 — profile ────────────────────────────────────────────────────────
 phase('Profile')
 const profile = unwrapProfile(await agent(
   'Return this project\'s PIPELINE.md `yaml pipeline-profile` block as JSON, per your instructions.',
-  { agentType: 'profile-reader', label: 'profile', schema: PROFILE, effort: 'low' },
+  { agentType: 'cohorte-profile-reader', label: 'profile', schema: PROFILE, effort: 'low' },
 ))
 if (!profile || profile.error) {
   return { id: feature, outcome: 'abort', reason: 'precondition', rounds: 0, detail: `profile unreadable: ${(profile && profile.error) || 'profile-reader returned nothing'}` }
@@ -501,7 +501,7 @@ while (true) {
   } catch (e) {
     return close('abort', 'review-workflow-unavailable', {
       detail: `workflow('cohorte-review') failed: ${e.message} — the review workflow must be installed ` +
-        '(<core>/workflows/review.js; /cohorte-doctor check 8); the loop never falls back to a conversational review',
+        '(~/.claude/workflows/cohorte-review.js; /cohorte-doctor check 8); the loop never falls back to a conversational review',
     })
   }
 
