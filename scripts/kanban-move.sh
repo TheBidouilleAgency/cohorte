@@ -31,7 +31,7 @@
 # Exit codes: 0 ok (incl. "kanban not configured" — and, under `auto`, a configured
 # board file that is gone: `kanban: board file not found`) · 2 usage · 3 unknown
 # column, or an EXPLICIT <board.md> path that does not exist · 4 the board stayed locked
-# by another move for ~10 s (moves are serialized). A board that resolved
+# by another move for ~30 s (moves are serialized). A board that resolved
 # but cannot be moved is loud; an unconfigured one is quiet — the pipeline never
 # blocks on the board. (schema/kanban.md states the same contract.)
 set -eu
@@ -234,12 +234,14 @@ fi
 lock="${board}.lock"
 waited=0
 until mkdir "$lock" 2>/dev/null; do
-  if [ -n "$(find "$lock" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then
+  # The stale check forks `find`: once a second, not on every 0.1 s poll — seven waiters forking
+  # ten times a second slowed a 2-core CI runner enough for the last move to give up.
+  if [ $((waited % 10)) -eq 0 ] && [ -n "$(find "$lock" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then
     rmdir "$lock" 2>/dev/null || true
     continue
   fi
   waited=$((waited + 1))
-  if [ "$waited" -gt 100 ]; then
+  if [ "$waited" -gt 300 ]; then
     echo "error: board is locked by another move ($lock) — retry, or remove the lock if no move is running" >&2
     exit 4
   fi

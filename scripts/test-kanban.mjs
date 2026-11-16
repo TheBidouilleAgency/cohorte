@@ -306,13 +306,16 @@ if (process.platform !== "win32") {
   const ids = Array.from({ length: 8 }, (_, i) => `par-${i}`);
   const b = board(d, { Ideas: ids.map((id) => `- [ ] ${id} #${id}`) });
   const { spawn } = await import("node:child_process");
-  await Promise.all(ids.map((id) => new Promise((res) => {
-    const c = spawn("sh", [SCRIPT, b, id, "Building"], { stdio: "ignore" });
-    c.on("exit", res);
+  const results = await Promise.all(ids.map((id) => new Promise((res) => {
+    const c = spawn("sh", [SCRIPT, b, id, "Building"], { stdio: ["ignore", "ignore", "pipe"] });
+    let err = "";
+    c.stderr.on("data", (d) => { err += d; });
+    c.on("close", (code) => res({ id, code, err: err.trim() }));
   })));
   const moved = ids.filter((id) => columnOf(b, id) === "Building");
   check("8 concurrent moves on one board all land (the board is locked per move)",
-    moved.length === ids.length, `${moved.length}/8 in Building`);
+    moved.length === ids.length,
+    `${moved.length}/8 in Building · exits ${JSON.stringify(results.filter((r) => r.code !== 0))}\n${readFileSync(b, "utf8")}`);
   check("…and the lock is released", !existsSync(b + ".lock"));
   mkdirSync(b + ".lock");
   utimesSync(b + ".lock", new Date(Date.now() - 5 * 60_000), new Date(Date.now() - 5 * 60_000));
