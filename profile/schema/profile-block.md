@@ -17,6 +17,7 @@ generic pipeline uses it, so a stateless agent can read/regenerate the profile c
 | `vcs.default_branch`                 | string       | build, review, release            | Base branch for diffs + PRs.                                  |
 | `vcs.feature_branch_prefix`          | string       | ship, isolation script            | `feature/` → branch `feature/<id>`.                           |
 | `vcs.patch_branch_prefix`            | string       | ship                              | Same, for a `kind: patch` spec: `fix/` → branch `fix/patch-<slug>`. Optional — a profile that predates it falls back to `fix/`. |
+| `project.kind`                       | enum         | init, spec, review                | What the repo delivers: `web`/`api`/`cli`/`library`/`mobile`/`data`/`other`. Selects the spec's DoD defaults, the review's kind-specific checks and whether the design step applies (`<core>/pipeline/schema/project-kinds.md`). Optional — absent ⇒ `web` (top-up default). |
 | `repo.layout`                        | enum         | build, audit                      | `monorepo` (many surfaces) or `single`.                       |
 | `repo.workspace_tool`                | enum         | audit                             | `turborepo`/`nx`/`none`.                                      |
 | `retrieval.provider`                 | enum         | init, update-pipeline, implementer | `serena` (default) / `graphify` / `none` — see §Code retrieval (`<core>/pipeline/schema/retrieval.md`). |

@@ -53,7 +53,10 @@ metrics line needs it:
 
 ## 1. Gather the inputs for stateless reviewers
 
-- Confirm `specs/$ARGUMENTS.md` exists.
+- Confirm `specs/$ARGUMENTS.md` exists. Front-matter **`kind: refactor`** (written by
+  `/cohorte-refactor` at the end of a round) ⇒ no contract: the reviewer checks behaviour
+  preservation, conventions and over-engineering against §6's backlog items instead of a contract
+  (its own check 1). Everything else below is unchanged.
 - **Every diff comes from `<core>/pipeline/scripts/feature-diff.sh`, never a bare `git diff`**
   (`<core>/pipeline/schema/feature-diff.md`): feature work is uncommitted until ship, and `git diff <ref>` drops
   every untracked file and diffs against the branch tip, not the merge-base. Non-zero exit ⇒ **stop
@@ -97,7 +100,7 @@ which sits at the END so every repeat hits the prompt-cache prefix:
 > a finding demands it. Emit the REVIEW REPORT in the capped format your agent instructions define —
 > every finding self-sufficient (`file:line` · severity · type · one-line concrete fix), no code
 > excerpts. — Variable slots: feature `$ARGUMENTS` · scope: the `<surface.key>` surface only · spec:
-> `specs/$ARGUMENTS.md` (source of truth) · contract: `<contract.path>/$ARGUMENTS.<ext>` · staged
+> `specs/$ARGUMENTS.md` (source of truth) · contract: `<contract.path>/$ARGUMENTS.<ext>` (`none` on `kind: refactor`) · staged
 > diff: `specs/reports/$ARGUMENTS.<surface.key>.diff` · changed files: <list>."
 
 ## 3. Merge & relay the verdict
@@ -211,7 +214,8 @@ surviving severity** — exactly one row applies:
   - **Tick the DoD**: in `specs/$ARGUMENTS.md` §`Acceptance criteria / DoD`, flip `- [ ]` → `- [x]`
     for the criteria the pipeline actually verified — spec conformance + `ui_language` copy (this
     review), tests · lint · typecheck (a green `/cohorte-build`), mobile-first as far as the code
-    shows it. **Leave `- [ ]` (and say which) any item no stage verified** — nothing in the pipeline
+    shows it. On `kind: refactor`: behaviour preserved + items cleared (this review), tests · lint ·
+    typecheck green (§0's preflight — no `/cohorte-build` ran). **Leave `- [ ]` (and say which) any item no stage verified** — nothing in the pipeline
     *runs* the feature, so a criterion that needs the app up stays open unless the human says they
     exercised it by hand. Ticking is the lead's job (the reviewer is read-only).
   - **Stamp the freshness gate** so `/cohorte-ship` can refuse code edited after this verdict:

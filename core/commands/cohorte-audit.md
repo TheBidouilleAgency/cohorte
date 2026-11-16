@@ -63,5 +63,12 @@ and re-emit every **open** (`- [ ]`) match of that domain verbatim, tag included
 put there by `/cohorte-review` §3.5 — a real finding a feature deliberately did not own — and an audit that
 blindly overwrites a section is the one way they silently disappear. Already-ticked (`- [x]`) ones in a
 rewritten section are done: drop them.
+
+**Keep the in-flight refactor ticks** too: `/cohorte-refactor` §4 ticks what it cleared as
+`- [x] … · refactor:<id>`, and until `specs/<id>.md` is `merged` that code is only in review or on an
+unmerged branch — an audit of the default branch would re-find it and queue the same work twice.
+So re-emit each such line verbatim while its spec's `status` (one `grep '^status:'` per id) is not
+`merged`/`abandoned`, and drop any new finding with the same `file` + problem; once merged (or
+abandoned — the audit then re-finds whatever survived), drop it like any ticked line.
 Print a short summary (counts per domain + top items). Tell the human: refactor a domain with
 `/cohorte-refactor <domain>`.

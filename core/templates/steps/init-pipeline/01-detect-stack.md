@@ -21,6 +21,11 @@ Gather evidence, then summarize what you found. Look for:
   flag candidates + their would-be shared-code tree.
 - **Per-surface commands:** derive `test`/`lint`/`format`/`typecheck`/`build` from each surface's
   `package.json` scripts + the workspace filter syntax (e.g. `pnpm --filter <pkg> test`).
+- **Project kind (`project.kind`):** match the evidence against the detection table of
+  `<core>/pipeline/schema/project-kinds.md` (read only its `### Detection` table) — first matching row
+  wins: UI deps ⇒ `web`; react-native/expo/Swift/Kotlin app ⇒ `mobile`; dbt/Airflow/notebooks ⇒
+  `data`; `bin` entries and no UI deps ⇒ `cli`; a published package with exports and no app ⇒
+  `library`; server-only ⇒ `api`; else `other`. Note the signal that decided it.
 - **Contract mechanism:** a shared types/schema package (`packages/shared-types`, Zod/`z.`),
   an `openapi.*`/`swagger.*` file, `.proto` files, or none.
 - **Release notes / versioning:** a `.changeset/` directory (+ `config.json`, and whether it declares a
@@ -39,5 +44,5 @@ Gather evidence, then summarize what you found. Look for:
 - **Existing `<memory>`** — read it; it may already state stack/conventions to fold in. **Existing
   `PIPELINE.md`** — if present, this is a re-run: load it as the starting draft and only reconcile deltas.
 
-Print a compact **Detection Report**: layout, surfaces (with framework + commands), contract, release
-notes, DB, design, vcs. Mark each field `detected` / `guessed` / `unknown`.
+Print a compact **Detection Report**: layout, project kind, surfaces (with framework + commands),
+contract, release notes, DB, design, vcs. Mark each field `detected` / `guessed` / `unknown`.

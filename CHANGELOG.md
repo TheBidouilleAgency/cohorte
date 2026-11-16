@@ -25,6 +25,25 @@ short, user-facing, most recent first. One `## <version> — <YYYY-MM-DD>` secti
   phase 0 is now a single Read of it. `cohorte doctor` gains a `profile-json` row: missing, stale or
   hand-edited (compared byte for byte with a fresh parse) or uncommitted ⇒ warn, fix `cohorte sync`.
   The installer ships `lib/yaml.js` next to `lib/project.js` so sync and doctor share one parser.
+- **A refactor now has a way to a PR.** `/cohorte-refactor` (and the refactor workflow) ends a green
+  round by freezing it as one spec, `specs/refactor-<domains>-<date>.md` — `kind: refactor`, the
+  cleared backlog items as scope, "public behaviour preserved" + "all tests green" as DoD, no
+  contract — cuts the feature branch when you are on the default one, and routes to
+  `/cohorte-review <id>` → `/cohorte-ship <id>`. The reviewer checks behaviour preservation,
+  conventions and over-engineering instead of contract conformance. Ticked backlog lines carry
+  `· refactor:<id>`, and `/cohorte-audit` keeps them until that spec merges, so the work is not queued
+  twice. Red gates ⇒ no spec.
+- **Refactor workflow: a retry round no longer turns an ungated domain green.** A domain with no gate
+  commands is unverified; round 1 said so, but the retry round's verifier answer replaced it.
+- **`project.kind` — presets for non-web projects.** `web` · `api` · `cli` · `library` · `mobile` ·
+  `data` · `other`, detected by `/cohorte-init-pipeline` (bin entries, published exports,
+  react-native/expo, dbt/Airflow, server-only…) and confirmed there. It selects the spec's DoD
+  defaults (library: semver impact, no break without a major; cli: `--help`, exit codes,
+  stdout/stderr; data: idempotency, backfill, schema evolution; mobile: platform matrix, offline,
+  permissions), which review checks apply (mobile-first only for web/mobile, RBAC not for
+  cli/library/data, API compatibility for api/library), and whether the design step runs. Tables in
+  `profile/schema/project-kinds.md`; the reviewer reads only its kind's section. **Absent ⇒ `web`** —
+  existing profiles behave exactly as before (`/cohorte-update-pipeline` tops it up as `web`).
 
 ## 3.0.0 — 2026-11-16
 

@@ -207,6 +207,23 @@ a fix that needs **new** contract surface area is a feature wearing a bug's clot
 `/cohorte-patch` sends it to `/cohorte-spec` rather than letting two surfaces invent a shape
 independently. Changing an *existing* contract entry is a legitimate §5 delta.
 
+## The way out of a refactor — `kind: refactor`
+
+`/cohorte-refactor` changes code with no spec behind it, and `/cohorte-ship` ships specs. So a
+refactor round that ends green freezes itself as one: `specs/refactor-<domains>-<date>.md`,
+`kind: refactor`, the cleared backlog items as scope, "public behaviour preserved" + "all tests
+green" as DoD, no contract. From there it is the normal tail — `/cohorte-review <id>` →
+`/cohorte-fix`* → `/cohorte-ship <id>` — with the reviewer swapping contract conformance for
+behaviour preservation, and the backlog's ticked lines pointing at the spec (`· refactor:<id>`).
+
+## Not a web app — `project.kind`
+
+The defaults above assume a web app: mobile-first, a design step, RBAC screens. `project.kind` in
+`PIPELINE.md` (`web` · `api` · `cli` · `library` · `mobile` · `data` · `other`; absent ⇒ `web`) is
+detected by `/cohorte-init-pipeline` and selects the spec's DoD defaults (a library states its semver
+impact, a CLI its exit codes, a data job its idempotency), the review's kind-specific checks, and
+whether the design step applies. The per-kind tables live in `profile/schema/project-kinds.md`.
+
 ## The disk artifacts, at a glance
 
 `<state>` is the project's pipeline dir, `.claude/` — committed except for the local-only
@@ -216,6 +233,7 @@ artifacts `cohorte sync` gitignores ([Installers](/reference/installers)).
 | --- | --- | --- |
 | `specs/<id>.md` | `/cohorte-spec` (+ `/cohorte-fix` remediation, `/cohorte-review` DoD + freshness stamp) | everyone |
 | `specs/patch-<slug>.md` | `/cohorte-patch` (same later writers) | everyone — it *is* a spec, `kind: patch` |
+| `specs/refactor-<domains>-<date>.md` | `/cohorte-refactor` §4 (same later writers) | review → ship — a spec, `kind: refactor` |
 | `specs/design/<id>.md` | `/cohorte-spec` | design surfaces, design tools |
 | `<contract.path>/<id>.<ext>` | the lead (`/cohorte-build`, `/cohorte-fix`) | implementers (read-only), reviewers |
 | `specs/reports/<id>.md` | `/cohorte-review` (gitignored buffer) | `/cohorte-fix` after a `/clear` |

@@ -51,6 +51,14 @@ be precise and self-contained.
    first-class finding on a patch**: a correct, tidy improvement the spec did not ask for still
    widens the blast radius of a change that is shipping fast, so report it rather than waving it
    through. Genuinely-good-but-out-of-scope work is a **deferred** finding, exactly as elsewhere.
+   **On a `kind: refactor` spec** (written by `/cohorte-refactor` from cleared backlog items) there is
+   no contract: the spec is §6's backlog items + §9's DoD. Check instead that (a) **public behaviour is
+   preserved** — no exported signature, route, response shape, CLI flag, event or persisted format
+   changed unless an item marks it a bug, and no existing test was loosened or rewritten to fit the new
+   code (either is CRITICAL `spec-violation`); (b) each §6 item actually landed at its `file:line`
+   (claimed but not done ⇒ CRITICAL); (c) the diff stays inside §6 — scope creep is a finding, as on a
+   patch. Weigh §8 harder here: a refactor that *adds* a layer, an interface or a dependency is the
+   classic failure (same 5-finding cap and MEDIUM ceiling).
 2. **Correctness.** Logic bugs, unhandled errors, validation gaps, auth holes, data exposure.
 3. **Security.** Authz on every entry point, input validation, no secret/PII leakage, no injection.
    (A security vulnerability blocks — §Severity & verdict.)
@@ -74,6 +82,12 @@ be precise and self-contained.
    fixtures and anything the contract or an acceptance criterion mandates are **out of bounds**:
    coverage is not bloat, and "simpler" is never a reason to drop a spec'd behaviour. Deduplication
    that would cross a surface boundary is out of bounds too — that's an architecture call, not a review one.
+
+**Kind-specific checks — `project.kind` (profile; absent ⇒ `web`).** `web` ⇒ checks 5–6 as written,
+nothing to read. Any other kind ⇒ Grep `^## ` in `<core>/pipeline/schema/project-kinds.md` and Read
+ONLY your kind's section: its **Review** line says which of 5–6 still apply (each still behind its own
+flag) and adds the kind's own checks (API / public-API compatibility, CLI discipline, idempotency…),
+reported in the same finding shape. Never apply another kind's checks.
 
 ## Language checks (apply only those matching the surfaces under review)
 

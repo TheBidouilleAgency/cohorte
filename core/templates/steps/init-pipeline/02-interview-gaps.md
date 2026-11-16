@@ -4,6 +4,11 @@
 
 Ask ONLY what you couldn't confidently detect. Batch related questions. Cover:
 
+- **Project kind** — always confirm, the detected `project.kind` as the Recommended option with the
+  signal that decided it (`web` · `api` · `cli` · `library` · `mobile` · `data` · `other`). It
+  selects the spec DoD defaults and the review's checks. Where `<core>/pipeline/schema/project-kinds.md`
+  says the kind has no design step, skip the **Design system** question below (`design.enabled: false`,
+  every `uses_design: false`); where it has no RBAC check, default **RBAC** to `enabled: false`.
 - **Surfaces & ownership** — confirm the surface list and each one's path + owning agent name. (If a
   single-app repo, one surface.) Confirm the `tools` each agent needs (add `DesignSync` only to a
   surface with `uses_design: true`), and each surface's `model` tier: `sonnet` (Recommended default —

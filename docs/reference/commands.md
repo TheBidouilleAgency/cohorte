@@ -18,7 +18,7 @@ model — their value is the conversation.
 | `/cohorte-fleet plan\|status\|sync` | sonnet | Several features in parallel: overlap matrix, merge order, one worktree each, post-merge rebase sweep. |
 | `/cohorte-ship <id>` | sonnet | Verdict-file + freshness + DoD gates, human confirm, release agent, CI watch, `merged` reconcile, teardown. |
 | `/cohorte-audit [target]` | sonnet | Mechanical gates + convention/TDD audit → prioritized backlog. |
-| `/cohorte-refactor <domain…>` | sonnet | Apply the backlog per domain via the surface implementers, TDD-first. |
+| `/cohorte-refactor <domain…>` | sonnet | Apply the backlog per domain via the surface implementers, TDD-first; freeze the round as a `kind: refactor` spec for review → ship. |
 | `/cohorte-retro [last <n> \| all]` | inherit | Turn repeated review findings into ratified §Conventions rules, re-render the agents. |
 | `/cohorte-align-ds` | sonnet | Align the code UI kit to the design system (design → code). |
 | `/cohorte-update-pipeline` | sonnet | `cohorte update`, `cohorte sync` this repo, reconcile its generated files. |
@@ -204,7 +204,16 @@ Reads the backlog, maps domains to surfaces (`shared` = the contract package, re
 lead directly). Dispatches implementers — tests pinned first, then refactor, public behavior
 preserved — in parallel when domains are independent, `shared` always alone and first.
 Verifies per domain (quiet gates + item-by-item `file:line` check — no `/cohorte-audit` re-run per
-round), ticks the backlog, loops until each dispatched domain is clean.
+round), loops until each dispatched domain is clean.
+
+Then it **delivers**: with the gates green and ≥ 1 item cleared, it freezes the round as one spec,
+`specs/refactor-<domains>-<date>.md` — `kind: refactor`, the cleared items as §6 scope, the still-open
+ones under §7, a DoD of "public behaviour preserved" + "all tests green", and **no contract
+section** — cuts `<feature_branch_prefix><id>` if you are on the default branch, and ticks each
+cleared backlog line `- [x] … · refactor:<id>`. Route: `/cohorte-review <id>` (the reviewer checks
+behaviour preservation, conventions and over-engineering instead of contract conformance) →
+`/cohorte-fix`* → `/cohorte-ship <id>`, unchanged. Never `/cohorte-build` or the loop workflow on it:
+both assume a contract. The refactor workflow does the same at its end.
 
 ## `/cohorte-retro [last <n> | all]`
 

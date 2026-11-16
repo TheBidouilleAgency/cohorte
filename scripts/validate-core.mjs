@@ -250,6 +250,60 @@ for (const rel of shipped) {
   }
 }
 
+// ── project.kind presets (3.1.0) ─────────────────────────────────────────────
+// One enum, four places that must agree: the profile-block row, the PIPELINE template, and
+// one `## <kind>` section per value in project-kinds.md — the review agent and /cohorte-spec
+// Grep for exactly that heading and read only its range, so a missing section is a kind whose
+// checks silently never run. The readers must cite the file, or nothing loads it.
+{
+  const KINDS = ["web", "api", "cli", "library", "mobile", "data", "other"];
+  const pk = "profile/schema/project-kinds.md";
+  const text = existsSync(join(root, pk)) ? read(pk) : "";
+  if (!text) fail(pk, "missing");
+  const heads = [...text.matchAll(/^## ([a-z]+)$/gm)].map((m) => m[1]);
+  if (heads.join(",") !== KINDS.join(","))
+    fail(pk, `\`## <kind>\` sections [${heads.join(", ")}] must be exactly [${KINDS.join(", ")}], in that order`);
+  for (const k of KINDS) {
+    const sec = (text.split(`\n## ${k}\n`)[1] || "").split("\n## ")[0];
+    if (!/\*\*DoD[:*]/.test(sec) || !/\*\*Review[:*]/.test(sec))
+      fail(pk, `section \`## ${k}\` lacks its **DoD** or **Review** line`);
+  }
+  const row = (read("profile/schema/profile-block.md").match(/^\| `project\.kind`.*$/m) || [""])[0];
+  if (!row) fail("profile/schema/profile-block.md", "no `project.kind` row");
+  else if (KINDS.some((k) => !row.includes(`\`${k}\``)) || !/absent ⇒ `web`/.test(row))
+    fail("profile/schema/profile-block.md", "the `project.kind` row must list every kind and the `web` default");
+  if (!/^project:\n\s+kind:/m.test(tpl))
+    fail("profile/PIPELINE.template.md", "no `project:` block with `kind:`");
+  for (const rel of ["core/agents/cohorte-review.md", "core/templates/spec.template.md",
+    "core/templates/steps/init-pipeline/01-detect-stack.md", "core/templates/steps/init-pipeline/02-interview-gaps.md"])
+    if (!read(rel).includes("<core>/pipeline/schema/project-kinds.md"))
+      fail(rel, "must cite <core>/pipeline/schema/project-kinds.md — it selects this step's kind-specific behaviour");
+}
+
+// ── refactor delivery: the `kind: refactor` spec, two writers ────────────────
+// /cohorte-refactor §4 and refactor.js both freeze the round as a spec /cohorte-review and
+// /cohorte-ship consume. Same skeleton in both: same DoD lines, the §9 heading ship's DoD gate
+// reads, and no §5 (there is no contract). The reviewer must know the kind, or it hunts for one.
+{
+  const md = read("core/commands/cohorte-refactor.md");
+  const js = read("core/workflows/refactor.js");
+  for (const [rel, t] of [["core/commands/cohorte-refactor.md", md], ["core/workflows/refactor.js", js]]) {
+    if (!t.includes("kind: refactor")) fail(rel, "must freeze the round as a `kind: refactor` spec");
+    if (!t.includes("## 9. Acceptance criteria / DoD"))
+      fail(rel, "the refactor spec must keep the `## 9. Acceptance criteria / DoD` heading /cohorte-ship reads");
+    if (!t.includes("/cohorte-review") || !t.includes("/cohorte-ship"))
+      fail(rel, "must route the refactor spec to /cohorte-review → /cohorte-ship");
+  }
+  const dodJs = [...js.matchAll(/['"]- \[ \] ([^'"]+)['"]/g)].map((m) => m[1]);
+  if (dodJs.length < 5) fail("core/workflows/refactor.js", "the refactor spec's DoD lines are missing");
+  for (const l of dodJs)
+    if (!md.includes(`- [ ] ${l}`)) fail("core/commands/cohorte-refactor.md", `DoD line differs from refactor.js: \`${l}\``);
+  if (/^\s*## 5\./m.test(md.split("## 4. Deliver")[1] || "") || /'## 5\./.test(js))
+    fail("core/commands/cohorte-refactor.md", "the refactor spec carries a §5 — it has no contract");
+  for (const rel of ["core/agents/cohorte-review.md", "core/commands/cohorte-review.md"])
+    if (!read(rel).includes("kind: refactor")) fail(rel, "does not handle a `kind: refactor` spec");
+}
+
 // ── init-pipeline router steps ──────────────────────────────────────────────
 const steps = join(root, "core/templates/steps/init-pipeline");
 if (!existsSync(steps) || readdirSync(steps).length === 0)
@@ -288,7 +342,7 @@ if (/usage ping|telemetry-send|consent/i.test(read(TELEMETRY_SCRUBBER)))
 // having opened neither the config nor PIPELINE.md, and a merged feature's card
 // stayed in "Ready to build". `kanban-move.sh auto` moved resolution into the
 // script; this keeps it there. Prose is not a call site — the literal invocation is.
-const KANBAN_STAGES = ["brainstorm", "spec", "build", "review", "fix", "ship", "patch", "intake"];
+const KANBAN_STAGES = ["brainstorm", "spec", "build", "review", "fix", "ship", "patch", "intake", "refactor"];
 for (const c of KANBAN_STAGES) {
   const path = `core/commands/${PREFIX}${c}.md`;
   const text = read(path);

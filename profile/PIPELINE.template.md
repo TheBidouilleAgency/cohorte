@@ -19,6 +19,12 @@ one_liner: <one sentence: what this product is>
 ui_language: <English | French | …>          # language of ALL user-facing copy
 package_manager: <pnpm | npm | yarn | bun | pip | cargo | go>
 
+# ── project kind (what the repo delivers) ───────────────────────────────────
+# Selects the spec DoD defaults, the review's kind-specific checks and whether
+# the design step applies — see <core>/pipeline/schema/project-kinds.md.
+project:
+  kind: <web | api | cli | library | mobile | data | other>   # absent ⇒ web
+
 # ── vcs ─────────────────────────────────────────────────────────────────────
 vcs:
   host: <github | gitlab | none>

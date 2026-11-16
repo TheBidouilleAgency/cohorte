@@ -72,6 +72,11 @@ design_files: [] # design page links — full URLs of the form https://claude.ai
 
 ## 9. Acceptance criteria / DoD
 
+> Defaults follow `PIPELINE.md` `project.kind` (absent ⇒ `web`). `web` ⇒ keep the five lines below
+> as they are. Any other kind ⇒ read only its `## <kind>` section of
+> `<core>/pipeline/schema/project-kinds.md` and apply its **DoD** line: add the lines it lists, drop
+> the ones it drops (mobile-first outside `web`/`mobile`). Then add this feature's own criteria.
+
 - [ ] Every contract endpoint/interface implemented exactly
 - [ ] Each surface's tests (TDD) green
 - [ ] `PIPELINE.md` commands.lint · typecheck · test green

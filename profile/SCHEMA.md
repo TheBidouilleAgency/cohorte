@@ -22,6 +22,7 @@ exact file it needs (`<core>/pipeline/schema/<file>.md`); this index is for find
 | `release-notes.md` | the per-feature release note (`release_notes.*`) | `/cohorte-ship` §2b |
 | `reconcile.md` | bringing a repo's generated files up to the current core | `/cohorte-update-pipeline` |
 | `workflows.md` | the opt-in Workflow scripts (review / audit / refactor / loop) | running, checking or editing a workflow |
+| `project-kinds.md` | `project.kind` presets: detection, per-kind DoD lines, review checks, design step | init 01–02; `/cohorte-spec` §9 defaults; the review agent's kind-specific checks |
 | `kanban.md` | the Obsidian board mirror: config, card format, `kanban-move.sh` | moving a card; linking or backfilling a board |
 
 The parsed machine block itself lives in `<state>/profile.json` (written by `<sync>`, committed): an
