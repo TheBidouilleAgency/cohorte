@@ -110,4 +110,7 @@ protection on the remote is the real boundary.
 #   - everything after that block is copied verbatim, and all modules share one namespace:
 #     a top-level name must be defined in exactly one module;
 #   - code that runs at import time (constants, `_START`) runs in build order.
+# The Bash analyzer spans five modules: findings, rules, protect and indirect each hold one
+# mixin class (methods only, no state of their own), and analyze — built last of them — composes
+# them into `Analyzer`. A method name must be unique across the mixins and `Analyzer`.
 # scripts/test-gate.mjs checks that the import lines are complete and accurate.

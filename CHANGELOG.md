@@ -19,6 +19,7 @@ short, user-facing, most recent first. One `## <version> — <YYYY-MM-DD>` secti
   `claude -p` — CI, francois — every pipeline script then asks or is refused. Doctor now warns and
   says how to fix it. The gate itself runs either way.
 - **The nightly real-model run is gone.** `scripts/ci/llm-e2e.sh` stays, to run by hand.
+- **Internal:** the gate's analyzer is split into modules; no behaviour change.
 
 ## 3.1.2 — 2026-11-16
 
