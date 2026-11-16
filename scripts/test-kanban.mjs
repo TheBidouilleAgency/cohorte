@@ -12,7 +12,7 @@
 //   node scripts/test-kanban.mjs
 
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -297,6 +297,27 @@ console.log("auto resolution");
   check("too few arguments is a usage error (exit 2)", r.status === 2, `exit ${r.status}`);
   const r2 = run(["auto", "x", "shipped", "--bogus", "1"]);
   check("unknown flag is a usage error (exit 2)", r2.status === 2, `exit ${r2.status}`);
+}
+
+// Parallel worktrees move cards on ONE board. Without the lock, two concurrent rewrites lost
+// one of the moves (both read the old board, the last writer won).
+if (process.platform !== "win32") {
+  const d = scratch();
+  const ids = Array.from({ length: 8 }, (_, i) => `par-${i}`);
+  const b = board(d, { Ideas: ids.map((id) => `- [ ] ${id} #${id}`) });
+  const { spawn } = await import("node:child_process");
+  await Promise.all(ids.map((id) => new Promise((res) => {
+    const c = spawn("sh", [SCRIPT, b, id, "Building"], { stdio: "ignore" });
+    c.on("exit", res);
+  })));
+  const moved = ids.filter((id) => columnOf(b, id) === "Building");
+  check("8 concurrent moves on one board all land (the board is locked per move)",
+    moved.length === ids.length, `${moved.length}/8 in Building`);
+  check("…and the lock is released", !existsSync(b + ".lock"));
+  mkdirSync(b + ".lock");
+  utimesSync(b + ".lock", new Date(Date.now() - 5 * 60_000), new Date(Date.now() - 5 * 60_000));
+  const r = run([b, "par-0", "Review"]);
+  check("a stale lock (a crashed writer's) is broken, not waited on", r.status === 0 && columnOf(b, "par-0") === "Review", r.err);
 }
 
 for (const d of tmps) rmSync(d, { recursive: true, force: true });

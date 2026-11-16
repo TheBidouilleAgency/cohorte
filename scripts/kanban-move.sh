@@ -30,7 +30,8 @@
 #
 # Exit codes: 0 ok (incl. "kanban not configured" — and, under `auto`, a configured
 # board file that is gone: `kanban: board file not found`) · 2 usage · 3 unknown
-# column, or an EXPLICIT <board.md> path that does not exist. A board that resolved
+# column, or an EXPLICIT <board.md> path that does not exist · 4 the board stayed locked
+# by another move for ~10 s (moves are serialized). A board that resolved
 # but cannot be moved is loud; an unconfigured one is quiet — the pipeline never
 # blocks on the board. (SCHEMA.md §Kanban states the same contract.)
 set -eu
@@ -226,6 +227,25 @@ EOF
 fi
 
 [ -f "$board" ] || { echo "error: board not found: $board" >&2; exit 3; }
+
+# Serialize the read-modify-write: parallel worktrees (/cohorte-fleet, the loop workflow) move
+# cards on ONE board, and two concurrent rewrites used to lose one of the moves. `mkdir` is
+# atomic on every filesystem, so it is the lock. A lock older than ~1 min is a crashed writer's.
+lock="${board}.lock"
+waited=0
+until mkdir "$lock" 2>/dev/null; do
+  if [ -n "$(find "$lock" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then
+    rmdir "$lock" 2>/dev/null || true
+    continue
+  fi
+  waited=$((waited + 1))
+  if [ "$waited" -gt 100 ]; then
+    echo "error: board is locked by another move ($lock) — retry, or remove the lock if no move is running" >&2
+    exit 4
+  fi
+  sleep 0.1 2>/dev/null || sleep 1
+done
+trap 'rmdir "$lock" 2>/dev/null' EXIT INT TERM
 
 tmp="${board}.kanban-move.$$"
 ID="$id" COL="$col" PR="$pr" TITLE="${title:-$id}" awk '
