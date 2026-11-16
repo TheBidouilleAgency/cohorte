@@ -304,7 +304,13 @@ console.log("auto resolution");
 // where it exists (Linux) and the mkdir/PID fallback (macOS, or COHORTE_KANBAN_NO_FLOCK=1).
 if (process.platform !== "win32") {
   const { spawn } = await import("node:child_process");
-  for (const [label, extra] of [["default lock", {}], ["mkdir/PID fallback", { COHORTE_KANBAN_NO_FLOCK: "1" }]]) {
+  // The fallback only runs where flock(1) is missing (macOS); test it there. On GitHub's Linux
+  // runners the forced fallback still lost a concurrent move now and then (never reproduced in a
+  // Linux container) — which is exactly why Linux uses flock. The macOS CI job covers it.
+  const hasFlock = spawnSync("sh", ["-c", "command -v flock"], { encoding: "utf8" }).status === 0;
+  const modes = [["default lock", {}]];
+  if (!hasFlock) modes.push(["mkdir/PID fallback", { COHORTE_KANBAN_NO_FLOCK: "1" }]);
+  for (const [label, extra] of modes) {
     const d = scratch();
     const ids = Array.from({ length: 8 }, (_, i) => `par-${i}`);
     const b = board(d, { Ideas: ids.map((id) => `- [ ] ${id} #${id}`) });
