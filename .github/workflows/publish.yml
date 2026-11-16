@@ -153,9 +153,10 @@ jobs:
             gh release create "v$VERSION" --title "v$VERSION" --generate-notes $flags
           fi
 
-      # The registry answers before its CDN serves the tarball: `npx cohorte@<new>` fails with
-      # "command not found" for a few minutes after every publish. Wait for the tarball, then
-      # install the published package exactly as a user would, in a throwaway home.
+      # Install the published package exactly as a user would: from an EMPTY directory (inside this
+      # checkout, whose package.json is also named `cohorte`, npx treats the local project as the
+      # package and fails with "cohorte: not found"), in a throwaway home, once the CDN serves the
+      # tarball.
       - name: Smoke-test the published package
         env:
           VERSION: ${{ needs.check.outputs.version }}
@@ -166,6 +167,7 @@ jobs:
             sleep 15
           done
           scratch=$(mktemp -d)
+          cd "$scratch"
           for i in $(seq 1 10); do
             if HOME="$scratch" CLAUDE_CONFIG_DIR="$scratch/.claude" COHORTE_NO_VERSION_CHECK=1 \
                 npx -y "cohorte@${VERSION}" install </dev/null; then break; fi
