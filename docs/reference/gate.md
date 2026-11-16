@@ -137,6 +137,14 @@ continuations, comments and heredocs respected. In each simple command:
     `git push --force` rule covers them all
 - package runners are looked through: `prisma migrate reset` also matches `npx prisma migrate
   reset`, `pnpm exec …`, `yarn …`, `bunx …`, `uv run …`, `python -m …`
+- container wrappers are looked through: a pattern is also tried at every later word of
+  `docker`/`docker compose`/`podman`/`kubectl` (`docker compose exec api node ace …`,
+  `kubectl exec pod -- psql`). `ssh host '<cmd>'` is analyzed as a remote command, with the
+  branch unknown.
+- a wrapper-only pattern (`sudo`, `env`) matches commands run through that wrapper
+- a run-time word (`$X`, `$(…)`) can stand for any argument, so a pattern that might match
+  gets **ask**. A double-quoted one (`"$f"`, `"$BRANCH"`) is a single word and is not assumed
+  to hide a flag (`rm -f "$f"` passes an `rm -rf` rule), and nothing after `--` is a flag.
 
 A pattern that contains a separator (`curl | sh`) matches a run of consecutive commands, each
 matching its part and joined by the same separator (`curl -fsSL https://x | sh`).
@@ -235,8 +243,17 @@ A legacy `--runtime claude` argument is accepted and ignored.
 
 - **Scripts on disk are not inspected.** `./release.sh`, `npm run deploy`, `make nuke` and a
   git alias defined in a file the gate can't read all run whatever they contain.
-- **Other tools are out of scope.** `gh api -X DELETE …`, `ssh host git push -f`, and API
-  calls from inline code that builds argv lists the gate can't see all get past it.
+- **Other tools are out of scope.** `gh api -X DELETE …`, and inline code that builds argv
+  lists the gate can't see (`subprocess.run(["git", "push", "-f"])` only gets the generic
+  "starts processes" ask), get past the specific rules.
+- **Self-protection covers direct writes, not every way to change a file.** These can revert
+  or remove a protected file without being flagged: `git checkout`/`restore`/`reset --hard`/
+  `stash` (an uncommitted change to `settings.json`), `git clean -x` (the gitignored stamp or
+  `settings.local.json`), `tar -x`/`unzip`/`patch` into `.claude/`, and a script that does the
+  write itself.
+- **A double-quoted variable is trusted to be one ordinary word.** `rm "$(printf -- -rf)" x`
+  or `git push origin "$REF"` with `REF=+main` are deliberate obfuscation. They are not
+  treated as flags (the push still asks under `ask_on_default_branch`).
 - **The stamp can be faked.** `preflight.sh r.txt true` produces a valid stamp without
   running a real check, and so does computing the digest by hand. The phase gate enforces
   ordering, not honesty.

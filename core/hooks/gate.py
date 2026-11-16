@@ -718,6 +718,11 @@ def is_flag_word(w):
     return (not w.dynamic) and len(v) > 1 and v.startswith("-") and v != "--"
 
 
+PREFIX_NAMES = {"env", "command", "builtin", "exec", "nice", "time", "sudo", "doas", "nohup",
+                "setsid", "chronic", "unbuffer", "caffeinate", "ionice", "stdbuf", "timeout"}
+PREFIXES_SEEN = []    # filled by the last strip_prefixes() call
+
+
 def strip_prefixes(words):
     """Drop `VAR=val`, `env …`, `command`, `sudo`, … in front of the real command.
     Returns (argv, assigned names, env -S string or None, relocated, lookup_only)."""
@@ -726,6 +731,7 @@ def strip_prefixes(words):
     assigns = []
     env_s = None
     relocated = False
+    del PREFIXES_SEEN[:]
 
     def val(k):
         return words[k].value if k < n else ""
@@ -737,6 +743,8 @@ def strip_prefixes(words):
         if i >= n or words[i].dynamic:
             break
         name = cmd_name(words[i].value)
+        if name in PREFIX_NAMES:
+            PREFIXES_SEEN.append(name)
         if name == "env":
             i += 1
             while i < n:
@@ -951,8 +959,11 @@ def analyze_push_args(args):
                 c = resolve_long(name, PUSH_LONG)
                 if FORCE_LONG.intersection(c):
                     pi.force = True
-            elif BRANCH_SUBST_RE.match(w.raw):
-                pi.positionals.append(w)      # "$(git branch --show-current)" — resolved later
+            elif BRANCH_SUBST_RE.match(w.raw) or (w.raw.startswith('"') and not h.startswith("-")
+                                                   and not h.startswith("+")):
+                # "$(git branch --show-current)" (resolved later) or a quoted "$BRANCH": one
+                # word, so not a flag — but its destination is unknown.
+                pi.positionals.append(w)
             elif not prev_takes_value:
                 pi.wild = True
                 pi.positionals.append(w)
@@ -1261,6 +1272,7 @@ class PatSeg(object):
         self.sep = sep
         self.git = parse_git(args) if name == "git" else None
         self.core = runner_core(name, args) if name != "git" else None
+        self.prefix_only = False
 
 
 class Pattern(object):
@@ -1279,6 +1291,12 @@ class Pattern(object):
                 words.pop(0)
             argv = strip_prefixes(words)[0]
             if not argv:
+                if not words or words[0].dynamic:
+                    continue
+                argv = words           # a wrapper-only pattern such as `sudo`
+                ps = PatSeg(cmd_name(argv[0].value), argv[1:], s.sep)
+                ps.prefix_only = True
+                self.segs.append(ps)
                 continue
             self.segs.append(PatSeg(cmd_name(argv[0].value), argv[1:], s.sep))
 
@@ -1345,6 +1363,25 @@ def runner_core(name, args, depth=0):
     return deeper or (inner, rest)
 
 
+WRAPPERS = {"docker", "podman", "nerdctl", "docker-compose", "kubectl", "oc", "lima", "colima"}
+
+
+def wrapper_cores(name, args):
+    """Container wrappers (`docker compose exec api node ace …`, `kubectl exec pod -- psql`)
+    run a command given as later words: try a pattern at every later static word."""
+    if name not in WRAPPERS:
+        return []
+    out = []
+    for k, w in enumerate(args):
+        if w.dynamic or w.value.startswith("-"):
+            continue
+        out.append((cmd_name(w.value), args[k + 1:]))
+        core = runner_core(cmd_name(w.value), args[k + 1:])
+        if core:
+            out.append(core)
+    return out[:40]
+
+
 def short_flags(v):
     return ["-" + c for c in v[1:]]
 
@@ -1391,6 +1428,17 @@ def is_wildcard(tokens, idx):
         if is_flag_word(p) and "=" not in p.value:
             return False
     return True
+
+
+def wild_flag(tokens, idx):
+    """A run-time word that could expand to flags: unquoted (field splitting) or visibly
+    starting with `-`, and not after `--`."""
+    if not is_wildcard(tokens, idx):
+        return False
+    if any(not t.dynamic and t.value == "--" for t in tokens[:idx]):
+        return False
+    w = tokens[idx]
+    return not w.raw.startswith('"') or w.head.startswith("-")
 
 
 def pos_match(ppos, tokens, eq):
@@ -1440,7 +1488,7 @@ def match_args(pargs, cargs, git=False, aliases=None, eq=None):
     if res is None:
         return None
     cflags = flag_names(cargs, aliases)
-    wild = any(is_wildcard(cargs, k) for k in range(len(cargs)))
+    wild = any(wild_flag(cargs, k) for k in range(len(cargs)))
     for pf in pflags:
         need = flag_names([pf], aliases)
         for f in need:
@@ -1515,6 +1563,20 @@ SPAWN_RE = {
                      r"\bshell_exec\b|\bpassthru\b|\bproc_open\b"),
 }
 STRING_LIT_RE = re.compile(r"'((?:[^'\\]|\\.)*)'|\"((?:[^\"\\]|\\.)*)\"")
+PROTECTED_BASENAMES = {"gate-config.json", "preflight.ok", "settings.json", "settings.local.json",
+                      "cohorte-gate.py", "pipeline.json", ".claude", ".cohorte", "hooks", "~", "",
+                      ".", ".."}
+
+
+def suspicious(tail, raw):
+    """For a path the gate can't resolve: could it name a protected file? Its static tail
+    decides — `…/.claude/pipeline-metrics.jsonl` can't, `$DIR/.claude/settings.json` can."""
+    base = os.path.basename(tail.rstrip("/")) if tail else ""
+    if tail and "/" in tail and base not in PROTECTED_BASENAMES and not tail.endswith("/"):
+        return False
+    return bool(PROTECTED_HINT_RE.search(raw))
+
+
 MAX_DEPTH = 6
 WRITE_OPS = {">", ">>", ">|", "&>", "&>>", "<>"}
 
@@ -1558,6 +1620,8 @@ class Inv(object):
         self.push_touches = False
         self.push_unknown = False
         self.core = None
+        self.cores = []
+        self.prefixes = []
 
 
 def short(text, n=90):
@@ -1665,6 +1729,7 @@ class Analyzer(object):
         if words and words[-1].value == "}" and not words[-1].quoted:
             words.pop()
         argv, assigns, env_s, relocated, lookup = strip_prefixes(words)
+        prefixes = list(PREFIXES_SEEN)
         seg_unknown = relocated
         if GIT_ENV_VARS.intersection(assigns):
             state.sticky = True
@@ -1684,6 +1749,7 @@ class Analyzer(object):
         name = cmd_name(cmd.value)
         args = argv[1:]
         inv = Inv(name, args, seg)
+        inv.prefixes = prefixes
 
         if name == "git":
             g = self.expand_git(args, state, depth)
@@ -1698,6 +1764,7 @@ class Analyzer(object):
                 self.opaque("git's arguments are computed at run time", seg.text)
         else:
             inv.core = runner_core(name, args)
+            inv.cores = wrapper_cores(name, args)
 
         here_unknown = seg_unknown or state.sticky or not state.cwd_known
         if inv.git and inv.git.sub == "push":
@@ -1850,6 +1917,8 @@ class Analyzer(object):
     def match_inv(self, pat_seg, inv):
         if inv is None:
             return None
+        if pat_seg.prefix_only:
+            return "match" if (pat_seg.name in inv.prefixes or pat_seg.name == inv.name) else None
         if pat_seg.name == "git":
             if inv.name != "git" or inv.git is None:
                 return None
@@ -1864,7 +1933,7 @@ class Analyzer(object):
                 return match_push(pat_seg.git.args, g.args, inv.push)
             return match_args(pat_seg.git.args, g.args, git=True)
         best = None
-        cands = [(inv.name, inv.args)] + ([inv.core] if inv.core else [])
+        cands = [(inv.name, inv.args)] + ([inv.core] if inv.core else []) + inv.cores
         pcands = [(pat_seg.name, pat_seg.args)] + ([pat_seg.core] if pat_seg.core else [])
         for pn, pa in pcands:
             for cn, ca in cands:
@@ -2028,6 +2097,21 @@ class Analyzer(object):
                         self.opaque("an alias is defined from a run-time value", a.raw)
                     elif val:
                         self.analyze_text(val, state.copy(), depth + 1)
+            return
+        if name in ("ssh", "mosh"):
+            k = 0
+            with_arg = set("-b -c -D -E -e -F -I -i -J -L -l -m -O -o -p -Q -R -S -W -w -B".split())
+            while k < len(args) and args[k].value.startswith("-") and not args[k].dynamic:
+                k += 2 if args[k].value in with_arg else 1
+            rest = args[k + 1:]
+            if rest:
+                remote = state.copy()
+                remote.cwd_known = False
+                remote.sticky = True
+                if any(a.dynamic for a in rest):
+                    self.opaque("`ssh` runs a remote command built at run time", seg.text)
+                else:
+                    self.analyze_text(" ".join(a.value for a in rest), remote, depth + 1)
             return
         if name in ("npx", "bunx", "pnpx"):
             for k, a in enumerate(args):
@@ -2224,14 +2308,14 @@ class Analyzer(object):
                 if val:
                     t = t.replace("${%s}" % var, val).replace("$" + var, val)
             if "$" in t or "`" in t or "'" in t or '"' in t or "\\" in t:
-                return "suspect" if PROTECTED_HINT_RE.search(w.raw) else None
+                return "suspect" if suspicious(w.value.split(DYN)[-1], w.raw) else None
             w = static_word(t)
         v = os.path.expanduser(w.value)
         if not v:
             return None
         if not os.path.isabs(v):
             if relocated or not state.cwd_known:
-                return "suspect" if PROTECTED_HINT_RE.search(v) else None
+                return "suspect" if suspicious(v, v) else None
             v = os.path.join(state.cwd, v)
         prot = ctx.delete_protected if mode in ("delete", "recursive", "chmod") else ctx.protected
         targets = [v]
@@ -2436,10 +2520,10 @@ class Analyzer(object):
         t = w.raw
         if len(t) >= 2 and t[0] == t[-1] == '"':
             t = t[1:-1]
-        for var, val in (("CLAUDE_PROJECT_DIR", os.environ.get("CLAUDE_PROJECT_DIR")),
-                         ("HOME", os.path.expanduser("~"))):
-            if val:
-                t = t.replace("${%s}" % var, val).replace("$" + var, val)
+        # Only $HOME: CLAUDE_PROJECT_DIR is set for hooks but usually NOT in the agent's
+        # Bash call, so resolving it here could judge the branch in the wrong directory.
+        val = os.path.expanduser("~")
+        t = t.replace("${HOME}", val).replace("$HOME", val)
         if "$" in t or "`" in t or "'" in t or '"' in t or "\\" in t:
             return None
         return t
@@ -2794,10 +2878,14 @@ def main():
     if argv and argv[0] in ("--check", "--check-dispatch"):
         return check_cli(argv)
     try:
-        raw = sys.stdin.read()
-    except Exception:
-        raw = ""
-    return hook(raw)
+        data = sys.stdin.buffer.read()
+    except Exception as e:
+        # Could not even read the call: refuse it in an active project (fail closed).
+        if is_active_fallback():
+            emit("deny", "Cohorte gate: the hook payload could not be read (%s) — refused for "
+                 "safety (fail closed)." % type(e).__name__)
+        return 0
+    return hook(data.decode("utf-8", errors="replace"))
 
 
 if __name__ == "__main__":
