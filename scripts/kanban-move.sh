@@ -229,34 +229,45 @@ fi
 [ -f "$board" ] || { echo "error: board not found: $board" >&2; exit 3; }
 
 # Serialize the read-modify-write: parallel worktrees (/cohorte-fleet, the loop workflow) move
-# cards on ONE board, and two concurrent rewrites used to lose one of the moves. `mkdir` is
-# atomic on every filesystem, so it is the lock; the holder writes its PID inside. A lock is
-# stale only when that PID is gone (a crashed writer) — never by age: an mtime test (`find
-# -mmin`) misfired on CI runners and broke live locks, letting two writers in at once.
+# cards on ONE board, and two concurrent rewrites used to lose one of the moves.
+# Where flock(1) exists (Linux), the kernel holds the lock and drops it if we die; the lock file
+# lives in $TMPDIR keyed by the board's path, never next to the board in the human's vault.
+# Elsewhere (macOS has no flock) an atomic `mkdir` is the lock and the holder's PID marks it: a
+# lock is stale only when that process is gone, never by age. COHORTE_KANBAN_NO_FLOCK=1 forces
+# the fallback (tests).
 lock="${board}.lock"
-waited=0
-until mkdir "$lock" 2>/dev/null; do
-  holder=$(cat "$lock/pid" 2>/dev/null || true)
-  if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; then
-    # Dead holder. Remove only if it is still THAT lock (another waiter may have replaced it).
-    if [ "$(cat "$lock/pid" 2>/dev/null || true)" = "$holder" ]; then
-      rm -f "$lock/pid"; rmdir "$lock" 2>/dev/null || true
-    fi
-    continue
-  fi
-  waited=$((waited + 1))
-  if [ "$waited" -gt 300 ]; then
-    echo "error: board is locked by another move ($lock, pid ${holder:-?}) — retry, or remove the lock if no move is running" >&2
+if [ -z "${COHORTE_KANBAN_NO_FLOCK:-}" ] && command -v flock >/dev/null 2>&1; then
+  flockfile="${TMPDIR:-/tmp}/cohorte-kanban-$(printf '%s' "$board" | cksum | cut -d' ' -f1).lock"
+  exec 9>"$flockfile"
+  if ! flock -w 30 9; then
+    echo "error: board is locked by another move ($flockfile) — retry" >&2
     exit 4
   fi
-  sleep 0.1 2>/dev/null || sleep 1
-done
-echo $$ > "$lock/pid"
-# Release only our own lock, and never let the release change the exit status.
-release() { [ "$(cat "$lock/pid" 2>/dev/null || true)" = "$$" ] && { rm -f "$lock/pid"; rmdir "$lock" 2>/dev/null; }; return 0; }
-trap release EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM
+else
+  waited=0
+  until mkdir "$lock" 2>/dev/null; do
+    holder=$(cat "$lock/pid" 2>/dev/null || true)
+    if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; then
+      # Dead holder. Remove only if it is still THAT lock (another waiter may have replaced it).
+      if [ "$(cat "$lock/pid" 2>/dev/null || true)" = "$holder" ]; then
+        rm -f "$lock/pid"; rmdir "$lock" 2>/dev/null || true
+      fi
+      continue
+    fi
+    waited=$((waited + 1))
+    if [ "$waited" -gt 300 ]; then
+      echo "error: board is locked by another move ($lock, pid ${holder:-?}) — retry, or remove the lock if no move is running" >&2
+      exit 4
+    fi
+    sleep 0.1 2>/dev/null || sleep 1
+  done
+  echo $$ > "$lock/pid"
+  # Release only our own lock, and never let the release change the exit status.
+  release() { [ "$(cat "$lock/pid" 2>/dev/null || true)" = "$$" ] && { rm -f "$lock/pid"; rmdir "$lock" 2>/dev/null; }; return 0; }
+  trap release EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+fi
 
 tmp="${board}.kanban-move.$$"
 ID="$id" COL="$col" PR="$pr" TITLE="${title:-$id}" awk '
