@@ -109,7 +109,7 @@ One-time per project, interactive, in five steps:
 Then commit what it lists:
 
 ```sh
-git add PIPELINE.md CLAUDE.md .claude .gitignore specs .mcp.json
+git add PIPELINE.md CLAUDE.md .claude .gitignore specs   # + .mcp.json and scripts/ if init wrote them
 git commit -m "chore: set up cohorte pipeline"
 ```
 

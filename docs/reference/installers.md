@@ -7,12 +7,15 @@ describes a project lives in that project and is committed with it.
 | --- | --- | --- |
 | `npm i -g cohorte && cohorte install` | Node ≥ 20 + npm | **The documented route.** Puts the `cohorte` binary on `PATH`. |
 | `npx cohorte@latest install` | Node ≥ 20 + npm | Same CLI, run once from the npm cache; leaves no binary behind. |
-| `install.sh` (curl … \| sh) | Node ≥ 20, `git`, POSIX sh | A thin wrapper: clones the **latest release tag** (never the tip of `main`) and runs its `bin/cli.js install`. From a checkout, installs that working tree. |
-| `install.ps1` (irm … \| iex) | Node ≥ 20, `git`, Windows PowerShell 5.1+ / PowerShell 7 | Same wrapper for Windows. Its Node version probe parses `node --version`, so it works on PowerShell 5.1. |
+| `install.sh` (curl … \| sh) | Node ≥ 20, `git`, POSIX sh | A thin wrapper: clones the **latest release tag** (never the tip of `main`) into a temp dir and runs its `bin/cli.js install`. From a checkout, installs that working tree. Leaves no `cohorte` binary on `PATH`. |
+| `install.ps1` (irm … \| iex) | Node ≥ 20, `git`, Windows PowerShell 5.1+ / PowerShell 7 | Same wrapper for Windows. Its Node version probe parses `node --version`, so it works on PowerShell 5.1. Leaves no binary either. |
 
 There is no Node-free install: both scripts check for Node ≥ 20 and stop with the npm command
 if it is missing. They exist for machines where you would rather not install a global npm
-package; they lay down exactly what the CLI lays down, because they *are* the CLI.
+package; they lay down exactly what the CLI lays down, because they *are* the CLI. Without the
+global binary, run the other verbs as `npx cohorte@latest doctor | sync | uninstall …` — the
+commands themselves call `sync` through `node ~/.claude/cohorte/lib/project.js`, so they don't need
+it.
 
 ## Commands
 
@@ -151,11 +154,12 @@ first. **Restart Claude Code** afterwards: commands and agents are scanned at se
 
 ### The version check
 
-`cohorte install`, `update` and `doctor` make one read-only lookup of the latest published
+`cohorte install`, `update` and `sync` end with one read-only lookup of the latest published
 version on `registry.npmjs.org`, and tell you when the CLI you ran is behind
-(`npm i -g cohorte@latest`, or `npx cohorte@latest …` when run through npx). It is skipped under
-`CI` and turned off by `COHORTE_NO_VERSION_CHECK=1`. Nothing else leaves your machine — there is
-no telemetry.
+(`npm i -g cohorte@latest`, or `npx cohorte@latest …` when run through npx) — skipped under `CI`.
+`cohorte doctor` makes the same lookup to report the "behind npm" line, under `CI` too.
+`COHORTE_NO_VERSION_CHECK=1` turns all of them off. That lookup is the only network call the CLI
+makes — there is no telemetry.
 
 ### Why `npm i -g`, not `npx`
 
