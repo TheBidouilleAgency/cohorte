@@ -73,6 +73,29 @@ jobs:
       - name: Metrics collector
         run: node scripts/test-metrics.mjs
 
+      # install.ps1 runs on Windows PowerShell 5.1 AND PowerShell 7; 5.1 mangles native-argument
+      # quoting (the 2.x Node probe reported every Node as v0 there), so run both.
+      - name: install.ps1 under Windows PowerShell 5.1
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $env:CLAUDE_CONFIG_DIR = Join-Path $env:RUNNER_TEMP 'coh-ps51'
+          $env:COHORTE_NO_VERSION_CHECK = '1'
+          .\install.ps1
+          if ($LASTEXITCODE -ne 0) { throw "install.ps1 exited $LASTEXITCODE" }
+          $v = (Get-Content (Join-Path $env:CLAUDE_CONFIG_DIR 'cohorte\pipeline\VERSION')).Trim()
+          if ($v -ne (node -p "require('./package.json').version")) { throw "VERSION is '$v'" }
+
+      - name: install.ps1 under PowerShell 7
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:CLAUDE_CONFIG_DIR = Join-Path $env:RUNNER_TEMP 'coh-pwsh'
+          $env:COHORTE_NO_VERSION_CHECK = '1'
+          .\install.ps1 -Update
+          if ($LASTEXITCODE -ne 0) { throw "install.ps1 exited $LASTEXITCODE" }
+          if (-not (Test-Path (Join-Path $env:CLAUDE_CONFIG_DIR 'commands\cohorte-build.md'))) { throw 'no commands installed' }
+
   package:
     # The tarball is the release artifact: assert what it does and does NOT carry. `.npmignore`
     # is inert under an explicit package.json `files` allowlist — only its negations work.

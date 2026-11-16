@@ -382,6 +382,14 @@ console.log("gate.py — config validation");
     const t = run(dispatch("cohorte-review", d), { projectDir: d });
     check(`invalid config (${label}) ⇒ dispatches ask`, t.decision === "ask", t.decision);
   }
+  // 3.0 renamed review → cohorte-review. A 2.x gate-config.json lists the bare name explicitly;
+  // without the alias every migrated repo silently lost its phase gate.
+  for (const [listed, sent] of [[["review"], "cohorte-review"], [["cohorte-review"], "review"]]) {
+    const d = scratch(); writeConfig(d, { preflight: { enabled: true, agents: listed } }); gitRepo(d, "feat");
+    const r = run(dispatch(sent, d), { projectDir: d });
+    check(`preflight.agents ${JSON.stringify(listed)} still gates a ${sent} dispatch (renamed agents alias)`,
+      r.decision === "ask", `${r.decision}: ${r.reason}`);
+  }
   // Legacy .cohorte/gate-config.json: read only as a fallback, unioned when both exist.
   const leg = scratch({ config: { deny: ["make a"] } }); gitRepo(leg, "feat");
   mkdirSync(join(leg, ".cohorte")); writeFileSync(join(leg, ".cohorte", "gate-config.json"), JSON.stringify({ deny: ["make b"] }));

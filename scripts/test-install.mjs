@@ -197,8 +197,15 @@ console.log("update — migrates a 2.x global install");
     { matcher: "Bash", hooks: [{ type: "command", command: "python3 ~/tools/gate.py" }] },
   ] } }, null, 2));
 
+  // Claude Code's project list: one 2.x global-mode repo (pointer, no 3.x gate), one unrelated.
+  const p2x = scratch("cohorte-2x-proj-");
+  write(join(p2x, ".claude/pipeline.json"), JSON.stringify({ pipeline: "cohorte", mode: "global" }));
+  const other = scratch("cohorte-other-");
+  write(join(sb.home, ".claude.json"), JSON.stringify({ projects: { [p2x]: {}, [other]: {} } }));
   const r = cli(sb, "update");
   check("exits 0", r.status === 0, r.out);
+  check("warns that 2.x projects are ungated until synced, naming the known one",
+    /NO gate until you wire them/.test(r.out) && r.out.includes(p2x) && !r.out.includes(other), r.out);
   const s = JSON.parse(read(join(sb.g, "settings.json")));
   const cmds = (s.hooks.PreToolUse || []).flatMap((g) => g.hooks.map((h) => h.command));
   check("the 2.x machine-wide gate registration is gone", !cmds.some((c) => c.includes(gatePath)), JSON.stringify(cmds));
@@ -300,6 +307,40 @@ console.log("sync — wires one project");
     env: { ...process.env, CLAUDE_PROJECT_DIR: d }, encoding: "utf8",
   });
   check("the committed gate runs and lets `ls` through", g.status === 0 && !/deny/.test(g.stdout || ""), (g.stderr || "") + (g.stdout || ""));
+
+  // What Claude Code actually runs is the STRING in settings.json, through a shell, with
+  // CLAUDE_PROJECT_DIR set and the payload on stdin — from whatever cwd the session is in.
+  // With onFailure: block, a crash on any payload shape would block every call of that kind.
+  if (!WIN) {
+    const spaced = join(scratch("cohorte-sp-"), "with space", "proj");
+    mkdirSync(spaced, { recursive: true });
+    spawnSync("git", ["-C", spaced, "init", "-q", "-b", "main"]);
+    cli(sb, "sync", spaced);
+    write(join(spaced, ".claude/gate-config.json"), JSON.stringify({ deny: ["git push --force"] }));
+    const reg = Object.fromEntries(JSON.parse(read(join(spaced, ".claude/settings.json"))).hooks.PreToolUse
+      .map((g) => [g.matcher, g.hooks[0].command]));
+    const hook = (matcher, tool_name, tool_input) => {
+      const r = spawnSync("sh", ["-c", reg[matcher]], {
+        input: JSON.stringify({ tool_name, tool_input, cwd: tmpdir(), hook_event_name: "PreToolUse", permission_mode: "default" }),
+        env: { ...process.env, CLAUDE_PROJECT_DIR: spaced }, cwd: tmpdir(), encoding: "utf8",
+      });
+      const out = (r.stdout || "").trim();
+      return { status: r.status, decision: out ? JSON.parse(out).hookSpecificOutput.permissionDecision : "allow", err: r.stderr };
+    };
+    const cases = [
+      ["Bash|Task|Agent", "Bash", { command: "ls" }, "allow"],
+      ["Bash|Task|Agent", "Bash", { command: "git push --force" }, "deny"],
+      ["Bash|Task|Agent", "Agent", { subagent_type: "backend", prompt: "x" }, "allow"],
+      ["Write|Edit|MultiEdit", "Write", { file_path: join(spaced, "src/a.ts"), content: "x" }, "allow"],
+      ["Write|Edit|MultiEdit", "MultiEdit", { file_path: join(spaced, "src/a.ts"), edits: [{ old_string: "a", new_string: "b" }] }, "allow"],
+      ["Write|Edit|MultiEdit", "Edit", { file_path: join(spaced, ".claude/gate-config.json"), old_string: "a", new_string: "b" }, "ask"],
+    ];
+    for (const [m, tool, input, want] of cases) {
+      const r = hook(m, tool, input);
+      check(`registered command, path with a space, foreign cwd: ${tool} ${want}`,
+        r.status === 0 && r.decision === want, `rc=${r.status} ${r.decision} ${r.err}`);
+    }
+  }
 
   // Broken settings: abort, untouched.
   const broken = '{"hooks": {,}}';

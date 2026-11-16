@@ -1041,6 +1041,19 @@ def normalize_ref(name):
 
 # ── config ───────────────────────────────────────────────────────────────────
 DEFAULT_AGENTS = ["cohorte-review", "review"]
+RENAMED_AGENTS = {"review": "cohorte-review", "release": "cohorte-release",
+                  "profile-reader": "cohorte-profile-reader"}
+
+
+def _with_renamed_aliases(agents):
+    """Every listed agent plus its 2.x/3.x counterpart, order kept, no duplicates."""
+    out = []
+    reverse = {v: k for k, v in RENAMED_AGENTS.items()}
+    for a in agents:
+        for name in (a, RENAMED_AGENTS.get(a), reverse.get(a)):
+            if name and name not in out:
+                out.append(name)
+    return out
 
 
 class ConfigError(Exception):
@@ -1095,6 +1108,10 @@ def validate_config(obj, path, warnings):
             if not isinstance(agents, list) or not all(isinstance(a, str) for a in agents):
                 raise ConfigError("`preflight.agents` must be a list of strings")
             agents = [a.strip() for a in agents if a.strip()] or list(DEFAULT_AGENTS)
+        # 3.0 renamed the fixed agents (review → cohorte-review …). A 2.x gate-config.json lists
+        # the bare names explicitly, so gate both spellings or every migrated repo silently
+        # loses its phase gate.
+        agents = _with_renamed_aliases(agents)
         age = pf.get("max_age_minutes", 30)
         if age is None:
             age = 30
