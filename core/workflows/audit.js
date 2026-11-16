@@ -3,7 +3,7 @@
 //
 // Invoke with args = {target: "<path or domain>"} (optional — default whole repo).
 //
-// Shape (SCHEMA.md §Workflows): profile via profile-reader (phase 0), the
+// Shape (profile/schema/workflows.md): profile via profile-reader (phase 0), the
 // mechanical gates staged to disk by one haiku agent, then ONE auditor per
 // domain (each surface + `shared`) running concurrently — the runtime caps
 // concurrency at 20 (CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS since 2026-08), extra
@@ -180,7 +180,7 @@ const gates = await agent(
   { model: 'haiku', label: 'gates', schema: GATES, effort: 'low' },
 )
 // A dead gates agent is NOT "zero mechanical failures" — silence would read as the
-// cleanest possible inventory from a phase that never ran (SCHEMA.md §Dead agents).
+// cleanest possible inventory from a phase that never ran (profile/schema/dead-agents.md).
 // The domain auditors still run (they read the staged gates file, which then simply
 // isn't there), but the run must say the mechanical sweep is uncovered.
 const gatesCovered = gates != null

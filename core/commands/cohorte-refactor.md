@@ -8,7 +8,7 @@ You are the **lead**. Refactor domain **$ARGUMENTS** to match `PIPELINE.md`, usi
 
 > Read `PIPELINE.md` §`surfaces` (map the domain → a surface + its agent + commands) and §`contract`.
 >
-> **Workflow variant** (opt-in — SCHEMA.md §Workflows): for BIG domains (many open backlog items
+> **Workflow variant** (opt-in — `<core>/pipeline/schema/workflows.md`): for BIG domains (many open backlog items
 > across several surfaces), on Claude Code ≥ 2.1.154 with workflows enabled, the human can ask to
 > "run the refactor workflow" (`<core>/workflows/refactor.js`). For a handful of items this
 > conversational path is cheaper — and it stays the default and the fallback.
@@ -49,7 +49,7 @@ slices import it, so refactor it alone, first.
 ## 3. Verify & loop
 
 After each agent returns: its surface's `test_quiet_cmd`/`lint_quiet_cmd` (else the `tail -40`
-fallback — SCHEMA.md §Output discipline), `commands.typecheck`, `commands.format --check` (redirect
+fallback — `<core>/pipeline/schema/output-discipline.md`), `commands.typecheck`, `commands.format --check` (redirect
 output to a file and grep it — don't print gate output into your context). Then verify each backlog item cleared by checking its `file:line` directly — do NOT re-run
 `/cohorte-audit` per round (that repeats the repo-wide gates + a review dispatch you don't need); one optional
 final `/cohorte-audit` once ALL dispatched domains are clean is enough. Check cleared items off in

@@ -51,10 +51,10 @@ skip silently.
 ## 3.5 Reconcile this repo's generated files
 
 Only when the current repo has a `PIPELINE.md`: run the **Reconcile procedure** from the installed
-`pipeline/SCHEMA.md` §Reconcile — top up the profile's machine block with new fields at their defaults
+`<core>/pipeline/schema/reconcile.md` — top up the profile's machine block with new fields at their defaults
 (one batched question set for any genuinely new human decision — e.g. choosing a `retrieval` provider,
 or the **quiet command variants**: `test_quiet_cmd`/`lint_quiet_cmd` + `commands.test_quiet`/
-`lint_quiet`, proposing the detected bridled forms per §Output discipline; `gate.preflight` tops up
+`lint_quiet`, proposing the detected bridled forms per `<core>/pipeline/schema/output-discipline.md`; `gate.preflight` tops up
 silently at its defaults), re-render the surface agents from the current `implementer.template.md`
 (this refreshes each agent's **baked §Conventions slice** — required after any hand-edit of the
 profile's prose).
@@ -63,7 +63,7 @@ block and the workflow-agent `allow` entries from init step 5) — never the gat
 owns those — and run any newly-added capability's wiring (e.g. Serena's project-scope `claude mcp add`).
 Verify the refreshed core actually carries `<workflows>/cohorte-review.js` + `<fixed-agents>/cohorte-profile-reader.md`
 — missing means the update half-ran: re-run `cohorte update`. Even when no capability is new, **re-run the retrieval provider's
-health check** (SCHEMA.md §Code retrieval: CLI resolvable from PATH, `.mcp.json` entry present —
+health check** (`<core>/pipeline/schema/retrieval.md`: CLI resolvable from PATH, `.mcp.json` entry present —
 upgrading a bare `serena` entry to the PATH-proof launcher form, `.serena/` gitignored, server
 actually connected) and repair whatever fails — wiring that worked at
 init can rot (PATH changes, uninstalls, hand-edits). Report what was reconciled; if nothing was
@@ -91,7 +91,7 @@ Four of the §Reconcile steps matter specifically here:
 - **Kanban sync** (§Reconcile step 6): resolve this project's board with
   `<core>/pipeline/scripts/kanban-move.sh --check` — it prints either the board path or the exact
   missing link. **Not linked** → offer to link/create a board (confirm the vault + `<folder>/Tasks.md`,
-  write the `boards` entry, create the board file per §Kanban). **Linked** → verify the board file
+  write the `boards` entry, create the board file per `<core>/pipeline/schema/kanban.md`). **Linked** → verify the board file
   exists (recreate if the human confirms) and its columns match `kanban.columns` (repair drift). Either
   way, run the §Kanban **full sync/backfill** from `specs/*.md` — one
   `kanban-move.sh auto <id> <stage>` per spec, `<stage>` from the status mapping — this is what adds

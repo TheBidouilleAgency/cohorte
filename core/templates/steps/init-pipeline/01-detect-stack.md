@@ -17,8 +17,7 @@ Gather evidence, then summarize what you found. Look for:
 - **Split candidates (sub-surface boundaries):** inside each surface, look for a clean internal partition
   — feature modules (`src/features/*`, `src/modules/*`, `app/(group)/*`), or independent services
   (`services/*`, domain folders). Note the surface's rough size (module/file count) so a *large* surface
-  with a *clean* boundary can be proposed as several specialized surfaces in Phase 2. See SCHEMA.md
-  §"Specialization — when to split one surface into more agents" for the heuristic. Don't split yet — just
+  with a *clean* boundary can be proposed as several specialized surfaces in Phase 2. See `<core>/pipeline/schema/specialization.md` for the heuristic. Don't split yet — just
   flag candidates + their would-be shared-code tree.
 - **Per-surface commands:** derive `test`/`lint`/`format`/`typecheck`/`build` from each surface's
   `package.json` scripts + the workspace filter syntax (e.g. `pnpm --filter <pkg> test`).
@@ -33,7 +32,7 @@ Gather evidence, then summarize what you found. Look for:
 - **Design system:** an existing `design-reference/` snapshot, `components/ui`, a DesignSync MCP
   connection, Figma links, or none.
 - **Code retrieval:** is the `serena` CLI resolvable (`command -v serena`)? If not, does
-  `~/.local/bin/serena` exist anyway — installed but PATH-broken (see SCHEMA.md §Code retrieval)?
+  `~/.local/bin/serena` exist anyway — installed but PATH-broken (see `<core>/pipeline/schema/retrieval.md`)?
   `graphify`? Is either already registered in this repo's `.mcp.json` or `claude mcp list`? (Feeds
   the retrieval question + Phase 4 wiring — default provider is `serena`.)
 - **VCS:** `git remote -v` → host + `owner/repo`; the default branch (`git symbolic-ref refs/remotes/origin/HEAD` or `git branch`).

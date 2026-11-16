@@ -9,13 +9,13 @@ You are the **lead**. Dispatch the review for feature **$ARGUMENTS**.
 > Read `PIPELINE.md` §`vcs.default_branch` (diff base) and the `surfaces`/`contract`/`commands` fields.
 > _Skip the re-read if it's already in your context this session and unmodified since._
 >
-> **Kanban** (SCHEMA.md §Kanban): run
+> **Kanban** (`<core>/pipeline/schema/kanban.md`): run
 > `<core>/pipeline/scripts/kanban-move.sh auto $ARGUMENTS review`. `auto` resolves the board from the config itself and
 > exits 0 with a `kanban: <reason>` line when there is none — so **never decide "no board is
 > configured" without running it**. _(PR mode — `--pr` below — skips this entirely: an incoming
 > PR is not a pipeline feature and has no card.)_
 >
-> **Workflow variant** (opt-in — SCHEMA.md §Workflows): on Claude Code ≥ 2.1.154 with workflows
+> **Workflow variant** (opt-in — `<core>/pipeline/schema/workflows.md`): on Claude Code ≥ 2.1.154 with workflows
 > enabled, the human can ask to "run the review workflow" (`<core>/workflows/review.js`) instead.
 > This conversational path stays the default and the fallback; `/cohorte-doctor` shows which is available.
 
@@ -47,7 +47,7 @@ metrics line needs it:
   `{"id":"$ARGUMENTS","phase":"review","ts":"<ISO>","aborted":"preflight","verdict":"BLOCK","blocking":null}`
   → `specs/reports/$ARGUMENTS.verdict.json`. One `printf`, in the same Bash call.
 - **Zero exit** ⇒ it stamped `<state>/preflight.ok`, which the gate hook checks before letting
-  `cohorte-review` dispatches through (SCHEMA.md §Preflight). Continue.
+  `cohorte-review` dispatches through (`<core>/pipeline/schema/preflight.md`). Continue.
 - Script absent (older core) ⇒ run the three commands yourself, each redirected into
   `specs/reports/$ARGUMENTS.preflight.txt`, aborting on the first failure the same way.
 
@@ -55,7 +55,7 @@ metrics line needs it:
 
 - Confirm `specs/$ARGUMENTS.md` exists.
 - **Every diff comes from `<core>/pipeline/scripts/feature-diff.sh`, never a bare `git diff`**
-  (SCHEMA.md §Feature diff): feature work is uncommitted until ship, and `git diff <ref>` drops
+  (`<core>/pipeline/schema/feature-diff.md`): feature work is uncommitted until ship, and `git diff <ref>` drops
   every untracked file and diffs against the branch tip, not the merge-base. Non-zero exit ⇒ **stop
   and relay it** (exit 3 = base unresolvable); script absent ⇒ stop (`cohorte update`). Never fall
   back to `git diff`.
@@ -102,7 +102,7 @@ which sits at the END so every repeat hits the prompt-cache prefix:
 
 ## 3. Merge & relay the verdict
 
-**Roll call FIRST — a dead reviewer is not a clean surface** (SCHEMA.md §Dead agents: its zero
+**Roll call FIRST — a dead reviewer is not a clean surface** (`<core>/pipeline/schema/dead-agents.md`: its zero
 findings are byte-identical to a clean surface's). Every surface dispatched in §2 must come back
 with a REVIEW REPORT:
 

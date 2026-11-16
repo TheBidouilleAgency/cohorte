@@ -33,8 +33,8 @@
 // review. scripts/test-workflows.mjs stubs workflow() to pin both paths.
 //
 // NOTE for unattended runs: workflow subagents run in acceptEdits whatever the session
-// mode, so hooks/gate.py is the only brake on file edits for the whole run (SCHEMA.md
-// §Preflight) — and in bypassPermissions its asks escalate to hard denies.
+// mode, so hooks/gate.py is the only brake on file edits for the whole run
+// (profile/schema/preflight.md) — and in bypassPermissions its asks escalate to hard denies.
 
 export const meta = {
   name: 'cohorte-loop',
@@ -88,7 +88,7 @@ const TERMINAL = new Set(['treading-water', 'max-rounds', 'contract-change'])
 // ── The reducer — the whole design, as one pure function ─────────────────────
 // Evaluated in this order; the first match wins, and the order is load-bearing:
 //   1. A child abort (preflight red, dead stager) carries no coverage claim — relay it.
-//   2. `unreviewed` BEFORE `blocking`: SCHEMA.md §Dead agents — a dead reviewer makes
+//   2. `unreviewed` BEFORE `blocking`: profile/schema/dead-agents.md — a dead reviewer makes
 //      blocking == 0 a statement about code nobody read. Checked the other way round,
 //      the loop ships a feature whose reviewer crashed, silently and "successfully".
 //   3. blocking == 0 ⇒ ship. HIGH/MEDIUM/LOW never block (they route to the backlog)
@@ -247,7 +247,7 @@ const spent = () => {
 }
 
 // kanban-move.sh is optional infrastructure — every prompt that runs it defines <core>
-// and tolerates its absence, per SCHEMA.md §Kanban.
+// and tolerates its absence, per profile/schema/kanban.md.
 const CORE_DEF = '(<core> = "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/cohorte" — ' +
   'script absent ⇒ skip the kanban step, the board is optional.)'
 const METRICS_PATH = '$(dirname "$(git rev-parse --git-common-dir)")/.claude/pipeline-metrics.jsonl'
@@ -340,7 +340,7 @@ if (!['frozen', 'in-review', 'in-progress'].includes(status) && !blockedOk) {
     ? `spec is blocked by a finished loop run (reason: ${prevStop || 'unknown'}) — that stop needs a human: ` +
       `/cohorte-fix ${feature} for open Remediation items, or /cohorte-build ${feature} [--readiness-only] to re-enter; then re-run the loop`
     : `spec status is '${status || '(none)'}' — the loop needs frozen | in-review | in-progress ` +
-      `(SCHEMA.md §Spec status). draft ⇒ /cohorte-spec; shipped/merged ⇒ done already`)
+      `(profile/schema/spec-status.md). draft ⇒ /cohorte-spec; shipped/merged ⇒ done already`)
 }
 // 2. A fresh readiness verdict — the gate /cohorte-build §1.6 wrote. NOT-READY is the one
 //    outcome more passes cannot fix; stale-or-absent means nobody has judged THIS spec.
@@ -410,7 +410,7 @@ const dispatchPrompt = j =>
   'Readiness gaps for YOUR surface (§1.6 RESERVATIONS — the spec is silent here: implement the stated ' +
   `assumption and flag what you assumed in your handoff): ${j.gaps}.`
 
-// Dispatch + roll call, SCHEMA.md §Dead agents: parallel fan-out, then each silent
+// Dispatch + roll call, profile/schema/dead-agents.md: parallel fan-out, then each silent
 // surface retried ONCE, alone, byte-identical. Never a surface that answered.
 const dispatchSurfaces = async (jobs, phaseTitle) => {
   const tag = phaseTitle === 'Build' ? 'build' : 'fix'
@@ -470,7 +470,7 @@ const writeState = async ({ label, phaseName, outcome, reason, status: st, kanba
 }
 
 // Close the run: final loop.json + status + kanban, then the return object. Status
-// doctrine (SCHEMA.md §Spec status): `blocked` = a round gave up, reason named in
+// doctrine (profile/schema/spec-status.md): `blocked` = a round gave up, reason named in
 // loop.json; `in-review` = zero blocking, awaiting /cohorte-ship; precondition aborts
 // never stamped anything, so they change nothing here either. A RESUMABLE abort leaves
 // loop.json without `outcome` (phase kept, reason set), so the next invocation resumes at
@@ -519,7 +519,7 @@ if (fresh(facts.build) && !(facts.build.dead || []).length) {
   const built = await dispatchSurfaces(jobs, 'Build')
   const dead = built.filter(b => b.handoff == null).map(b => b.key)
   // Write build.json + the metrics line EVEN WHEN a surface died — an incomplete batch
-  // is exactly the batch worth recording (SCHEMA.md §Dead agents).
+  // is exactly the batch worth recording (profile/schema/dead-agents.md).
   await writeState({
     label: 'state:built', phaseName: dead.length ? 'build' : 'review',
     metrics: {
@@ -653,7 +653,7 @@ while (true) {
   const fixed = await dispatchSurfaces(fixJobs, 'Fix')
   const fixDead = fixed.filter(f => f.handoff == null).map(f => f.key)
   // The metrics line is written EVEN WHEN a surface died — an incomplete batch is
-  // exactly the batch worth recording (SCHEMA.md §Dead agents), so it lands before
+  // exactly the batch worth recording (profile/schema/dead-agents.md), so it lands before
   // the dead-implementers abort, with the dead surfaces named.
   await writeState({ label: `state:fixed-${round}`, phaseName: 'review', metrics: {
     phase: 'fix', tokens: Math.max(0, spent() - mark),

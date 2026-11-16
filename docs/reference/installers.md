@@ -58,6 +58,7 @@ network call (see [The version check](#the-version-check)).
 ~/.claude/cohorte/
   pipeline/      PIPELINE.template.md · SCHEMA.md · cohorte.config.template.yaml ·
                  implementer.template.md · CHANGELOG.md · VERSION
+    schema/      the rulebook, one file per topic (SCHEMA.md is its index)
     scripts/     preflight.sh · kanban-move.sh · new-feature.sh.template · remove-feature.sh.template
   templates/     handoff, review-feedback, spec, patch, design-brief, pr-body, brainstorm-return,
                  decisions + steps/init-pipeline/ (the router's step files)
@@ -313,7 +314,7 @@ lib/doctor.js           the JS port of /cohorte-doctor, + versions.js / yaml.js.
 install.sh, install.ps1 thin wrappers around bin/cli.js (Node required)
 core/                   rendered (commands, agents) or copied (the rest) into ~/.claude by install
   agents/ commands/ hooks/ templates/ workflows/
-profile/                PIPELINE.template.md · SCHEMA.md · cohorte.config.template.yaml
+profile/                PIPELINE.template.md · SCHEMA.md (index) · schema/ · cohorte.config.template.yaml
 scripts/                shipped preflight/kanban scripts, isolation templates, metrics, the test suites
 docs/                   this site (VitePress → GitHub Pages)
 ```

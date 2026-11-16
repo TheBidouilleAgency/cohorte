@@ -6,8 +6,7 @@
 2. **Wire it into `<memory>`:** if `<memory>` exists, ensure it references the profile (add a line
    near the top: `> Project profile & pipeline facts: **@PIPELINE.md**`). If not, create a minimal
    `<memory>` with that reference + a one-paragraph project intro.
-3. **Render one agent per surface** — for each surface, follow SCHEMA.md §"Rendering / reconciling a
-   surface agent" (steps 2–3): render `<agents>/<agent>.md` from the installer's
+3. **Render one agent per surface** — for each surface, follow `<core>/pipeline/schema/rendering.md` (steps 2–3): render `<agents>/<agent>.md` from the installer's
    `pipeline/implementer.template.md`, substituting `<SURFACE_AGENT>`, `<SURFACE_LABEL>`, `<SURFACE_PATH>`,
    `<SURFACE_TOOLS>`, `<SURFACE_MODEL>`, `<PROJECT_NAME>`, `<SURFACE_CONVENTIONS>` (the surface's
    baked convention slice — §Shared + its `### Surface:` stanza + its §Testing lines from the
@@ -42,20 +41,20 @@
      recommend the PATH fix (`uv tool update-shell`, or add `~/.local/bin` to the shell profile) for
      CLI use. Then register at **project scope** (committed `.mcp.json`, portable —
      `--project-from-cwd` resolves the project at server start) using the **PATH-proof launcher**
-     from SCHEMA.md §Code retrieval (`sh -c 'exec "$(command -v serena || echo
+     from `<core>/pipeline/schema/retrieval.md` (`sh -c 'exec "$(command -v serena || echo
      "$HOME/.local/bin/serena")" start-mcp-server …'` — a bare `serena` entry dies with ENOENT when
      Claude Code was launched from an environment without `~/.local/bin` on PATH; Windows-native
      teams use the bare form + PATH instead). If `.mcp.json` already has a bare `serena` entry,
      upgrade it to the launcher form rather than skipping. Add `.serena/` to the repo's `.gitignore`
      (per-machine cache/config Serena creates on first launch). On a large repo, offer the one-off
-     `serena project index`. Finish with the **health check** from SCHEMA.md §Code retrieval and
+     `serena project index`. Finish with the **health check** from `<core>/pipeline/schema/retrieval.md` and
      report each result — if the static checks pass but the server isn't connected in this session,
      say a session restart is needed; never report Serena wired on registration alone.
    - **graphify:** have the human install it (`uv tool install graphify` then `graphify install`),
      build the initial graph (`/graphify .`), and note it needs incremental rescans (`--update`) after
      big changes.
    - Either way the rendered agents already carry the provider's MCP tools in their `tools:` list
-     (step 3 / SCHEMA §Rendering); remind the human the new MCP server appears after a session restart.
+     (step 3 / `<core>/pipeline/schema/rendering.md`); remind the human the new MCP server appears after a session restart.
 7. **Render the isolation scripts** (if `isolation.enabled`) from the installer's
    `pipeline/scripts/*.template` to this repo's `scripts/new-feature.sh` and `scripts/remove-feature.sh`,
    substituting the `__TOKENS__` (project
@@ -81,7 +80,7 @@
     sibling workflow does if one exists. `/cohorte-ship` watches these checks before the merge.
 11. **Design system:** if `design.enabled` with a snapshot dir, note that `/cohorte-align-ds` is active; else the
     `/cohorte-align-ds` command will no-op with a clear message.
-12. **Kanban** (only if the human opted in at Phase 2): wire it per SCHEMA.md §Kanban, writing into the
+12. **Kanban** (only if the human opted in at Phase 2): wire it per `<core>/pipeline/schema/kanban.md`, writing into the
     **global** `<config>` (never into this repo — the board points at a
     personal vault). Create the file from `pipeline/cohorte.config.template.yaml` if absent; set
     `kanban.enabled: true` and `obsidian.vault_path` if it was empty. Add a `kanban.boards[<PIPELINE

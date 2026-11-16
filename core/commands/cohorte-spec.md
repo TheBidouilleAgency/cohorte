@@ -10,11 +10,11 @@ You run the **spec** step in the main thread — interactive, with the human. Pa
 > Read `PIPELINE.md` first: `contract` (mechanism/path — so §5 names the right schema types),
 > `design.enabled` (whether §8 matters), and §Conventions. Use `specs/_template.md` as the section list.
 >
-> **Decision journal** (SCHEMA.md §Decisions): read `specs/_decisions.md` §Live if it exists — one
+> **Decision journal** (`<core>/pipeline/schema/decisions.md`): read `specs/_decisions.md` §Live if it exists — one
 > line per standing decision, so it is cheap. It is the ONLY place the project's transverse rules
 > live; a spec that contradicts one silently un-decides it. Absent ⇒ nothing to honour yet.
 >
-> **Kanban** (SCHEMA.md §Kanban): when the spec opens, run
+> **Kanban** (`<core>/pipeline/schema/kanban.md`): when the spec opens, run
 > `<core>/pipeline/scripts/kanban-move.sh auto <feature_id> spec --title "<human title>"`; on freeze
 > (`status: frozen`, Mode A), the same call with `ready`. `auto` resolves the board from the config itself and exits 0 with a
 > `kanban: <reason>` line when there is none — so **never decide "no board is configured" without

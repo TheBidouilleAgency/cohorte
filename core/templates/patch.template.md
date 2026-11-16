@@ -2,7 +2,7 @@
 feature_id: patch-<slug>
 kind: patch # a bug fix, not a feature — /cohorte-build skips contract authoring, /cohorte-ship commits `fix(…)`
 title: <one line: the bug, from the user's side>
-status: draft # draft → frozen → in-progress → in-review → shipped → merged · blocked · abandoned (see SCHEMA.md §Spec status)
+status: draft # draft → frozen → in-progress → in-review → shipped → merged · blocked · abandoned (see `<core>/pipeline/schema/spec-status.md`)
 severity: <critical | major | minor> # drives nothing mechanical; it is what the human triages on
 branch: <patch_branch_prefix><feature_id>
 created: <YYYY-MM-DD>

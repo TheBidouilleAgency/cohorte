@@ -12,7 +12,7 @@ Ask ONLY what you couldn't confidently detect. Batch related questions. Cover:
   design decisions worth running on the lead's model.
 - **Specialization (only if Phase 1 flagged a large + cleanly-separable surface)** — offer to split it
   into specialized sub-surfaces (e.g. `web-checkout`, `web-billing`) so `/cohorte-build` runs them in parallel,
-  per SCHEMA.md §Specialization. If the human accepts, apply the rules: **shared code (routing, global
+  per `<core>/pipeline/schema/specialization.md`. If the human accepts, apply the rules: **shared code (routing, global
   state, DS kit/tokens) becomes its own single-owner surface**, and cross-slice shapes go through the
   contract. Default to NOT splitting when boundaries are tangled or slices are tiny — coarse is fine.
 - **Quiet commands** (never store a bare `pnpm test` as what agents execute) — for each noisy command
@@ -20,7 +20,7 @@ Ask ONLY what you couldn't confidently detect. Batch related questions. Cover:
   Recommended option: dot/failures-only reporter (`--reporter=dot` vitest/playwright, `--silent`
   jest, `-q` pytest, `--quiet` eslint/ruff — whatever the detected runner supports). These land in
   `test_quiet_cmd`/`lint_quiet_cmd` + `commands.test_quiet`/`lint_quiet` and are what agents and the
-  `/cohorte-review` pre-flight actually run (SCHEMA.md §Output discipline). If the human declines or
+  `/cohorte-review` pre-flight actually run (`<core>/pipeline/schema/output-discipline.md`). If the human declines or
   the runner has no such flag, leave `""` — consumers then fall back to `<cmd> 2>&1 | tail -40`.
 - **Contract** — mechanism (`shared-types-zod` / `openapi` / `protobuf` / `json-schema` / `none`) and
   where feature contracts are authored. If `none`, surfaces sync by the spec prose alone.
@@ -33,7 +33,7 @@ Ask ONLY what you couldn't confidently detect. Batch related questions. Cover:
 - **UI language** — language of all user-facing copy.
 - **RBAC** — is there a role hierarchy? If yes, list it highest→lowest.
 - **Design system** — enabled? provider (Claude Design / Figma / none) + project ids + kit/token paths.
-- **Code retrieval** — confirm the provider (see SCHEMA.md §Code retrieval): `serena` (Recommended
+- **Code retrieval** — confirm the provider (see `<core>/pipeline/schema/retrieval.md`): `serena` (Recommended
   default — live LSP symbol navigation, no index to maintain), `graphify` (persistent knowledge graph
   over code + docs — better on very large or mixed code+docs repos, but needs an index step + rescans),
   or `none`. Only demote from `serena` if the human objects or the provider CLI can't be installed.

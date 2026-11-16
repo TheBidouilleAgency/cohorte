@@ -216,6 +216,40 @@ for (const rel of shipped) {
     fail(rel, "mentions a dropped runtime (Codex/Cursor/Gemini/OpenCode/.cohorte) — 3.x is Claude Code only");
 }
 
+// ── the schema: an index + one file per topic (3.1.0) ───────────────────────
+// SCHEMA.md used to be ~750 lines (~15k tokens) loaded whole by any prompt that cited one of
+// its sections. It is now a short index of profile/schema/*.md, and every prompt cites the
+// exact file — `<core>/pipeline/schema/<file>.md` in prompts, `profile/schema/<file>.md` in
+// source comments and docs. A citation that resolves nowhere sends the agent hunting (or, worse,
+// loading the whole directory); a bare `SCHEMA.md §X` sends it back to the index for nothing.
+{
+  const schemaDir = join(root, "profile/schema");
+  const topics = existsSync(schemaDir) ? readdirSync(schemaDir).filter((f) => f.endsWith(".md")).sort() : [];
+  if (!topics.length) fail("profile/schema", "missing or empty — the schema topic files ship from here");
+  const index = read("profile/SCHEMA.md");
+  const indexLines = index.split("\n").length;
+  if (indexLines > 80)
+    fail("profile/SCHEMA.md", `is ${indexLines} lines — it must stay a short index (≤ 80); put content in profile/schema/<topic>.md`);
+  for (const f of topics)
+    if (!index.includes(`\`${f}\``)) fail("profile/SCHEMA.md", `index does not list profile/schema/${f}`);
+  for (const m of index.matchAll(/^\| `([a-z0-9-]+\.md)` \|/gm))
+    if (!topics.includes(m[1])) fail("profile/SCHEMA.md", `index lists ${m[1]}, which is not in profile/schema/`);
+
+  const cited = [
+    ...walkAll("core"), ...walkAll("profile"), ...walkAll("lib"), "README.md",
+    ...["docs/guide", "docs/reference"].filter((d) => existsSync(join(root, d))).flatMap(walkAll),
+  ].filter((p) => /\.(md|js|yaml)$/.test(p));
+  for (const rel of cited) {
+    const text = read(rel);
+    for (const m of text.matchAll(/(?:<core>\/pipeline|profile)\/schema\/([a-z0-9-]+\.md)/g))
+      if (!topics.includes(m[1])) fail(rel, `cites schema/${m[1]}, which is not in profile/schema/`);
+    if (rel === "profile/SCHEMA.md") continue;
+    const flat = text.replace(/\s+/g, " ").replace(/ (?:>|\/\/) /g, " ");
+    const bare = flat.match(/SCHEMA(?:\.md)?`? ?§/);
+    if (bare) fail(rel, `cites \`${bare[0]}…\` — cite the topic file (\`<core>/pipeline/schema/<file>.md\`) instead`);
+  }
+}
+
 // ── init-pipeline router steps ──────────────────────────────────────────────
 const steps = join(root, "core/templates/steps/init-pipeline");
 if (!existsSync(steps) || readdirSync(steps).length === 0)

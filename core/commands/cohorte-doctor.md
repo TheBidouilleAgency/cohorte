@@ -24,7 +24,7 @@ fix only with the human's go-ahead (or hand them the command).
    **2.x leftovers are ⚠️ with a named fix:** a vendored core in this repo (`.claude/pipeline/VERSION`,
    `.claude/hooks/gate.py`) ⇒ `<sync>` removes it; a 2.x core in `~/.claude/pipeline/` or a gate
    registered in `~/.claude/settings.json` ⇒ `cohorte update` migrates it; surface agents for this
-   project in `~/.claude/agents/` ⇒ re-render them into `<agents>/` (§Rendering) and delete the global
+   project in `~/.claude/agents/` ⇒ re-render them into `<agents>/` (`<core>/pipeline/schema/rendering.md`) and delete the global
    copies. The router commands' step files are present — `<core>/templates/steps/init-pipeline/`
    non-empty. **Shipped scripts present and executable** in `<core>/pipeline/scripts/`:
    `kanban-move.sh`, `preflight.sh`, `feature-diff.sh`; the `new-feature.sh.template` and
@@ -35,7 +35,7 @@ fix only with the human's go-ahead (or hand them the command).
    bare `git diff`, which misses untracked files).
 2. **Profile.** `PIPELINE.md` exists and its `yaml pipeline-profile` block parses. Every
    `surfaces[].agent` has its `<agents>/<agent>.md` and every agent file has its `surfaces[]`
-   entry — **no orphans either way** (SCHEMA.md rule). Each rendered agent's frontmatter `tools`
+   entry — **no orphans either way** (`<core>/pipeline/schema/rendering.md` rule). Each rendered agent's frontmatter `tools`
    matches its surface's `tools` (incl. `DesignSync` iff `uses_design`, retrieval MCP tools iff
    `retrieval.provider` ≠ `none`). **Model pins:** each rendered agent's frontmatter `model` matches
    its `surfaces[].model` — ❌ if missing, mismatched, or a literal `<SURFACE_MODEL>` placeholder
@@ -65,7 +65,7 @@ fix only with the human's go-ahead (or hand them the command).
    ⚠️) — it records the tree it verified, the commit that carries it moves HEAD past that tree, and
    the committed copy lands in every clone and new worktree; the gate then blocks clean trees and
    greens unchecked ones. fix: `git rm --cached <state>/preflight.ok` + add it to `.gitignore`.
-4. **Retrieval** (if `retrieval.provider` ≠ `none`). Run the SCHEMA.md §Code retrieval health
+4. **Retrieval** (if `retrieval.provider` ≠ `none`). Run the `<core>/pipeline/schema/retrieval.md` health
    check: CLI resolvable from PATH, `.mcp.json` entry present in PATH-proof launcher form,
    `.serena/` gitignored, server actually connects.
 5. **Design** (if `design.enabled`). `snapshot_dir` exists and is committed; `ui_kit_path` +
@@ -80,7 +80,7 @@ fix only with the human's go-ahead (or hand them the command).
    When ≥2 slots are live, print the parallel-feature table (feature · worktree · ports · db ·
    branch behind main by N commits) — a worktree far behind main means its next review will diff
    against stale code ⇒ suggest rebasing it.
-7. **Kanban** (the board mirror — SCHEMA.md §Kanban). Run
+7. **Kanban** (the board mirror — `<core>/pipeline/schema/kanban.md`). Run
    `<core>/pipeline/scripts/kanban-move.sh --check` and report its one line verbatim: the resolved
    board path, or the exact link that is missing. A board mirror is optional, so "not configured" is
    ℹ️, never ❌ — but it must be **stated**, because the whole class of bug here is a card that
@@ -89,7 +89,7 @@ fix only with the human's go-ahead (or hand them the command).
    other key whose board file exists (a **rename** orphaned the link — re-key it via
    `/cohorte-update-pipeline`), and an entry whose board file no longer exists at
    `vault_path`-relative `board` (moved or renamed in the vault).
-8. **Workflows** (the opt-in execution path — SCHEMA.md §Workflows; the conversational commands
+8. **Workflows** (the opt-in execution path — `<core>/pipeline/schema/workflows.md`; the conversational commands
    stay the default, so failures here are ⚠️ at most, never ❌). Report which path this machine will
    take and why:
    - **Claude Code version** ≥ 2.1.154 (`claude --version 2>/dev/null | head -1`) — older or no CLI
@@ -109,8 +109,7 @@ fix only with the human's go-ahead (or hand them the command).
    `workflows: available (opt-in — ask to "run the review workflow")` or
    `workflows: unavailable (<first failing prerequisite>) — conversational commands (the default)`.
 9. **Specs & metrics.** Every `specs/*.md` front-matter `status` is a valid stage — one of
-   `draft · frozen · in-progress · in-review · blocked · shipped · merged · abandoned` (SCHEMA.md
-   §Spec status) — excluding
+   `draft · frozen · in-progress · in-review · blocked · shipped · merged · abandoned` (`<core>/pipeline/schema/spec-status.md`) — excluding
    `_`-prefixed files (the spec template and `specs/_decisions.md`, the decision journal) and
    `specs/refactor-backlog.md`, which `/cohorte-audit` writes as a backlog, not a
    spec, and which has no front-matter to check. A spec left `in-progress` or `blocked` is a round

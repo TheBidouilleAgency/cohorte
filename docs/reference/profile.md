@@ -7,8 +7,12 @@ generic and references this file by section. **Machine block first, prose after*
 prose sections carry conventions agents read (baked into their rendered files).
 
 The full field-by-field reference lives in the repo:
-[`profile/SCHEMA.md`](https://github.com/TheBidouilleAgency/cohorte/blob/main/profile/SCHEMA.md)
-(installed as `<core>/pipeline/SCHEMA.md`). This page summarizes each block and its consumers.
+[`profile/schema/profile-block.md`](https://github.com/TheBidouilleAgency/cohorte/blob/main/profile/schema/profile-block.md)
+(installed as `<core>/pipeline/schema/profile-block.md`). The rest of the rulebook — spec status,
+kanban, reconcile, workflows, … — is one file per topic under
+[`profile/schema/`](https://github.com/TheBidouilleAgency/cohorte/tree/main/profile/schema), indexed by
+`profile/SCHEMA.md`; each command cites only the file it needs. This page summarizes each block and its
+consumers.
 
 ## Machine block
 

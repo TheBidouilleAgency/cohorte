@@ -4,7 +4,7 @@
 // Invoke with args = {feature: "<feature_id>"} (or the bare feature id string).
 // Requires Claude Code >= 2.1.154 with workflows enabled — /cohorte-doctor reports this.
 //
-// Shape (SCHEMA.md §Workflows): phase 0 reads the profile through the
+// Shape (profile/schema/workflows.md): phase 0 reads the profile through the
 // profile-reader agent (scripts have no filesystem or shell), the deterministic
 // preflight aborts while red (zero reviewers spawned), the diff is staged ONCE
 // per touched surface, one reviewer runs per surface in parallel, an adversarial
@@ -44,7 +44,7 @@ const ARGS = (() => {
 })()
 // Approximate cost of this run from the runtime's own output-token counter — the one
 // figure the conversational path cannot record (a lead cannot read a subagent's token
-// count; SCHEMA.md §Measuring cost). Sampled at start, delta stamped into the metrics line.
+// count; profile/schema/metrics.md). Sampled at start, delta stamped into the metrics line.
 const spentNow = () => {
   try {
     const v = (budget && typeof budget.spent === 'function') ? budget.spent() : 0
@@ -229,7 +229,7 @@ if (!pre || !pre.pass) {
 // ── Phase 2 — stage the diff once ────────────────────────────────────────────
 phase('Stage')
 const surfaceList = surfaces.map(s => `${s.key} → ${s.path}`).join(' · ') || '(none declared)'
-// Every diff goes through feature-diff.sh (SCHEMA.md §Feature diff): a throwaway index so
+// Every diff goes through feature-diff.sh (profile/schema/feature-diff.md): a throwaway index so
 // UNTRACKED files are reviewed (feature work is uncommitted until ship — a bare `git diff`
 // dropped every new module, and an adds-only feature staged an empty diff that scored SHIP),
 // against the MERGE-BASE with the default branch (its tip blamed the feature for every file
@@ -294,7 +294,7 @@ const reviewPrompt = s =>
   '(max 10, each with its out-of-scope reason) per your §Deferred rules — never in `findings`. — Variable slots: ' +
   `feature ${feature} · scope: the ${s.key} surface only · spec: specs/${feature}.md · ` +
   `staged diff: ${s.diff} · changed files: ${s.files.join(', ')}`
-// SCHEMA.md §Dead agents, the same rule as the build: a silent reviewer is retried ONCE,
+// profile/schema/dead-agents.md, the same rule as the build: a silent reviewer is retried ONCE,
 // byte-identical (the staged diff is already on disk — the retry costs one agent); only a
 // surface silent twice is `unreviewed`.
 const reviewOnce = (s, label) =>
@@ -426,7 +426,7 @@ const staging = await agent(
   `${verdictJson}\n` +
   // Per-surface verdicts (not the merged one stamped on every row — one BLOCK used to
   // mark ALL surfaces failed), and dead reviewers logged as "dead"
-  // per SCHEMA.md §Dead agents — an incomplete batch is the batch worth recording.
+  // per profile/schema/dead-agents.md — an incomplete batch is the batch worth recording.
   `3. Append one line to $(dirname "$(git rev-parse --git-common-dir)")/.claude/pipeline-metrics.jsonl: ` +
   // seconds: the clock lives in Bash (scripts have none) — elapsed since the preflight's
   // `date +%s`. No epoch came back ⇒ the field is OMITTED, never a made-up 0.

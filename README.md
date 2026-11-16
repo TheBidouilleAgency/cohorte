@@ -313,7 +313,7 @@ The essentials:
   the script the profile as JSON, since workflow scripts have no filesystem access. Mechanical
   phases run on haiku; judgment phases use the same pinned agents as the commands.
 
-Details: `profile/SCHEMA.md` §Workflows.
+Details: `profile/schema/workflows.md`.
 
 ## Privacy
 
@@ -331,7 +331,8 @@ or offer it as a network service, you must publish your modifications under the 
 
 ## Profile reference
 
-See `profile/SCHEMA.md` for every field in `PIPELINE.md` and how the pipeline uses it.
+See `profile/schema/profile-block.md` for every field in `PIPELINE.md` and how the pipeline uses it. The
+rest of the pipeline's rulebook sits next to it, one file per topic, indexed by `profile/SCHEMA.md`.
 
 ## Layout of this repo
 
@@ -352,7 +353,8 @@ core/
   workflows/            # Workflow-runtime scripts: review / audit / refactor (opt-in variants) + loop (workflow-only)
 profile/
   PIPELINE.template.md  # the profile skeleton /cohorte-init-pipeline fills
-  SCHEMA.md             # field reference
+  SCHEMA.md             # index of schema/ — one line per topic file
+  schema/               # the rulebook, one file per topic (profile-block, spec-status, kanban, …)
   cohorte.config.template.yaml   # seeds ~/.claude/cohorte.config.yaml (kanban)
 scripts/                # shipped preflight/kanban scripts, worktree-isolation templates, metrics, the test suites
 ```

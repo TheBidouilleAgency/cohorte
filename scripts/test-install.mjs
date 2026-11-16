@@ -90,6 +90,13 @@ console.log("install — a fresh machine");
     "implementer.template.md", "CHANGELOG.md"]) {
     check(`cohorte/pipeline/${f}`, existsSync(join(sb.g, "cohorte", "pipeline", f)));
   }
+  const topics = readdirSync(join(root, "profile/schema")).filter((f) => f.endsWith(".md"));
+  check("the schema topic files ship (one per section, indexed by SCHEMA.md)", topics.length > 10
+    && topics.every((f) => read(join(sb.g, "cohorte/pipeline/schema", f)) === read(join(root, "profile/schema", f))), topics.join(","));
+  check("a rendered command cites a schema topic file that is installed", (() => {
+    const m = read(join(sb.g, "commands/cohorte-build.md")).match(/<core>\/pipeline\/schema\/([a-z0-9-]+\.md)/);
+    return m && existsSync(join(sb.g, "cohorte/pipeline/schema", m[1]));
+  })());
   check("VERSION is the package version", read(join(sb.g, "cohorte/pipeline/VERSION")).trim() === pkg.version);
   for (const s of shippedScripts) {
     const p = join(sb.g, "cohorte", "pipeline", "scripts", s);

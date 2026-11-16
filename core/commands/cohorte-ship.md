@@ -10,7 +10,7 @@ You are the **lead**. Ship feature **$ARGUMENTS**. This is the outward-facing ga
 > §`release_notes`** — §2b below is skipped or required based on it, and skipping it when it is
 > required opens a PR that CI fails on arrival.
 >
-> **Kanban** (SCHEMA.md §Kanban) is mirrored in **explicit steps** below, not as an afterthought:
+> **Kanban** (`<core>/pipeline/schema/kanban.md`) is mirrored in **explicit steps** below, not as an afterthought:
 > §1 moves the card → **Ship**; §4 moves it → **Shipped** and writes the PR number. Both are one
 > call to `<core>/pipeline/scripts/kanban-move.sh auto …`, which resolves the board from the config itself and exits 0 with a
 > `kanban: <reason>` line when there is none. **Never decide "no board is configured" without running
@@ -22,7 +22,7 @@ You are the **lead**. Ship feature **$ARGUMENTS**. This is the outward-facing ga
 `grep '^status:' specs/$ARGUMENTS.md` first. `shipped` means a PR is (or was) open — reconcile it
 instead of shipping twice: `gh pr view <the branch §1 resolves> --json state,mergedAt,url` (no `gh` /
 not github ⇒ ask the human what happened to the PR):
-- `MERGED` ⇒ set `status: merged` (SCHEMA.md §Spec status) and say so; go straight to §5's teardown.
+- `MERGED` ⇒ set `status: merged` (`<core>/pipeline/schema/spec-status.md`) and say so; go straight to §5's teardown.
 - `OPEN` ⇒ nothing to ship again: go to §5's CI watch (a red check routes per §5).
 - `CLOSED` (not merged) ⇒ ask the human: reopen and continue (`/cohorte-fix` on what killed it), or
   drop it — then set `status: abandoned`. Never decide that alone.
@@ -82,7 +82,7 @@ uncommitted after the PR opens). Only flip after the human's "yes"; if they decl
 
 Otherwise **you** write it — never the release agent, never the implementers. Picking the bump is
 project policy and the prose is outward-facing copy; both are the lead's, exactly like the contract.
-See SCHEMA.md §Release notes.
+See `<core>/pipeline/schema/release-notes.md`.
 
 - Write `<release_notes.dir>/<release_notes.filename>` (`<feature_id>` substituted), front-matter
   carrying the **single** key `release_notes.anchor_package` and the chosen level, then the prose body

@@ -116,7 +116,7 @@ suits very large or mixed code+docs repos; `none` falls back to grep. Wiring is 
 
 - `<state>/pipeline-metrics.jsonl` records **wall-clock seconds** per phase batch — what's
   *slow*. It's the evidence required before splitting a bottleneck surface into specialized
-  sub-surfaces (see `SCHEMA.md` §Specialization).
+  sub-surfaces (see `profile/schema/specialization.md`).
 - The **workflow runs** (loop, review) also stamp an approximate **`tokens`** figure per batch,
   read from the runtime's own counter — `cohorte metrics` reports it per feature and per phase
   (`~Nk tok`). Conversational runs can't count tokens and stamp nothing; absent ≠ free.

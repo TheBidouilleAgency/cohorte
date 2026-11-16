@@ -11,7 +11,7 @@ that change the *contract*; `/cohorte-fix` is for everything else.
 > Read `PIPELINE.md` §`pipeline-profile` first: `surfaces` (paths + agent names) and `contract`.
 > _Skip the re-read if it's already in your context this session and unmodified since._
 >
-> **Kanban** (SCHEMA.md §Kanban): on ingest, run
+> **Kanban** (`<core>/pipeline/schema/kanban.md`): on ingest, run
 > `<core>/pipeline/scripts/kanban-move.sh auto $ARGUMENTS fix`; the card returns to **Review** when `/cohorte-review`
 > re-runs. `auto` resolves the board from the config itself and exits 0 with a `kanban: <reason>`
 > line when there is none — so **never decide "no board is configured" without running it**.
@@ -53,7 +53,7 @@ that change the *contract*; `/cohorte-fix` is for everything else.
 
 When the agents return:
 
-- **Roll call first (SCHEMA.md §Dead agents).** A re-dispatched agent that returns nothing has fixed
+- **Roll call first (`<core>/pipeline/schema/dead-agents.md`).** A re-dispatched agent that returns nothing has fixed
   nothing you can verify. Retry that surface ONCE with the byte-identical dispatch; still silent ⇒ leave
   **every one of its items `- [ ]`** (a dead agent never ticks a box — that would hide an open finding
   from the next round and from the driver), print `<key> · DEAD — items untouched`, and say the surface

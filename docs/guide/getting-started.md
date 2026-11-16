@@ -59,7 +59,7 @@ irm https://raw.githubusercontent.com/TheBidouilleAgency/cohorte/main/install.ps
                  cohorte-release.md
                  cohorte-profile-reader.md
 ~/.claude/workflows/cohorte-*.js       review · audit · refactor · loop
-~/.claude/cohorte/                     the generic core: pipeline/ (SCHEMA.md, templates,
+~/.claude/cohorte/                     the generic core: pipeline/ (SCHEMA.md + schema/, templates,
                                        implementer.template.md, scripts/, VERSION, CHANGELOG.md),
                                        templates/, hooks/gate.py, lib/project.js, manifest.json
 ~/.claude/cohorte.config.yaml          YOUR config (kanban boards, shared vault) — seeded once,

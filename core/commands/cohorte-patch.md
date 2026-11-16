@@ -17,7 +17,7 @@ Bug (may be empty): **$ARGUMENTS**
 > Do NOT read `specs/_decisions.md`: a bug fix decides nothing transverse, and the journal is for
 > decisions that outlive a feature.
 >
-> **Kanban** (SCHEMA.md §Kanban): two moves, and their **order is load-bearing** — §1 settles the
+> **Kanban** (`<core>/pipeline/schema/kanban.md`): two moves, and their **order is load-bearing** — §1 settles the
 > slug and moves the card to `spec`, §4 moves it to `ready` at freeze. Both are one call to
 > `<core>/pipeline/scripts/kanban-move.sh auto patch-<slug> <stage> [--title "[patch] <human title>"]`.
 > The slug is settled first precisely because the move needs it: a card cannot be joined on an id

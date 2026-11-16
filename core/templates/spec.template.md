@@ -1,7 +1,7 @@
 ---
 feature_id: <slug>
 title: <Feature title>
-status: draft # draft → frozen → in-progress → in-review → shipped → merged · blocked · abandoned (see SCHEMA.md §Spec status)
+status: draft # draft → frozen → in-progress → in-review → shipped → merged · blocked · abandoned (see `<core>/pipeline/schema/spec-status.md`)
 branch: <feature_branch_prefix><slug>
 created: <YYYY-MM-DD>
 reviewed_base: # merge-base sha at the last SHIP verdict — freshness-gate anchor (written by /cohorte-review)

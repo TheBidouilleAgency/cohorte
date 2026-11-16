@@ -7,6 +7,15 @@ short, user-facing, most recent first. One `## <version> — <YYYY-MM-DD>` secti
 > They are history and are deliberately not rewritten — every command gained a `cohorte-` prefix
 > in 2.0.0.
 
+## 3.1.0 — 2026-11-16
+
+- **The schema is split: one file per topic, each command loads only what it cites.**
+  `SCHEMA.md` (≈750 lines, ≈15k tokens) was read whole by any prompt that named one of its
+  sections. Its content now lives, unchanged, in `<core>/pipeline/schema/<topic>.md`
+  (`profile-block`, `spec-status`, `kanban`, `dead-agents`, `reconcile`, `workflows`, …), and
+  every command, agent, template and workflow cites the exact file. `SCHEMA.md` stays as a short
+  index. `validate-core` fails on a citation that resolves nowhere and on any bare `SCHEMA.md §…`.
+
 ## 3.0.0 — 2026-11-16
 
 **One install mode, Claude Code only.** The machine gets the commands and the generic core;

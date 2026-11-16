@@ -48,7 +48,7 @@ retrieval:
 # This list GROWS automatically: /cohorte-build §1.5 adds a surface (and renders its
 # agent) when a spec touches a tree no surface owns, or splits a bottleneck
 # surface into specialized sub-surfaces. Keep one owner per tree; shared code
-# (routing/state/DS) is its own single-owner surface. See SCHEMA.md §Specialization.
+# (routing/state/DS) is its own single-owner surface. See `<core>/pipeline/schema/specialization.md`.
 surfaces:
   - key: backend                              # short id, used as agent name + scope
     path: apps/api                            # the ONLY tree this surface's agent may touch

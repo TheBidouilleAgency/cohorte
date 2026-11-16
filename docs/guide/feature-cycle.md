@@ -112,7 +112,7 @@ for it and checks the tree instead (that surface's own quiet commands, output re
 `DEAD — unverified`, records `"<key>":"dead"` in the metrics line and in
 `specs/reports/<id>.build.json`. The batch is never reported as ok. Same rule in `/cohorte-review` (a dead
 reviewer lands in the verdict's `unreviewed[]` and forbids `SHIP`) and in `/cohorte-fix` (a dead agent ticks no
-checkbox). See [§Dead agents](/reference/profile).
+checkbox). See [`profile/schema/dead-agents.md`](https://github.com/TheBidouilleAgency/cohorte/blob/main/profile/schema/dead-agents.md).
 
 ## 4. `/cohorte-review` — audit the diff against the spec
 

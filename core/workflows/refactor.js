@@ -5,7 +5,7 @@
 // cheaper through the conversational /cohorte-refactor — this script skips it and says
 // so. Invoke with args = {domains: ["backend", …]} or {domains: "all"}.
 //
-// Shape (SCHEMA.md §Workflows): profile via profile-reader (phase 0), the open
+// Shape (profile/schema/workflows.md): profile via profile-reader (phase 0), the open
 // backlog read once, the `shared` domain (contract package — every slice
 // imports it) refactored FIRST and alone, then the other domains' surface
 // implementers in parallel (their trees are disjoint by construction), each

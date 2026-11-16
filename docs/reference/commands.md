@@ -88,7 +88,7 @@ history at input price on every turn.
 **Multi-surface is allowed** (one bug, one repro, one spec). The single hard escalation: a fix
 needing **new** contract surface area is a feature wearing a bug's clothes ⇒ `/cohorte-spec`.
 Changing an *existing* contract entry is a legitimate §5 delta. See
-[SCHEMA §Spec status](/reference/profile) for the three places `kind: patch` changes behaviour.
+[`profile/schema/spec-status.md`](https://github.com/TheBidouilleAgency/cohorte/blob/main/profile/schema/spec-status.md) for the three places `kind: patch` changes behaviour.
 
 ## `/cohorte-build <id>`
 
