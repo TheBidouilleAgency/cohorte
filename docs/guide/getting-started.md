@@ -2,76 +2,76 @@
 
 ## Prerequisites
 
-- **A supported coding agent** — Claude Code, Codex CLI, Cursor, Gemini CLI or OpenCode
-  ([matrix](/reference/runtimes)). All five have real subagents, which the pipeline requires.
-  On Claude Code, **≥ 2.1.154 with workflows enabled** additionally unlocks the
-  [workflow variants](/guide/workflows). `/cohorte-doctor` tells you what your runtime can enforce.
-- **Node ≥ 18 + npm** for the `cohorte` CLI (the shell installers work without Node).
-- **Python 3** on PATH — the destructive-command gate hook (`gate.py`) runs through it.
+- **[Claude Code](https://code.claude.com)** — Cohorte targets Claude Code only. Workflows (the
+  opt-in [deterministic runs](/guide/workflows)) need **≥ 2.1.154** with workflows enabled; the
+  gate hook's fail-closed `onFailure` setting is honoured from **2.1.295** (older clients ignore
+  it, so a broken hook fails open there).
+- **Node ≥ 20 + npm** — for the `cohorte` CLI. Every install route needs it, the shell scripts
+  included.
+- **Python ≥ 3.8 as `python3`** — the gate hook every project commits runs on it. The hook is
+  registered fail-closed: without a working `python3`, Claude Code refuses every Bash call in a
+  Cohorte project.
 - Optional: [`uv`](https://docs.astral.sh/uv/) to install **Serena** (the default code-retrieval
   provider): `uv tool install -p 3.13 serena-agent`, and make sure `~/.local/bin` is on PATH
-  (`uv tool update-shell`).
+  (`uv tool update-shell`). Without it agents fall back to Grep/Read. Install it before
+  `/cohorte-init-pipeline` and init wires it in one pass.
 - Optional: `gh` (GitHub CLI) — `/cohorte-ship` uses it to open PRs and watch CI; without it you get a
   compare URL + drafted PR body instead.
 
-## Install the core
+::: info Codex, Cursor, Gemini CLI, OpenCode
+3.0.0 dropped them. The last multi-runtime release is `cohorte@2.10.2`; its source is on the
+[`archive/multi-runtime`](https://github.com/TheBidouilleAgency/cohorte/tree/archive/multi-runtime)
+branch.
+:::
 
-Two modes. Pick one per machine/project — you can mix (a bundled repo and a global core can
-coexist; the bundled one wins inside its repo).
-
-Add `--runtime=codex,cursor` (or `--all-runtimes`) to target coding agents other than Claude
-Code. With no flag the installer detects what you have and asks; with no TTY it installs for
-Claude Code alone.
-
-### Global (recommended) — one core for every repo on the machine
+## Install once per machine
 
 ```sh
 npm i -g cohorte
-cohorte install --global
-```
-
-Copies the core into `~/.claude/` and registers the gate hook once in the global
-`settings.json` (it reads each repo's own `gate-config.json`, and no-ops where absent — one
-registration serves every project). The commands and agents are then available in **every**
-project.
-
-### Bundled — the core committed inside one repo
-
-```sh
-# from inside the project (or pass its path):
 cohorte install
 ```
 
-Copies the core into the project (`<project>/.claude/`, or `.cohorte/<runtime>/` for the other
-agents), which you commit — teammates get the exact pipeline version with the checkout.
+There is one install mode. `cohorte install` writes only into `~/.claude` (or
+`$CLAUDE_CONFIG_DIR`), records every file it writes in `~/.claude/cohorte/manifest.json`, and
+registers **no** machine-wide hook — the gate lives in each project. It is idempotent: run it
+again (or `cohorte update`, the same operation) any time.
 
-### Without Node
+**Restart Claude Code** (or start a new session) afterwards: commands and agents are scanned at
+session start.
+
+No global npm install? `npx cohorte@latest install` does the same once. The shell scripts are
+thin wrappers that still need Node ≥ 20 (plus `git`) and install the **latest release tag**, not
+the tip of `main`:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/TheBidouilleAgency/cohorte/main/install.sh | sh -s -- --global
+curl -fsSL https://raw.githubusercontent.com/TheBidouilleAgency/cohorte/main/install.sh | sh
 ```
 
 ```powershell
-# Windows PowerShell 5.1+
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/TheBidouilleAgency/cohorte/main/install.ps1))) -Global
+# Windows PowerShell 5.1+ / PowerShell 7
+irm https://raw.githubusercontent.com/TheBidouilleAgency/cohorte/main/install.ps1 | iex
 ```
 
-Both mirror the npm CLI exactly (same files, same scrub of retired artifacts, same config seeding).
-
 ::: tip What lands where
-Either mode installs: `commands/` (the slash commands), `agents/` (the three fixed agents —
-review, release, profile-reader), `hooks/gate.py`, `templates/`, `workflows/` (the four
-workflow scripts), and `pipeline/` (the profile templates, `SCHEMA.md`,
-`implementer.template.md` — the surface-agent template lives here, *not* in `agents/`, so it is
-never mistaken for a dispatchable agent — the shipped scripts `preflight.sh` and `kanban-move.sh`,
-and `VERSION` + `CHANGELOG.md`). A
-user-level `~/.claude/cohorte.config.yaml` is seeded once (the kanban config; never
-clobbered on update).
+```
+~/.claude/commands/cohorte-*.md        the 16 slash commands
+~/.claude/agents/cohorte-review.md     the three fixed agents
+                 cohorte-release.md
+                 cohorte-profile-reader.md
+~/.claude/workflows/cohorte-*.js       review · audit · refactor · loop
+~/.claude/cohorte/                     the generic core: pipeline/ (SCHEMA.md, templates,
+                                       implementer.template.md, scripts/, VERSION, CHANGELOG.md),
+                                       templates/, hooks/gate.py, lib/project.js, manifest.json
+~/.claude/cohorte.config.yaml          YOUR config (kanban boards, shared vault) — seeded once,
+                                       never overwritten, not in the manifest
+```
+Nothing project-specific is ever written under `~/.claude`. See
+[Installers & updates](/reference/installers) for the ownership rules.
 :::
 
 ## Initialize a project
 
-Open the project in your coding agent and run:
+Open the project in Claude Code and run:
 
 ```
 /cohorte-init-pipeline
@@ -80,7 +80,7 @@ Open the project in your coding agent and run:
 One-time per project, interactive, in five steps:
 
 1. **Detect** — reads the repo (read-only, no questions yet): package manager, workspace layout,
-   apps/services, test/lint/typecheck commands, migration tooling, CI.
+   apps/services, test/lint/typecheck commands, migration tooling, CI, git remote, design system.
 2. **Interview the gaps** — asks *only* what it couldn't detect, batched:
    - **Surfaces & ownership** — one entry per independently-built area (`backend` → `apps/api`,
      `frontend` → `apps/web`, …), each with its agent name, tools, and model tier (`sonnet`
@@ -94,33 +94,44 @@ One-time per project, interactive, in five steps:
      **code retrieval** provider (Serena by default), **isolation** (parallel git worktrees with
      per-feature DB + ports), **gate** patterns (destructive commands to deny / confirm), and the
      `/cohorte-brainstorm` **personas**.
-   - Optional: **kanban** mirror (Obsidian board)
-     question (default No).
+   - Optional: **kanban** mirror (Obsidian board) question (default No).
 3. **Draft** — shows you the assembled `PIPELINE.md` for approval.
-4. **Write & render** — writes `PIPELINE.md`, renders one agent file per surface (conventions
-   baked in), generates the project's `gate-config.json` (+ `settings.json` permissions on Claude Code
-   allow-list + hooks), wires the retrieval provider (committed `.mcp.json`), renders the
-   isolation scripts, seeds `specs/_template.md`, writes the committed `pipeline.json`
-   pointer, and (optionally) a CI workflow.
-5. **Report** — install mode, files written, surface → agent mapping.
+4. **Write & render** — writes `PIPELINE.md`, renders one agent per surface into the project's
+   `.claude/agents/` (conventions baked in), generates `.claude/gate-config.json` and the
+   `.claude/settings.json` permissions (an `allow` list of read-only commands so agents don't stall
+   on prompts), wires the retrieval provider (committed `.mcp.json`), renders the isolation
+   scripts, then runs **`cohorte sync`** — which copies the gate to
+   `.claude/hooks/cohorte-gate.py`, registers it in `.claude/settings.json`, writes the
+   `.claude/pipeline.json` pointer, adds the local-only artifacts to `.gitignore` and seeds
+   `specs/_template.md` — and (optionally) a CI workflow.
+5. **Report** — core version, the `sync` output, files written, surface → agent mapping.
 
-Then:
+Then commit what it lists:
 
 ```sh
-git add PIPELINE.md .claude specs .mcp.json
-git commit -m "chore: install cohorte pipeline"
+git add PIPELINE.md CLAUDE.md .claude .gitignore specs .mcp.json
+git commit -m "chore: set up cohorte pipeline"
 ```
+
+Everything project-specific travels with `git clone` — **including the gate**: a teammate who
+clones is protected before installing anything, and only needs `npm i -g cohorte && cohorte install`
+to get the commands.
 
 ## Sanity check
 
-```
-/cohorte-doctor
+```sh
+cohorte doctor          # in the shell — exits 1 when any check is bad
 ```
 
-Verifies the whole wiring: core version + pointer coherence, agents ↔ surfaces (no orphans),
-model pins, hooks + gate config, retrieval health, design paths, isolation slots, the kanban
-board link, **workflows availability** (check 8), specs & metrics hygiene. Every failure
-comes with its exact fix command.
+```
+/cohorte-doctor         # in Claude Code — same checks plus the live, in-session half
+```
+
+Verifies the whole wiring: core version + pointer coherence, 2.x leftovers, agents ↔ surfaces
+(no orphans), model pins, the gate config and the committed, registered gate hook, retrieval
+health, design paths, isolation, the kanban board link, workflows availability, specs hygiene.
+Every failure comes with its exact fix. The [two-minute check](/reference/installers#the-two-minute-check)
+walks through a fresh install.
 
 ## Your first feature
 
@@ -138,15 +149,14 @@ comes with its exact fix command.
 
 Every handoff lands on disk, which is why the `/clear` between phases is always safe — and
 always worth it (the lead's history is re-sent at input price on every turn). See
-[The feature cycle](/guide/feature-cycle). On Claude Code with workflows enabled, the middle of
-that loop can also run unattended: ask to *"run the loop workflow for `<id>`"* after the first
-`/cohorte-build` — see [Workflows](/guide/workflows).
+[The feature cycle](/guide/feature-cycle). With workflows enabled, the middle of that loop can also
+run unattended: ask to *"run the loop workflow for `<id>`"* after the first `/cohorte-build` —
+see [Workflows](/guide/workflows).
 
 ## Keeping it current
 
 ```sh
-npm i -g cohorte@latest              # refresh the CLI first — the core it lays down is its own
-cohorte update --global              # refresh the core (never touches generated files)
+npm i -g cohorte@latest && cohorte update   # refresh the CLI first — it lays down its own core
 ```
 
 then, inside each project:
@@ -155,8 +165,11 @@ then, inside each project:
 /cohorte-update-pipeline
 ```
 
-which **reconciles** the generated files to the new core: tops up new profile fields at their
-defaults (asking only for genuine human decisions, batched), re-renders the surface agents (this
-also refreshes their baked conventions), additively patches `settings.json`/`gate-config.json`,
-re-runs capability wiring health checks, and shows the CHANGELOG entries you just gained.
-`/cohorte-init-pipeline` never needs re-running for an upgrade.
+which runs `cohorte sync` (refreshes the committed gate and the pointer) and **reconciles** the
+generated files to the new core: tops up new profile fields at their defaults (asking only for
+genuine human decisions, batched), re-renders the surface agents (this also refreshes their baked
+conventions), additively patches `settings.json`/`gate-config.json`, re-runs capability wiring
+health checks, and shows the CHANGELOG entries you just gained. `/cohorte-init-pipeline` never
+needs re-running for an upgrade.
+
+Coming from 2.x? See [Migrating from 2.x](/reference/installers#migrating-from-2-x).

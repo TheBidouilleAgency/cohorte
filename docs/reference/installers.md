@@ -1,61 +1,270 @@
 # Installers & updates
 
-Three installers, one contract: same files, same scrubs, same seeding. CI dry-runs the shell and
-npm installers against identical postconditions so they can't drift (they have — that's why the
-check exists).
+One install mode since 3.0.0. The machine gets the commands and the generic core; everything that
+describes a project lives in that project and is committed with it.
 
-| Installer | Runs where | Notes |
+| Route | Needs | Notes |
 | --- | --- | --- |
-| `bin/cli.js` (the `cohorte` CLI) | anywhere with Node ≥ 18 | The npm package; copies by *rule* (every non-template agent, every shipped `.sh`) so new files can't be forgotten. Offers a quick TTY interview when seeding the global config. |
-| `install.sh` | POSIX sh (dash/bash/zsh) | Works from a checkout or piped via curl (clones itself). |
-| `install.ps1` | Windows PowerShell 5.1+ | Mirrors install.sh; BOM-free JSON writes, Store-alias-proof Python detection. |
+| `npm i -g cohorte && cohorte install` | Node ≥ 20 + npm | **The documented route.** Puts the `cohorte` binary on `PATH`. |
+| `npx cohorte@latest install` | Node ≥ 20 + npm | Same CLI, run once from the npm cache; leaves no binary behind. |
+| `install.sh` (curl … \| sh) | Node ≥ 20, `git`, POSIX sh | A thin wrapper: clones the **latest release tag** (never the tip of `main`) and runs its `bin/cli.js install`. From a checkout, installs that working tree. |
+| `install.ps1` (irm … \| iex) | Node ≥ 20, `git`, Windows PowerShell 5.1+ / PowerShell 7 | Same wrapper for Windows. Its Node version probe parses `node --version`, so it works on PowerShell 5.1. |
+
+There is no Node-free install: both scripts check for Node ≥ 20 and stop with the npm command
+if it is missing. They exist for machines where you would rather not install a global npm
+package; they lay down exactly what the CLI lays down, because they *are* the CLI.
 
 ## Commands
 
 ```sh
-npm i -g cohorte                # once per machine — this is what puts `cohorte` on PATH
+npm i -g cohorte                         # once per machine — this is what puts `cohorte` on PATH
 
-cohorte install [target]        # bundled: core into <target>/.claude (committable)
-cohorte install --global        # global: one shared core in ~/.claude + gate hook registered
-cohorte update  [--global]      # refresh the stack-agnostic core ONLY
-cohorte metrics [target] [--days=N] [--since=ISO] [--runs] [--json]
-cohorte specs   [target] [--porcelain | --json | --panel]
-cohorte doctor  [target] [--porcelain | --json | --panel]
+cohorte install                          # install (or refresh) on this machine — idempotent
+cohorte update                           # the same operation; also migrates a 2.x install
+cohorte sync      [project]              # wire one repo (run by /cohorte-init-pipeline and /cohorte-update-pipeline)
+cohorte uninstall [--purge]              # remove what install wrote (--purge also removes your config)
+cohorte uninstall --project [project]    # remove what sync wrote in one repo
+cohorte doctor    [project] [--porcelain | --json | --panel]
+cohorte specs     [project] [--porcelain | --json | --panel]
+cohorte metrics   [project] [--days=N] [--since=ISO] [--runs] [--json]
 cohorte version
 ```
 
-### Why one form, and why the global one
+`[project]` defaults to the current directory. Leftovers from 2.x:
 
-`npm i -g` and `npx` are different tools, not two spellings: `npm i -g` installs the package and
-leaves a **`cohorte` binary on your `PATH`**, pinned to the version you installed; `npx` fetches
-the package into a cache, runs it **once**, and leaves nothing behind. Everything here is
-documented in the first form, for two reasons:
+- `--global` (or `-g`) is accepted and means nothing — it is the only mode.
+- `cohorte install <path>` is **refused** with a pointer to `cohorte sync <path>`: the 2.x
+  "bundled" mode (a core copied into each repo) no longer exists.
+- `--runtime=claude` is accepted; any other `--runtime` / `--all-runtimes` is an error naming
+  `cohorte@2.10.2`.
 
-- A **Francois extension panel** may only spawn a bare binary name resolved on `PATH`. `npx` is
-  not reachable that way, so [francois-plugin-cohorte](https://github.com/TheBidouilleAgency/francois-plugin-cohorte)
-  requires the global install — this is structural, not a preference.
-- One form in the docs is one form to get right. Two spellings of the same command is how a
-  README ends up contradicting the thing it documents.
+`CLAUDE_CONFIG_DIR` moves `~/.claude` for every verb. `COHORTE_NO_VERSION_CHECK=1` skips the one
+network call (see [The version check](#the-version-check)).
 
-The price of pinning is that **`install` and `update` lay down the core carried by the CLI that
-runs them**, so a global CLI left at an old version would re-lay an old core and report success.
-That is why both verbs now compare themselves against the registry and print what to run
-(`npm i -g cohorte@latest`) when they are behind — set `COHORTE_NO_VERSION_CHECK=1` to silence
-it, and it is skipped under `CI` already.
+## What `cohorte install` writes
 
-`npx cohorte@latest <verb>` still works, and is the right call for a one-off on a machine you
-do not own.
+```
+~/.claude/commands/cohorte-*.md          the 16 slash commands
+~/.claude/agents/cohorte-review.md       the fixed agents (surface agents are never written here)
+                 cohorte-release.md
+                 cohorte-profile-reader.md
+~/.claude/workflows/cohorte-review.js    the four workflow scripts (cohorte-loop.js is workflow-only)
+                    cohorte-audit.js
+                    cohorte-refactor.js
+                    cohorte-loop.js
+~/.claude/cohorte/
+  pipeline/      PIPELINE.template.md · SCHEMA.md · cohorte.config.template.yaml ·
+                 implementer.template.md · CHANGELOG.md · VERSION
+    scripts/     preflight.sh · kanban-move.sh · new-feature.sh.template · remove-feature.sh.template
+  templates/     handoff, review-feedback, spec, patch, design-brief, pr-body, brainstorm-return,
+                 decisions + steps/init-pipeline/ (the router's step files)
+  hooks/gate.py  the gate's source — copied into each project by `cohorte sync`
+  lib/project.js the self-contained `sync` (runs without the binary on PATH)
+  manifest.json  every file above, with the hash it was written with
+~/.claude/cohorte.config.yaml            YOUR config — seeded once (a TTY install asks for the vault
+                                         path), never overwritten, never in the manifest
+```
+
+Commands and agents are **rendered**, not copied as-is: the sources in `core/commands/` and
+`core/agents/` keep only the frontmatter keys Claude Code understands and get one preamble that
+resolves the path tokens (`<core>`, `<state>`, `<agents>`, `<fixed-agents>`, `<workflows>`,
+`<sync>`…) for this machine. The surface-agent template ships under `pipeline/`, never under
+`agents/`, so it is never mistaken for a dispatchable agent.
+
+`install` registers **no hook** in `~/.claude/settings.json`. The gate lives in each project.
+
+### Ownership rules
+
+Each one is a bug that shipped in 2.x:
+
+- **The manifest is the list of what is ours.** Nothing outside it is ever deleted. (2.x removed
+  any `~/.claude/commands/review.md`, `build.md`, `spec.md`…, yours or not.)
+- **Edited files are backed up.** A file of ours you modified — or a file of yours sitting on one
+  of our names — is copied to `~/.claude/cohorte/backup/<timestamp>/` before it is refreshed, and
+  the run says so.
+- **Retired files go only when untouched.** A file the previous version shipped and this one does
+  not is deleted if it is byte-for-byte what we wrote; if you edited it, it is kept and listed.
+- **An unparseable `settings.json` aborts the run, unchanged.** `install`, `update`, `uninstall`
+  and `sync` parse every JSON file they may edit (`~/.claude/settings.json`;
+  `.claude/settings.json` and `.claude/pipeline.json` in a project) before writing anything, and
+  stop with the parse error instead of resetting your model, env and permissions.
+- **Another tool's hook is never touched.** Only registrations of Cohorte's own gate paths are
+  recognised as ours — an unrelated `~/tools/gate.py` sharing a matcher group survives.
+
+## `cohorte sync` — wiring one project
+
+`/cohorte-init-pipeline` and `/cohorte-update-pipeline` run it; you can too. It is the same code as
+`node ~/.claude/cohorte/lib/project.js sync .`, which the commands call so it works without the
+binary on `PATH`. Deterministic and idempotent (a second run prints `already in sync`):
+
+1. copies the gate to **`.claude/hooks/cohorte-gate.py`** (executable);
+2. registers it in **`.claude/settings.json`** as two `PreToolUse` groups — matchers
+   `Bash|Task|Agent` and `Write|Edit|MultiEdit` — exactly once, every other hook kept:
+
+   ```json
+   {
+     "matcher": "Bash|Task|Agent",
+     "hooks": [{
+       "type": "command",
+       "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/cohorte-gate.py\"",
+       "onFailure": "block"
+     }]
+   }
+   ```
+
+   `onFailure: block` makes it fail-closed (honoured from Claude Code 2.1.295): if `python3` or the
+   hook file is missing, the call is refused rather than let through;
+3. writes the **`.claude/pipeline.json`** pointer (below);
+4. adds `.claude/preflight.ok`, `.claude/pipeline-metrics.jsonl` and `specs/reports/` to
+   **`.gitignore`**;
+5. seeds **`specs/_template.md`** if absent;
+6. on a 2.x repo, removes the vendored core (see [Migrating from 2.x](#migrating-from-2-x)) and
+   repoints 2.x permission rules at `~/.claude/cohorte/pipeline/scripts/`.
+
+Commit `.claude/settings.json`, `.claude/hooks/cohorte-gate.py`, `.claude/pipeline.json` and
+`.gitignore` — a teammate who clones is protected before installing anything.
+
+`sync` never writes `PIPELINE.md`, the surface agents, `gate-config.json` or the permission rules;
+those are `/cohorte-init-pipeline`'s and `/cohorte-update-pipeline`'s job.
+
+### The pointer — `.claude/pipeline.json`
+
+```json
+{ "pipeline": "cohorte", "core_version": "3.0.0", "install": "npm i -g cohorte && cohorte install" }
+```
+
+It tells a teammate which core to install, and lets `cohorte doctor` detect version drift. 3.x
+has no `mode` field — `sync` drops a 2.x `"mode": "bundled" | "global"`.
+
+## Updating
+
+```sh
+npm i -g cohorte@latest && cohorte update
+```
+
+then, in each project, **`/cohorte-update-pipeline`** — it runs `cohorte sync` and reconciles the
+repo's generated files to the new core (new profile fields at their defaults, surface agents
+re-rendered, permissions patched additively). `cohorte update` itself never touches a project.
+
+`install` and `update` lay down the core carried by the CLI that runs them, so update the CLI
+first. **Restart Claude Code** afterwards: commands and agents are scanned at session start.
+
+### The version check
+
+`cohorte install`, `update` and `doctor` make one read-only lookup of the latest published
+version on `registry.npmjs.org`, and tell you when the CLI you ran is behind
+(`npm i -g cohorte@latest`, or `npx cohorte@latest …` when run through npx). It is skipped under
+`CI` and turned off by `COHORTE_NO_VERSION_CHECK=1`. Nothing else leaves your machine — there is
+no telemetry.
+
+### Why `npm i -g`, not `npx`
+
+`npm i -g` installs the package and leaves a **`cohorte` binary on your `PATH`**, pinned to the
+version you installed; `npx` fetches it into a cache, runs it once, and leaves nothing behind. The
+docs use the first form because a **Francois extension panel** may only spawn a bare binary name
+resolved on `PATH` — [francois-plugin-cohorte](https://github.com/TheBidouilleAgency/francois-plugin-cohorte)
+requires the global install. `npx cohorte@latest <verb>` remains the right call for a one-off on
+a machine you do not own.
+
+## Migrating from 2.x
+
+```sh
+npm i -g cohorte@latest && cohorte update
+```
+
+On a 2.x machine, `cohorte update`:
+
+1. **removes the 2.x machine-wide gate registration** from `~/.claude/settings.json` — first,
+   before any file moves (a registered hook whose script is missing would block every Bash call
+   on the machine). Other hooks in the same file are kept;
+2. **moves the 2.x core** (`~/.claude/pipeline/`, the 2.x `templates/`, `hooks/gate.py`,
+   `agents/review.md`, `release.md`, `profile-reader.md`, the unprefixed workflow scripts, retired
+   commands carrying the Cohorte marker…) into `~/.claude/cohorte/legacy-backup/<timestamp>/`. Only
+   files that are provably Cohorte's move — your own files are never touched;
+3. **reports, and leaves in place**, surface agents a 2.x global init rendered into
+   `~/.claude/agents` (e.g. `backend.md`) — live projects may still dispatch them.
+
+Then, in **each project**, run `/cohorte-update-pipeline` (or `cohorte sync <project>`). On a 2.x
+repo it removes the vendored core (`.claude/pipeline/`, `.claude/templates/`, `.claude/workflows/`,
+`.claude/commands/cohorte-*.md`, `.claude/agents/{review,release,profile-reader}.md`,
+`.claude/hooks/gate.py`) — files git tracks unmodified are deleted (git history keeps them),
+anything else is moved to `.claude/cohorte-legacy-backup/<timestamp>/` — registers the new gate,
+drops the pointer's `mode`, and re-renders surface agents that lived in `~/.claude/agents` into the
+project's `.claude/agents`. Commit the result; once no project uses them, delete the global copies
+of the surface agents.
+
+Renamed in 3.0: the fixed agents are `cohorte-review`, `cohorte-release` and
+`cohorte-profile-reader`; the workflow files are `cohorte-*.js`.
+
+Using Codex, Cursor, Gemini CLI or OpenCode? 3.x does not support them — stay on
+`cohorte@2.10.2` (`npx cohorte@2.10.2 …`); its source is on the
+[`archive/multi-runtime`](https://github.com/TheBidouilleAgency/cohorte/tree/archive/multi-runtime)
+branch.
+
+If you ever tried the discontinued Python line (`cohorte@dev` 3.0.0-dev.*, `cohorte-engine` on
+PyPI): `uv tool uninstall cohorte-engine` (or `pipx uninstall cohorte-engine`) so its `cohorte`
+binary cannot shadow this one, and delete `~/.cohorte/` and any `.cohorte/` directory it left in
+your repos.
+
+## Uninstall
+
+```sh
+cohorte uninstall                      # everything install wrote
+cohorte uninstall --purge              # …and ~/.claude/cohorte.config.yaml
+cohorte uninstall --project [path]     # the gate wiring of one repo
+```
+
+- **`cohorte uninstall`** deletes every manifest file that is still exactly as written; files you
+  modified are kept and listed, and so is `~/.claude/cohorte/` while it still holds backups. It
+  also removes a 2.x machine-wide gate registration if one is left. Projects are not touched.
+- **`--purge`** additionally deletes your `~/.claude/cohorte.config.yaml`.
+- **`--project`** removes Cohorte's hook registrations from `.claude/settings.json` (foreign hooks
+  kept), `.claude/hooks/cohorte-gate.py` and `.claude/pipeline.json`. It leaves `PIPELINE.md`,
+  `.claude/gate-config.json`, the surface agents, `specs/` (including `specs/_template.md`), the
+  isolation scripts and the `.gitignore` lines — those are yours to delete.
+
+Uninstall the projects first if you want the gate gone everywhere: a project whose gate is still
+registered keeps running it (it is committed in the repo, not under `~/.claude`).
+
+## The two-minute check
+
+After installing, in a project you have run `/cohorte-init-pipeline` in:
+
+```sh
+cohorte version            # 3.x
+cohorte doctor             # exits 1 when any check is bad
+```
+
+What a healthy report shows, and what to do when a line is not `ok`:
+
+| Line | Healthy | When it is not |
+| --- | --- | --- |
+| Core & pointer | `core 3.x` | not installed ⇒ `cohorte install`; pointer behind ⇒ `cohorte sync` and commit; `mode` in the pointer or a 2.x core ⇒ `/cohorte-update-pipeline` / `cohorte update` |
+| Profile (PIPELINE.md) | surfaces counted | missing ⇒ `/cohorte-init-pipeline` |
+| Surfaces ↔ agents | every surface has its `.claude/agents/<agent>.md`, no orphans | `/cohorte-update-pipeline` re-renders |
+| Gate config | `gate-config.json` mirrors the profile | missing or drifted ⇒ regenerate it from the profile's `gate` block (doctor prints the command) |
+| Gate hook | `registered once (Bash\|Task\|Agent + Write\|Edit\|MultiEdit), committed` | not committed ⇒ `git add .claude/hooks/cohorte-gate.py .claude/settings.json`; missing ⇒ `cohorte sync` |
+| Local artifacts | all gitignored | a tracked `preflight.ok` ⇒ `git rm --cached .claude/preflight.ok` |
+| Workflows | scripts + `cohorte-profile-reader` installed | `cohorte update` |
+
+Then, in Claude Code, `/cohorte-doctor` runs the same checks plus the live half (the workflow
+runtime in this session, retrieval connectivity, the kanban link). Finally, prove the gate fires:
+
+```sh
+python3 .claude/hooks/cohorte-gate.py --check "<a pattern from your gate.deny list>"
+# → gate: deny — …   (exit 2)
+```
+
+Treat the gate as a strong guard against agent mistakes, not a sandbox: keep **branch
+protection** on the default branch in GitHub (require a PR, block force-pushes) as the hard
+boundary for the remote.
 
 ## Reading a project without a coding agent
 
-`specs` and `doctor` are the read-only half of the pipeline, out of the agent's mouth and into
-the shell. `specs` prints the board (`id`, `status`, `branch`, `title`) from the frontmatter of
-`specs/*.md`; `doctor` runs the same checks `/cohorte-doctor` runs — core, pointer, profile,
-surfaces↔agents, gate, hook, retrieval, design, isolation, specs — and **exits 1 when any check
-is bad**, so it drops into CI unchanged. Both read through `lib/`, so the board and
-the CLI can never give two answers about one repo.
-
-Three machine-readable shapes:
+`specs` and `doctor` are the read-only half of the pipeline, in the shell. `specs` prints the
+board (`id`, `status`, `branch`, `title`) from the frontmatter of `specs/*.md`; `doctor` runs the
+checks above and **exits 1 when any check is bad**, so it drops into CI unchanged. Both read
+through `lib/`, so every consumer — the CLI, a Francois panel — answers from one implementation.
 
 | Flag | Shape |
 | --- | --- |
@@ -63,86 +272,44 @@ Three machine-readable shapes:
 | `--json` | the native document (the full doctor state, the spec list) |
 | `--panel` | the payload a [Francois](https://github.com/antoine-gmnz/francois) extension panel validates against — also accepted by `metrics`, which emits the headline tiles |
 
-`--panel` is the one Francois-aware surface in the whole package, and it exists for
+`--panel` is the one Francois-aware surface in the package, and it exists for
 [francois-plugin-cohorte](https://github.com/TheBidouilleAgency/francois-plugin-cohorte): a
-manifest-only Francois extension that renders the spec board, the doctor report and the 30-day
-cost as three panels beside your sessions. It needs `npm i -g cohorte` — never `npx`, never a
-shell, never an absolute path; the manifest names a bare binary and Francois resolves it on
-`PATH` at spawn time.
+manifest-only extension that renders the spec board, the doctor report and the 30-day cost as
+three panels beside your sessions. It needs `npm i -g cohorte` — the manifest names a bare binary
+and Francois resolves it on `PATH` at spawn time.
 
-Add `--runtime=codex,cursor` (or `--all-runtimes`) to `install`/`update` to target coding agents
-other than Claude Code; with no flag the installer detects what is configured on the machine and
-asks, and with no TTY it targets Claude Code alone. See [Runtimes](/reference/runtimes).
-
-**Update never touches generated files**: `PIPELINE.md`, rendered surface agents,
-`gate-config.json`, `settings.json`, and your filled user config are always
-preserved. Bringing those up to a new core is `/cohorte-update-pipeline`'s reconcile job.
-
-## What gets copied
-
-Into the destination core — `.claude/` on Claude Code, `.cohorte/<runtime>/` on the others,
-with `commands/` and `agents/` redirected to wherever that runtime actually reads them:
-
-```
-commands/     the slash commands
-agents/       review · release · profile-reader (fixed agents)
-hooks/        gate.py
-templates/    handoff, review-feedback, spec, design-brief, pr-body, brainstorm-return,
-              + steps/init-pipeline/ (the router's step files)
-workflows/    review.js · audit.js · refactor.js · loop.js
-pipeline/     PIPELINE.template.md · SCHEMA.md · cohorte.config.template.yaml ·
-              implementer.template.md · CHANGELOG.md · VERSION
-  scripts/    preflight.sh · kanban-move.sh ·
-              new-feature.sh.template · remove-feature.sh.template
-```
-
-The commands and agents are **rendered**, not copied: `core/commands/` and `core/agents/` are
-runtime-neutral sources, and the adapter emits markdown + that runtime's frontmatter keys, a
-Codex skill directory, or TOML, resolving every path and stripping the branches that runtime
-cannot follow.
-
-Plus, at install: the fixed agents, the spec template into `specs/_template.md` (bundled mode),
-the user-config seed, and the gate-hook registration in that runtime's own config file. Installers also
-**scrub retired artifacts** from older installs (the removed TDD-gate hook and its settings
-registration, the retired research/questionnaire capability) — copy-over never deletes, so the
-scrubs are explicit.
-
-## The pointer — `pipeline.json` in the project's state dir
-
-Committed by `/cohorte-init-pipeline`:
-
-```json
-{ "pipeline": "cohorte", "mode": "global", "core_version": "1.3.1", "install": "npm i -g cohorte && cohorte install --global …" }
-```
-
-It's how a teammate cloning the repo knows which core to install, and how `/cohorte-doctor` detects
-version drift. `/cohorte-update-pipeline` syncs `core_version` in **both** modes (a shared global core
-can't know which repos point at it, so nothing else can).
-
-## Version flow
+## Releases (maintainers)
 
 ```
 package.json (semver source of truth)
-  → npm publish (CI, on main, trusted publishing + provenance)
-    → installers stamp <core>/pipeline/VERSION
-      → /cohorte-doctor compares VERSION ↔ pointer ↔ npm latest
-        → /cohorte-update-pipeline shows CHANGELOG entries between old and new
+  → merge to main → CI green on that commit
+    → publish.yml re-runs the suites, waits for a maintainer's approval (npm-publish environment)
+      → npm publish --provenance (latest, or `next` for a pre-release) · tag vX.Y.Z · GitHub release
+        → cohorte install stamps ~/.claude/cohorte/pipeline/VERSION
+          → cohorte doctor compares VERSION ↔ pointer ↔ npm latest
+            → /cohorte-update-pipeline shows the CHANGELOG entries between old and new
 ```
 
-Releases are fully automated: bump `package.json`, add the `## <version>` CHANGELOG section,
-push to main — `publish.yml` verifies, publishes, tags `v<version>`, and creates the GitHub
-release. A push without a version change publishes nothing.
+Bump `"version"` in `package.json` and add its `## X.Y.Z — YYYY-MM-DD` section to `CHANGELOG.md`,
+then merge to `main`. `publish.yml` starts only **after CI succeeded** on that commit and publishes
+nothing for a version already on the registry. A pre-release version (`3.1.0-rc.1`) is published
+under the `next` dist-tag, never `latest`. `install.sh` / `install.ps1` pick up the new `vX.Y.Z`
+tag automatically.
 
 ## Repo layout (for contributors)
 
 ```
-package.json           npm package — semver source of truth
-bin/cli.js             the npm CLI (cross-platform, dependency-free)
-install.sh · install.ps1
-core/                  copied verbatim into ~/.claude or <project>/.claude
+package.json            npm package (cohorte) — semver source of truth; `npm test` runs every suite
+bin/cli.js              the CLI: install / update / sync / uninstall / doctor / specs / metrics / version
+bin/report.js           the four renderings of `specs` / `doctor` (human, porcelain, json, panel)
+lib/install.js          the machine install: manifest, ownership rules, 2.x migration, uninstall
+lib/project.js          `cohorte sync`: wires one repo (self-contained; also copied into the core)
+lib/render.js           renders core/commands + core/agents for Claude Code (one preamble of path tokens)
+lib/doctor.js           the JS port of /cohorte-doctor, + versions.js / yaml.js. No dependencies.
+install.sh, install.ps1 thin wrappers around bin/cli.js (Node required)
+core/                   rendered (commands, agents) or copied (the rest) into ~/.claude by install
   agents/ commands/ hooks/ templates/ workflows/
-profile/               PIPELINE.template.md · SCHEMA.md · cohorte.config.template.yaml
-scripts/               shipped scripts + isolation templates + validate-core.mjs
-lib/                   shared readers behind `cohorte doctor` / `specs` (dependency-free)
-docs/                  this site (VitePress → GitHub Pages)
+profile/                PIPELINE.template.md · SCHEMA.md · cohorte.config.template.yaml
+scripts/                shipped preflight/kanban scripts, isolation templates, metrics, the test suites
+docs/                   this site (VitePress → GitHub Pages)
 ```

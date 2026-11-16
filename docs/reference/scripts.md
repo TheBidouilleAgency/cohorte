@@ -1,6 +1,6 @@
 # Shipped scripts
 
-Installed to `<core>/pipeline/scripts/` (`~/.claude` global, `.claude` bundled). Two families:
+Installed to `<core>/pipeline/scripts/`, i.e. `~/.claude/cohorte/pipeline/scripts/`. Two families:
 **shipped executables** used as-is by the commands, and **templates** rendered per project by
 `/cohorte-init-pipeline`. Every call site chains them with `|| true`, so a missing script is a *silent*
 no-op — `/cohorte-doctor` check 1 is what catches a half-copied core.
@@ -15,7 +15,8 @@ Runs each command through `sh -c`, all output appended to `<report-file>` (the b
 any agent's context). First failure ⇒ prints the last 40 lines of the report raw to stderr, exit
 1 — the caller (**`/cohorte-review` §0, the workflow preflight phases**) must stop there
 and spawn no agents. All green ⇒ writes `<state>/preflight.ok` (`<epoch> <HEAD sha> <tree digest>`), the stamp
-`gate.py` checks before letting review dispatches through. It is a **local, gitignored** file —
+the gate (`.claude/hooks/cohorte-gate.py`) checks before letting review dispatches through. It is a
+**local, gitignored** file —
 never commit it (see [gate.md](gate.md#the-preflight-phase-gate)).
 
 ## `kanban-move.sh` — board updates outside agent context
@@ -58,17 +59,19 @@ prefix, install/dev/migrate commands, per-surface env stanzas).
 
 ## Repo-side helpers (not installed)
 
-- `scripts/validate-core.mjs` — CI's structural validator for the core itself: command/agent
+`npm test` runs every suite below, in this order; CI runs them on Linux, macOS and Windows across
+Node 20–24 and Python 3.9–3.13.
+
+- `scripts/validate-core.mjs` — the structural validator for the core itself: command/agent
   frontmatter + model pins, template placeholders, cross-references, the no-telemetry ratchet,
   installer coverage of every shipped script, packaging negations,
   and workflow-script invariants (parses each `core/workflows/*.js` exactly as the runtime does —
-  async body wrap — plus meta literal, `profile-reader` phase 0, no `Date.now()`).
-- `scripts/test-workflows.mjs` — **behavioural** tests for `core/workflows/*.js`: runs each script
-  with stub agents and asserts the returned verdict object. Structural checks cannot see verdict
-  logic, and one failure mode needs exactly this — `agent()` returns `null` when a subagent dies,
-  so a crashed reviewer yields zero findings, indistinguishable from a clean surface.
-  `review.js` scored that as `SHIP` until this test existed; the same suite now pins the
-  loop workflow's reducer (`loop.js`) and the refactor retry round.
+  async body wrap — plus meta literal, `cohorte-profile-reader` phase 0, no `Date.now()`).
+- `scripts/test-install.mjs` — installer and project-wiring tests (`bin/cli.js`, `lib/install.js`,
+  `lib/project.js`), run through the real CLI in a scratch `CLAUDE_CONFIG_DIR` + `HOME`. Every
+  assertion is a postcondition on disk, and several pin 2.x regressions: install deleting a user's
+  own `~/.claude/commands/review.md`, an unparseable `settings.json` being replaced, any hook
+  ending in `gate.py` being treated as ours, no uninstall.
 - `scripts/test-gate.mjs` — **behavioural** tests for `hooks/gate.py`, driving its real
   stdin→stdout contract with PreToolUse payloads: the deny/ask tiers, chained-command splitting
   (`&&`, `;`, `|`, `||`, newlines), branch-conditional gating resolved at the *payload's* cwd,
@@ -76,25 +79,27 @@ prefix, install/dev/migrate commands, per-surface env stanzas).
   the preflight phase gate (missing/stale/HEAD-moved/unreadable stamp), and worktree-aware HEAD
   matching. The gate is the only component that can block a user's command; `py_compile` proves
   only that it parses.
-- `scripts/test-adapter.mjs` — tests for the runtime adapter (`core/adapter/render.js` +
-  `core/runtimes/*.json`), which turns one set of source prompts into five runtimes' worth of
-  commands and agents. Its failures are silent by construction — a dropped conditional or a leaked
-  marker still installs cleanly and only misleads the model at run time — so this installs for every
-  runtime into a scratch home and asserts what lands on disk: no unresolved markers, the dispatch
-  doctrine matching that runtime's capabilities, the gate described as blocking or advisory
-  according to whether it really is, only supported frontmatter keys surviving, the reviewer's
-  read-only restriction re-emitted in that runtime's spelling, and Claude Code's output unchanged.
-- `scripts/test-lib.mjs` — tests for `lib/*.js`, the shipped runtime code behind `cohorte doctor`
-  and `cohorte specs`: the block-YAML parser (against the real `PIPELINE.template.md`), the JS port
-  of `/cohorte-doctor` (each check green, then each one made to fail), and the runtime-layout
-  resolver — including a non-Claude layout and a registry whose absolute paths point at someone
-  else's checkout, both of which used to report a healthy install as several false reds.
-- `scripts/assert-gate-hook.mjs` — post-install assertion on a `settings.json`: exactly one
-  `gate.py` registration (callers install twice first), with a matcher covering both `Bash` and
-  `Task`. Both invariants are shipped regressions.
-- `.github/workflows/ci.yml` — runs the validator, syntax-checks CLI/lib/hook/installers,
-  and **dry-runs both installers** into scratch homes, asserting the exact postconditions
-  (agents present, scripts executable, workflows shipped, templates-not-rendered).
-- `.github/workflows/publish.yml` — publish-on-main: version-diff check against the registry, a
-  required CHANGELOG entry, `npm publish --provenance` (token-less OIDC trusted
-  publishing), tag + GitHub release.
+- `scripts/test-lib.mjs` — tests for `lib/*.js`, the shipped code behind `cohorte doctor` and
+  `cohorte specs`: the block-YAML parser (against the real `PIPELINE.template.md` and real-world
+  profile shapes — indentless lists, `- db:wipe` staying a string, block scalars) and the JS port
+  of `/cohorte-doctor` (each check green, then each one made to fail).
+- `scripts/test-workflows.mjs` — **behavioural** tests for `core/workflows/*.js`: runs each script
+  with stub agents and asserts the returned verdict object. Structural checks cannot see verdict
+  logic, and one failure mode needs exactly this — `agent()` returns `null` when a subagent dies,
+  so a crashed reviewer yields zero findings, indistinguishable from a clean surface.
+  `review.js` scored that as `SHIP` until this test existed; the same suite now pins the
+  loop workflow's reducer (`loop.js`) and the refactor retry round.
+- `scripts/test-kanban.mjs` — behavioural tests for `kanban-move.sh`, the board mirror's only
+  writer: what resolves, what refuses to resolve, and that a refusal *says why* on stdout instead
+  of exiting quietly.
+- `scripts/test-metrics.mjs` — end-to-end checks for `scripts/metrics/collect.mjs` against a
+  synthetic transcript: repeated `usage` lines, a mid-command task notification, subagent spend,
+  synthetic harness messages, the cache-tier pricing arithmetic.
+- `.github/workflows/ci.yml` — the suites above on the OS × Node × Python matrix, plus a
+  package-contents job: `install.sh` parses and installs the checkout, and the tarball carries no
+  bytecode and no test suite.
+- `.github/workflows/publish.yml` — runs only after CI succeeded on `main`: re-runs the suites,
+  requires a CHANGELOG entry for the new version, skips a version already on the registry, then
+  waits for a maintainer's approval (the `npm-publish` environment) before `npm publish
+  --provenance` (token-less OIDC trusted publishing; `next` dist-tag for a pre-release), the
+  `vX.Y.Z` tag and the GitHub release.

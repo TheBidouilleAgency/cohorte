@@ -1,18 +1,23 @@
 # Agents
 
-Two kinds: **fixed agents** shipped as-is by the installers, and **rendered surface agents**
-generated per project by `/cohorte-init-pipeline` from a template. All are stateless — every dispatch
+Two kinds: **fixed agents** installed once per machine by `cohorte install` (in
+`~/.claude/agents/`), and **rendered surface agents** generated per project by
+`/cohorte-init-pipeline` from a template and committed in that project's `.claude/agents/`. All are stateless — every dispatch
 re-supplies everything they need as exact file paths.
 
 ## Fixed agents
 
 | Agent | Model | Tools | Job |
 | --- | --- | --- | --- |
-| `review` | sonnet | Read, Grep, Glob, retrieval MCP | Read-only reviewer / auditor. |
-| `release` | haiku | Read, Grep, Glob, Bash | Commit / push / PR ritual at `/cohorte-ship`. |
-| `profile-reader` | haiku | Read, Grep, Glob | `PIPELINE.md` machine block → JSON (workflow phase 0). |
+| `cohorte-review` | sonnet | Read, Grep, Glob, `mcp__serena`, `mcp__graphify` | Read-only reviewer / auditor. |
+| `cohorte-release` | haiku | Read, Grep, Glob, Bash | Commit / push / PR ritual at `/cohorte-ship`. |
+| `cohorte-profile-reader` | haiku | Read, Grep, Glob | `PIPELINE.md` machine block → JSON (workflow phase 0). |
 
-### `review`
+They were named `review`, `release` and `profile-reader` before 3.0.0; `cohorte update` moves the
+2.x copies out of `~/.claude/agents` (see [Migrating from 2.x](/reference/installers#migrating-from-2-x)).
+Dispatch them by the new name (`subagent_type: cohorte-review`).
+
+### `cohorte-review`
 
 Read-only **by construction** — no Write, no Edit, no Bash. Reads the staged diff file named in
 its dispatch *first* (hunks + immediate context; full source files only when a finding demands
@@ -44,7 +49,7 @@ security issue on a path this feature adds or calls is **never** deferrable. In 
 with a path instead of a spec) it emits a prioritized refactor backlog grouped by domain
 instead of a verdict.
 
-### `release`
+### `cohorte-release`
 
 Runs only after a human-confirmed SHIP. Sanity-checks the branch and staged files (refuses
 `.env`/secrets), writes conventional commits referencing the feature id, plain `git push`
@@ -52,7 +57,7 @@ Runs only after a human-confirmed SHIP. Sanity-checks the branch and staged file
 drafted PR body from the template when `gh`/GitHub isn't available. Never edits source, never
 runs migrations, never touches `gate.deny` commands.
 
-### `profile-reader`
+### `cohorte-profile-reader`
 
 Reads the fenced `yaml pipeline-profile` block of `PIPELINE.md` and returns it as faithful JSON
 (comments dropped, nothing invented, `<…>` placeholders passed through) — or
@@ -62,8 +67,10 @@ it's the mandatory phase 0 of all four workflow scripts.
 ## Rendered surface agents
 
 `/cohorte-init-pipeline` (and `/cohorte-build` §1.5 when a spec grows the surface list) renders one agent per
-`surfaces[]` entry from `core/agents/implementer.template.md` into
-the runtime's agents dir as `<agent>.md`, substituting:
+`surfaces[]` entry from the installed `<core>/pipeline/implementer.template.md` (source:
+`core/agents/implementer.template.md`) into **the project's `.claude/agents/<agent>.md`** — always
+the project, never `~/.claude/agents`, where two projects with a `frontend` surface would overwrite
+each other (2.x global installs did exactly that). Commit them with the code. It substitutes:
 
 | Placeholder | Filled with |
 | --- | --- |
@@ -74,7 +81,8 @@ the runtime's agents dir as `<agent>.md`, substituting:
 
 The rendered implementer:
 
-- **Owns one tree** (`<path>/**`) and may touch nothing else; never edits the frozen contract
+- **Owns one tree** (`<path>/**`) and is told to touch nothing else — a rule the agent follows and
+  the review checks, not a sandbox; never edits the frozen contract
   (mismatch ⇒ report in the handoff, never fix); never runs `gate.deny` commands; migrations
   are append-only.
 - **Reads only the machine block** of `PIPELINE.md` at runtime — its conventions are baked in.
