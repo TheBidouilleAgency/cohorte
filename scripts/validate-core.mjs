@@ -280,6 +280,11 @@ for (const [name, marker] of [["install.sh", "cp -R \"$src/core"], ["install.ps1
     fail(name, "carries its own core-copy logic again — installs must go through bin/cli.js (no shell renderer exists)");
 }
 
+// install.ps1 must stay pure ASCII: Windows PowerShell 5.1 reads a BOM-less .ps1 in the ANSI code
+// page, and one em dash inside a string literal breaks the parser (CI caught it on 3.0).
+if (/[^\x00-\x7F]/.test(read("install.ps1")))
+  fail("install.ps1", "contains non-ASCII characters — Windows PowerShell 5.1 mis-parses BOM-less scripts");
+
 // ── workflow scripts ────────────────────────────────────────────────────────
 // core/workflows/*.js run inside the Claude Code Workflow runtime: an async
 // function body with agent()/pipeline()/… injected, plus one `export const

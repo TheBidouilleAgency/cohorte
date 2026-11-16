@@ -1,17 +1,20 @@
-# install.ps1 — install cohorte (the multi-agent dev pipeline for Claude Code) on this machine (Windows).
+# install.ps1 - install cohorte (the multi-agent dev pipeline for Claude Code) on this machine (Windows).
 # Works on Windows PowerShell 5.1 and PowerShell 7+. A thin wrapper around bin\cli.js: Node >= 20 is required.
 #
 #   irm https://raw.githubusercontent.com/TheBidouilleAgency/cohorte/main/install.ps1 | iex
 #   .\install.ps1            # from a checkout: installs that working tree
-#   .\install.ps1 -Update    # same thing — install is idempotent
+#   .\install.ps1 -Update    # same thing - install is idempotent
 #
 # The documented route is `npm i -g cohorte; cohorte install`. Piped, this script installs the
 # LATEST RELEASE tag (never the tip of main). Then, in each project, run /cohorte-init-pipeline once.
 
+# Keep this file pure ASCII: Windows PowerShell 5.1 reads a BOM-less script in the ANSI code
+# page, and a single em dash inside a string breaks parsing.
+
 [CmdletBinding()]
 param(
     [switch]$Update,
-    [switch]$Global  # 2.x flag — 3.x has a single mode
+    [switch]$Global  # 2.x flag - 3.x has a single mode
 )
 
 $ErrorActionPreference = 'Stop'
@@ -29,7 +32,7 @@ if (-not $node) {
 $nodeMajor = 0
 try { $nodeMajor = [int](((& $node.Source --version) -replace '^v', '') -split '\.')[0] } catch { }
 if ($nodeMajor -lt 20) {
-    Write-Error "cohorte needs Node >= 20 — found $(& $node.Source --version)."
+    Write-Error "cohorte needs Node >= 20 - found $(& $node.Source --version)."
     if ($PSCommandPath) { exit 1 }
     return
 }
@@ -60,7 +63,7 @@ try {
         $src = Join-Path $tmp 'cohorte'
     }
     & $node.Source (Join-Path $src 'bin\cli.js') $(if ($Update) { 'update' } else { 'install' })
-    # `exit` under `irm … | iex` would close the user's interactive session. Exit only as a file.
+    # `exit` under `irm ... | iex` would close the user's interactive session. Exit only as a file.
     if ($PSCommandPath) { exit $LASTEXITCODE }
 } finally {
     if ($tmp -and (Test-Path -LiteralPath $tmp)) {
