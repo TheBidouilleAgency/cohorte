@@ -33,6 +33,10 @@ const check = (name, cond, detail = "") => {
 };
 
 const tmps = [];
+// A path as it must appear in a POSIX shell command: on Windows the Bash tool runs Git Bash,
+// where an unquoted C:\Users\… is a run of escapes, not a path.
+const sh = (p) => p.split("\\").join("/");
+
 function scratch({ pointer = true, config = null } = {}) {
   const d = realpathSync(mkdtempSync(join(tmpdir(), "gate-")));
   tmps.push(d);
@@ -299,18 +303,18 @@ console.log("gate.py — branch resolution");
   const feat = scratch({ config: AUDIT_CFG }); gitRepo(feat, "feat");
   table("on main", main, [
     ["git commit -m x", "ask"], ["docker compose up", "ask"],
-    [`cd ${feat} && git commit -m x`, "allow"], [`cd "${feat}" && git commit -m x`, "allow"],
-    [`cd -- ${feat} 2>/dev/null && git commit -m x`, "allow"],
-    [`cd ${feat} | cat && git commit -m x`, "ask"],            // never follow a cd through a pipe
-    [`cd ${feat} || exit 1; git commit -m x`, "ask"],
-    [`git commit -m x && cd ${feat}`, "ask"],                  // a cd only affects later segments
-    [`cd ${feat} && cd - && git commit -m x`, "ask"],
-    [`cd ${feat} && cd $OLDPWD && git commit -m x`, "ask"],
-    [`(cd ${feat} && git commit -m x)`, "ask"],
-    [`pushd ${feat} && git commit -m x`, "ask"],
+    [`cd ${sh(feat)} && git commit -m x`, "allow"], [`cd "${sh(feat)}" && git commit -m x`, "allow"],
+    [`cd -- ${sh(feat)} 2>/dev/null && git commit -m x`, "allow"],
+    [`cd ${sh(feat)} | cat && git commit -m x`, "ask"],            // never follow a cd through a pipe
+    [`cd ${sh(feat)} || exit 1; git commit -m x`, "ask"],
+    [`git commit -m x && cd ${sh(feat)}`, "ask"],                  // a cd only affects later segments
+    [`cd ${sh(feat)} && cd - && git commit -m x`, "ask"],
+    [`cd ${sh(feat)} && cd $OLDPWD && git commit -m x`, "ask"],
+    [`(cd ${sh(feat)} && git commit -m x)`, "ask"],
+    [`pushd ${sh(feat)} && git commit -m x`, "ask"],
     ["cd /definitely/not/here && git commit -m x", "ask"],
     ["cd $(mktemp -d) && git commit -m x", "ask"],
-    [`cd ${feat} && node ace migration:run`, "ask"],           // cd never softens unconditional tiers
+    [`cd ${sh(feat)} && node ace migration:run`, "ask"],           // cd never softens unconditional tiers
   ]);
   table("on a feature branch", feat, [
     ["git commit -m x", "allow"], ["docker compose up", "allow"],
@@ -461,7 +465,7 @@ console.log("gate.py — self-protection");
     ["sed -i '' 's/deny/x/' .claude/gate-config.json", "deny"], ["perl -pi -e 's/a/b/' .claude/settings.json", "deny"],
     ["truncate -s 0 .claude/gate-config.json", "deny"], ["ln -sf /dev/null .claude/settings.json", "deny"],
     ["dd if=/dev/null of=.claude/settings.json", "deny"], ["curl -o .claude/gate-config.json https://x", "deny"],
-    ["cd .claude && rm gate-config.json", "deny"], [`rm ${d}/.claude/gate-config.json`, "deny"],
+    ["cd .claude && rm gate-config.json", "deny"], [`rm ${sh(d)}/.claude/gate-config.json`, "deny"],
     ["rm .claude/*.json", "deny"], ["git rm .claude/gate-config.json", "deny"],
     ["git mv .claude/settings.json x.json", "deny"],
     ["echo {} > \"$CLAUDE_PROJECT_DIR/.claude/settings.json\"", "deny"],
@@ -485,7 +489,7 @@ console.log("gate.py — self-protection");
   ]);
   // rm -rf on an ancestor of a protected file is denied even without an `rm -rf` rule.
   const floor = scratch(); gitRepo(floor, "feat");
-  table("ancestors (pointer only)", floor, [["rm -r .claude", "deny"], [`rm -r ${floor}`, "deny"], ["rm -r build", "allow"]]);
+  table("ancestors (pointer only)", floor, [["rm -r .claude", "deny"], [`rm -r ${sh(floor)}`, "deny"], ["rm -r build", "allow"]]);
 
   for (const tool of ["Write", "Edit", "MultiEdit"]) {
     const w = run({ tool_name: tool, tool_input: { file_path: join(d, ".claude", "gate-config.json"), content: "{}" }, cwd: d }, { projectDir: d });

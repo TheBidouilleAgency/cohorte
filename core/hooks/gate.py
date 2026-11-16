@@ -2323,6 +2323,9 @@ class Analyzer(object):
                              ("HOME", os.path.expanduser("~")),
                              ("PWD", state.cwd if state.cwd_known else None)):
                 if val:
+                    # Forward slashes: a Windows value (C:\\Users\\…) would otherwise read as
+                    # shell escapes below and every expanded path would look suspect.
+                    val = val.replace("\\", "/")
                     t = t.replace("${%s}" % var, val).replace("$" + var, val)
             if "$" in t or "`" in t or "'" in t or '"' in t or "\\" in t:
                 return "suspect" if suspicious(w.value.split(DYN)[-1], w.raw) else None
@@ -2887,7 +2890,17 @@ def strip_runtime(argv):
     return out
 
 
+def _utf8_streams():
+    """Claude Code reads hook output as UTF-8; Windows consoles default to a code page."""
+    for s in (sys.stdout, sys.stderr):
+        try:
+            s.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
+
+
 def main():
+    _utf8_streams()
     argv = sys.argv[1:]
     if argv and argv[0] in ("--check", "--check-dispatch"):
         return check_cli(argv)
