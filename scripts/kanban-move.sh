@@ -1,6 +1,6 @@
 #!/bin/sh
 # kanban-move.sh — move a feature card on an Obsidian Kanban board without
-# loading the board into an agent's context (SCHEMA.md §Kanban "Move a card").
+# loading the board into an agent's context (schema/kanban.md "Move a card").
 #
 #   kanban-move.sh <board.md|auto> <feature-id> <column|stage> [options]
 #   kanban-move.sh --check                 resolve only: print the board this
@@ -33,7 +33,7 @@
 # column, or an EXPLICIT <board.md> path that does not exist · 4 the board stayed locked
 # by another move for ~10 s (moves are serialized). A board that resolved
 # but cannot be moved is loud; an unconfigured one is quiet — the pipeline never
-# blocks on the board. (SCHEMA.md §Kanban states the same contract.)
+# blocks on the board. (schema/kanban.md states the same contract.)
 set -eu
 
 usage='usage: kanban-move.sh <board.md|auto> <feature-id> <column|stage> [--pr <num>] [--title <title>] [--project <name>] [--profile <path>]
