@@ -35,6 +35,7 @@ Usage:
   cohorte doctor    [project] [--porcelain | --json | --panel]
   cohorte specs     [project] [--porcelain | --json | --panel]
   cohorte metrics   [project] [--days=N] [--since=ISO] [--runs] [--json]
+  cohorte ui        [--port=N] [--no-open]   Local dashboard over every registered project
   cohorte version
 
 Where things go:
@@ -69,7 +70,9 @@ let projectScope = false;
 const metricsFlags = [];
 const isMetricsFlag = (a) =>
   a === '--json' || a === '--runs' || a.startsWith('--days=') || a.startsWith('--since=');
-const VERBS = ['install', 'update', 'sync', 'uninstall', 'metrics', 'specs', 'doctor'];
+const VERBS = ['install', 'update', 'sync', 'uninstall', 'metrics', 'specs', 'doctor', 'ui'];
+let uiPort = 0;
+let uiOpen = true;
 
 for (const a of args) {
   if (!mode && VERBS.includes(a)) mode = a;
@@ -77,6 +80,11 @@ for (const a of args) {
   else if (isMetricsFlag(a)) { if (a === '--json') format = 'json'; metricsFlags.push(a); }
   else if (a === 'version' || a === '--version' || a === '-v') { console.log(VERSION); process.exit(0); }
   else if (a === 'help' || a === '--help' || a === '-h') usage(0);
+  else if (a.startsWith('--port=') && mode === 'ui') {
+    uiPort = Number(a.slice(7));
+    if (!Number.isInteger(uiPort) || uiPort < 0 || uiPort > 65535) { console.error('error: --port must be 0-65535'); process.exit(2); }
+  }
+  else if (a === '--no-open' && mode === 'ui') uiOpen = false;
   else if (a === '--purge') purge = true;
   else if (a === '--project') projectScope = true;
   // 2.x flags. --global is what 3.x always does; --runtime=claude is the only runtime left.
@@ -98,7 +106,27 @@ if ((mode === 'install' || mode === 'update') && target) {
     + '       2.x "bundled" installs (a core copied into the repo) no longer exist.');
   process.exit(2);
 }
+if (mode === 'ui' && target) {
+  console.error('error: `cohorte ui` is a dashboard over all your projects and takes no path.\n'
+    + '       Add a project from the page, or open one with its own `cohorte doctor <path>`.');
+  process.exit(2);
+}
 const project = target || process.cwd();
+
+// --- dashboard ---------------------------------------------------------------
+if (mode === 'ui') {
+  const { create } = require('../ui/server.js');
+  const ui = create({ globalDir, version: VERSION });
+  ui.listen(uiPort).then((l) => {
+    console.log(`cohorte ui — ${l.url}\n  Local only (127.0.0.1); the link carries this session's token. Ctrl-C to stop.`);
+    if (uiOpen && process.stdout.isTTY) {
+      const [cmd, ...a] = process.platform === 'darwin' ? ['open'] : process.platform === 'win32' ? ['cmd', '/c', 'start', ''] : ['xdg-open'];
+      const c = spawnSync(cmd, [...a, l.url], { stdio: 'ignore' });
+      if (c.error) console.log('  (could not open a browser — open the link above)');
+    }
+  }).catch((e) => { console.error(`error: ${e && e.message ? e.message : e}`); process.exit(1); });
+  return;
+}
 
 // --- read-only reports -------------------------------------------------------
 if (mode === 'specs' || mode === 'doctor') {

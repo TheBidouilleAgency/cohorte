@@ -91,6 +91,9 @@ jobs:
         if: runner.os != 'Windows'
         run: node scripts/test-verify.mjs
 
+      - name: Dashboard (registry, local HTTP security)
+        run: node scripts/test-ui.mjs
+
       - name: End-to-end (install → sync → feature diff → preflight → gate → kanban → uninstall)
         run: node scripts/test-e2e.mjs
 
