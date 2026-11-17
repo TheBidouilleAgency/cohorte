@@ -228,6 +228,10 @@ async function startRun(form) {
     watchRun(r.run);
   });
 }
+const sendReply = (text) => guard(async () => {
+  const r = await api(`/projects/${S.sel}/runs/${S.run.id}/reply`, { method: 'POST', body: { text } });
+  watchRun({ ...r.run, events: S.run.events.concat(r.run.events.slice(S.run.cursor)), cursor: r.run.cursor });
+});
 const respond = (requestId, behavior, answers) => api(`/projects/${S.sel}/runs/${S.run.id}/respond`, { method: 'POST', body: { requestId, behavior, answers } })
   .then(() => pollRun()).catch((e) => { S.error = e.message; render(); });
 
@@ -257,10 +261,17 @@ function eventRow(e, last) {
   if (e.kind === 'text') return h('div', { class: 'ev' }, e.text);
   if (e.kind === 'tool') return h('div', { class: 'ev mute mono' }, `▸ ${e.name}  ${e.summary}`);
   if (e.kind === 'tool_result') return e.error ? h('div', { class: 'ev err mono' }, `✗ ${e.text}`) : null;
+  if (e.kind === 'reply') return h('div', { class: 'ev reply' }, h('span', { class: 'mute' }, 'you · '), e.text);
   if (e.kind === 'resolved') return h('div', { class: 'ev mute' }, `gate: ${e.decision}`);
   if (e.kind === 'result') return h('div', { class: `ev ${e.ok ? '' : 'err'}` }, h('strong', {}, e.ok ? 'Done' : 'Failed'), e.costUsd != null ? ` · ${usd(e.costUsd)}` : '', e.durationMs ? ` · ${Math.round(e.durationMs / 1000)}s` : '', e.text && e.text !== last ? h('div', {}, e.text) : null);
   if (e.kind === 'stderr' || e.kind === 'system') return h('div', { class: 'ev err mono' }, e.text);
   return null;
+}
+function replyBox(r) {
+  const ta = h('textarea', { rows: '3', placeholder: `Reply to ${r.command.split(' ')[0]} (same session)…`, 'aria-label': 'Reply to the command' });
+  return h('form', { class: 'reply-box', onsubmit: (e) => { e.preventDefault(); if (ta.value.trim()) sendReply(ta.value.trim()); } },
+    ta, h('button', { class: 'b', type: 'submit' }, 'Send'),
+    h('div', { class: 'mute' }, 'Goes to this Cohorte command only — it is not a general chat.'));
 }
 function runTab(d) {
   const form = {
@@ -285,7 +296,8 @@ function runTab(d) {
     hintEl,
     h('div', { class: 'mute' }, 'Headless run (claude -p): gates and questions appear below. Talking to the agent stays in Claude Code or Francois.'),
     r ? [h('h3', { style: 'text-transform:none' }, `${r.command} · ${r.status}`, r.status === 'running' ? [' ', h('button', { class: 'b', onclick: () => api(`/projects/${S.sel}/runs/${r.id}/stop`, { method: 'POST', body: {} }).then(pollRun) }, 'Stop')] : null),
-      (r.pending || []).map(pendingCard), h('div', { class: 'feed' }, r.events.map((e, i) => eventRow(e, (r.events.slice(0, i).reverse().find((x) => x.kind === 'text') || {}).text)))]
+      (r.pending || []).map(pendingCard), h('div', { class: 'feed' }, r.events.map((e, i) => eventRow(e, (r.events.slice(0, i).reverse().find((x) => x.kind === 'text') || {}).text))),
+      r.status !== 'running' && r.sessionId ? replyBox(r) : null]
       : (d.runs || []).length ? [h('h3', {}, 'Earlier runs'), (d.runs || []).map((x) => h('div', { class: 'mono' }, `${x.command} · ${x.status}`))] : null);
 }
 

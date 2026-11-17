@@ -192,6 +192,12 @@ function create({ globalDir, version, token = crypto.randomBytes(24).toString('h
         if (!run || run.projectId !== p.id) return fail(res, 404, 'unknown run');
         if (parts.length === 4 && method === 'GET') return send(res, 200, runs.view(run, Math.max(0, parseInt(url.searchParams.get('since'), 10) || 0)));
         if (parts[4] === 'stop' && method === 'POST') return send(res, 200, { stopped: runs.stop(run) });
+        if (parts[4] === 'reply' && method === 'POST') {
+          let body;
+          try { body = await readBody(req); } catch (e) { return fail(res, 400, e.message); }
+          const err = runs.reply(run, body.text);
+          return err ? fail(res, 409, err) : send(res, 202, { run: runs.view(run, 0) });
+        }
         if (parts[4] === 'respond' && method === 'POST') {
           let body;
           try { body = await readBody(req); } catch (e) { return fail(res, 400, e.message); }

@@ -49,22 +49,43 @@ class Runs {
       permissionMode: mode, status: 'running', startedAt: new Date().toISOString(), endedAt: null,
       events: [], dropped: 0, pending: new Map(), result: null, sessionId: null, child: null, closeTimer: null, stopping: false,
     };
+    this.#spawn(run, null);
+    this.runs.set(run.id, run);
+    this.#write(run, { type: 'user', message: { role: 'user', content: [{ type: 'text', text: opts.command }] } });
+    return run;
+  }
+
+  // One `claude -p` process for the run's next turn. A reply resumes the same session in a new process.
+  #spawn(run, resumeId) {
     const args = ['-p', '--output-format', 'stream-json', '--input-format', 'stream-json', '--permission-prompt-tool', 'stdio', '--verbose'];
-    if (mode !== 'default') args.push('--permission-mode', mode);
-    const child = spawn(this.bin, args, { cwd: opts.cwd, detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'], env: process.env });
+    if (run.permissionMode !== 'default') args.push('--permission-mode', run.permissionMode);
+    if (resumeId) args.push('--resume', resumeId);
+    const child = spawn(this.bin, args, { cwd: run.cwd, detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'], env: process.env });
     run.child = child;
     child.stdin.on('error', () => { /* the child went away first */ });
-    child.on('error', (e) => { this.#push(run, { kind: 'system', text: `could not start ${this.bin}: ${e.message}` }); this.#end(run, 'failed'); });
-    readline.createInterface({ input: child.stdout }).on('line', (line) => this.#line(run, line));
+    child.on('error', (e) => { this.#push(run, { kind: 'system', text: `could not start ${this.bin}: ${e.message}` }); if (run.child === child) this.#end(run, 'failed'); });
+    readline.createInterface({ input: child.stdout }).on('line', (line) => { if (run.child === child) this.#line(run, line); });
     child.stderr.on('data', (d) => this.#push(run, { kind: 'stderr', text: clip(String(d).trim(), 1000) }));
     child.on('close', (code) => {
+      if (run.child !== child) return;
       clearTimeout(run.closeTimer);
       if (run.status === 'running') this.#end(run, run.stopping ? 'stopped' : run.result && !run.result.ok ? 'failed' : code === 0 ? 'done' : 'failed');
       run.exitCode = code;
     });
-    this.runs.set(run.id, run);
-    this.#write(run, { type: 'user', message: { role: 'user', content: [{ type: 'text', text: opts.command }] } });
-    return run;
+  }
+
+  // Answers the command's free-text question (or steers it) in the SAME session. Only a Cohorte run
+  // that has ended its turn: there is no free-standing conversation here.
+  reply(run, text) {
+    if (!/^\/cohorte-/.test(run.command)) return 'not a cohorte run';
+    if (run.status === 'running') return 'the command is still running — answer its gates first, or wait for it to finish';
+    if (!run.sessionId) return 'this run has no session to continue';
+    if (typeof text !== 'string' || !text.trim() || text.length > 4000) return 'a reply of 1 to 4000 characters is required';
+    run.status = 'running'; run.endedAt = null; run.result = null; run.stopping = false;
+    this.#push(run, { kind: 'reply', text: text.trim() });
+    this.#spawn(run, run.sessionId);
+    this.#write(run, { type: 'user', message: { role: 'user', content: [{ type: 'text', text: text.trim() }] } });
+    return null;
   }
 
   #write(run, obj) { try { if (run.child.stdin.writable) run.child.stdin.write(`${JSON.stringify(obj)}\n`); } catch { /* closed */ } }

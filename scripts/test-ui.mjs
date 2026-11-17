@@ -73,8 +73,14 @@ const out = (o) => process.stdout.write(JSON.stringify(o) + "\\n");
 const waiting = new Map();
 let prompt = null, stage = 0;
 const ask = (req) => { const id = "r" + (++stage); waiting.set(id, true); out({ type: "control_request", request_id: id, request: req }); return id; };
+const resumed = process.argv.indexOf("--resume") >= 0 ? process.argv[process.argv.indexOf("--resume") + 1] : null;
 rl.on("line", (line) => {
   const v = JSON.parse(line);
+  if (v.type === "user" && resumed) {
+    out({ type: "system", subtype: "init", session_id: resumed });
+    out({ type: "result", subtype: "success", is_error: false, result: "resumed:" + resumed + ":" + v.message.content[0].text, total_cost_usd: 0.02, duration_ms: 3 });
+    return;
+  }
   if (v.type === "user") {
     prompt = v.message.content[0].text;
     out({ type: "system", subtype: "init", session_id: "s1" });
@@ -220,9 +226,16 @@ try {
   check("the answer reached the CLI keyed by question text", v.result && v.result.ok && v.result.text === 'answers={"Which db?":"sqlite"}', JSON.stringify(v.result));
   check("the run ends done once the stream is quiet (stdin closed)", v.status === "done" && v.result.costUsd === 0.01, v.status);
 
+  check("reply on a finished run resumes its session → 202", (await post(`${runsUrl}/${rid}/reply`, { text: "use sqlite, thanks" })).status === 202);
+  v = await poll((x) => x.status !== "running" && x.result && /^resumed:/.test(x.result.text));
+  check("the reply reached the SAME session and the run ended again", v.status === "done" && v.result.text === "resumed:s1:use sqlite, thanks", JSON.stringify(v.result));
+  check("the feed records what you said", v.events.some((e) => e.kind === "reply" && e.text === "use sqlite, thanks"));
+  check("empty reply → 409", (await post(`${runsUrl}/${rid}/reply`, { text: "  " })).status === 409);
+
   const hang = await post(runsUrl, { worktree: proj, command: "cohorte-build", args: "hang" });
   check("a second run can start once the first ended", hang.status === 202);
   const hid = hang.json.run.id;
+  check("reply while the command runs → 409", (await post(`${runsUrl}/${hid}/reply`, { text: "hi" })).status === 409);
   check("stop → 200", (await post(`${runsUrl}/${hid}/stop`, {})).status === 200);
   let hv;
   for (let i = 0; i < 60; i++) { hv = (await call(`${runsUrl}/${hid}?since=0`)).json; if (hv.status !== "running") break; await new Promise((r) => setTimeout(r, 100)); }
