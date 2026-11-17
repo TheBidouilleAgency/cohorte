@@ -30,7 +30,7 @@ async function api(path, opts = {}) {
   return data;
 }
 
-const S = { run: null, commands: null, job: null, projects: [], suggestions: [], sel: null, tab: 'health', detail: null, spec: null, metrics: null, error: null, busy: false };
+const S = { form: null, run: null, commands: null, job: null, projects: [], suggestions: [], sel: null, tab: 'health', detail: null, spec: null, metrics: null, error: null, busy: false };
 const tone = (s) => (s && s.error ? 'bad' : !s || s.missing ? 'bad' : s.summary.bad ? 'bad' : s.summary.warn ? 'warn' : 'ok');
 const STATUS_TONE = { shipped: 'ok', merged: 'ok', blocked: 'bad', abandoned: 'warn' };
 const usd = (n) => (typeof n === 'number' ? `$${n.toFixed(2)}` : '–');
@@ -52,7 +52,7 @@ async function guard(fn) {
   try { await fn(); S.error = null; } catch (e) { S.error = e.message; }
   S.busy = false; render();
 }
-const select = (id) => guard(async () => { S.sel = id; S.tab = 'health'; S.job = null; S.run = null; await loadDetail(); });
+const select = (id) => guard(async () => { S.sel = id; S.tab = 'health'; S.job = null; S.run = null; S.form = null; await loadDetail(); });
 const addProject = (path) => guard(async () => {
   const r = await api('/projects', { method: 'POST', body: { path } });
   await refresh(); S.sel = r.project.id; S.tab = 'health'; await loadDetail();
@@ -214,6 +214,9 @@ function pollRun() {
   }, 1000);
 }
 async function startRun(form) {
+  const c = (S.commands || []).find((x) => x.name === form.cmd.value);
+  if (c && c.argumentHint && !form.args.value.trim() &&
+      !confirm(`${c.name} usually takes an argument ${c.argumentHint}. Without one it may ask a free-text question this dashboard cannot answer.\n\nRun without?`)) return;
   const body = { worktree: form.wt.value, command: form.cmd.value, args: form.args.value, permissionMode: form.mode.value };
   await guard(async () => {
     let r;
@@ -250,12 +253,12 @@ function pendingCard(p) {
     h('button', { class: 'b', onclick: () => respond(p.requestId, 'allow') }, 'Allow'), ' ',
     h('button', { class: 'b', onclick: () => respond(p.requestId, 'deny') }, 'Deny'));
 }
-function eventRow(e) {
+function eventRow(e, last) {
   if (e.kind === 'text') return h('div', { class: 'ev' }, e.text);
   if (e.kind === 'tool') return h('div', { class: 'ev mute mono' }, `▸ ${e.name}  ${e.summary}`);
   if (e.kind === 'tool_result') return e.error ? h('div', { class: 'ev err mono' }, `✗ ${e.text}`) : null;
   if (e.kind === 'resolved') return h('div', { class: 'ev mute' }, `gate: ${e.decision}`);
-  if (e.kind === 'result') return h('div', { class: `ev ${e.ok ? '' : 'err'}` }, h('strong', {}, e.ok ? 'Done' : 'Failed'), e.costUsd != null ? ` · ${usd(e.costUsd)}` : '', e.durationMs ? ` · ${Math.round(e.durationMs / 1000)}s` : '', e.text ? h('div', {}, e.text) : null);
+  if (e.kind === 'result') return h('div', { class: `ev ${e.ok ? '' : 'err'}` }, h('strong', {}, e.ok ? 'Done' : 'Failed'), e.costUsd != null ? ` · ${usd(e.costUsd)}` : '', e.durationMs ? ` · ${Math.round(e.durationMs / 1000)}s` : '', e.text && e.text !== last ? h('div', {}, e.text) : null);
   if (e.kind === 'stderr' || e.kind === 'system') return h('div', { class: 'ev err mono' }, e.text);
   return null;
 }
@@ -266,6 +269,11 @@ function runTab(d) {
     args: h('input', { placeholder: 'argument (feature id, text…)' }),
     mode: h('select', {}, [['default', 'ask for edits'], ['acceptEdits', 'accept edits'], ['plan', 'plan only']].map(([v, l]) => h('option', { value: v }, l))),
   };
+  S.form = S.form || {};
+  for (const k of ['wt', 'cmd', 'args', 'mode']) {
+    if (S.form[k] != null) form[k].value = S.form[k];
+    form[k].addEventListener('input', () => { S.form[k] = form[k].value; });
+  }
   const hint = () => { const c = (S.commands || []).find((x) => x.name === form.cmd.value); return c ? `${c.description}${c.argumentHint ? `  [${c.argumentHint}]` : ''}` : ''; };
   const hintEl = h('div', { class: 'mute' }, hint());
   form.cmd.addEventListener('change', () => { hintEl.textContent = hint(); });
@@ -276,8 +284,8 @@ function runTab(d) {
       form.wt, form.cmd, form.args, form.mode, h('button', { class: 'b', type: 'submit', disabled: r && r.status === 'running' ? 'disabled' : null }, 'Run')),
     hintEl,
     h('div', { class: 'mute' }, 'Headless run (claude -p): gates and questions appear below. Talking to the agent stays in Claude Code or Francois.'),
-    r ? [h('h3', {}, `${r.command} · ${r.status}`, r.status === 'running' ? [' ', h('button', { class: 'b', onclick: () => api(`/projects/${S.sel}/runs/${r.id}/stop`, { method: 'POST', body: {} }).then(pollRun) }, 'Stop')] : null),
-      (r.pending || []).map(pendingCard), h('div', { class: 'feed' }, r.events.map(eventRow))]
+    r ? [h('h3', { style: 'text-transform:none' }, `${r.command} · ${r.status}`, r.status === 'running' ? [' ', h('button', { class: 'b', onclick: () => api(`/projects/${S.sel}/runs/${r.id}/stop`, { method: 'POST', body: {} }).then(pollRun) }, 'Stop')] : null),
+      (r.pending || []).map(pendingCard), h('div', { class: 'feed' }, r.events.map((e, i) => eventRow(e, (r.events.slice(0, i).reverse().find((x) => x.kind === 'text') || {}).text)))]
       : (d.runs || []).length ? [h('h3', {}, 'Earlier runs'), (d.runs || []).map((x) => h('div', { class: 'mono' }, `${x.command} · ${x.status}`))] : null);
 }
 
