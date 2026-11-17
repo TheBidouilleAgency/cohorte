@@ -117,8 +117,12 @@ const project = target || process.cwd();
 if (mode === 'ui') {
   const { create } = require('../ui/server.js');
   const ui = create({ globalDir, version: VERSION });
+  const bye = () => { ui.jobs.stopAll(); process.exit(0); };
+  process.on('SIGINT', bye);
+  process.on('SIGTERM', bye);
+  process.on('exit', () => ui.jobs.stopAll());
   ui.listen(uiPort).then((l) => {
-    console.log(`cohorte ui — ${l.url}\n  Local only (127.0.0.1); the link carries this session's token. Ctrl-C to stop.`);
+    console.log(`cohorte ui — ${l.url}\n  Local only (127.0.0.1); the link carries this session's token. Ctrl-C stops it and the dev servers it started.`);
     if (uiOpen && process.stdout.isTTY) {
       const [cmd, ...a] = process.platform === 'darwin' ? ['open'] : process.platform === 'win32' ? ['cmd', '/c', 'start', ''] : ['xdg-open'];
       const c = spawnSync(cmd, [...a, l.url], { stdio: 'ignore' });

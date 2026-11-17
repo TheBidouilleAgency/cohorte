@@ -39,6 +39,10 @@ git(proj, "init", "-q");
 write(join(proj, "PIPELINE.md"), "# app\n");
 write(join(proj, "specs", "f1.md"), "---\nfeature_id: f1\ntitle: First\nstatus: draft\nbranch: feat/f1\n---\nbody\n");
 write(join(proj, "specs", "reports", "f1.verdict.json"), JSON.stringify({ verdict: "SHIP" }));
+git(proj, "add", "-A");
+git(proj, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init");
+write(join(proj, ".claude", "profile.json"), JSON.stringify({ name: "app",
+  commands: { dev: `node -e "console.log('hello-dev');setInterval(()=>{},1000)"`, dev_ready: `node -e "process.exit(0)"` } }));
 const plain = join(home, "plain");
 mkdirSync(plain);
 
@@ -101,6 +105,53 @@ try {
   check("a raw path is not an id", (await call(`/api/projects/${encodeURIComponent(proj)}`)).status === 404);
   const m = await call(`/api/projects/${id}/metrics`);
   check("metrics answers (json or a clean error)", m.status === 200 || m.status === 502, String(m.status));
+  // --- step 2: worktrees and dev servers ---
+  const post = (path, obj) => call(path, { method: "POST", headers: JSON_H, body: JSON.stringify(obj) });
+  const waitJob = async (jid, want) => {
+    for (let i = 0; i < 60; i++) {
+      const j = (await call(`/api/projects/${id}/jobs/${jid}/logs?since=0`)).json;
+      if (want.includes(j.status)) return j;
+      await new Promise((r) => setTimeout(r, 150));
+    }
+    return (await call(`/api/projects/${id}/jobs/${jid}/logs?since=0`)).json;
+  };
+  check("bad feature id → 400", (await post(`/api/projects/${id}/worktrees`, { feature: "../evil" })).status === 400);
+  const cw = await post(`/api/projects/${id}/worktrees`, { feature: "feat-x" });
+  check("create worktree → 202", cw.status === 202, JSON.stringify(cw.json));
+  const cwj = await waitJob(cw.json.job.id, ["done", "failed"]);
+  check("worktree job finishes", cwj.status === "done", JSON.stringify(cwj));
+  const d2 = (await call(`/api/projects/${id}`)).json;
+  check("detail now lists 2 worktrees, main first", d2.worktrees.length === 2 && d2.worktrees[0].main === true && d2.dev.command.includes("hello-dev"));
+  const wt = d2.worktrees[1].path;
+  check("a path that is not a worktree → 404", (await post(`/api/projects/${id}/dev`, { worktree: home })).status === 404);
+  const dv = await post(`/api/projects/${id}/dev`, { worktree: wt });
+  check("start dev → 202", dv.status === 202, JSON.stringify(dv.json));
+  const dj = await waitJob(dv.json.job.id, ["ready"]);
+  check("dev server is ready and its logs stream", dj.status === "ready" && dj.lines.some((x) => x.includes("hello-dev")), JSON.stringify(dj));
+  check("second start in the same worktree → 409", (await post(`/api/projects/${id}/dev`, { worktree: wt })).status === 409);
+  check("remove refused while dev runs", (await post(`/api/projects/${id}/worktrees/remove`, { path: wt })).status === 409);
+  check("main checkout cannot be removed", (await post(`/api/projects/${id}/worktrees/remove`, { path: proj })).status === 400);
+  check("stop → 200", (await post(`/api/projects/${id}/jobs/${dj.id}/stop`, {})).status === 200);
+  const dstop = await waitJob(dj.id, ["stopped"]);
+  check("dev server stopped, process group gone", dstop.status === "stopped" && (() => { try { process.kill(dj.pid, 0); return false; } catch { return true; } })());
+  const rm = await post(`/api/projects/${id}/worktrees/remove`, { path: wt });
+  check("remove worktree → job done", rm.status === 202 && (await waitJob(rm.json.job.id, ["done", "failed"])).status === "done");
+  check("back to 1 worktree", (await call(`/api/projects/${id}`)).json.worktrees.length === 1);
+  check("unknown job → 404", (await call(`/api/projects/${id}/jobs/deadbeef/logs`)).status === 404);
+
+  // the project's gate has the last word
+  const gate = join(proj, ".claude", "hooks", "cohorte-gate.py");
+  write(gate, "import sys; sys.exit(2)\n");
+  const denied = await post(`/api/projects/${id}/dev`, { worktree: proj });
+  check("gate deny → 403, nothing started", denied.status === 403, JSON.stringify(denied.json));
+  write(gate, "import sys; sys.exit(1)\n");
+  const asked = await post(`/api/projects/${id}/dev`, { worktree: proj });
+  check("gate ask → 409 needsConfirmation", asked.status === 409 && asked.json.needsConfirmation === true);
+  const okd = await post(`/api/projects/${id}/dev`, { worktree: proj, confirmed: true });
+  check("gate ask + confirmed → 202", okd.status === 202);
+  await post(`/api/projects/${id}/jobs/${okd.json.job.id}/stop`, {});
+  await waitJob(okd.json.job.id, ["stopped"]);
+
   check("remove → 200", (await call(`/api/projects/${id}`, { method: "DELETE" })).status === 200);
   check("project is gone", (await call("/api/state")).json.projects.length === 0);
 } finally {

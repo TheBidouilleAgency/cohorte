@@ -17,6 +17,8 @@ const { spawn } = require('child_process');
 const registry = require('../lib/registry.js');
 const { state, scanSpecs } = require('../lib/doctor.js');
 const report = require('../bin/report.js');
+const { Jobs } = require('./jobs.js');
+const ops = require('./ops.js');
 
 const pkgRoot = path.join(__dirname, '..');
 const PUBLIC = path.join(__dirname, 'public');
@@ -29,7 +31,7 @@ const MAX_BODY = 16 * 1024;
 // A small TTL cache keyed by string; concurrent callers share one in-flight computation.
 function memo(ttlMs) {
   const m = new Map();
-  return (key, fn) => {
+  const run = (key, fn) => {
     const hit = m.get(key);
     if (hit && (hit.pending || Date.now() - hit.at < ttlMs)) return hit.value;
     const value = Promise.resolve().then(fn);
@@ -38,6 +40,8 @@ function memo(ttlMs) {
     value.then(() => { entry.pending = false; entry.at = Date.now(); }, () => m.delete(key));
     return value;
   };
+  run.clear = (key) => m.delete(key);
+  return run;
 }
 
 function runMetrics(root, args) {
@@ -61,6 +65,7 @@ function readJson(p) { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } ca
 function create({ globalDir, version, token = crypto.randomBytes(24).toString('hex'), storePath }) {
   const cacheDoctor = memo(8000);
   const cacheMetrics = memo(60000);
+  const jobs = new Jobs();
   let origin = null; // set once listening
 
   const doctorOf = (root) => cacheDoctor(root, () => state({ projectRoot: root, globalDir, cliVersion: version, offline: true }));
@@ -84,7 +89,11 @@ function create({ globalDir, version, token = crypto.randomBytes(24).toString('h
     const s = await doctorOf(p.root);
     const specs = report.specRecords(p.root, scanSpecs);
     const wt = registry.worktrees(p.root);
-    return { id: p.id, root: p.root, name: path.basename(p.root), doctor: s, specs, worktrees: wt };
+    const dev = ops.devInfo(p.root);
+    const scripts = ops.isolationScripts(p.root);
+    const withDev = wt.map((w, i) => ({ ...w, main: i === 0, dev: (jobs.find(p.id, 'dev', w.path) && jobs.view(jobs.find(p.id, 'dev', w.path))) || null }));
+    return { id: p.id, root: p.root, name: path.basename(p.root), doctor: s, specs, worktrees: withDev,
+      dev: { command: dev.command, ready: dev.ready }, isolation: scripts };
   }
 
   function specDetail(p, specId) {
@@ -158,6 +167,30 @@ function create({ globalDir, version, token = crypto.randomBytes(24).toString('h
       if (parts.length === 2 && method === 'DELETE') { registry.remove(globalDir, p.id); return send(res, 200, { removed: true }); }
       if (!fs.existsSync(p.root)) return fail(res, 410, `${p.root} no longer exists — remove it from the list`);
       if (parts.length === 2 && method === 'GET') return send(res, 200, await detail(p));
+      if (parts[2] === 'jobs') {
+        if (parts.length === 3 && method === 'GET') return send(res, 200, { jobs: jobs.forProject(p.id).map((j) => jobs.view(j)) });
+        const job = parts[3] && jobs.get(parts[3]);
+        if (!job || job.projectId !== p.id) return fail(res, 404, 'unknown job');
+        if (parts[4] === 'logs' && method === 'GET') return send(res, 200, jobs.view(job, Math.max(0, parseInt(url.searchParams.get('since'), 10) || 0)));
+        if (parts[4] === 'stop' && method === 'POST') return send(res, 200, { stopped: ops.stopJob(jobs, p, job.id) });
+      }
+      if (method === 'POST' && (parts[2] === 'dev' || parts[2] === 'worktrees')) {
+        let body;
+        try { body = await readBody(req); } catch (e) { return fail(res, 400, e.message); }
+        const confirmed = body.confirmed === true;
+        try {
+          let job;
+          if (parts[2] === 'dev' && parts.length === 3) job = ops.startDev(jobs, p, body.worktree, { confirmed });
+          else if (parts[2] === 'worktrees' && parts.length === 3) job = ops.createWorktree(jobs, p, body.feature, { confirmed });
+          else if (parts[2] === 'worktrees' && parts[3] === 'remove') job = ops.removeWorktree(jobs, p, body.path, { confirmed });
+          else return fail(res, 404, 'not found');
+          cacheDoctor.clear(p.root);
+          return send(res, 202, { job: jobs.view(job) });
+        } catch (e) {
+          if (e instanceof ops.OpError) return send(res, e.code, { error: e.message, needsConfirmation: e.needsConfirmation || false, command: e.command, reason: e.reason });
+          throw e;
+        }
+      }
       if (parts[2] === 'metrics' && method === 'GET') {
         const days = Math.min(365, Math.max(1, parseInt(url.searchParams.get('days'), 10) || 30));
         try { return send(res, 200, await cacheMetrics(`${p.root}|${days}`, () => runMetrics(p.root, [`--days=${days}`, '--runs']))); }
@@ -212,7 +245,7 @@ function create({ globalDir, version, token = crypto.randomBytes(24).toString('h
     });
   }
 
-  return { server, listen, token, close: () => new Promise((r) => server.close(r)) };
+  return { server, listen, token, jobs, close: () => { jobs.stopAll(); return new Promise((r) => server.close(r)); } };
 }
 
 module.exports = { create };

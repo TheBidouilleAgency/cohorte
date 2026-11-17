@@ -26,11 +26,11 @@ async function api(path, opts = {}) {
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  if (!res.ok) { const err = new Error(data.error || `HTTP ${res.status}`); err.needs = data.needsConfirmation === true; err.command = data.command; err.reason = data.reason; throw err; }
   return data;
 }
 
-const S = { projects: [], suggestions: [], sel: null, tab: 'health', detail: null, spec: null, metrics: null, error: null, busy: false };
+const S = { job: null, projects: [], suggestions: [], sel: null, tab: 'health', detail: null, spec: null, metrics: null, error: null, busy: false };
 const tone = (s) => (s && s.error ? 'bad' : !s || s.missing ? 'bad' : s.summary.bad ? 'bad' : s.summary.warn ? 'warn' : 'ok');
 const STATUS_TONE = { shipped: 'ok', merged: 'ok', blocked: 'bad', abandoned: 'warn' };
 const usd = (n) => (typeof n === 'number' ? `$${n.toFixed(2)}` : '–');
@@ -52,7 +52,7 @@ async function guard(fn) {
   try { await fn(); S.error = null; } catch (e) { S.error = e.message; }
   S.busy = false; render();
 }
-const select = (id) => guard(async () => { S.sel = id; S.tab = 'health'; await loadDetail(); });
+const select = (id) => guard(async () => { S.sel = id; S.tab = 'health'; S.job = null; await loadDetail(); });
 const addProject = (path) => guard(async () => {
   const r = await api('/projects', { method: 'POST', body: { path } });
   await refresh(); S.sel = r.project.id; S.tab = 'health'; await loadDetail();
@@ -124,9 +124,72 @@ function cost() {
         h('td', {}, usd(c.cost && typeof c.cost === 'object' ? c.cost.total : c.cost)))))));
 }
 
+// --- jobs: worktree provisioning and dev servers ---------------------------------
+let pollTimer = null;
+const LIVE = ['starting', 'running', 'ready'];
+async function postJob(path, body) {
+  try { return await api(path, { method: 'POST', body }); } catch (e) {
+    if (e.needs) {
+      if (!confirm(`The project's gate asks before running:\n\n${e.command}\n\n${e.reason || ''}\n\nRun it?`)) throw new Error('cancelled');
+      return await api(path, { method: 'POST', body: { ...body, confirmed: true } });
+    }
+    throw e;
+  }
+}
+function watch(job) { S.job = { ...job, lines: [], cursor: 0 }; poll(); }
+function poll() {
+  clearTimeout(pollTimer);
+  if (!S.job) return;
+  pollTimer = setTimeout(async () => {
+    const j = S.job;
+    if (!j || S.tab !== 'worktrees') return poll();
+    try {
+      const v = await api(`/projects/${S.sel}/jobs/${j.id}/logs?since=${j.cursor}`);
+      const was = j.status;
+      S.job = { ...v, lines: j.lines.concat(v.lines).slice(-1500), cursor: v.cursor };
+      const pre = document.getElementById('joblog');
+      if (pre) { pre.textContent = S.job.lines.join('\n'); pre.scrollTop = pre.scrollHeight; }
+      const st = document.getElementById('jobstatus');
+      if (st) st.textContent = S.job.status;
+      if (was !== S.job.status) { await loadDetail(); render(); }
+      if (!LIVE.includes(S.job.status) && was === S.job.status) { await loadDetail(); render(); return; }
+    } catch (e) { S.error = e.message; }
+    poll();
+  }, 1200);
+}
+const act = (fn) => guard(async () => { await fn(); await loadDetail(); });
+const startDev = (w) => act(async () => { const r = await postJob(`/projects/${S.sel}/dev`, { worktree: w.path }); watch(r.job); });
+const stopJobBtn = (id) => act(async () => { await api(`/projects/${S.sel}/jobs/${id}/stop`, { method: 'POST', body: {} }); });
+const createWt = (feature) => act(async () => { const r = await postJob(`/projects/${S.sel}/worktrees`, { feature }); watch(r.job); });
+const removeWt = (w) => act(async () => {
+  if (!confirm(`Remove the worktree ${w.path}?\n\nGit refuses if it has uncommitted changes. The branch is kept.`)) return;
+  const r = await postJob(`/projects/${S.sel}/worktrees/remove`, { path: w.path }); watch(r.job);
+});
+
 function worktrees(d) {
-  return h('table', {}, h('thead', {}, h('tr', {}, ['Path', 'Branch', 'HEAD'].map((t) => h('th', {}, t)))),
-    h('tbody', {}, d.worktrees.map((w) => h('tr', {}, h('td', { class: 'mono' }, w.path), h('td', { class: 'mono' }, w.branch || (w.bare ? 'bare' : 'detached')), h('td', { class: 'mono' }, w.head || '')))));
+  const feature = h('input', { placeholder: 'feature-id (kebab-case)', 'aria-label': 'Feature id' });
+  const live = (w) => w.dev && LIVE.includes(w.dev.status);
+  return h('div', {},
+    h('div', { class: 'mute' }, d.dev.command ? ['Dev command: ', h('span', { class: 'mono' }, d.dev.command)] : 'No commands.dev in this project’s profile — dev servers cannot be started from here.'),
+    h('table', {}, h('thead', {}, h('tr', {}, ['Worktree', 'Branch', 'Dev server', ''].map((t) => h('th', {}, t)))),
+      h('tbody', {}, d.worktrees.map((w) => h('tr', {},
+        h('td', { class: 'mono' }, w.path, w.main ? h('span', { class: 'pill', style: 'margin-left:6px' }, 'main') : null),
+        h('td', { class: 'mono' }, w.branch || (w.bare ? 'bare' : 'detached')),
+        h('td', {}, w.dev ? h('span', { class: `pill ${w.dev.status === 'ready' ? 'ok' : w.dev.status === 'failed' ? 'bad' : ''}` }, w.dev.status) : h('span', { class: 'mute' }, 'stopped')),
+        h('td', {},
+          live(w) ? h('button', { class: 'b', onclick: () => stopJobBtn(w.dev.id) }, 'Stop')
+            : (d.dev.command && !w.bare ? h('button', { class: 'b', onclick: () => startDev(w) }, 'Start dev') : null),
+          ' ',
+          w.dev ? h('button', { class: 'b', onclick: () => watch(w.dev) }, 'Logs') : null,
+          ' ',
+          !w.main ? h('button', { class: 'b', onclick: () => removeWt(w) }, 'Remove') : null))))),
+    h('h3', {}, 'New worktree'),
+    h('form', { class: 'add', onsubmit: (e) => { e.preventDefault(); if (feature.value.trim()) createWt(feature.value.trim()); } },
+      feature, h('button', { class: 'b', type: 'submit' }, 'Create')),
+    h('div', { class: 'mute' }, d.isolation.create ? 'Uses scripts/new-feature.sh (own DB and ports).' : 'Plain git worktree next to the repo, on a new branch.'),
+    S.job ? [h('h3', {}, `${S.job.label} · `, h('span', { id: 'jobstatus' }, S.job.status),
+      LIVE.includes(S.job.status) ? [' ', h('button', { class: 'b', onclick: () => stopJobBtn(S.job.id) }, 'Stop')] : null),
+      h('div', { class: 'mute mono' }, S.job.command), h('pre', { id: 'joblog' }, (S.job.lines || []).join('\n'))] : null);
 }
 
 function main() {
