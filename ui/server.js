@@ -18,6 +18,7 @@ const registry = require('../lib/registry.js');
 const { state, scanSpecs } = require('../lib/doctor.js');
 const report = require('../bin/report.js');
 const { Jobs } = require('./jobs.js');
+const { Runs } = require('./runs.js');
 const ops = require('./ops.js');
 
 const pkgRoot = path.join(__dirname, '..');
@@ -66,6 +67,7 @@ function create({ globalDir, version, token = crypto.randomBytes(24).toString('h
   const cacheDoctor = memo(8000);
   const cacheMetrics = memo(60000);
   const jobs = new Jobs();
+  const runs = new Runs();
   let origin = null; // set once listening
 
   const doctorOf = (root) => cacheDoctor(root, () => state({ projectRoot: root, globalDir, cliVersion: version, offline: true }));
@@ -93,7 +95,8 @@ function create({ globalDir, version, token = crypto.randomBytes(24).toString('h
     const scripts = ops.isolationScripts(p.root);
     const withDev = wt.map((w, i) => ({ ...w, main: i === 0, dev: (jobs.find(p.id, 'dev', w.path) && jobs.view(jobs.find(p.id, 'dev', w.path))) || null }));
     return { id: p.id, root: p.root, name: path.basename(p.root), doctor: s, specs, worktrees: withDev,
-      dev: { command: dev.command, ready: dev.ready }, isolation: scripts };
+      dev: { command: dev.command, ready: dev.ready }, isolation: scripts,
+      runs: runs.forProject(p.id).map((r) => runs.view(r)) };
   }
 
   function specDetail(p, specId) {
@@ -147,6 +150,7 @@ function create({ globalDir, version, token = crypto.randomBytes(24).toString('h
       const list = registry.load(globalDir);
       return send(res, 200, { version, projects: await Promise.all(list.map(summary)) });
     }
+    if (parts[0] === 'commands' && method === 'GET') return send(res, 200, { commands: ops.listCommands(globalDir) });
     if (parts[0] === 'discover' && method === 'GET') {
       return send(res, 200, { suggestions: registry.discover(globalDir, storePath) });
     }
@@ -173,6 +177,27 @@ function create({ globalDir, version, token = crypto.randomBytes(24).toString('h
         if (!job || job.projectId !== p.id) return fail(res, 404, 'unknown job');
         if (parts[4] === 'logs' && method === 'GET') return send(res, 200, jobs.view(job, Math.max(0, parseInt(url.searchParams.get('since'), 10) || 0)));
         if (parts[4] === 'stop' && method === 'POST') return send(res, 200, { stopped: ops.stopJob(jobs, p, job.id) });
+      }
+      if (parts[2] === 'runs') {
+        if (parts.length === 3 && method === 'GET') return send(res, 200, { runs: runs.forProject(p.id).map((r) => runs.view(r)) });
+        if (parts.length === 3 && method === 'POST') {
+          let body;
+          try { body = await readBody(req); } catch (e) { return fail(res, 400, e.message); }
+          try { return send(res, 202, { run: runs.view(ops.startRun(runs, p, globalDir, body), 0) }); } catch (e) {
+            if (e instanceof ops.OpError) return send(res, e.code, { error: e.message, untrusted: e.untrusted || false, fix: e.fix });
+            throw e;
+          }
+        }
+        const run = parts[3] && runs.get(parts[3]);
+        if (!run || run.projectId !== p.id) return fail(res, 404, 'unknown run');
+        if (parts.length === 4 && method === 'GET') return send(res, 200, runs.view(run, Math.max(0, parseInt(url.searchParams.get('since'), 10) || 0)));
+        if (parts[4] === 'stop' && method === 'POST') return send(res, 200, { stopped: runs.stop(run) });
+        if (parts[4] === 'respond' && method === 'POST') {
+          let body;
+          try { body = await readBody(req); } catch (e) { return fail(res, 400, e.message); }
+          if (body.behavior !== 'allow' && body.behavior !== 'deny') return fail(res, 400, 'behavior must be allow or deny');
+          return runs.respond(run, String(body.requestId), body.behavior, body.answers) ? send(res, 200, { ok: true }) : fail(res, 404, 'no such pending request');
+        }
       }
       if (method === 'POST' && (parts[2] === 'dev' || parts[2] === 'worktrees')) {
         let body;
@@ -245,7 +270,7 @@ function create({ globalDir, version, token = crypto.randomBytes(24).toString('h
     });
   }
 
-  return { server, listen, token, jobs, close: () => { jobs.stopAll(); return new Promise((r) => server.close(r)); } };
+  return { server, listen, token, jobs, runs, close: () => { jobs.stopAll(); runs.stopAll(); return new Promise((r) => server.close(r)); } };
 }
 
 module.exports = { create };

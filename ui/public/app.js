@@ -30,7 +30,7 @@ async function api(path, opts = {}) {
   return data;
 }
 
-const S = { job: null, projects: [], suggestions: [], sel: null, tab: 'health', detail: null, spec: null, metrics: null, error: null, busy: false };
+const S = { run: null, commands: null, job: null, projects: [], suggestions: [], sel: null, tab: 'health', detail: null, spec: null, metrics: null, error: null, busy: false };
 const tone = (s) => (s && s.error ? 'bad' : !s || s.missing ? 'bad' : s.summary.bad ? 'bad' : s.summary.warn ? 'warn' : 'ok');
 const STATUS_TONE = { shipped: 'ok', merged: 'ok', blocked: 'bad', abandoned: 'warn' };
 const usd = (n) => (typeof n === 'number' ? `$${n.toFixed(2)}` : '–');
@@ -52,7 +52,7 @@ async function guard(fn) {
   try { await fn(); S.error = null; } catch (e) { S.error = e.message; }
   S.busy = false; render();
 }
-const select = (id) => guard(async () => { S.sel = id; S.tab = 'health'; S.job = null; await loadDetail(); });
+const select = (id) => guard(async () => { S.sel = id; S.tab = 'health'; S.job = null; S.run = null; await loadDetail(); });
 const addProject = (path) => guard(async () => {
   const r = await api('/projects', { method: 'POST', body: { path } });
   await refresh(); S.sel = r.project.id; S.tab = 'health'; await loadDetail();
@@ -61,6 +61,7 @@ const removeProject = (id) => guard(async () => { await api(`/projects/${id}`, {
 const openSpec = (id) => guard(async () => { S.spec = await api(`/projects/${S.sel}/specs/${encodeURIComponent(id)}`); });
 const setTab = (t) => guard(async () => {
   S.tab = t; S.spec = null;
+  if (t === 'run' && !S.commands) { try { S.commands = (await api('/commands')).commands; } catch { S.commands = []; } }
   if (t === 'cost' && !S.metrics) { try { S.metrics = await api(`/projects/${S.sel}/metrics`); } catch (e) { S.metrics = { error: e.message }; } }
 });
 
@@ -192,18 +193,106 @@ function worktrees(d) {
       h('div', { class: 'mute mono' }, S.job.command), h('pre', { id: 'joblog' }, (S.job.lines || []).join('\n'))] : null);
 }
 
+// --- runs: a pipeline command through `claude -p`, with its gates answered here --------------
+let runTimer = null;
+const RUN_LIVE = ['running'];
+function watchRun(run) { S.run = { ...run, events: run.events || [], cursor: run.cursor || 0 }; pollRun(); }
+function pollRun() {
+  clearTimeout(runTimer);
+  if (!S.run) return;
+  runTimer = setTimeout(async () => {
+    const r = S.run;
+    if (!r || S.tab !== 'run') return pollRun();
+    try {
+      const v = await api(`/projects/${S.sel}/runs/${r.id}?since=${r.cursor}`);
+      const before = JSON.stringify(r.pending) + r.status + (r.events.length);
+      S.run = { ...v, events: r.events.concat(v.events).slice(-1500), cursor: v.cursor };
+      if (before !== JSON.stringify(S.run.pending) + S.run.status + S.run.events.length) render();
+      if (!RUN_LIVE.includes(S.run.status)) { await loadDetail(); render(); return; }
+    } catch (e) { S.error = e.message; }
+    pollRun();
+  }, 1000);
+}
+async function startRun(form) {
+  const body = { worktree: form.wt.value, command: form.cmd.value, args: form.args.value, permissionMode: form.mode.value };
+  await guard(async () => {
+    let r;
+    try { r = await api(`/projects/${S.sel}/runs`, { method: 'POST', body }); } catch (e) {
+      if (!e.untrusted) throw e;
+      if (!confirm(`${e.message}\n\nFix: ${e.fix || 'run claude once in this folder and accept the trust dialog'}\n\nRun anyway?`)) throw new Error('cancelled');
+      r = await api(`/projects/${S.sel}/runs`, { method: 'POST', body: { ...body, acknowledgeUntrusted: true } });
+    }
+    watchRun(r.run);
+  });
+}
+const respond = (requestId, behavior, answers) => api(`/projects/${S.sel}/runs/${S.run.id}/respond`, { method: 'POST', body: { requestId, behavior, answers } })
+  .then(() => pollRun()).catch((e) => { S.error = e.message; render(); });
+
+function pendingCard(p) {
+  if (p.kind === 'question') {
+    const picked = {};
+    const blocks = p.questions.map((q) => {
+      const free = h('input', { placeholder: 'Other…', 'aria-label': 'Other answer' });
+      free.addEventListener('input', () => { picked[q.question] = free.value ? [free.value] : []; });
+      return h('div', { style: 'margin:8px 0' }, h('strong', {}, q.header ? `${q.header} — ` : '', q.question),
+        q.options.map((o) => h('label', { style: 'display:block' },
+          h('input', { type: q.multiSelect ? 'checkbox' : 'radio', name: q.question, style: 'flex:none;margin-right:6px', onchange: (e) => {
+            const cur = picked[q.question] || [];
+            picked[q.question] = q.multiSelect ? (e.target.checked ? cur.concat(o.label) : cur.filter((x) => x !== o.label)) : [o.label];
+          } }), o.label, o.description ? h('span', { class: 'mute' }, ` — ${o.description}`) : null)), free);
+    });
+    return h('div', { class: 'card gate' }, h('div', { class: 'pill warn' }, 'Question'), blocks,
+      h('button', { class: 'b', onclick: () => respond(p.requestId, 'allow', Object.fromEntries(Object.entries(picked).map(([k, v]) => [k, v]))) }, 'Answer'), ' ',
+      h('button', { class: 'b', onclick: () => respond(p.requestId, 'deny') }, 'Skip'));
+  }
+  return h('div', { class: 'card gate' }, h('div', { class: 'pill warn' }, `Permission · ${p.tool}`, p.via ? ` · ${p.via}` : ''),
+    h('pre', { style: 'max-height:140px' }, p.summary), p.reason ? h('div', { class: 'fix' }, p.reason) : null,
+    h('button', { class: 'b', onclick: () => respond(p.requestId, 'allow') }, 'Allow'), ' ',
+    h('button', { class: 'b', onclick: () => respond(p.requestId, 'deny') }, 'Deny'));
+}
+function eventRow(e) {
+  if (e.kind === 'text') return h('div', { class: 'ev' }, e.text);
+  if (e.kind === 'tool') return h('div', { class: 'ev mute mono' }, `▸ ${e.name}  ${e.summary}`);
+  if (e.kind === 'tool_result') return e.error ? h('div', { class: 'ev err mono' }, `✗ ${e.text}`) : null;
+  if (e.kind === 'resolved') return h('div', { class: 'ev mute' }, `gate: ${e.decision}`);
+  if (e.kind === 'result') return h('div', { class: `ev ${e.ok ? '' : 'err'}` }, h('strong', {}, e.ok ? 'Done' : 'Failed'), e.costUsd != null ? ` · ${usd(e.costUsd)}` : '', e.durationMs ? ` · ${Math.round(e.durationMs / 1000)}s` : '', e.text ? h('div', {}, e.text) : null);
+  if (e.kind === 'stderr' || e.kind === 'system') return h('div', { class: 'ev err mono' }, e.text);
+  return null;
+}
+function runTab(d) {
+  const form = {
+    wt: h('select', {}, d.worktrees.filter((w) => !w.bare).map((w) => h('option', { value: w.path }, `${w.main ? '(main) ' : ''}${w.branch || w.path}`))),
+    cmd: h('select', {}, (S.commands || []).map((c) => h('option', { value: c.name, title: c.description }, c.name))),
+    args: h('input', { placeholder: 'argument (feature id, text…)' }),
+    mode: h('select', {}, [['default', 'ask for edits'], ['acceptEdits', 'accept edits'], ['plan', 'plan only']].map(([v, l]) => h('option', { value: v }, l))),
+  };
+  const hint = () => { const c = (S.commands || []).find((x) => x.name === form.cmd.value); return c ? `${c.description}${c.argumentHint ? `  [${c.argumentHint}]` : ''}` : ''; };
+  const hintEl = h('div', { class: 'mute' }, hint());
+  form.cmd.addEventListener('change', () => { hintEl.textContent = hint(); });
+  const r = S.run;
+  return h('div', {},
+    !(S.commands || []).length ? h('div', { class: 'mute' }, 'No /cohorte-* commands found in ~/.claude/commands — run `cohorte install`.') : null,
+    h('form', { class: 'add', style: 'flex-wrap:wrap', onsubmit: (e) => { e.preventDefault(); startRun(form); } },
+      form.wt, form.cmd, form.args, form.mode, h('button', { class: 'b', type: 'submit', disabled: r && r.status === 'running' ? 'disabled' : null }, 'Run')),
+    hintEl,
+    h('div', { class: 'mute' }, 'Headless run (claude -p): gates and questions appear below. Talking to the agent stays in Claude Code or Francois.'),
+    r ? [h('h3', {}, `${r.command} · ${r.status}`, r.status === 'running' ? [' ', h('button', { class: 'b', onclick: () => api(`/projects/${S.sel}/runs/${r.id}/stop`, { method: 'POST', body: {} }).then(pollRun) }, 'Stop')] : null),
+      (r.pending || []).map(pendingCard), h('div', { class: 'feed' }, r.events.map(eventRow))]
+      : (d.runs || []).length ? [h('h3', {}, 'Earlier runs'), (d.runs || []).map((x) => h('div', { class: 'mono' }, `${x.command} · ${x.status}`))] : null);
+}
+
 function main() {
   if (!S.projects.length) return h('main', {}, h('div', { class: 'empty' }, h('h2', {}, 'No project yet'), 'Add a repo that has a PIPELINE.md using the field on the left.'));
   const sum = S.projects.find((p) => p.id === S.sel);
   const d = S.detail;
-  const tabs = [['health', 'Health'], ['specs', 'Specs'], ['cost', 'Cost'], ['worktrees', 'Worktrees']];
+  const tabs = [['health', 'Health'], ['specs', 'Specs'], ['run', 'Run'], ['cost', 'Cost'], ['worktrees', 'Worktrees']];
   return h('main', {},
     S.error ? h('div', { class: 'err' }, S.error) : null,
     sum ? h('div', {}, h('h2', {}, sum.title || sum.name), h('div', { class: 'mute' }, sum.oneLiner), h('div', { class: 'mute mono' }, sum.root),
       h('div', { style: 'margin-top:8px' }, h('button', { class: 'b', onclick: () => { if (confirm('Remove this project from the dashboard? Nothing on disk is touched.')) removeProject(sum.id); } }, 'Remove from dashboard'))) : null,
     h('div', { class: 'tabs' }, tabs.map(([k, l]) => h('button', { class: `tab${S.tab === k ? ' sel' : ''}`, onclick: () => setTab(k) }, l))),
     !d ? h('div', { class: 'empty' }, S.busy ? 'Loading…' : 'Nothing to show.')
-      : S.tab === 'health' ? health(d) : S.tab === 'specs' ? specs(d) : S.tab === 'cost' ? cost() : worktrees(d));
+      : S.tab === 'health' ? health(d) : S.tab === 'specs' ? specs(d) : S.tab === 'cost' ? cost() : S.tab === 'run' ? runTab(d) : worktrees(d));
 }
 
 function render() {

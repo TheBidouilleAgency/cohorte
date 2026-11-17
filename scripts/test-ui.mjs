@@ -5,7 +5,7 @@
 //   node scripts/test-ui.mjs
 
 import { createRequire } from "node:module";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -65,6 +65,37 @@ console.log("registry");
 }
 
 console.log("dashboard http");
+// A stand-in for `claude -p` speaking the same stream-json control protocol (verified against claude 2.1.326).
+const fake = join(home, "fake-claude.js");
+writeFileSync(fake, `#!/usr/bin/env node
+const rl = require("readline").createInterface({ input: process.stdin });
+const out = (o) => process.stdout.write(JSON.stringify(o) + "\\n");
+const waiting = new Map();
+let prompt = null, stage = 0;
+const ask = (req) => { const id = "r" + (++stage); waiting.set(id, true); out({ type: "control_request", request_id: id, request: req }); return id; };
+rl.on("line", (line) => {
+  const v = JSON.parse(line);
+  if (v.type === "user") {
+    prompt = v.message.content[0].text;
+    out({ type: "system", subtype: "init", session_id: "s1" });
+    out({ type: "assistant", message: { content: [{ type: "text", text: "starting " + prompt }, { type: "tool_use", id: "t1", name: "Bash", input: { command: "rm -rf build" } }] } });
+    if (prompt.includes("hang")) return;
+    ask({ subtype: "can_use_tool", tool_name: "Bash", input: { command: "rm -rf build" }, decision_reason: "gate: confirm", decision_reason_type: "hook" });
+  } else if (v.type === "control_response") {
+    const r = v.response.response;
+    if (stage === 1) {
+      out({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t1", is_error: r.behavior === "deny", content: r.behavior === "deny" ? r.message : "ok" }] } });
+      ask({ subtype: "can_use_tool", tool_name: "AskUserQuestion", input: { questions: [{ question: "Which db?", header: "DB", multiSelect: false, options: [{ label: "pg", description: "" }, { label: "sqlite", description: "" }] }] } });
+    } else {
+      out({ type: "result", subtype: "success", is_error: false, result: "answers=" + JSON.stringify(r.updatedInput.answers), total_cost_usd: 0.01, duration_ms: 5 });
+    }
+  }
+});
+rl.on("close", () => process.exit(0));
+`);
+chmodSync(fake, 0o755);
+process.env.COHORTE_CLAUDE_BIN = fake;
+write(join(globalDir, "commands", "cohorte-build.md"), "---\ndescription: Build a frozen spec\nargument-hint: <id>\n---\nbody\n");
 const ui = create({ globalDir, version: "0.0.0-test", storePath });
 const l = await ui.listen(0);
 const call = (path, { method = "GET", headers = {}, body, token = l.token } = {}) => new Promise((resolve, reject) => {
@@ -151,6 +182,52 @@ try {
   check("gate ask + confirmed → 202", okd.status === 202);
   await post(`/api/projects/${id}/jobs/${okd.json.job.id}/stop`, {});
   await waitJob(okd.json.job.id, ["stopped"]);
+
+  // --- step 3: pipeline runs through claude -p, gates answered over HTTP ---
+  const cmds = (await call("/api/commands")).json.commands;
+  check("lists the installed /cohorte-* commands", cmds.length === 1 && cmds[0].name === "cohorte-build" && cmds[0].description === "Build a frozen spec" && cmds[0].argumentHint === "<id>", JSON.stringify(cmds));
+  const runsUrl = `/api/projects/${id}/runs`;
+  check("unknown command → 400", (await post(runsUrl, { worktree: proj, command: "rm -rf /" })).status === 400);
+  check("a command name outside cohorte-* is refused", (await post(runsUrl, { worktree: proj, command: "cohorte-nope" })).status === 400);
+  check("multi-line args → 400", (await post(runsUrl, { worktree: proj, command: "cohorte-build", args: "a\n/exit" })).status === 400);
+  writeFileSync(storePath, JSON.stringify({ projects: {} }));
+  const untrusted = await post(runsUrl, { worktree: proj, command: "cohorte-build", args: "f1" });
+  check("untrusted folder → 409 with the fix, nothing started", untrusted.status === 409 && untrusted.json.untrusted === true && !!untrusted.json.fix, JSON.stringify(untrusted.json));
+  writeFileSync(storePath, JSON.stringify({ projects: { [proj]: { hasTrustDialogAccepted: true } } }));
+  const started = await post(runsUrl, { worktree: proj, command: "/cohorte-build", args: "f1", permissionMode: "bypassPermissions" });
+  check("run starts → 202 (bypassPermissions is downgraded to default)", started.status === 202 && started.json.run.permissionMode === "default", JSON.stringify(started.json));
+  const rid = started.json.run.id;
+  const poll = async (pred) => {
+    for (let i = 0; i < 80; i++) {
+      const v = (await call(`${runsUrl}/${rid}?since=0`)).json;
+      if (pred(v)) return v;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    return (await call(`${runsUrl}/${rid}?since=0`)).json;
+  };
+  check("second run in the same worktree → 409", (await post(runsUrl, { worktree: proj, command: "cohorte-build" })).status === 409);
+  let v = await poll((x) => x.pending.length > 0);
+  check("a gate ask is parked with the hook's reason", v.pending.length === 1 && v.pending[0].kind === "permission" && v.pending[0].summary === "rm -rf build" && v.pending[0].reason === "gate: confirm" && v.pending[0].via === "hook", JSON.stringify(v.pending));
+  check("the feed shows text and the tool call", v.events.some((e) => e.kind === "text" && e.text.includes("/cohorte-build f1")) && v.events.some((e) => e.kind === "tool" && e.name === "Bash"));
+  check("respond with a bad behavior → 400", (await post(`${runsUrl}/${rid}/respond`, { requestId: v.pending[0].requestId, behavior: "maybe" })).status === 400);
+  check("respond to an unknown request → 404", (await post(`${runsUrl}/${rid}/respond`, { requestId: "nope", behavior: "allow" })).status === 404);
+  check("deny → 200", (await post(`${runsUrl}/${rid}/respond`, { requestId: v.pending[0].requestId, behavior: "deny" })).status === 200);
+  v = await poll((x) => x.pending.some((p) => p.kind === "question"));
+  check("the denial reached the CLI (error tool_result)", v.events.some((e) => e.kind === "tool_result" && e.error && /denied/.test(e.text)));
+  check("a question is parked with its options", v.pending[0] && v.pending[0].kind === "question" && v.pending[0].questions[0].options.map((o) => o.label).join() === "pg,sqlite");
+  check("answer → 200", (await post(`${runsUrl}/${rid}/respond`, { requestId: v.pending[0].requestId, behavior: "allow", answers: { "Which db?": ["sqlite"] } })).status === 200);
+  v = await poll((x) => x.status !== "running");
+  check("the answer reached the CLI keyed by question text", v.result && v.result.ok && v.result.text === 'answers={"Which db?":"sqlite"}', JSON.stringify(v.result));
+  check("the run ends done once the stream is quiet (stdin closed)", v.status === "done" && v.result.costUsd === 0.01, v.status);
+
+  const hang = await post(runsUrl, { worktree: proj, command: "cohorte-build", args: "hang" });
+  check("a second run can start once the first ended", hang.status === 202);
+  const hid = hang.json.run.id;
+  check("stop → 200", (await post(`${runsUrl}/${hid}/stop`, {})).status === 200);
+  let hv;
+  for (let i = 0; i < 60; i++) { hv = (await call(`${runsUrl}/${hid}?since=0`)).json; if (hv.status !== "running") break; await new Promise((r) => setTimeout(r, 100)); }
+  check("a stopped run is marked stopped", hv.status === "stopped", hv.status);
+  check("a run of another project is not reachable by id", (await call(`/api/projects/ffffffffff/runs/${rid}`)).status === 404);
 
   check("remove → 200", (await call(`/api/projects/${id}`, { method: "DELETE" })).status === 200);
   check("project is gone", (await call("/api/state")).json.projects.length === 0);

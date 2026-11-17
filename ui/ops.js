@@ -13,6 +13,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const registry = require('../lib/registry.js');
+const { checkTrust } = require('../lib/doctor.js');
 const { parseProfileBlock } = require('../lib/yaml.js');
 
 const FEATURE_ID = /^[a-z0-9][a-z0-9-]{0,62}$/;
@@ -119,4 +120,38 @@ function removeWorktree(jobs, project, wtPath, { confirmed = false } = {}) {
   return jobs.start({ projectId: project.id, kind: 'worktree-remove', tag: wt.path, label, cwd: root, file: 'git', args: ['worktree', 'remove', wt.path] });
 }
 
-module.exports = { startDev, stopJob, createWorktree, removeWorktree, devInfo, isolationScripts, resolveWorktree, OpError, FEATURE_ID };
+// The pipeline commands this machine has (`cohorte install` wrote them), with their one-line description.
+function listCommands(globalDir) {
+  const dir = path.join(globalDir, 'commands');
+  let files = [];
+  try { files = fs.readdirSync(dir).filter((f) => /^cohorte-[a-z0-9-]+\.md$/.test(f)).sort(); } catch { return []; }
+  return files.map((f) => {
+    const txt = fs.readFileSync(path.join(dir, f), 'utf8');
+    const fm = txt.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+    const d = fm && fm[1].match(/^description:\s*(.*)$/m);
+    const h = fm && fm[1].match(/^argument-hint:\s*(.*)$/m);
+    return { name: f.slice(0, -3), description: d ? d[1].replace(/^["']|["']$/g, '').trim() : '', argumentHint: h ? h[1].replace(/^["']|["']$/g, '').trim() : '' };
+  });
+}
+
+// Starts `/cohorte-<name> <args>` in a worktree. What the human may pass is a command NAME this machine has
+// and a one-line argument; both reach Claude as prompt text, never a shell.
+function startRun(runs, project, globalDir, body) {
+  const wt = resolveWorktree(project.root, body.worktree);
+  const name = typeof body.command === 'string' ? body.command.replace(/^\//, '') : '';
+  if (!listCommands(globalDir).some((c) => c.name === name)) throw new OpError('unknown cohorte command — run `cohorte install`', 400);
+  const args = typeof body.args === 'string' ? body.args.trim() : '';
+  if (args.length > 500 || /[\r\n]/.test(args)) throw new OpError('arguments must be one line of at most 500 characters');
+  if (runs.find(project.id, wt.path)) throw new OpError('a run is already in progress in this worktree', 409);
+  // Under `claude -p`, an untrusted folder's permissions.allow are ignored: every pipeline script would prompt.
+  const trust = checkTrust(wt.path, globalDir);
+  if (trust.status === 'warn' && body.acknowledgeUntrusted !== true) {
+    throw new OpError(trust.detail, 409, { untrusted: true, fix: trust.fix });
+  }
+  if (fs.existsSync(path.join(project.root, '.claude', 'hooks', 'cohorte-gate.py')) && spawnSync('python3', ['--version'], { stdio: 'ignore' }).status !== 0) {
+    throw new OpError('python3 is not on PATH: the project gate is fail-closed, so every tool call would be refused', 400);
+  }
+  return runs.start({ projectId: project.id, cwd: wt.path, command: `/${name}${args ? ` ${args}` : ''}`, permissionMode: body.permissionMode });
+}
+
+module.exports = { listCommands, startRun, startDev, stopJob, createWorktree, removeWorktree, devInfo, isolationScripts, resolveWorktree, OpError, FEATURE_ID };
