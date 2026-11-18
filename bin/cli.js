@@ -115,12 +115,17 @@ const project = target || process.cwd();
 
 // --- dashboard ---------------------------------------------------------------
 if (mode === 'ui') {
-  const { create } = require('../ui/server.js');
+  const built = path.join(__dirname, '..', 'ui', 'dist-server', 'server', 'server.js');
+  if (!fs.existsSync(built) || !fs.existsSync(path.join(__dirname, '..', 'ui', 'dist-web', 'index.html'))) {
+    console.error('error: the dashboard is not built in this checkout.\n       Run `npm run build:ui` here first (the published package ships it built).');
+    process.exit(1);
+  }
+  const { create } = require(built);
   const ui = create({ globalDir, version: VERSION });
-  const bye = () => { ui.jobs.stopAll(); ui.runs.stopAll(); process.exit(0); };
+  const bye = () => { ui.jobs.stopAll(); ui.runs.stopAll(); ui.runs.flush(); process.exit(0); };
   process.on('SIGINT', bye);
   process.on('SIGTERM', bye);
-  process.on('exit', () => { ui.jobs.stopAll(); ui.runs.stopAll(); });
+  process.on('exit', () => { ui.jobs.stopAll(); ui.runs.stopAll(); ui.runs.flush(); });
   ui.listen(uiPort).then((l) => {
     console.log(`cohorte ui — ${l.url}\n  Local only (127.0.0.1); the link carries this session's token. Ctrl-C stops it and the dev servers it started.`);
     if (uiOpen && process.stdout.isTTY) {

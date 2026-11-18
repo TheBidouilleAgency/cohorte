@@ -14,3 +14,7 @@ docs/.vitepress/cache/
 scripts/new-feature.sh
 scripts/remove-feature.sh
 .serena/
+
+# cohorte ui build output (built by `npm run build:ui`, shipped via prepack)
+ui/dist-server/
+ui/dist-web/

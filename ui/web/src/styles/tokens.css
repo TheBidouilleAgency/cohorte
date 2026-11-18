@@ -1,0 +1,107 @@
+/* Design tokens — copied (subset) from Francois's src/styles.css, "Redesign · Graphite & Signal".
+   Source of truth: Francois's Figma file YEY4c6AiWq1bKYuaju9qdV. Dark is the default; the light theme is
+   set with <html data-theme="light"> (see src/lib/theme.ts). Colour only ever comes from these tokens.
+   Additions that Francois does not have (--state-warn*) are marked below. */
+:root {
+  color-scheme: dark;
+  --font-ui: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  --bg-canvas: #0c0d0f;
+  --bg-rail: #111215;
+  --bg-input: #131417;
+  --bg-card: #16181b;
+  --bg-raised: #1c1f23;
+  --bg-selected: #24272c;
+  --bg-strong: #2a2d33;
+  --line-subtle: #ffffff0f;
+  --line-default: #ffffff1a;
+  --line-strong: #ffffff38;
+  --text-primary: #eceae5;
+  --text-secondary: #d8d5cf;
+  --text-muted: #a3a09a;
+  --text-faint: #8a8781;
+  --text-disabled: #6f6d68;
+  --text-inverse: #111215;
+  --action-primary: #eceae5;
+  --state-running: #5ec8e5;
+  --state-attention: #a897ff;
+  --state-attention-text: #c3b8ff;
+  --state-success: #5cc195;
+  --state-success-text: #8fddb8;
+  --state-danger: #ef7a6e;
+  --state-danger-text: #f2a79e;
+  --state-idle: #6f6d68;
+  --state-info: #7aa2f7;
+  --tint-running: #5ec8e51a;
+  --tint-attention: #a897ff12;
+  --tint-attention-line: #a897ff42;
+  --tint-success: #5cc19517;
+  --tint-success-line: #5cc19559;
+  --tint-danger: #ef7a6e14;
+  --tint-danger-line: #ef7a6e47;
+  --bg-terminal: #09090b;
+  /* not in Francois: the dashboard needs a "needs a look" tone between success and danger */
+  --state-warn: #e0b45a;
+  --state-warn-text: #ecc986;
+  --tint-warn: #e0b45a14;
+  --tint-warn-line: #e0b45a52;
+  --tint-info: #7aa2f712;
+  --diff-add-bg: var(--tint-success);
+  --diff-add-text: var(--state-success-text);
+  --diff-remove-bg: var(--tint-danger);
+  --diff-remove-text: var(--state-danger-text);
+  --diff-context-text: var(--text-faint);
+  --overlay-scrim: #060708b8;
+  --bg-popover: #1a1c20;
+
+  --space-4: 4px; --space-6: 6px; --space-8: 8px; --space-10: 10px; --space-12: 12px;
+  --space-16: 16px; --space-20: 20px; --space-24: 24px; --space-32: 32px;
+  --radius-4: 4px; --radius-6: 6px; --radius-8: 8px; --radius-10: 10px;
+  --shadow-float: 0 18px 48px 0 rgba(0, 0, 0, 0.5);
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg-canvas: #fafaf8;
+  --bg-rail: #f3f2ef;
+  --bg-input: #ffffff;
+  --bg-card: #ffffff;
+  --bg-raised: #e9e7e2;
+  --bg-selected: #e2e0da;
+  --bg-strong: #dad7d0;
+  --line-subtle: #11121514;
+  --line-default: #11121521;
+  --line-strong: #11121540;
+  --text-primary: #1a1b1e;
+  --text-secondary: #3a3b3f;
+  --text-muted: #5f5d58;
+  --text-faint: #716e68;
+  --text-disabled: #9a978f;
+  --text-inverse: #f3f2ef;
+  --action-primary: #1a1b1e;
+  --state-running: #0b7fa0;
+  --state-attention: #6b55e0;
+  --state-attention-text: #5440c8;
+  --state-success: #1e875a;
+  --state-success-text: #1b7550;
+  --state-danger: #c6443a;
+  --state-danger-text: #ae3a30;
+  --state-idle: #9a978f;
+  --state-info: #3a62c8;
+  --tint-running: #0b7fa01a;
+  --tint-attention: #6b55e00f;
+  --tint-attention-line: #6b55e04d;
+  --tint-success: #1e875a14;
+  --tint-success-line: #1e875a59;
+  --tint-danger: #c6443a14;
+  --tint-danger-line: #c6443a4d;
+  --bg-terminal: #f5f4f1;
+  --state-warn: #8f6a12;
+  --state-warn-text: #7d5c0d;
+  --tint-warn: #8f6a1214;
+  --tint-warn-line: #8f6a1259;
+  --tint-info: #3a62c812;
+  --overlay-scrim: #11121566;
+  --bg-popover: #ffffff;
+  --shadow-float: 0 18px 48px 0 rgba(17, 18, 21, 0.16);
+}

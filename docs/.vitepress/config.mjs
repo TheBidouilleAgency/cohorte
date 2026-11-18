@@ -59,6 +59,7 @@ export default defineConfig({
             { text: 'Gate & permissions', link: '/reference/gate' },
             { text: 'Shipped scripts', link: '/reference/scripts' },
             { text: 'Installers & updates', link: '/reference/installers' },
+            { text: 'Dashboard (cohorte ui)', link: '/reference/dashboard' },
             { text: 'Migrating from 2.x', link: '/reference/installers#migrating-from-2-x' },
             { text: 'Troubleshooting', link: '/reference/troubleshooting' },
           ],
