@@ -19,7 +19,14 @@ const { parseProfileBlock } = require('../lib/yaml.js');
 const FEATURE_ID = /^[a-z0-9][a-z0-9-]{0,62}$/;
 class OpError extends Error { constructor(message, code = 400, extra = {}) { super(message); this.code = code; Object.assign(this, extra); } }
 
-const realOr = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+// git reports `C:/x/y` where Node says `C:\x\y` (and 8.3 short names, and drive-letter case) on Windows:
+// compare paths through the native realpath, normalized, case-insensitively there.
+const realOr = (p) => {
+  let r;
+  try { r = fs.realpathSync.native(p); } catch { r = path.resolve(p); }
+  r = path.normalize(r);
+  return process.platform === 'win32' ? r.toLowerCase() : r;
+};
 const git = (cwd, ...a) => spawnSync('git', ['-C', cwd, ...a], { encoding: 'utf8' });
 
 function readProfile(root) {
@@ -154,4 +161,4 @@ function startRun(runs, project, globalDir, body) {
   return runs.start({ projectId: project.id, cwd: wt.path, command: `/${name}${args ? ` ${args}` : ''}`, permissionMode: body.permissionMode });
 }
 
-module.exports = { listCommands, startRun, startDev, stopJob, createWorktree, removeWorktree, devInfo, isolationScripts, resolveWorktree, OpError, FEATURE_ID };
+module.exports = { gateVerdict, confirm, readProfile, listCommands, startRun, startDev, stopJob, createWorktree, removeWorktree, devInfo, isolationScripts, resolveWorktree, OpError, FEATURE_ID };

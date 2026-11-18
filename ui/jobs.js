@@ -42,12 +42,12 @@ function probeOnce(target, cwd) {
 class Jobs {
   constructor() { this.jobs = new Map(); }
 
-  // opts: { projectId, kind, label, cwd, command (shell string) | file+args, ready, readyTimeoutMs, tag, env }
+  // opts: { projectId, kind, label, cwd, command (shell string) | file+args (+ display: what to show), ready, readyTimeoutMs, tag, env }
   start(opts) {
     const id = crypto.randomBytes(4).toString('hex');
     const job = {
       id, projectId: opts.projectId, kind: opts.kind, label: opts.label, cwd: opts.cwd, tag: opts.tag || null,
-      command: opts.command || [opts.file, ...(opts.args || [])].join(' '),
+      command: opts.display || opts.command || [opts.file, ...(opts.args || [])].join(' '),
       status: 'starting', pid: null, startedAt: new Date().toISOString(), endedAt: null, exitCode: null,
       lines: [], dropped: 0, stopping: false, child: null,
     };

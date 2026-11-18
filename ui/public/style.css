@@ -32,3 +32,4 @@ pre{background:var(--panel);border:1px solid var(--line);border-radius:8px;paddi
 .empty{padding:48px 0;text-align:center;color:var(--mute)}
 .gate{margin:10px 0;border-color:var(--warn)}.feed{margin-top:10px}.ev{padding:3px 0;white-space:pre-wrap;word-break:break-word}select{padding:6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text);font:inherit}label{cursor:pointer}
 textarea{width:100%;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text);font:inherit;margin-bottom:6px}.reply-box{margin-top:14px}.reply{border-left:3px solid var(--accent);padding-left:8px}
+.card.link{text-align:left;font:inherit;color:inherit;background:none;cursor:pointer}.card.link:hover{border-color:var(--accent)}.card.ok .v{color:var(--ok)}.card.warn .v{color:var(--warn)}.card.bad .v{color:var(--bad)}button:disabled{opacity:.5;cursor:not-allowed}

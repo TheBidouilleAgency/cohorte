@@ -20,6 +20,7 @@ const report = require('../bin/report.js');
 const { Jobs } = require('./jobs.js');
 const { Runs } = require('./runs.js');
 const ops = require('./ops.js');
+const docker = require('./docker.js');
 
 const pkgRoot = path.join(__dirname, '..');
 const PUBLIC = path.join(__dirname, 'public');
@@ -96,6 +97,7 @@ function create({ globalDir, version, token = crypto.randomBytes(24).toString('h
     const withDev = wt.map((w, i) => ({ ...w, main: i === 0, dev: (jobs.find(p.id, 'dev', w.path) && jobs.view(jobs.find(p.id, 'dev', w.path))) || null }));
     return { id: p.id, root: p.root, name: path.basename(p.root), doctor: s, specs, worktrees: withDev,
       dev: { command: dev.command, ready: dev.ready }, isolation: scripts,
+      docker: (() => { const c = docker.composeFile(p.root); return c ? { file: c.rel } : null; })(),
       runs: runs.forProject(p.id).map((r) => runs.view(r)) };
   }
 
@@ -205,12 +207,27 @@ function create({ globalDir, version, token = crypto.randomBytes(24).toString('h
           return runs.respond(run, String(body.requestId), body.behavior, body.answers) ? send(res, 200, { ok: true }) : fail(res, 404, 'no such pending request');
         }
       }
+      if (parts[2] === 'docker' && parts.length === 3) {
+        if (method === 'GET') return send(res, 200, await docker.status(p.root));
+        if (method === 'POST') {
+          let body;
+          try { body = await readBody(req); } catch (e) { return fail(res, 400, e.message); }
+          try { return send(res, 202, { job: jobs.view(await docker.act(jobs, p, { action: body.action, service: body.service, confirmed: body.confirmed === true })) }); } catch (e) {
+            if (e instanceof ops.OpError) return send(res, e.code, { error: e.message, needsConfirmation: e.needsConfirmation || false, command: e.command, reason: e.reason, dockerDown: e.dockerDown || false });
+            throw e;
+          }
+        }
+      }
       if (method === 'POST' && (parts[2] === 'dev' || parts[2] === 'worktrees')) {
         let body;
         try { body = await readBody(req); } catch (e) { return fail(res, 400, e.message); }
         const confirmed = body.confirmed === true;
         try {
           let job;
+          if (parts[2] === 'worktrees' && parts.length === 3 && body.skipDockerCheck !== true) {
+            const pre = await docker.preflight(p.root);
+            if (pre && !pre.ok) return send(res, 409, { error: pre.reason, dockerPreflight: pre });
+          }
           if (parts[2] === 'dev' && parts.length === 3) job = ops.startDev(jobs, p, body.worktree, { confirmed });
           else if (parts[2] === 'worktrees' && parts.length === 3) job = ops.createWorktree(jobs, p, body.feature, { confirmed });
           else if (parts[2] === 'worktrees' && parts[3] === 'remove') job = ops.removeWorktree(jobs, p, body.path, { confirmed });

@@ -26,11 +26,11 @@ async function api(path, opts = {}) {
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) { const err = new Error(data.error || `HTTP ${res.status}`); err.needs = data.needsConfirmation === true; err.command = data.command; err.reason = data.reason; throw err; }
+  if (!res.ok) { const err = new Error(data.error || `HTTP ${res.status}`); err.data = data; err.needs = data.needsConfirmation === true; err.command = data.command; err.reason = data.reason; throw err; }
   return data;
 }
 
-const S = { form: null, run: null, commands: null, job: null, projects: [], suggestions: [], sel: null, tab: 'health', detail: null, spec: null, metrics: null, error: null, busy: false };
+const S = { docker: null, preflight: null, form: null, run: null, commands: null, job: null, projects: [], suggestions: [], sel: null, tab: 'overview', detail: null, spec: null, metrics: null, error: null, busy: false };
 const tone = (s) => (s && s.error ? 'bad' : !s || s.missing ? 'bad' : s.summary.bad ? 'bad' : s.summary.warn ? 'warn' : 'ok');
 const STATUS_TONE = { shipped: 'ok', merged: 'ok', blocked: 'bad', abandoned: 'warn' };
 const usd = (n) => (typeof n === 'number' ? `$${n.toFixed(2)}` : '–');
@@ -52,15 +52,16 @@ async function guard(fn) {
   try { await fn(); S.error = null; } catch (e) { S.error = e.message; }
   S.busy = false; render();
 }
-const select = (id) => guard(async () => { S.sel = id; S.tab = 'health'; S.job = null; S.run = null; S.form = null; await loadDetail(); });
+const select = (id) => guard(async () => { S.sel = id; S.tab = 'overview'; S.job = null; S.docker = null; S.preflight = null; S.run = null; S.form = null; await loadDetail(); });
 const addProject = (path) => guard(async () => {
   const r = await api('/projects', { method: 'POST', body: { path } });
-  await refresh(); S.sel = r.project.id; S.tab = 'health'; await loadDetail();
+  await refresh(); S.sel = r.project.id; S.tab = 'overview'; S.docker = null; await loadDetail();
 });
 const removeProject = (id) => guard(async () => { await api(`/projects/${id}`, { method: 'DELETE' }); S.sel = null; S.detail = null; await refresh(); await loadDetail(); });
 const openSpec = (id) => guard(async () => { S.spec = await api(`/projects/${S.sel}/specs/${encodeURIComponent(id)}`); });
 const setTab = (t) => guard(async () => {
-  S.tab = t; S.spec = null;
+  S.tab = t; S.spec = null; clearTimeout(dockerTimer);
+  if (t === 'docker') { await loadDocker(); pollDocker(); }
   if (t === 'run' && !S.commands) { try { S.commands = (await api('/commands')).commands; } catch { S.commands = []; } }
   if (t === 'cost' && !S.metrics) { try { S.metrics = await api(`/projects/${S.sel}/metrics`); } catch (e) { S.metrics = { error: e.message }; } }
 });
@@ -143,7 +144,7 @@ function poll() {
   if (!S.job) return;
   pollTimer = setTimeout(async () => {
     const j = S.job;
-    if (!j || S.tab !== 'worktrees') return poll();
+    if (!j || !['worktrees', 'docker'].includes(S.tab)) return poll();
     try {
       const v = await api(`/projects/${S.sel}/jobs/${j.id}/logs?since=${j.cursor}`);
       const was = j.status;
@@ -161,7 +162,13 @@ function poll() {
 const act = (fn) => guard(async () => { await fn(); await loadDetail(); });
 const startDev = (w) => act(async () => { const r = await postJob(`/projects/${S.sel}/dev`, { worktree: w.path }); watch(r.job); });
 const stopJobBtn = (id) => act(async () => { await api(`/projects/${S.sel}/jobs/${id}/stop`, { method: 'POST', body: {} }); });
-const createWt = (feature) => act(async () => { const r = await postJob(`/projects/${S.sel}/worktrees`, { feature }); watch(r.job); });
+const createWt = (feature, skipDockerCheck) => act(async () => {
+  S.preflight = null;
+  try { const r = await postJob(`/projects/${S.sel}/worktrees`, { feature, skipDockerCheck }); watch(r.job); } catch (e) {
+    if (!(e.data && e.data.dockerPreflight)) throw e;
+    S.preflight = { feature, ...e.data.dockerPreflight, message: e.message };
+  }
+});
 const removeWt = (w) => act(async () => {
   if (!confirm(`Remove the worktree ${w.path}?\n\nGit refuses if it has uncommitted changes. The branch is kept.`)) return;
   const r = await postJob(`/projects/${S.sel}/worktrees/remove`, { path: w.path }); watch(r.job);
@@ -188,9 +195,95 @@ function worktrees(d) {
     h('form', { class: 'add', onsubmit: (e) => { e.preventDefault(); if (feature.value.trim()) createWt(feature.value.trim()); } },
       feature, h('button', { class: 'b', type: 'submit' }, 'Create')),
     h('div', { class: 'mute' }, d.isolation.create ? 'Uses scripts/new-feature.sh (own DB and ports).' : 'Plain git worktree next to the repo, on a new branch.'),
+    S.preflight ? h('div', { class: 'card gate' }, h('div', { class: 'pill warn' }, 'Docker is not ready'), h('div', { style: 'margin:6px 0' }, S.preflight.message),
+      S.preflight.daemonUp ? h('button', { class: 'b', onclick: () => act(async () => { S.preflight = null; const r = await postJob(`/projects/${S.sel}/docker`, { action: 'up' }); watch(r.job); }) }, 'Start the stack')
+        : h('button', { class: 'b', onclick: () => setTab('docker') }, 'Open the Docker tab'), ' ',
+      h('button', { class: 'b', onclick: () => { const f = S.preflight.feature; createWt(f, true); } }, 'Create anyway'), ' ',
+      h('button', { class: 'b', onclick: () => { S.preflight = null; render(); } }, 'Cancel'),
+      S.preflight.daemonUp ? null : h('div', { class: 'fix' }, 'Start Docker Desktop (or the docker service), then try again.')) : null,
     S.job ? [h('h3', {}, `${S.job.label} · `, h('span', { id: 'jobstatus' }, S.job.status),
       LIVE.includes(S.job.status) ? [' ', h('button', { class: 'b', onclick: () => stopJobBtn(S.job.id) }, 'Stop')] : null),
       h('div', { class: 'mute mono' }, S.job.command), h('pre', { id: 'joblog' }, (S.job.lines || []).join('\n'))] : null);
+}
+
+
+// --- docker: the project's compose stack ----------------------------------------------
+let dockerTimer = null;
+async function loadDocker() { try { S.docker = await api(`/projects/${S.sel}/docker`); } catch (e) { S.docker = { error: e.message }; } }
+function pollDocker() {
+  clearTimeout(dockerTimer);
+  dockerTimer = setTimeout(async () => {
+    if (S.tab !== 'docker') return;
+    const before = JSON.stringify(S.docker);
+    await loadDocker();
+    if (S.tab === 'docker' && before !== JSON.stringify(S.docker)) render();
+    pollDocker();
+  }, 4000);
+}
+const dockerAct = (action, service) => act(async () => {
+  if (action === 'down' && !confirm('Stop and remove the stack’s containers?\n\nVolumes (your data) are kept.')) return;
+  const r = await postJob(`/projects/${S.sel}/docker`, { action, service });
+  watch(r.job);
+  setTimeout(async () => { if (S.tab === 'docker') { await loadDocker(); render(); } }, 2500);
+});
+const STATE_TONE = { running: 'ok', exited: 'warn', dead: 'bad', restarting: 'warn' };
+function dockerTab(d) {
+  const k = S.docker;
+  if (!d.docker) return h('div', { class: 'empty' }, 'No compose file here. Declare isolation.compose_file in PIPELINE.md, or add a docker-compose.yml at the repo root.');
+  if (!k) return h('div', { class: 'empty' }, 'Loading…');
+  if (k.error) return h('div', { class: 'err' }, k.error);
+  const live = S.job && LIVE.includes(S.job.status) && /^docker/.test(S.job.label || '');
+  return h('div', {},
+    h('div', { class: 'cards' },
+      h('div', { class: 'card' }, h('div', { class: 'v' }, h('span', { class: `dot ${k.daemon.up ? 'ok' : 'bad'}`, style: 'display:inline-block;margin-right:8px' }), k.daemon.up ? 'Docker up' : 'Docker down'),
+        h('div', { class: 'mute' }, k.daemon.up ? `engine ${k.daemon.version || ''}` : k.daemon.error)),
+      h('div', { class: 'card' }, h('div', { class: 'v' }, `${k.running || 0}/${k.services.length}`), h('div', { class: 'mute' }, 'services running')),
+      h('div', { class: 'card' }, h('div', { class: 'v mono', style: 'font-size:14px' }, k.file), h('div', { class: 'mute' }, 'compose file'))),
+    k.configError ? h('div', { class: 'err' }, `compose: ${k.configError}`) : null,
+    !k.daemon.up ? h('div', { class: 'mute', style: 'margin:10px 0' }, 'Start Docker Desktop (or the docker service). scripts/new-feature.sh needs it to create a worktree’s database.') : null,
+    h('div', { style: 'margin:12px 0' },
+      h('button', { class: 'b', disabled: !k.daemon.up || live ? 'disabled' : null, onclick: () => dockerAct('up') }, 'Start stack'), ' ',
+      h('button', { class: 'b', disabled: !k.daemon.up || live ? 'disabled' : null, onclick: () => dockerAct('restart') }, 'Restart all'), ' ',
+      h('button', { class: 'b', disabled: !k.daemon.up || live ? 'disabled' : null, onclick: () => dockerAct('stop') }, 'Stop all'), ' ',
+      h('button', { class: 'b', disabled: !k.daemon.up || live ? 'disabled' : null, onclick: () => dockerAct('down') }, 'Down (keeps volumes)')),
+    h('table', {}, h('thead', {}, h('tr', {}, ['Service', 'State', 'Ports', 'Status', ''].map((t) => h('th', {}, t)))),
+      h('tbody', {}, k.services.map((v) => h('tr', {},
+        h('td', { class: 'mono' }, v.name),
+        h('td', {}, h('span', { class: `pill ${STATE_TONE[v.state] || ''}` }, v.state), v.health ? h('span', { class: `pill ${v.health === 'healthy' ? 'ok' : v.health === 'unhealthy' ? 'bad' : 'warn'}`, style: 'margin-left:6px' }, v.health) : null),
+        h('td', { class: 'mono' }, v.ports.join(', ')), h('td', { class: 'mute' }, v.status),
+        h('td', {}, k.daemon.up ? [
+          v.state === 'running' ? h('button', { class: 'b', disabled: live ? 'disabled' : null, onclick: () => dockerAct('stop', v.name) }, 'Stop') : h('button', { class: 'b', disabled: live ? 'disabled' : null, onclick: () => dockerAct('up', v.name) }, 'Start'),
+          ' ', h('button', { class: 'b', disabled: live ? 'disabled' : null, onclick: () => dockerAct('restart', v.name) }, 'Restart'),
+          ' ', h('button', { class: 'b', onclick: () => dockerAct('logs', v.name) }, 'Logs')] : null))))),
+    S.job && /^docker/.test(S.job.label || '') ? [h('h3', {}, `${S.job.label} · `, h('span', { id: 'jobstatus' }, S.job.status),
+      LIVE.includes(S.job.status) ? [' ', h('button', { class: 'b', onclick: () => stopJobBtn(S.job.id) }, 'Stop')] : null),
+      h('div', { class: 'mute mono' }, S.job.command), h('pre', { id: 'joblog' }, (S.job.lines || []).join('\n'))] : null);
+}
+
+// --- overview: the project at a glance --------------------------------------------------
+function overview(d) {
+  const s = d.doctor.summary;
+  const counts = {};
+  for (const sp of d.specs) counts[sp.status || 'unknown'] = (counts[sp.status || 'unknown'] || 0) + 1;
+  const devs = d.worktrees.filter((w) => w.dev && LIVE.includes(w.dev.status));
+  const runs = (d.runs || []).filter((r) => r.status === 'running');
+  const todo = d.doctor.checks.filter((c) => c.status === 'bad' || c.status === 'warn');
+  const card = (v, l, go, tone) => h('button', { class: `card link${tone ? ` ${tone}` : ''}`, onclick: () => setTab(go) }, h('div', { class: 'v' }, v), h('div', { class: 'mute' }, l));
+  return h('div', {},
+    h('div', { class: 'cards' },
+      card(s.bad ? `${s.bad} failing` : s.warn ? `${s.warn} to review` : 'Healthy', 'pipeline health', 'health', s.bad ? 'bad' : s.warn ? 'warn' : 'ok'),
+      card(d.specs.length, `specs${Object.keys(counts).length ? ` · ${Object.entries(counts).map(([k, v]) => `${v} ${k}`).join(', ')}` : ''}`, 'specs'),
+      card(d.worktrees.length, `worktree${d.worktrees.length === 1 ? '' : 's'} · ${devs.length} dev server${devs.length === 1 ? '' : 's'} up`, 'worktrees'),
+      card(runs.length ? `${runs.length} running` : 'Idle', 'cohorte commands', 'run'),
+      d.docker ? card('Docker', d.docker.file, 'docker') : null),
+    h('h3', {}, 'Needs attention'),
+    todo.length ? h('table', {}, h('tbody', {}, todo.map((c) => h('tr', {}, h('td', {}, h('span', { class: `pill ${c.status}` }, c.status)), h('td', {}, c.label),
+      h('td', {}, c.detail, c.fix ? h('div', { class: 'fix' }, `fix: ${c.fix}`) : null))))) : h('div', { class: 'mute' }, 'Nothing — every check passes.'),
+    devs.length ? [h('h3', {}, 'Running now'), h('table', {}, h('tbody', {}, devs.map((w) => h('tr', {}, h('td', { class: 'mono' }, w.branch || w.path),
+      h('td', {}, h('span', { class: `pill ${w.dev.status === 'ready' ? 'ok' : ''}` }, `dev · ${w.dev.status}`)),
+      h('td', {}, h('button', { class: 'b', onclick: () => { watch(w.dev); setTab('worktrees'); } }, 'Logs'))))))] : null,
+    d.specs.length ? [h('h3', {}, 'Latest specs'), h('table', {}, h('tbody', {}, d.specs.slice(0, 5).map((sp) => h('tr', { class: 'click', onclick: () => { S.tab = 'specs'; openSpec(sp.id); } },
+      h('td', { class: 'mono' }, sp.id), h('td', {}, sp.title), h('td', {}, h('span', { class: `pill ${STATUS_TONE[sp.status] || ''}` }, sp.status))))))] : null);
 }
 
 // --- runs: a pipeline command through `claude -p`, with its gates answered here --------------
@@ -305,14 +398,14 @@ function main() {
   if (!S.projects.length) return h('main', {}, h('div', { class: 'empty' }, h('h2', {}, 'No project yet'), 'Add a repo that has a PIPELINE.md using the field on the left.'));
   const sum = S.projects.find((p) => p.id === S.sel);
   const d = S.detail;
-  const tabs = [['health', 'Health'], ['specs', 'Specs'], ['run', 'Run'], ['cost', 'Cost'], ['worktrees', 'Worktrees']];
+  const tabs = [['overview', 'Overview'], ['health', 'Health'], ['specs', 'Specs'], ['run', 'Run'], ['worktrees', 'Worktrees'], ['docker', 'Docker'], ['cost', 'Cost']];
   return h('main', {},
     S.error ? h('div', { class: 'err' }, S.error) : null,
     sum ? h('div', {}, h('h2', {}, sum.title || sum.name), h('div', { class: 'mute' }, sum.oneLiner), h('div', { class: 'mute mono' }, sum.root),
       h('div', { style: 'margin-top:8px' }, h('button', { class: 'b', onclick: () => { if (confirm('Remove this project from the dashboard? Nothing on disk is touched.')) removeProject(sum.id); } }, 'Remove from dashboard'))) : null,
     h('div', { class: 'tabs' }, tabs.map(([k, l]) => h('button', { class: `tab${S.tab === k ? ' sel' : ''}`, onclick: () => setTab(k) }, l))),
     !d ? h('div', { class: 'empty' }, S.busy ? 'Loading…' : 'Nothing to show.')
-      : S.tab === 'health' ? health(d) : S.tab === 'specs' ? specs(d) : S.tab === 'cost' ? cost() : S.tab === 'run' ? runTab(d) : worktrees(d));
+      : S.tab === 'overview' ? overview(d) : S.tab === 'health' ? health(d) : S.tab === 'docker' ? dockerTab(d) : S.tab === 'specs' ? specs(d) : S.tab === 'cost' ? cost() : S.tab === 'run' ? runTab(d) : worktrees(d));
 }
 
 function render() {
