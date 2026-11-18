@@ -25,7 +25,7 @@ const check = (name, cond, detail = "") => {
 };
 
 const tmps = [];
-const scratch = () => { const d = realpathSync(mkdtempSync(join(tmpdir(), "cohorte-ui-"))); tmps.push(d); return d; };
+const scratch = () => { const d = realpathSync.native(mkdtempSync(join(tmpdir(), "cohorte-ui-"))); tmps.push(d); return d; };
 const write = (p, s) => { mkdirSync(join(p, ".."), { recursive: true }); writeFileSync(p, s); };
 const git = (cwd, ...a) => spawnSync("git", ["-C", cwd, ...a], { encoding: "utf8" });
 
