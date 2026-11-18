@@ -7,6 +7,20 @@ short, user-facing, most recent first. One `## <version> — <YYYY-MM-DD>` secti
 > They are history and are deliberately not rewritten — every command gained a `cohorte-` prefix
 > in 2.0.0.
 
+## 3.3.0 — 2026-11-18
+
+- **`cohorte ui` is now a full dashboard.** The Specs tab shows every spec as a pipeline
+  (Spec → Build → Review → Verify → Ship) with the **next command** to run, derived from the spec's
+  status and the reports the pipeline writes; opening one lists the review's findings by severity
+  with `file:line` and fix. Worktrees show git state (ahead/behind, dirty files, last commit), the
+  PR and its checks (with `gh`), the diff against the default branch, and an **Open** link for
+  each dev server. Updates are pushed live, a Home screen lists what is running across projects,
+  and the page can notify you when a run needs approval or finishes. Run history is kept across
+  restarts. Command palette (Ctrl/Cmd-K) and keyboard shortcuts.
+- **Rebuilt in TypeScript.** The page is React + TypeScript (Vite), the server TypeScript compiled
+  to plain Node; both ship built, the package still has no runtime dependency. Looks like Francois
+  (same design tokens, dark by default, light theme).
+
 ## 3.2.0 — 2026-11-18
 
 - **`cohorte ui` — a local dashboard over all your Cohorte projects.** Run it in a terminal; it opens

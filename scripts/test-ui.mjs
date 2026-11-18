@@ -15,7 +15,7 @@ import http from "node:http";
 const require = createRequire(import.meta.url);
 const root = fileURLToPath(new URL("..", import.meta.url));
 const registry = require(join(root, "lib/registry.js"));
-const { create } = require(join(root, "ui/server.js"));
+const { create } = require(join(root, "ui/dist-server/server/server.js"));
 
 const WIN = process.platform === "win32";
 let failures = 0;
@@ -43,7 +43,7 @@ write(join(proj, "specs", "reports", "f1.verdict.json"), JSON.stringify({ verdic
 git(proj, "add", "-A");
 git(proj, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init");
 write(join(proj, ".claude", "profile.json"), JSON.stringify({ name: "app",
-  commands: { dev: `node -e "console.log('hello-dev');setInterval(()=>{},1000)"`, dev_ready: `node -e "process.exit(0)"` },
+  commands: { dev: `node -e "console.log('hello-dev http://localhost:5173/');setInterval(()=>{},1000)"`, dev_ready: `node -e "process.exit(0)"` },
   isolation: { compose_file: "docker-compose.yml" } }));
 write(join(proj, "docker-compose.yml"), "services:\n  postgres: {image: postgres}\n  api: {image: api}\n");
 const plain = join(home, "plain");
@@ -147,6 +147,14 @@ const JSON_H = { "Content-Type": "application/json" };
 
 try {
   check("page is served with a CSP", await call("/", { token: null }).then((r) => r.status === 200 && /script-src 'self'/.test(r.headers["content-security-policy"])));
+  {
+    const idx = await call("/", { token: null });
+    const assets = [...idx.text.matchAll(/(?:src|href)="\.?\/?(assets\/[^"]+)"/g)].map((m) => m[1]);
+    check("the page references built assets (a missing build fails here, not in production)", assets.length >= 2, idx.text.slice(0, 300));
+    const codes = await Promise.all(assets.map((a) => call(`/${a}`, { token: null }).then((r) => r.status)));
+    check("every referenced asset is served", codes.every((c) => c === 200), JSON.stringify(codes));
+    check("the page has no inline script or style (CSP)", !/<script(?![^>]*\bsrc=)[^>]*>/.test(idx.text) && !/<style/.test(idx.text) && !/ style="/.test(idx.text));
+  }
   check("no path traversal on static files", (await call("/..%2f..%2fpackage.json", { token: null })).status === 404);
   check("api without token → 401", (await call("/api/state", { token: null })).status === 401);
   check("api with a wrong token → 401", (await call("/api/state", { token: "nope" })).status === 401);
@@ -253,6 +261,53 @@ try {
 
   }
 
+
+  // --- v2: pipeline per spec, review findings, git, live stream, activity ---
+  const d3 = (await call(`/api/projects/${id}`)).json;
+  const f1 = d3.specs.find((x) => x.id === "f1");
+  check("a draft spec's next step is /cohorte-spec", f1.pipeline.next.command === "cohorte-spec" && f1.pipeline.stages[0].state === "current" && f1.pipeline.stages.length === 5, JSON.stringify(f1.pipeline));
+  write(join(proj, "specs", "reports", "f1.build.json"), JSON.stringify({ id: "f1", phase: "build", surfaces: { backend: "ok" }, dead: [] }));
+  write(join(proj, "specs", "reports", "f1.verdict.json"), JSON.stringify({ id: "f1", phase: "review", verdict: "REVISE", findings: 2, blocking: 1, security: 0, deferred: 1, unreviewed: [] }));
+  write(join(proj, "specs", "reports", "f1.md"), "# REVIEW REPORT\nVerdict: REVISE\n\n## Findings\n\n- **[LOW]** `a.ts:3` · quality · naming\n- **[CRITICAL]** `b.ts:9` · security · no authz → **Fix:** add the guard\n\n## Deferred\n\n- **[MEDIUM]** `c.ts:1` · quality · dup → **Fix:** extract · out of scope: shared\n");
+  write(join(proj, "specs", "f1.md"), "---\nfeature_id: f1\ntitle: First\nstatus: in-review\nbranch: feat/f1\n---\nbody\n");
+  const sp2 = (await call(`/api/projects/${id}/specs/f1`)).json;
+  check("a REVISE verdict routes to /cohorte-fix and review is blocked", sp2.pipeline.next.command === "cohorte-fix" && sp2.pipeline.stages.find((x) => x.key === "review").state === "blocked" && sp2.pipeline.verdict.blocking === 1, JSON.stringify(sp2.pipeline));
+  check("review findings are parsed and sorted by severity", sp2.review.findings.map((x) => x.severity).join() === "CRITICAL,LOW" && sp2.review.findings[0].fix === "add the guard" && sp2.review.deferred[0].outOfScope === "shared" && sp2.review.raw.includes("REVIEW REPORT"), JSON.stringify(sp2.review));
+  write(join(proj, "specs", "reports", "f1.verdict.json"), JSON.stringify({ id: "f1", phase: "review", verdict: "SHIP", findings: 0, blocking: 0, unreviewed: [] }));
+  check("SHIP then goes to verify", (await call(`/api/projects/${id}/specs/f1`)).json.pipeline.next.command === "cohorte-verify");
+  const gi = (await call(`/api/projects/${id}/git`)).json;
+  const mainGit = Object.values(gi.worktrees)[0]; // keyed by the path git reports (forward slashes on Windows)
+  check("git info: branch, clean/dirty counts, last commit", mainGit && mainGit.branch && typeof mainGit.ahead === "number" && mainGit.lastCommit && mainGit.lastCommit.subject === "init", JSON.stringify(gi));
+  write(join(proj, "scratch.txt"), "hello\n");
+  const dl = (await call(`/api/projects/${id}/diff?worktree=${encodeURIComponent(proj)}`)).json;
+  check("diff lists untracked files", dl.files.some((x) => x.path === "scratch.txt" && x.status === "untracked"), JSON.stringify(dl));
+  const df = await call(`/api/projects/${id}/diff?worktree=${encodeURIComponent(proj)}&file=scratch.txt`);
+  check("a file diff is served", df.status === 200 && df.json.diff.includes("+hello"), df.text.slice(0, 200));
+  check("a path git did not list is refused", (await call(`/api/projects/${id}/diff?worktree=${encodeURIComponent(proj)}&file=${encodeURIComponent("../../etc/passwd")}`)).status === 404);
+  check("diff of a non-worktree → 404", (await call(`/api/projects/${id}/diff?worktree=${encodeURIComponent(home)}`)).status === 404);
+  rmSync(join(proj, "scratch.txt"), { force: true });
+  // live stream: a change notice arrives when a dev server starts
+  const got = await new Promise((resolve) => {
+    const req = http.request({ host: "127.0.0.1", port: l.port, path: "/api/stream", headers: { Authorization: `Bearer ${l.token}` } }, (res) => {
+      let buf = "";
+      res.on("data", (c) => { buf += c; const m = /data: (\[.*\])/.exec(buf); if (m) { req.destroy(); resolve(JSON.parse(m[1])); } });
+      setTimeout(async () => { const r = await post(`/api/projects/${id}/dev`, { worktree: proj, confirmed: true }); if (r.json && r.json.job) globalThis.__streamJob = r.json.job.id; }, 100);
+    });
+    req.on("error", () => resolve(null));
+    setTimeout(() => { req.destroy(); resolve(null); }, 6000);
+    req.end();
+  });
+  check("the event stream pushes a notice for the started job", Array.isArray(got) && got.some((e) => e.type === "job" && e.projectId === id), JSON.stringify(got));
+  check("the stream needs the token", (await call("/api/stream", { token: null })).status === 401);
+  const devJob = (await call(`/api/projects/${id}/jobs`)).json.jobs.find((j) => j.kind === "dev" && (j.status === "running" || j.status === "ready" || j.status === "starting"));
+  const act = (await call("/api/activity")).json;
+  check("activity lists the live dev server across projects", act.items.some((x) => x.kind === "dev" && x.projectId === id && x.projectName === "app"), JSON.stringify(act));
+  await new Promise((r) => setTimeout(r, 400));
+  const dj2 = (await call(`/api/projects/${id}/jobs/${devJob.id}/logs?since=0`)).json;
+  check("a dev server's printed URL is offered as an Open link", dj2.urls.includes("http://localhost:5173/"), JSON.stringify(dj2.urls));
+  await post(`/api/projects/${id}/jobs/${devJob.id}/stop`, {});
+  await waitJob(devJob.id, ["stopped"]);
+
   // the project's gate has the last word
   const gate = join(proj, ".claude", "hooks", "cohorte-gate.py");
   write(gate, "import sys; sys.exit(2)\n");
@@ -330,6 +385,16 @@ try {
   check("a stopped run is marked stopped", hv.status === "stopped", hv.status);
   check("a run of another project is not reachable by id", (await call(`/api/projects/ffffffffff/runs/${rid}`)).status === 404);
 
+  // run history survives a restart, and a stored run can still be replied to
+  {
+    const ui2 = create({ globalDir, version: "0.0.0-test", storePath });
+    const l2 = await ui2.listen(0);
+    const stored = ui2.runs.get(rid);
+    check("a finished run is reloaded from disk after a restart", stored && stored.status === "done" && stored.sessionId === "s1" && stored.events.length > 3 && stored.result.ok, JSON.stringify(stored && { s: stored.status, sid: stored.sessionId }));
+    const hv2 = ui2.runs.get(hid);
+    check("a run that was still running when the process died comes back stopped", hv2 && hv2.status === "stopped", hv2 && hv2.status);
+    await ui2.close();
+  }
   }
 
   check("remove → 200", (await call(`/api/projects/${id}`, { method: "DELETE" })).status === 200);

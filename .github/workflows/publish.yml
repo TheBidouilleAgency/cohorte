@@ -44,6 +44,7 @@ jobs:
       # it keeps this workflow honest if CI's job list ever drifts (validate-core pins both).
       - name: Test suites (same gate as CI)
         run: |
+          npm run build:ui
           node scripts/validate-core.mjs
           node scripts/test-install.mjs
           node scripts/test-gate.mjs

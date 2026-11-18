@@ -65,6 +65,13 @@ jobs:
           # suite (rightly) fails when a bytecode cache sits next to gate.py.
           python3 -c "import ast, sys; ast.parse(open('core/hooks/gate.py', encoding='utf-8').read()); print(sys.version)"
 
+      - name: Build the dashboard (typecheck + server + page)
+        shell: bash
+        run: |
+          npm run build:ui
+          npm --prefix ui run typecheck
+          npm --prefix ui test
+
       - name: Structural invariants
         run: node scripts/validate-core.mjs
 
@@ -142,7 +149,14 @@ jobs:
       - name: Tarball carries no bytecode and no test suite
         run: |
           python3 -m py_compile core/hooks/gate.py   # make the cache exist first
+          npm run build:ui
           npm pack --dry-run --ignore-scripts 2>&1 | tee /tmp/pack.txt
+          # the dashboard ships BUILT: its page and compiled server, never its sources or build tooling
+          grep -q 'ui/dist-web/index.html' /tmp/pack.txt
+          grep -q 'ui/dist-server/server/server.js' /tmp/pack.txt
+          if grep -qE 'ui/(web|server|shared|node_modules)/|ui/(package|tsconfig[a-z.]*|vite\.config)\.' /tmp/pack.txt; then
+            echo "::error::the npm tarball ships the dashboard's sources or build tooling — only ui/dist-server and ui/dist-web ship"; exit 1
+          fi
           if grep -qiE '__pycache__|\.pyc' /tmp/pack.txt; then
             echo "::error::the npm tarball contains Python bytecode — fix package.json files negations"; exit 1
           fi
