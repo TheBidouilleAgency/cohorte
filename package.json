@@ -1,6 +1,6 @@
 {
   "name": "cohorte",
-  "version": "3.1.3",
+  "version": "3.2.0",
   "description": "Multi-agent development pipeline for Claude Code — install it once, run /cohorte-init-pipeline in a repo, and it adapts to that project's stack.",
   "bin": {
     "cohorte": "bin/cli.js"
@@ -11,6 +11,7 @@
     "core",
     "profile",
     "scripts",
+    "ui",
     "!scripts/new-feature.sh",
     "!scripts/remove-feature.sh",
     "!scripts/demo",
@@ -26,7 +27,7 @@
     "CHANGELOG.md"
   ],
   "scripts": {
-    "test": "node scripts/validate-core.mjs && node scripts/test-install.mjs && node scripts/test-gate.mjs && node scripts/test-lib.mjs && node scripts/test-workflows.mjs && node scripts/test-kanban.mjs && node scripts/test-metrics.mjs && node scripts/test-e2e.mjs && node scripts/test-verify.mjs"
+    "test": "node scripts/validate-core.mjs && node scripts/test-install.mjs && node scripts/test-gate.mjs && node scripts/test-lib.mjs && node scripts/test-workflows.mjs && node scripts/test-kanban.mjs && node scripts/test-metrics.mjs && node scripts/test-e2e.mjs && node scripts/test-verify.mjs && node scripts/test-ui.mjs"
   },
   "engines": {
     "node": ">=20"

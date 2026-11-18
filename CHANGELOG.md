@@ -7,6 +7,21 @@ short, user-facing, most recent first. One `## <version> — <YYYY-MM-DD>` secti
 > They are history and are deliberately not rewritten — every command gained a `cohorte-` prefix
 > in 2.0.0.
 
+## 3.2.0 — 2026-11-18
+
+- **`cohorte ui` — a local dashboard over all your Cohorte projects.** Run it in a terminal; it opens
+  a page on `127.0.0.1` (session token, loopback Host/Origin checks, strict CSP) listing every
+  registered project (add one by path, or pick from the repos Claude Code already knows). Per project:
+  an overview, doctor checks, specs with their reports, cost by command, worktrees (create/remove,
+  dev servers with live logs) and the **Docker** stack — services, health and ports, start / stop /
+  restart / down (never `-v`) and logs. Zero dependencies, nothing leaves the machine.
+- **Run `/cohorte-*` commands from the page.** Headless `claude -p` runs with the project's gate
+  asked first; permission asks and interview questions are answered in the page, and a reply resumes
+  the same session. It talks to Claude only through Cohorte commands — it is not a chat.
+- **Worktree creation checks Docker first.** `scripts/new-feature.sh` creates the worktree's database
+  inside a compose service, and failed late and obscurely when Docker or that service was down; the
+  dashboard now says so up front and offers to start the stack.
+
 ## 3.1.3 — 2026-11-16
 
 - **Kanban moves on macOS use a kernel lock.** macOS has no `flock(1)`, so parallel moves on one

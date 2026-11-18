@@ -28,6 +28,7 @@ cohorte sync      [project]              # wire one repo (run by /cohorte-init-p
 cohorte uninstall [--purge]              # remove what install wrote (--purge also removes your config)
 cohorte uninstall --project [project]    # remove what sync wrote in one repo
 cohorte doctor    [project] [--porcelain | --json | --panel]
+cohorte ui        [--port=N] [--no-open]  # local dashboard over every registered project (127.0.0.1)
 cohorte specs     [project] [--porcelain | --json | --panel]
 cohorte metrics   [project] [--days=N] [--since=ISO] [--runs] [--json]
 cohorte version
