@@ -276,7 +276,7 @@ try {
   write(join(proj, "specs", "reports", "f1.verdict.json"), JSON.stringify({ id: "f1", phase: "review", verdict: "SHIP", findings: 0, blocking: 0, unreviewed: [] }));
   check("SHIP then goes to verify", (await call(`/api/projects/${id}/specs/f1`)).json.pipeline.next.command === "cohorte-verify");
   const gi = (await call(`/api/projects/${id}/git`)).json;
-  const mainGit = gi.worktrees[proj];
+  const mainGit = Object.values(gi.worktrees)[0]; // keyed by the path git reports (forward slashes on Windows)
   check("git info: branch, clean/dirty counts, last commit", mainGit && mainGit.branch && typeof mainGit.ahead === "number" && mainGit.lastCommit && mainGit.lastCommit.subject === "init", JSON.stringify(gi));
   write(join(proj, "scratch.txt"), "hello\n");
   const dl = (await call(`/api/projects/${id}/diff?worktree=${encodeURIComponent(proj)}`)).json;
