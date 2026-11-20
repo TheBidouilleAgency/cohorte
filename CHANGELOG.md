@@ -7,6 +7,49 @@ short, user-facing, most recent first. One `## <version> — <YYYY-MM-DD>` secti
 > They are history and are deliberately not rewritten — every command gained a `cohorte-` prefix
 > in 2.0.0.
 
+## 4.0.0 — 2026-11-20
+
+- **The company flow, in `cohorte ui`.** The pipeline now runs the way a company runs work — the business
+  asks, the developers build, the host merges, the business checks — with no command and no `/clear` to
+  type. A **product owner** agent talks with the business (never about code) and drafts tickets; the
+  requester validates them (**CP0**). A developer takes one: its worktree is created and a **lead** agent
+  frames it with them — approach, contract, the decisions they must own — and posts a plan they approve
+  (**CP1**). An **autopilot** then runs build → review → fix → verify, each stage a fresh session, and opens
+  a checkpoint only on a signal (**CP2**: a stage failed twice, a security finding, a spec that was not
+  ready, a fix loop out of rounds) or when it is ready to ship (**CP3**: verdict, Definition of Done,
+  assumptions, diff, every decision taken on your behalf). The PR opens; merge it on the host or from the
+  page. The PO writes the acceptance note and the requester checks the delivery (**CP4**) — "not quite"
+  opens a follow-up conversation. New tabs: Tickets, Features, Settings; Home gets **Waiting for you**.
+- **The decider.** Questions an agent asks mid-run go to a decider first. It answers only from what is
+  settled — the plan, the spec, `specs/_decisions.md`, §Conventions, your past answers — and cites its
+  source; its confidence is the agreement of independent one-turn votes (a fraction of a cent each), and
+  a split vote goes one model up before it reaches you. It never settles behaviour, contracts, security,
+  cost or anything irreversible. Three autonomy levels; every confirmation and contest at CP3 is
+  remembered, so fewer questions reach you over time.
+- **A model per role.** PO and lead on the strongest model, build/fix/review on the mid one, verify and
+  the decider's first vote on the light one — all in Settings. A failed stage, or a fix round that made no
+  progress, retries one model up. `/cohorte-build` and `/cohorte-fix` pass the implementer model to every
+  dispatch when the prompt carries a `Model routing:` line.
+- **Flow runs load only the project's MCP servers** (`.mcp.json`): a machine with many servers carried
+  ~230k tokens of tool schemas into every session — the flow's agents need none of them.
+- **Learning that compounds.** `/cohorte-learn` writes each feature's journal (`.claude/journal/`, gitignored
+  in the main checkout): findings, red checks, your corrections, contested decisions, implementer traps —
+  as counted motifs. `/cohorte-retro` reads it, puts each proposed rule to you one at a time, gives ratified
+  rules a stable id (`SH-004`, `BACKEND-002`) that reviews cite, treats a rule that keeps being broken as a
+  rule that does not work, prefers a mechanical check to prose, and records rejections so they are not
+  proposed again.
+- **Implementer handoffs carry Questions, Assumptions and Learnings.** An implementer builds its
+  recommended option and lists the decision with its class; the lead asks, and a different answer becomes
+  a Remediation item. Reviews say how sure they are (`risk:`), and name the test that must protect a fix.
+- **Obsidian, from the page.** Settings → Connect Obsidian writes your `cohorte.config.yaml` and creates
+  the board in a new **company layout** (Discussion · To validate · Backlog · Framing · In progress · To
+  validate · dev · PR open · Acceptance · Done). Tickets are notes in `Tickets/` linked from their card.
+  Every stage key now resolves to the first heading the board actually has, so the pipeline commands move
+  cards on both layouts with no config change.
+- **New commands:** `/cohorte-po`, `/cohorte-lead`, `/cohorte-learn`, `/cohorte-acceptance`,
+  `/cohorte-product-map` (writes `PRODUCT.md`, what the product does in business language). The terminal
+  pipeline is unchanged and still works command by command.
+
 ## 3.3.0 — 2026-11-18
 
 - **`cohorte ui` is now a full dashboard.** The Specs tab shows every spec as a pipeline

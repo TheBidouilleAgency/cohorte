@@ -243,7 +243,9 @@ gate:
 ## Conventions
 
 > Read by the implementer + review agents. Keep these terse and rule-shaped; the machine
-> block above holds the paths/commands they enforce against.
+> block above holds the paths/commands they enforce against. Rules ratified by `/cohorte-retro` carry a
+> stable id — `**SH-<nnn>**` under Shared, `**<SURFACE KEY>-<nnn>**` under a surface — that reviews cite
+> when a rule is broken and that is never reused. Hand-written rules may stay id-less.
 
 ### Shared
 

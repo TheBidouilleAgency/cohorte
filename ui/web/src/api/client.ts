@@ -1,6 +1,7 @@
 import type {
   ActivityResponse, ApiErrorBody, DiffListResponse, FileDiff, GitResponse, Command, DiscoverResponse, DockerStatus, JobView, MetricsResponse, ProjectDetail,
-  ProjectSummary, RunView, SpecDetail, StateResponse,
+  ProjectSummary, RunView, SpecDetail, StateResponse, TicketsResponse, Ticket, FeaturesResponse, FeatureDetail, FeatureView, SettingsResponse,
+  ProjectSettings, InboxResponse, LearningResponse, TrackerInfo,
 } from '../../../shared/api';
 import { readToken } from '../lib/token';
 
@@ -51,6 +52,26 @@ export const api = {
   reply: (id: string, run: string, text: string) => post<{ run: RunView }>(`/projects/${id}/runs/${run}/reply`, { text }),
   respond: (id: string, run: string, body: { requestId: string; behavior: 'allow' | 'deny'; answers?: Record<string, string[]> }) =>
     post<{ ok: boolean }>(`/projects/${id}/runs/${run}/respond`, body),
+
+  // company flow
+  inbox: () => request<InboxResponse>('/inbox'),
+  tickets: (id: string) => request<TicketsResponse>(`/projects/${id}/tickets`),
+  createTicket: (id: string, body: { title: string; type: string; need: string; criteria: string[] }) => post<{ ticket: Ticket }>(`/projects/${id}/tickets`, body),
+  decideTicket: (id: string, t: string, action: 'validate' | 'reject') => post<{ ticket: Ticket }>(`/projects/${id}/tickets/${t}/decide`, { action }),
+  takeTicket: (id: string, t: string, body: { confirmed?: boolean; skipDockerCheck?: boolean } = {}) => post<{ feature: FeatureView }>(`/projects/${id}/tickets/${t}/take`, body),
+  acceptance: (id: string, t: string, body: { action: 'accept' | 'not-quite'; text?: string }) => post<{ ticket: Ticket; run: RunView | null }>(`/projects/${id}/tickets/${t}/acceptance`, body),
+  startPO: (id: string, body: { text: string; requester?: string; parent?: string }) => post<{ run: RunView }>(`/projects/${id}/po`, body),
+  features: (id: string) => request<FeaturesResponse>(`/projects/${id}/features`),
+  feature: (id: string, f: string) => request<FeatureDetail>(`/projects/${id}/features/${f}`),
+  checkpoint: (id: string, f: string, body: { action: string; text?: string }) => post<{ feature: FeatureView }>(`/projects/${id}/features/${f}/checkpoint`, body),
+  replyLead: (id: string, f: string, text: string) => post<{ ok: boolean }>(`/projects/${id}/features/${f}/lead`, { text }),
+  merge: (id: string, f: string) => post<{ job: JobView }>(`/projects/${id}/features/${f}/merge`),
+  contest: (id: string, f: string, d: string, note: string) => post<{ feature: FeatureView }>(`/projects/${id}/features/${f}/decisions/${d}/contest`, { note }),
+  settings: (id: string) => request<SettingsResponse>(`/projects/${id}/settings`),
+  saveSettings: (id: string, body: Partial<ProjectSettings>) => post<SettingsResponse>(`/projects/${id}/settings`, body),
+  connectObsidian: (id: string, body: { vault: string; board?: string }) => post<{ created: boolean; board: string; tracker: TrackerInfo }>(`/projects/${id}/tracker`, body),
+  productMap: (id: string) => post<{ run: RunView }>(`/projects/${id}/product-map`),
+  learning: (id: string) => request<LearningResponse>(`/projects/${id}/learning`),
 };
 
 export const errorMessage = (e: unknown): string => (e instanceof Error ? e.message : String(e));

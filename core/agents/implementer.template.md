@@ -143,12 +143,30 @@ only acts on mismatches, test failures, remediation ticks, and TODOs; never list
 ## Tests
 - Run: <your test_cmd> · result: <pass/fail + counts>
 
-## Contract mismatches / assumptions
+## Contract mismatches
 <none, or describe — NEVER edit the contract; report here instead>
+
+## Questions
+<none — or, per decision the spec left open that a person should own: the question, 2–4 options with
+your recommended one FIRST, and its class (reversible · visible · behavior · contract · cost · security ·
+irreversible). You already IMPLEMENTED your recommended option: the lead asks, and an answer that differs
+comes back to you as a Remediation item. Never stop and wait.>
+- <class> · <question> · options: <recommended> (Recommended) | <other> | …
+
+## Assumptions
+- <what you assumed where the spec was silent and you decided alone — or "none">
 
 ## Remediation addressed (fix loops only)
 - <items fixed, by file:line>
 
 ## TODO / not done
 - <deferred, blocked, or out of scope — or "none">
+
+## Learnings
+- <a trap you hit that a rule would have prevented: a misleading convention, a tool or environment
+  quirk, a pattern of this codebase the spec did not warn about — or "none">
 ```
+
+A question is not a blocker: you build your recommendation and say so. Only a contract you believe is
+wrong, or a security choice you cannot make safely, stops your work — report it under Contract
+mismatches (or Questions with class `security`) and leave that part unimplemented.

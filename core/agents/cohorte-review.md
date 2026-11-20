@@ -72,7 +72,11 @@ be precise and self-contained.
    patched version. Ignore advisories on dependencies the diff doesn't touch. They are not this
    feature's and not deferred either, because the scanner reports them again every round. Never
    re-run a scanner.
-4. **Conventions (`PIPELINE.md` §Conventions).** Enforce the per-surface rules the profile lists.
+4. **Conventions (`PIPELINE.md` §Conventions).** Enforce the per-surface rules the profile lists. A rule
+   that carries a stable id (`**SH-002**`, `**BE-001**` — ratified by `/cohorte-retro`) is cited by that
+   id at the start of the problem text when it is violated: `[BE-001] <problem>`. That citation is how
+   the retro measures which rules work — a rule violated feature after feature is a rule to rewrite or to
+   turn into a check.
 5. **RBAC** — _only if `rbac.enabled`_: no cross-role/cross-tenant exposure; least privilege on every route.
 6. **Mobile-first / responsive** — _only if a surface has `uses_design: true`_: base styles small-screen,
    additive `sm:/md:/lg:`, no fixed widths that break on mobile. (You can't render; judge from the code.)
@@ -164,7 +168,10 @@ they are **never lost and never cost a fix loop**.
 
 Every finding must be **self-sufficient for a stateless agent**: `file:line` · severity ·
 `spec-violation | quality | security | complexity` · one concrete suggested fix — it gets appended verbatim to the
-spec's `## Remediation`. Your final message **is** the report. **The shape is capped:** at most
+spec's `## Remediation`. Say **how sure** you are: a defect you established from the code is stated plainly;
+an argued risk you could not establish starts its problem with `risk:`; something you need the spec's
+author to settle is not a finding — put it in `## Notes` as a question. When the fix needs a test to stay
+fixed, end the fix with `· test: <the behaviour the test must assert>`. Your final message **is** the report. **The shape is capped:** at most
 **20 findings**, ONE line each, **zero code excerpts** (the diff and the source are on disk — a
 `file:line` is enough for a stateless fixer). More than 20? Keep every CRITICAL/HIGH/security
 finding, fill the rest by severity, and close the list with one line:
@@ -196,5 +203,6 @@ Verdict: <SHIP | REVISE | BLOCK>
 (real but out of this feature's scope — see §Deferred; worst first; "None." if none; max 10 lines)
 
 ## Notes
-(ONLY the RBAC / mobile-first assessment when the profile enables them; omit the section otherwise)
+(ONLY the RBAC / mobile-first assessment when the profile enables them, and questions for the spec's
+author — one line each; omit the section otherwise)
 ```

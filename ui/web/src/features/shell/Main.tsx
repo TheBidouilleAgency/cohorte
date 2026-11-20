@@ -12,11 +12,15 @@ import { Run } from '../run/Run';
 import { Specs } from '../specs/Specs';
 import { Worktrees } from '../worktrees/Worktrees';
 import { Home } from '../home/Home';
+import { Tickets } from '../tickets/Tickets';
+import { Features } from '../features/Features';
+import { Settings } from '../settings/Settings';
 import { Topbar } from './Topbar';
 
 const PANELS: Record<TabId, (d: ProjectDetail) => ReactNode> = {
   overview: (d) => <Overview d={d} />, health: (d) => <Health d={d} />, specs: (d) => <Specs d={d} />, run: (d) => <Run d={d} />,
   worktrees: (d) => <Worktrees d={d} />, docker: (d) => <Docker d={d} />, cost: () => <Cost />,
+  tickets: (d) => <Tickets d={d} />, features: (d) => <Features d={d} />, settings: () => <Settings />,
 };
 const TAB_DEFS = TABS.map(([id, label]) => ({ id, label }));
 

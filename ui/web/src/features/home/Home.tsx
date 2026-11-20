@@ -1,4 +1,7 @@
-import type { ActivityItem, ProjectSummary } from '../../../../shared/api';
+import { useEffect } from 'react';
+import type { ActivityItem, InboxItem, ProjectSummary } from '../../../../shared/api';
+import { loadInbox, openChat, openFeature, selectTicket, useFlow } from '../../store/flow';
+import { openRun } from '../../store/run';
 import { byProject, useActivity } from '../../store/activity';
 import { selectProject, useApp, type TabId } from '../../store/app';
 import { Dot, EmptyState, Muted, Pill, SectionTitle } from '../../ui/primitives';
@@ -22,6 +25,48 @@ function ProjectCard({ p, running, pending }: { p: ProjectSummary; running: numb
   );
 }
 
+const INBOX: Record<InboxItem['kind'], [string, TabId]> = {
+  cp0: ['CP0 · ticket to validate', 'tickets'], cp1: ['CP1 · plan to approve', 'features'], cp2: ['CP2 · course check', 'features'],
+  cp3: ['CP3 · ready to ship', 'features'], cp4: ['CP4 · delivery to accept', 'tickets'], pr: ['PR to merge', 'features'],
+  question: ['question', 'features'], permission: ['permission', 'features'],
+};
+
+/** Everything across projects that waits on a person: checkpoints, questions the decider handed over, gate asks. */
+export function Inbox() {
+  const items = useFlow((s) => s.inbox);
+  useEffect(() => { void loadInbox(); }, []);
+  const go = async (i: InboxItem) => {
+    const [, tab] = INBOX[i.kind];
+    await selectProject(i.projectId, i.kind === 'question' || i.kind === 'permission' ? (i.feature ? 'features' : 'overview') : tab);
+    if (tab === 'tickets') selectTicket(i.ref);
+    else if (i.feature) await openFeature(i.feature);
+    else if (i.kind === 'question' || i.kind === 'permission') {
+      // a run outside any feature: a PO conversation (Tickets) or a command started by hand (Run)
+      await openChat(i.ref);
+      if (useFlow.getState().chat?.meta?.role === 'po') useApp.getState().setTab('tickets');
+      else { useApp.getState().setTab('run'); await openRun(i.ref); }
+    }
+  };
+  return (
+    <>
+      <SectionTitle>Waiting for you</SectionTitle>
+      {items.length ? (
+        <ul className="activity">
+          {items.map((i) => (
+            <li key={`${i.kind}:${i.projectId}:${i.ref}:${i.detail}`}>
+              <button type="button" className="act-row" onClick={() => void go(i)}>
+                <span className="mono act-proj">{i.projectName}</span>
+                <Pill tone="warn">{INBOX[i.kind][0]}</Pill>
+                <span className="act-label">{i.title}<span className="muted">{` — ${i.detail}`}</span></span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : <Muted>Nothing waits on you.</Muted>}
+    </>
+  );
+}
+
 export function Home() {
   const projects = useApp((s) => s.projects);
   const items = useActivity((s) => s.items);
@@ -32,6 +77,7 @@ export function Home() {
     <div>
       <h2>Home</h2>
       <Muted>{`${projects.length} project${projects.length === 1 ? '' : 's'} on this machine`}</Muted>
+      <Inbox />
       <SectionTitle>Projects</SectionTitle>
       <div className="cards home-cards">{projects.map((p) => <ProjectCard key={p.id} p={p} running={per[p.id]?.running ?? 0} pending={per[p.id]?.pending ?? 0} />)}</div>
       <SectionTitle>Activity</SectionTitle>

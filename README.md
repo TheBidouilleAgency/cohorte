@@ -235,10 +235,27 @@ suite locally.
 | `/cohorte-revert <id>`       | Revert a shipped feature through a PR (never pushed to the default branch), running its `## Rollback` down migration on a dev DB. |
 | `/cohorte-audit [path]`      | Prioritized refactor backlog for existing code.                                       |
 | `/cohorte-refactor <domain>` | Apply the backlog for one surface, TDD-first, then freeze the round as a `kind: refactor` spec that goes review → ship. |
-| `/cohorte-retro [last n]`    | Mine the accumulated review findings for patterns; ratified ones become §Conventions rules and the surface agents are re-rendered — the next build never produces the finding. |
+| `/cohorte-retro [last n]`    | Mine the learning journal and the accumulated review findings for patterns; ratified ones become §Conventions rules and the surface agents are re-rendered — the next build never produces the finding. |
+| `/cohorte-po [request]`      | The product owner (company flow): a business conversation that ends in ticket proposals. |
+| `/cohorte-lead <ticket>`     | The lead (company flow): frames a validated ticket with the developer, writes the spec, posts the plan for CP1. |
+| `/cohorte-learn <id>`        | Write the feature's journal entries — findings, red checks, corrections, contested decisions — for the retro to count. |
+| `/cohorte-acceptance <ticket>` | The acceptance note of a merged ticket, in the business's words (CP4). |
+| `/cohorte-product-map`       | Write `PRODUCT.md` — what the product does, in business language — for the product owner. |
 | `/cohorte-align-ds`          | Align the code UI kit to the design system (no-op if none configured).                |
 | `/cohorte-update-pipeline`   | Refresh the machine install, re-wire this repo (`cohorte sync`) and reconcile its generated files. |
 | `/cohorte-doctor`            | Diagnose the installation (core, agents↔surfaces, hooks, gate, retrieval, worktrees). |
+
+### Or let it run — the company flow in `cohorte ui`
+
+`cohorte ui` runs the same pipeline the way a company runs work, with no command and no `/clear` to
+type: a **product owner** agent talks with the business and drafts tickets (**CP0**: the requester
+validates), a developer takes one and frames it with a **lead** agent (**CP1**: they approve the plan),
+an **autopilot** runs build → review → fix → verify — each stage a fresh session on its own model, a
+**decider** answering mid-run questions only from what is already settled — and stops only on a signal
+(**CP2**) or when it is ready to ship (**CP3**). The PR opens, you merge (or let it), the PO writes the
+acceptance note and the requester checks it (**CP4**). Every feature leaves a journal that
+`/cohorte-retro` turns into ratified rules. Tickets live in your Obsidian vault.
+[The company flow →](https://thebidouilleagency.github.io/cohorte/guide/company-flow)
 
 ### Run the loop cheaply — `/clear` between stages
 

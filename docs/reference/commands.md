@@ -8,6 +8,8 @@ model — their value is the conversation.
 | Command | Model | Role |
 | --- | --- | --- |
 | `/cohorte-init-pipeline` | inherit | Detect stack → interview → generate profile + agents. Once per project. |
+| `/cohorte-po [request]` | inherit | The product owner: talks with the business (never code), proposes tickets as `cohorte-ticket` blocks. Company flow. |
+| `/cohorte-lead <ticket>` | inherit | The lead: frames a validated ticket with the developer, writes the spec, posts the CP1 plan, freezes on approval. Company flow. |
 | `/cohorte-brainstorm` | inherit | Persona panel pressure-tests a feature idea. |
 | `/cohorte-spec` | inherit | Freeze the spec + contract; also applies review returns (Mode B). |
 | `/cohorte-intake [paste]` | inherit | Triage a ticket / email / trace / thread into a `/cohorte-patch` handoff or a brainstorm seed. |
@@ -21,12 +23,33 @@ model — their value is the conversation.
 | `/cohorte-revert <id>` | sonnet | Revert a merged feature as a branch + PR; its down migration only on a dev DB. Never pushes the default branch. |
 | `/cohorte-audit [target]` | sonnet | Mechanical gates + convention/TDD audit → prioritized backlog. |
 | `/cohorte-refactor <domain…>` | sonnet | Apply the backlog per domain via the surface implementers, TDD-first; freeze the round as a `kind: refactor` spec for review → ship. |
-| `/cohorte-retro [last <n> \| all]` | inherit | Turn repeated review findings into ratified §Conventions rules, re-render the agents. |
+| `/cohorte-learn <id> [merged\|abandoned]` | sonnet | Write the feature's journal entries (findings, red checks, corrections, contested decisions) as counted motifs. |
+| `/cohorte-acceptance <ticket>` | sonnet | The PO's acceptance note for a merged ticket, in the business's words (CP4). |
+| `/cohorte-product-map` | sonnet | Write `PRODUCT.md`: what the product does, in business language, from the code. |
+| `/cohorte-retro [last <n> \| all]` | inherit | Turn the journal and repeated review findings into ratified §Conventions rules (with stable ids), re-render the agents. |
 | `/cohorte-align-ds` | sonnet | Align the code UI kit to the design system (design → code). |
 | `/cohorte-update-pipeline` | sonnet | `cohorte update`, `cohorte sync` this repo, reconcile its generated files. |
 | `/cohorte-doctor` | sonnet | Diagnose the whole installation; exact fix per failure. |
 
 ---
+
+## The company flow commands
+
+`cohorte ui` runs these itself — see [The company flow](/guide/company-flow). They also work in a plain
+Claude Code session.
+
+- **`/cohorte-po [request]`** — a business conversation. Asks about need, value, frequency, scope; never
+  code. Reads `PRODUCT.md` and the existing tickets to avoid duplicates. Each ticket it proposes is a
+  ` ```cohorte-ticket ` JSON block (`ref`, `title`, `type`, `need`, `value`, `criteria`, `outOfScope`,
+  `priority`, `size`, `parent`); the dashboard turns it into a draft ticket waiting for CP0. Read-only.
+- **`/cohorte-lead <ticket>`** — framing with the developer. Proposes an approach and asks the decisions
+  the developer must own (by class), writes `specs/<ticket>.md` as a draft from `/cohorte-spec`'s
+  doctrine, posts a ` ```cohorte-plan ` block for CP1, and freezes on `CP1 APPROVED`.
+- **`/cohorte-learn <id> [merged|abandoned]`** — the feature's journal: one entry per pattern worth
+  counting, in `.claude/journal/<date>-<id>.md` of the main checkout, reusing existing motifs.
+- **`/cohorte-acceptance <ticket>`** — the acceptance note (` ```cohorte-acceptance ` block): what changed,
+  how to check it, what is not in this delivery. Read-only.
+- **`/cohorte-product-map`** — writes or updates `PRODUCT.md` (≤ ~200 lines, no paths or technology).
 
 ## `/cohorte-init-pipeline`
 
