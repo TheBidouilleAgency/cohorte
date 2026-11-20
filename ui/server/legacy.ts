@@ -20,7 +20,7 @@ export interface WorktreeRow { path: string; branch: string | null; head?: strin
 export class RegistryErrorBase extends Error {}
 export interface Registry {
   load(globalDir: string): Project[];
-  add(globalDir: string, p: unknown): { project: Project; created: boolean };
+  add(globalDir: string, p: unknown, o?: { founding?: boolean }): { project: Project; created: boolean };
   remove(globalDir: string, id: string): boolean;
   get(globalDir: string, id: string): Project | null;
   discover(globalDir: string, storePath?: string): { name: string; root: string }[];
@@ -46,3 +46,6 @@ export interface Doctor {
 export const doctor: Doctor = load('lib/doctor.js');
 export const report: { specRecords(root: string, scan: Doctor['scanSpecs']): unknown[] } = load('bin/report.js');
 export const parseProfileBlock: (text: string) => Record<string, any> | null = load('lib/yaml.js').parseProfileBlock;
+
+/** `cohorte sync` — re-wires a repo from its PIPELINE.md (profile.json, gate, pointer). */
+export const project: { sync(root: string): unknown } = load('lib/project.js');

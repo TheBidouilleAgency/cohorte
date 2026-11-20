@@ -7,8 +7,10 @@ cohorte ui --no-open       # print the link, don't open a browser
 ```
 
 A local web page over **every** Cohorte project on the machine — no account, no network, nothing to
-install beyond Cohorte itself. Add a project by path (or pick one Claude Code already knows about);
-the list lives in `~/.claude/cohorte.projects.json`.
+install beyond Cohorte itself. Add a project by path (or pick one Claude Code already knows about), or
+start one with **New project** — from an idea, from a stack, or from a repository that does not use cohorte
+yet ([Starting a new project](/guide/company-flow#starting-a-new-project)). The list lives in
+`~/.claude/cohorte.projects.json`.
 
 ## What it shows and does
 

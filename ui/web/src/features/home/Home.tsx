@@ -4,7 +4,9 @@ import { loadInbox, openChat, openFeature, selectTicket, useFlow } from '../../s
 import { openRun } from '../../store/run';
 import { byProject, useActivity } from '../../store/activity';
 import { selectProject, useApp, type TabId } from '../../store/app';
-import { Dot, EmptyState, Muted, Pill, SectionTitle } from '../../ui/primitives';
+import { Button, Dot, EmptyState, Muted, Pill, SectionTitle } from '../../ui/primitives';
+import { openNewProject, useFounding } from '../../store/founding';
+import { NewProject } from '../founding/NewProject';
 
 const tone = (p: ProjectSummary): 'ok' | 'warn' | 'bad' => (p.error || p.missing || !p.summary ? 'bad' : p.summary.bad ? 'bad' : p.summary.warn ? 'warn' : 'ok');
 const KIND_TAB: Record<ActivityItem['kind'], TabId> = { dev: 'worktrees', job: 'worktrees', docker: 'docker', run: 'run' };
@@ -14,7 +16,7 @@ function ProjectCard({ p, running, pending }: { p: ProjectSummary; running: numb
   return (
     <button type="button" className="card home-card link" onClick={() => void selectProject(p.id)}>
       <span className="proj-name"><Dot tone={tone(p)} />{p.title || p.name}</span>
-      <span className="muted home-line">{p.missing ? 'folder missing' : p.error ? p.error : p.oneLiner || p.root}</span>
+      <span className="muted home-line">{p.founding ? 'being founded — open it to continue' : p.missing ? 'folder missing' : p.error ? p.error : p.oneLiner || p.root}</span>
       {p.summary ? <span className="muted home-line">{`${p.summary.ok} ok · ${p.summary.warn} to review · ${p.summary.bad} failing`}</span> : null}
       <span className="home-chips">
         {counts.map(([k, v]) => <Pill key={k}>{`${v} ${k}`}</Pill>)}
@@ -28,7 +30,7 @@ function ProjectCard({ p, running, pending }: { p: ProjectSummary; running: numb
 const INBOX: Record<InboxItem['kind'], [string, TabId]> = {
   cp0: ['CP0 · ticket to validate', 'tickets'], cp1: ['CP1 · plan to approve', 'features'], cp2: ['CP2 · course check', 'features'],
   cp3: ['CP3 · ready to ship', 'features'], cp4: ['CP4 · delivery to accept', 'tickets'], pr: ['PR to merge', 'features'],
-  question: ['question', 'features'], permission: ['permission', 'features'],
+  question: ['question', 'features'], permission: ['permission', 'features'], founding: ['new project', 'overview'],
 };
 
 /** Everything across projects that waits on a person: checkpoints, questions the decider handed over, gate asks. */
@@ -37,6 +39,7 @@ export function Inbox() {
   useEffect(() => { void loadInbox(); }, []);
   const go = async (i: InboxItem) => {
     const [, tab] = INBOX[i.kind];
+    if (i.kind === 'founding' || useApp.getState().projects.find((p) => p.id === i.projectId)?.founding) { await selectProject(i.projectId); return; }
     await selectProject(i.projectId, i.kind === 'question' || i.kind === 'permission' ? (i.feature ? 'features' : 'overview') : tab);
     if (tab === 'tickets') selectTicket(i.ref);
     else if (i.feature) await openFeature(i.feature);
@@ -72,10 +75,19 @@ export function Home() {
   const items = useActivity((s) => s.items);
   const per = byProject(items);
   const sorted = [...items].sort((a, b) => b.pending - a.pending || b.startedAt.localeCompare(a.startedAt));
-  if (!projects.length) return <EmptyState><h2>No project yet</h2>Add a repo that has a PIPELINE.md using the field on the left.</EmptyState>;
+  const form = useFounding((s) => s.form);
+  if (!projects.length) return (
+    <div>
+      {form ? <NewProject /> : (
+        <EmptyState><h2>No project yet</h2><p>Start a new one from an idea or a stack, set up a repository you already have, or add a cohorte project with the field on the left.</p>
+          <Button variant="primary" onClick={() => openNewProject('idea')}>New project</Button></EmptyState>
+      )}
+    </div>
+  );
   return (
     <div>
-      <h2>Home</h2>
+      <div className="toolbar between"><h2>Home</h2>{form ? null : <Button variant="primary" onClick={() => openNewProject('idea')}>New project</Button>}</div>
+      <NewProject />
       <Muted>{`${projects.length} project${projects.length === 1 ? '' : 's'} on this machine`}</Muted>
       <Inbox />
       <SectionTitle>Projects</SectionTitle>

@@ -153,6 +153,8 @@ export const startProductMap = () => guard(async () => {
 /** A change notice from the server's flow: re-read what the open page shows. */
 export function refreshFlow(): void {
   void loadInbox();
+  const sum = useApp.getState().projects.find((p) => p.id === useApp.getState().sel);
+  if (sum?.founding) { void import('./founding').then((m) => m.loadFounding()); return; }
   const tab = useApp.getState().tab;
   if (tab === 'tickets') void loadTickets();
   if (tab === 'features') { void loadFeatures(); void loadFeature(); }

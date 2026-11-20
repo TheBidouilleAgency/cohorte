@@ -10,6 +10,8 @@ export interface Check { id?: string; label: string; status: CheckStatus; detail
 export interface ProjectSummary {
   id: string; root: string; name: string; addedAt?: string;
   missing?: boolean; error?: string;
+  /** Set while the project is being founded from cohorte ui (New project) — the Founding page replaces the tabs. */
+  founding?: FoundingPhase | null;
   title?: string; oneLiner?: string; summary?: Summary; specCounts?: Record<string, number>; specTotal?: number; core?: string | null;
 }
 export interface StateResponse { version: string; projects: ProjectSummary[] }
@@ -81,7 +83,7 @@ export type RunEvent =
   | { t: number; kind: 'approval'; requestId: string; tool: string; summary: string; reason: string; via: string }
   | { t: number; kind: 'question'; requestId: string; tool: string; questions: PendingQuestion[] };
 /** What a run is for. `command` is a human-started /cohorte-* run (the Run tab); the others belong to the company flow. */
-export type RunRole = 'command' | 'po' | 'lead' | 'stage' | 'acceptance' | 'product-map';
+export type RunRole = 'command' | 'po' | 'lead' | 'stage' | 'acceptance' | 'product-map' | 'vision' | 'foundation' | 'scaffold' | 'setup';
 export interface RunMeta { role: RunRole; featureId?: string; ticketId?: string; stage?: string; title?: string }
 export interface RunView {
   id: string; command: string; cwd: string; permissionMode: string; status: RunStatus; startedAt: string; endedAt: string | null;
@@ -103,6 +105,8 @@ export interface MetricsResponse { totals?: { cost?: number; runs?: number; sess
 export interface ApiErrorBody {
   error: string; needsConfirmation?: boolean; command?: string; reason?: string;
   untrusted?: boolean; fix?: string; dockerDown?: boolean; dockerPreflight?: DockerPreflight;
+  /** POST /projects: the folder is a repo that does not use cohorte yet — the dashboard can set it up (New project → existing). */
+  notCohorte?: boolean;
 }
 
 // ---- git / PR ----
@@ -188,14 +192,14 @@ export interface FeatureDetail extends FeatureView {
 export interface FeaturesResponse { features: FeatureView[] }
 
 export type Autonomy = 'prudent' | 'balanced' | 'autonomous';
-export type ModelRole = 'po' | 'lead' | 'build' | 'implementer' | 'review' | 'fix' | 'verify' | 'ship' | 'learn' | 'acceptance' | 'productMap' | 'decider' | 'deciderEscalation';
+export type ModelRole = 'po' | 'lead' | 'build' | 'implementer' | 'review' | 'fix' | 'verify' | 'ship' | 'learn' | 'acceptance' | 'productMap' | 'scaffold' | 'setup' | 'decider' | 'deciderEscalation';
 export interface ProjectSettings {
   autonomy: Autonomy; models: Record<ModelRole, string>; deciderVotes: number; maxRounds: number;
   mergeMethod: 'squash' | 'merge' | 'rebase'; autopilot: boolean; requester: string;
 }
 export interface SettingsResponse { settings: ProjectSettings; defaults: ProjectSettings; tracker: TrackerInfo; productMap: { exists: boolean; updated: string | null } }
 
-export type InboxKind = 'cp0' | 'cp1' | 'cp2' | 'cp3' | 'cp4' | 'question' | 'permission' | 'pr';
+export type InboxKind = 'cp0' | 'cp1' | 'cp2' | 'cp3' | 'cp4' | 'question' | 'permission' | 'pr' | 'founding';
 /** `ref` is the ticket id (cp0, cp4), the feature id (cp1–cp3, pr) or the run id (question, permission); `feature` names the feature when there is one. */
 export interface InboxItem { projectId: string; projectName: string; kind: InboxKind; ref: string; feature: string | null; title: string; detail: string; at: string }
 export interface InboxResponse { items: InboxItem[] }
@@ -203,3 +207,37 @@ export interface LearningResponse {
   decisions: { total: number; byDecider: number; contested: number; confirmed: number };
   preferences: number; stages: { stage: string; model: string; runs: number; ok: number; costUsd: number }[];
 }
+
+// ---- Founding a new project (New project in cohorte ui) ----
+
+/** The PO's vision of a product that does not exist yet, from its ```cohorte-vision``` block — what the Vision checkpoint validates. */
+export interface Vision {
+  name: string; pitch: string; users: string[]; problem: string; today: string; firstVersion: string[]; later: string[];
+  success: string; constraints: string[]; language: string;
+}
+export interface FoundationSurface { key: string; path: string; stack: string; generate: string | null; packageManager: string; test: string; lint: string; build: string }
+/** The lead's foundations plan, from its ```cohorte-foundation``` block — what the Foundations checkpoint validates. */
+export interface Foundation {
+  summary: string; surfaces: FoundationSurface[]; data: string; auth: string; hosting: string; devCommand: string; ci: string;
+  basedOn: string | null; conventions: string[]; skeleton: string; decisions: string[]; assumptions: string[]; questions: string[];
+}
+/** The scaffold's report, from its ```cohorte-scaffold``` block. */
+export interface ScaffoldReport {
+  status: 'ok' | 'failed'; surfaces: { key: string; path: string; test: string; lint: string; build: string; ok: boolean }[];
+  devCommand: string; checks: { command: string; ok: boolean; note: string }[]; assumptions: string[]; notes: string;
+}
+/**
+ * vision → cp-vision → foundation → cp-foundation → scaffold (→ cp-scaffold on a failure) → setup → done.
+ * A developer who knows what to build starts at `foundation`; an existing folder without cohorte starts at `setup`.
+ */
+export type FoundingPhase = 'vision' | 'cp-vision' | 'foundation' | 'cp-foundation' | 'scaffold' | 'cp-scaffold' | 'setup' | 'done' | 'abandoned';
+export type FoundingMode = 'idea' | 'stack' | 'existing';
+export interface FoundingStage { stage: 'vision' | 'foundation' | 'scaffold' | 'setup'; runId: string; model: string; status: RunStatus; costUsd: number | null; startedAt: string; endedAt: string | null }
+export interface FoundingView {
+  projectId: string; root: string; name: string; mode: FoundingMode; phase: FoundingPhase; brief: string; basedOn: string | null; requester: string;
+  vision: Vision | null; tickets: TicketProposal[]; foundation: Foundation | null; scaffold: ScaffoldReport | null;
+  currentRunId: string | null; stages: FoundingStage[]; error: string | null; warning: string | null; createdAt: string; updatedAt: string; costUsd: number;
+}
+export interface NewProjectBody { mode: FoundingMode; name?: string; parent?: string; path?: string; brief?: string; basedOn?: string | null; requester?: string }
+/** Where the code is hosted: the `origin` remote, and whether `gh` can create a GitHub repo from here. */
+export interface RemoteInfo { origin: string | null; branch: string | null; ahead: number | null; gh: { installed: boolean; authed: boolean; user: string | null } }

@@ -190,3 +190,18 @@ textarea{width:100%;margin-bottom:6px;resize:vertical}
 .contest{min-width:240px}
 .dod li{list-style:none;margin-left:-18px}
 @media (max-width:900px){.convo-grid{grid-template-columns:1fr}.board-flow{grid-template-columns:repeat(7,minmax(150px,1fr))}}
+/* New project */
+.new-project-btn{width:100%;margin:8px 0 0}
+.new-project{margin:12px 0}
+.new-project .field{margin:10px 0}
+.new-project .field textarea,.new-project .field input,.new-project .field select{width:100%;box-sizing:border-box}
+.field.grow{flex:1 1 220px}
+.mode-pick{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin:8px 0 4px}
+.mode{position:relative;display:flex;flex-direction:column;gap:4px;border:1px solid var(--line-subtle);border-radius:var(--radius-10);padding:10px 12px;cursor:pointer;font-size:13px}
+.mode input{position:absolute;opacity:0;pointer-events:none}
+.mode.sel{border-color:var(--state-attention);background:var(--tint-attention)}
+.mode:focus-within{outline:2px solid var(--state-attention);outline-offset:2px}
+.seg{display:flex;flex-direction:column;gap:4px;font-size:13px}
+.kv{display:grid;grid-template-columns:max-content 1fr;gap:4px 12px;align-items:baseline;margin:8px 0}
+.kv .label{margin:0}
+details>summary{cursor:pointer;color:var(--text-muted);font-size:13px}

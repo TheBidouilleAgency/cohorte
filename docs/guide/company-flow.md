@@ -95,6 +95,44 @@ model to `/cohorte-build` and `/cohorte-fix`, which hand it to every implementer
 Every flow run loads **only the project's own MCP servers** (`.mcp.json`). A machine with many MCP
 servers can carry 200k+ tokens of tool schemas into every session; the agents of this flow need none of them.
 
+## Starting a new project
+
+**New project** (Home, or the sidebar) starts a project that does not exist yet — the same flow, one step
+earlier. Nothing is pushed anywhere and nothing is required but a folder name.
+
+| Step | With | What comes out | Checkpoint |
+| --- | --- | --- | --- |
+| **Vision** (`/cohorte-vision`) | the person with the idea | who it is for, the problem, the first version, what waits — and the first version's tickets | **Vision**: they validate it → `PRODUCT.md` |
+| **Foundations** (`/cohorte-foundation`) | the developer | the surfaces, the stack, each one's official generator, the data, the checks | **Foundations**: the developer approves the plan |
+| **Skeleton** (`/cohorte-scaffold`) | nobody | every surface generated and wired, one trivial path through all of them, tests/lint/build green, compose, CI, README — committed | only if it fails: retry (one model up), answer, or keep it as is |
+| **Pipeline** (`/cohorte-init-pipeline`) | nobody, mostly | `PIPELINE.md`, the gate, the surface agents — the plan answers the interview — committed | — |
+
+Then it is an ordinary project: the first version's tickets wait in the backlog, and the first one is taken
+like any other. **Start from an idea** begins at the vision; **I know what to build** skips it and talks to
+the lead directly.
+
+- **The lead defaults to what you already use.** It sees the stacks of your other registered projects and
+  recommends the same language, framework, package manager and test runner unless the vision needs
+  otherwise. **Start from one of my projects** goes further: the same structure, tooling and
+  `§Conventions` — never a line of its business code.
+- **Official generators only** (`npm create vite`, `nest new`, `uv init`, `cargo new`…): no hand-written
+  framework setup, nothing to maintain on cohorte's side. The skeleton may run, without asking, the
+  package managers and tools the approved plan names; anything else (a remover, a shell, a download)
+  asks you in the page.
+- **The skeleton has no feature.** It proves the plumbing; the vision's tickets are built one at a time,
+  through the normal flow — the first build already has a frozen spec, a review and a verify.
+
+**A repository you already have** (or one the sidebar refuses because it has no `PIPELINE.md`) goes
+straight to the pipeline set-up; nothing is committed for you there.
+
+### The code host — when you want one
+
+A project can stay on your machine. When you want pull requests, **Settings → Where the code is hosted**
+(also shown on the Overview until there is one) does it in one step: **a new GitHub repository** (`gh repo
+create`, private by default — `gh` must be installed and signed in once) or **the URL of an empty
+repository you made anywhere** (GitLab, Gitea…). cohorte points `PIPELINE.md`'s `vcs` at it — so
+shipping opens PRs there — commits that, and pushes.
+
 ## Where tickets live
 
 **Settings → Connect Obsidian** points the project at a board in your vault (creating it with the

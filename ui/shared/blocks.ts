@@ -6,12 +6,15 @@
 //   ```cohorte-ticket       one ticket proposal (PO)            → TicketProposal
 //   ```cohorte-plan         the lead's plan, what CP1 validates → Plan
 //   ```cohorte-acceptance   the PO's acceptance note (CP4)      → AcceptanceNote (minus `at`)
+//   ```cohorte-vision       a new product's vision (PO)         → Vision
+//   ```cohorte-foundation   a new project's stack (lead)        → Foundation
+//   ```cohorte-scaffold     the skeleton's report               → ScaffoldReport
 //
 // Everything here is pure and total: malformed JSON or a missing field yields null or a default, never a throw.
 
-import type { AcceptanceNote, Plan, Priority, Size, TicketProposal, TicketType } from './api';
+import type { AcceptanceNote, Foundation, Plan, Priority, ScaffoldReport, Size, TicketProposal, TicketType, Vision } from './api';
 
-export type BlockKind = 'cohorte-ticket' | 'cohorte-plan' | 'cohorte-acceptance';
+export type BlockKind = 'cohorte-ticket' | 'cohorte-plan' | 'cohorte-acceptance' | 'cohorte-vision' | 'cohorte-foundation' | 'cohorte-scaffold';
 
 /** Every ```<kind> block in `text`, parsed as JSON (blocks that do not parse are skipped). */
 export function blocksOf(text: string, kind: BlockKind): unknown[] {
@@ -25,7 +28,7 @@ export function blocksOf(text: string, kind: BlockKind): unknown[] {
 
 /** The text with its machine blocks removed — what a person reads in the chat. */
 export function stripBlocks(text: string): string {
-  return text.replace(/```cohorte-(ticket|plan|acceptance)[^\n]*\n[\s\S]*?\n?```/g, '').replace(/\n{3,}/g, '\n\n').trim();
+  return text.replace(/```cohorte-(ticket|plan|acceptance|vision|foundation|scaffold)[^\n]*\n[\s\S]*?\n?```/g, '').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 const str = (v: unknown, max = 4000): string => (typeof v === 'string' ? v.trim().slice(0, max) : '');
@@ -75,6 +78,49 @@ export function toAcceptance(v: unknown): Omit<AcceptanceNote, 'at'> | null {
   const summary = str(o.summary);
   if (!summary) return null;
   return { summary, changes: list(o.changes), howToTest: list(o.howToTest ?? o.how_to_test), outOfScope: list(o.outOfScope ?? o.out_of_scope) };
+}
+
+export function toVision(v: unknown): Vision | null {
+  if (!v || typeof v !== 'object') return null;
+  const o = v as Record<string, unknown>;
+  const pitch = str(o.pitch, 1000);
+  const firstVersion = list(o.firstVersion ?? o.first_version);
+  if (!pitch || !firstVersion.length) return null;
+  return { name: str(o.name, 120), pitch, users: list(o.users), problem: str(o.problem), today: str(o.today), firstVersion, later: list(o.later),
+    success: str(o.success, 1000), constraints: list(o.constraints), language: str(o.language, 60) };
+}
+
+const cmd = (v: unknown): string => str(v, 400).replace(/[\r\n]+/g, ' ');
+export function toFoundation(v: unknown): Foundation | null {
+  if (!v || typeof v !== 'object') return null;
+  const o = v as Record<string, unknown>;
+  const summary = str(o.summary);
+  const surfaces = (Array.isArray(o.surfaces) ? o.surfaces : []).map((x) => {
+    const r = (x || {}) as Record<string, unknown>;
+    const raw = str(r.key, 40);
+    const key = raw ? slug(raw, 40) : '';
+    return { key, path: str(r.path, 120).replace(/^\.?\/+/, '') || key, stack: str(r.stack, 300), generate: cmd(r.generate) || null,
+      packageManager: str(r.packageManager ?? r.package_manager, 20), test: cmd(r.test), lint: cmd(r.lint), build: cmd(r.build) };
+  }).filter((x) => x.key).slice(0, 12);
+  if (!summary || !surfaces.length) return null;
+  return { summary, surfaces, data: str(o.data, 1000), auth: str(o.auth, 1000), hosting: str(o.hosting, 1000), devCommand: cmd(o.devCommand ?? o.dev_command), ci: str(o.ci, 1000),
+    basedOn: str(o.basedOn ?? o.based_on, 200) || null, conventions: list(o.conventions), skeleton: str(o.skeleton, 1000), decisions: list(o.decisions),
+    assumptions: list(o.assumptions), questions: list(o.questions) };
+}
+
+export function toScaffold(v: unknown): ScaffoldReport | null {
+  if (!v || typeof v !== 'object') return null;
+  const o = v as Record<string, unknown>;
+  if (o.status !== 'ok' && o.status !== 'failed') return null;
+  const surfaces = (Array.isArray(o.surfaces) ? o.surfaces : []).map((x) => {
+    const r = (x || {}) as Record<string, unknown>;
+    return { key: str(r.key, 40), path: str(r.path, 120), test: cmd(r.test), lint: cmd(r.lint), build: cmd(r.build), ok: r.ok === true };
+  }).filter((x) => x.key).slice(0, 12);
+  const checks = (Array.isArray(o.checks) ? o.checks : []).map((x) => {
+    const r = (x || {}) as Record<string, unknown>;
+    return { command: cmd(r.command), ok: r.ok === true, note: str(r.note, 500) };
+  }).filter((x) => x.command).slice(0, 40);
+  return { status: o.status, surfaces, devCommand: cmd(o.devCommand ?? o.dev_command), checks, assumptions: list(o.assumptions), notes: str(o.notes, 2000) };
 }
 
 /** The last parseable block of `kind` across a run's text events, in order. */

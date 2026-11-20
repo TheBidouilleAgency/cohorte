@@ -4,6 +4,7 @@ import { ago, usd } from '../../lib/format';
 import { connectObsidian, loadSettings, saveSettings, startProductMap, useFlow } from '../../store/flow';
 import { useApp } from '../../store/app';
 import { Button, Card, EmptyState, Muted, Pill, SectionTitle, Table } from '../../ui/primitives';
+import { RemoteCard } from '../founding/Remote';
 
 const AUTONOMY: { v: Autonomy; label: string; text: string }[] = [
   { v: 'prudent', label: 'Prudent', text: 'The decider only settles internal, reversible choices that a written decision (plan, spec, decisions, your past answers) answers word for word — unanimously.' },
@@ -15,6 +16,7 @@ const ROLES: { r: ModelRole; label: string }[] = [
   { r: 'build', label: 'Build stage' }, { r: 'implementer', label: 'Implementer agents' }, { r: 'review', label: 'Review stage' },
   { r: 'fix', label: 'Fix stage' }, { r: 'verify', label: 'Verify stage' }, { r: 'ship', label: 'Ship stage' }, { r: 'learn', label: 'Learning journal' },
   { r: 'acceptance', label: 'Acceptance note' }, { r: 'productMap', label: 'Product map' },
+  { r: 'scaffold', label: 'New project — skeleton' }, { r: 'setup', label: 'New project — pipeline set-up' },
   { r: 'decider', label: 'Decider — first vote' }, { r: 'deciderEscalation', label: 'Decider — on a split vote' },
 ];
 
@@ -53,6 +55,9 @@ export function Settings() {
   const dirty = JSON.stringify(draft) !== JSON.stringify(data.settings);
   return (
     <div>
+      <SectionTitle>Where the code is hosted</SectionTitle>
+      <RemoteCard />
+
       <SectionTitle>Where tickets live</SectionTitle>
       <Obsidian />
 

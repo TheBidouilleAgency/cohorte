@@ -7,6 +7,26 @@ short, user-facing, most recent first. One `## <version> — <YYYY-MM-DD>` secti
 > They are history and are deliberately not rewritten — every command gained a `cohorte-` prefix
 > in 2.0.0.
 
+## 4.1.0 — 2026-11-20
+
+- **New project, from `cohorte ui`.** Start a project that does not exist yet — no terminal, no
+  `/cohorte-init-pipeline` by hand. **From an idea**: the product owner (`/cohorte-vision`) shapes the vision
+  and the first version's tickets, and the person with the idea validates it (→ `PRODUCT.md`). **From a
+  stack**: straight to the lead (`/cohorte-foundation`), who chooses the surfaces and the stack with the
+  developer — defaulting to what their other projects use, or following one of them (structure, tooling,
+  conventions; never its code) — and posts a foundations plan to approve.
+- **The walking skeleton** (`/cohorte-scaffold`): every surface from its framework's official generator, one
+  trivial path through all of them, tests/lint/build green, compose, CI, README — committed. No feature: the
+  first version's tickets go through the normal flow. It may run the tools the approved plan names without
+  asking; anything else asks in the page. A failed skeleton is retried one model up.
+- **The pipeline sets itself up**: `/cohorte-init-pipeline` runs right after, its interview answered by the
+  approved plan, and the result is committed. The first version's tickets land in the backlog.
+- **A repository without cohorte** can now be set up from the dashboard too — the sidebar offers it instead of
+  refusing the folder.
+- **The code host, when you want one**: Settings (and the Overview, until there is one) creates a GitHub
+  repository with `gh` or connects any empty repository by URL, points `PIPELINE.md`'s `vcs` at it, commits
+  and pushes. Never required.
+
 ## 4.0.0 — 2026-11-20
 
 - **The company flow, in `cohorte ui`.** The pipeline now runs the way a company runs work — the business

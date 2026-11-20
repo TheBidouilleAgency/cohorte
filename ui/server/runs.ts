@@ -18,6 +18,7 @@
 // parked on a human, and the stream has been quiet for a moment (a background subagent's asks would
 // otherwise be thrown away at the source with "Stream closed").
 
+import path from 'path';
 import crypto from 'crypto';
 import readline from 'readline';
 import { spawn, type ChildProcess } from 'child_process';
@@ -52,6 +53,10 @@ export interface Run {
   child: ChildProcess | null; closeTimer: NodeJS.Timeout | null; stopping: boolean; exitCode?: number | null;
   /** Company-flow runs only: what the run is for, the model it runs on, the tools it may not use. */
   meta: RunMeta; model: string | null; disallowedTools: string[];
+  /** Tool rules allowed without asking (`Bash(npm:*)`) — the scaffold of a new project runs its stack's package managers. */
+  allowedTools: string[];
+  /** Extra folders the session may read and edit without asking (`--add-dir`): the pipeline core, for the set-up. */
+  addDirs: string[];
   /** Company-flow runs load only the project's own MCP servers (its .mcp.json, or none) — not every server of the user's. */
   strictMcp: boolean; mcpConfig: string | null;
   /** The flow's bookkeeping, persisted with the run: how far its events were processed, the draft tickets it created. */
@@ -60,10 +65,12 @@ export interface Run {
 export interface RunStartOpts {
   projectId: string; cwd: string; command: string; permissionMode?: unknown;
   /** The text sent as the first turn. Defaults to `command` (a slash command); the flow sends the expanded command body instead, so its model applies. */
-  prompt?: string; model?: string | null; disallowedTools?: string[]; meta?: RunMeta; strictMcp?: boolean; mcpConfig?: string | null;
+  prompt?: string; model?: string | null; disallowedTools?: string[]; allowedTools?: string[]; addDirs?: string[]; meta?: RunMeta; strictMcp?: boolean; mcpConfig?: string | null;
   /** Shown in the feed as what the person said (a conversation's first message), when the prompt itself is not. */
   echo?: string;
 }
+/** A permission rule: a tool name, optionally with a specifier — `Bash(npm:*)`, `Bash(docker compose:*)`. No comma (the list separator). */
+export const ALLOWED_RULE = /^[A-Za-z][\w]{0,40}(\([^(),\r\n]{1,400}\))?$/;
 export const MODEL = /^[A-Za-z0-9][A-Za-z0-9._:\[\]-]{0,80}$/;
 export interface RunHooks {
   /** A turn ended (the process closed): done, failed or stopped. */
@@ -95,6 +102,8 @@ export class Runs {
       permissionMode: mode, status: 'running', startedAt: new Date().toISOString(), endedAt: null,
       events: [], dropped: 0, pending: new Map(), result: null, sessionId: null, child: null, closeTimer: null, stopping: false,
       meta: opts.meta || { role: 'command' }, model, disallowedTools: (opts.disallowedTools || []).filter((t) => /^[A-Za-z][\w:-]{0,60}$/.test(t)),
+      allowedTools: (opts.allowedTools || []).filter((t) => ALLOWED_RULE.test(t)),
+      addDirs: (opts.addDirs || []).filter((d) => typeof d === 'string' && path.isAbsolute(d)),
       seen: 0, tickets: {}, strictMcp: opts.strictMcp === true, mcpConfig: typeof opts.mcpConfig === 'string' ? opts.mcpConfig : null,
     };
     this.#spawn(run, null);
@@ -110,6 +119,8 @@ export class Runs {
     if (run.permissionMode !== 'default') args.push('--permission-mode', run.permissionMode);
     if (run.model) args.push('--model', run.model);
     if (run.disallowedTools.length) args.push('--disallowedTools', run.disallowedTools.join(','));
+    if (run.allowedTools.length) args.push('--allowedTools', run.allowedTools.join(','));
+    for (const d of run.addDirs) args.push('--add-dir', d);
     if (run.strictMcp) args.push('--strict-mcp-config');
     if (run.mcpConfig) args.push('--mcp-config', run.mcpConfig);
     if (resumeId) args.push('--resume', resumeId);
