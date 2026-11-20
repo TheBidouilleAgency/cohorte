@@ -50,7 +50,7 @@ write(join(proj, ".claude", "profile.json"), JSON.stringify({ name: "app", ui_la
 writeFileSync(storePath, JSON.stringify({ projects: { [home]: { hasTrustDialogAccepted: true } } }));
 
 // The installed commands: stubs — the flow only needs them to exist, the fake only reads <command-name> and ARGS.
-for (const c of ["po", "lead", "build", "review", "fix", "verify", "ship", "learn", "acceptance", "product-map"])
+for (const c of ["po", "lead", "build", "review", "fix", "verify", "ship", "learn", "acceptance", "product-map", "vision", "foundation", "scaffold", "init-pipeline"])
   write(join(globalDir, "commands", `cohorte-${c}.md`), `---\ndescription: stub ${c}\n---\nSTUB ${c} ARGS=$ARGUMENTS END\n`);
 
 // ---- fake gh: one PR per branch, merged on `gh pr merge` ----
@@ -62,6 +62,8 @@ const fs = require("fs"); const st = ${JSON.stringify(ghState)};
 const a = process.argv.slice(2); const s = JSON.parse(fs.readFileSync(st, "utf8"));
 if (a[0] === "--version") { console.log("gh version 9.9.9"); process.exit(0); }
 if (a[0] === "pr" && a[1] === "list") { console.log(JSON.stringify([{ number: 7, state: s.state, url: "https://example.test/pr/7", title: "feat", isDraft: false, reviewDecision: null, statusCheckRollup: [{ conclusion: "SUCCESS", state: "SUCCESS", status: "COMPLETED" }] }])); process.exit(0); }
+if (a[0] === "api" && a[1] === "user") { console.log("octo"); process.exit(0); }
+if (a[0] === "repo" && a[1] === "create") { require("child_process").spawnSync("git", ["remote", "add", "origin", "https://github.com/octo/" + a[2] + ".git"], { cwd: process.cwd() }); s.created = a; fs.writeFileSync(st, JSON.stringify(s)); console.log("created"); process.exit(0); }
 if (a[0] === "pr" && a[1] === "merge") { s.state = "MERGED"; s.merged = a; fs.writeFileSync(st, JSON.stringify(s)); console.log("merged"); process.exit(0); }
 process.exit(1);
 `);
@@ -108,6 +110,10 @@ rl.on("line", (line) => {
   const cmd = (prompt.match(/<command-name>\\/(cohorte-[a-z-]+)<\\/command-name>/) || [])[1];
   const id = (prompt.match(/ARGS=(\\S+)/) || [])[1];
   if (opt("--resume")) {                           // a reply in an existing conversation
+    if (/for dentists/.test(prompt)) {
+      text("Here is the vision.\\n\`\`\`cohorte-vision\\n" + JSON.stringify({ name: "Dentist", pitch: "Online booking for dentists.", users: ["the receptionist"], problem: "Phone all day.", firstVersion: ["a patient books a slot"], later: ["payments"] }) + "\\n\`\`\`\\n\`\`\`cohorte-ticket\\n" + JSON.stringify({ ref: "book", title: "Book an appointment online", criteria: ["a patient books"], priority: "high", size: "M" }) + "\\n\`\`\`\\n\`\`\`cohorte-ticket\\n" + JSON.stringify({ ref: "remind", title: "SMS reminder", priority: "medium" }) + "\\n\`\`\`");
+      return done("vision");
+    }
     if (/CP1 APPROVED/.test(prompt)) { const p = fs.readdirSync(path.join(process.cwd(), "specs")).find((f) => !f.startsWith("_") && f.endsWith(".md")); const fid = p.slice(0, -3); spec(fid, "frozen"); text("Frozen."); return done("frozen"); }
     if (/two tickets/.test(prompt)) {
       text("Revised.\\n\`\`\`cohorte-ticket\\n" + JSON.stringify({ ref: "csv", title: "Export appointments as CSV", need: "Revised need", criteria: ["C one", "C two"], priority: "high", size: "S" }) + "\\n\`\`\`\\n\`\`\`cohorte-ticket\\n" + JSON.stringify({ ref: "pdf", title: "Export as PDF", need: "Later", priority: "low" }) + "\\n\`\`\`");
@@ -156,6 +162,29 @@ rl.on("line", (line) => {
   if (cmd === "cohorte-acceptance") {
     text("Here is your note.\\n\`\`\`cohorte-acceptance\\n" + JSON.stringify({ summary: "You can now export appointments as a CSV file.", changes: ["An Export button on the list"], howToTest: ["Open the list, click Export: a CSV downloads"], outOfScope: ["PDF export"] }) + "\\n\`\`\`");
     return done("noted");
+  }
+  if (cmd === "cohorte-vision") { text("Who books today, and how?"); return done("asked"); }
+  if (cmd === "cohorte-foundation") {
+    const ok = /Installed on this machine/.test(prompt) && /START FROM THIS PROJECT/.test(prompt) && /SH-001/.test(prompt) && /THE VISION/.test(prompt) && /Book an appointment online/.test(prompt);
+    text("Proposal.\\n\`\`\`cohorte-foundation\\n" + JSON.stringify({ summary: "One web app.", surfaces: [{ key: "web", path: "web", stack: "React", generate: "npm create vite@latest web -- --template react-ts", packageManager: "npm", test: "npm test", lint: "npm run lint", build: "npm run build" }], data: "none", devCommand: "npm run dev", conventions: ["copy in French"], questions: ok ? [] : ["MISSING CONTEXT"] }) + "\\n\`\`\`");
+    return done("plan", 0.2);
+  }
+  if (cmd === "cohorte-scaffold") {
+    const at = path.join(${JSON.stringify(home)}, "scaffold-attempts");
+    const n = Number((() => { try { return fs.readFileSync(at, "utf8"); } catch { return "0"; } })()) + 1; fs.writeFileSync(at, String(n));
+    if (!/Bash\\(npm:\\*\\)/.test(opt("--allowedTools") || "") || /Bash\\(rm:/.test(opt("--allowedTools") || "")) { text("WRONG ALLOWED TOOLS " + opt("--allowedTools")); return done("x"); }
+    if (n === 1) { text("npm test failed.\\n\`\`\`cohorte-scaffold\\n" + JSON.stringify({ status: "failed", checks: [{ command: "npm test", ok: false, note: "1 failing" }], notes: "a test fails" }) + "\\n\`\`\`"); return done("failed"); }
+    W("web/package.json", "{}"); W("README.md", "# dentist\\n");
+    const g = (...a) => require("child_process").spawnSync("git", a, { cwd: process.cwd() });
+    g("add", "-A"); g("commit", "-qm", "chore: walking skeleton");
+    text("Skeleton ready.\\n\`\`\`cohorte-scaffold\\n" + JSON.stringify({ status: "ok", surfaces: [{ key: "web", path: "web", test: "npm test", ok: true }], devCommand: "npm run dev", checks: [{ command: "npm test", ok: true }] }) + "\\n\`\`\`");
+    return done("ok", 0.4);
+  }
+  if (cmd === "cohorte-init-pipeline") {
+    const name = path.basename(process.cwd());
+    W("PIPELINE.md", "# " + name + "\\n\\n\`\`\`yaml pipeline-profile\\nname: " + name + "\\nvcs:\\n  host: none\\n  remote: none\\n  default_branch: main\\n\`\`\`\\n");
+    W(".claude/pipeline.json", "{}"); W(".claude/profile.json", JSON.stringify({ name }));
+    text(/APPROVED its foundations/.test(prompt) ? "Pipeline ready, from the plan." : "Pipeline ready."); return done("set up", 0.3);
   }
   if (cmd === "cohorte-product-map") { W("PRODUCT.md", "# app — what it does\\n"); text("mapped"); return done("mapped"); }
   text("unknown " + cmd); done("unknown");
@@ -316,6 +345,73 @@ try {
     check("the feature is done", (await call(F())).json.phase === "done");
     const learning = (await call(`${P}/learning`)).json;
     check("learning stats count the decider's work", learning.decisions.byDecider === 1 && learning.decisions.contested === 1 && learning.stages.some((s) => s.stage === "build"), JSON.stringify(learning));
+  }
+
+  console.log("new project: idea → vision → foundations → skeleton → pipeline → code host");
+  {
+    for (const [k, v] of Object.entries({ GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" })) process.env[k] = v;
+    check("a bad folder name is refused", (await post("/api/founding", { mode: "idea", name: "../x", parent: home, brief: "x" })).status === 400);
+    check("an idea needs a brief", (await post("/api/founding", { mode: "idea", name: "dentist", parent: home })).status === 400);
+    mkdirSync(join(home, "taken")); writeFileSync(join(home, "taken", "f"), "x");
+    check("a non-empty folder is refused", (await post("/api/founding", { mode: "stack", name: "taken", parent: home })).status === 409);
+    const c = await post("/api/founding", { mode: "idea", name: "dentist", parent: home, brief: "Patients call all day to book", requester: "Dr. B", basedOn: id });
+    check("New project → 201, a founding project, the PO talks first", c.status === 201 && c.json.project.founding === "vision" && c.json.founding.phase === "vision", JSON.stringify(c.json));
+    const nid = c.json.project.id; const N = `/api/projects/${nid}`; const nroot = join(home, "dentist");
+    check("the folder is a git repo on main", git(nroot, "symbolic-ref", "--short", "HEAD").stdout.trim() === "main");
+    await until("the PO asked", async () => { const v = (await call(`${N}/founding`)).json; return v.stages[0] && v.stages[0].status === "done" ? v : null; });
+    check("reply → 202", (await post(`${N}/founding/reply`, { text: "Receptionists, for dentists" })).status === 202);
+    const cv = await until("the vision checkpoint", async () => { const v = (await call(`${N}/founding`)).json; return v.phase === "cp-vision" ? v : null; });
+    check("the vision and its tickets are parsed", cv && cv.vision.pitch === "Online booking for dentists." && cv.tickets.length === 2, JSON.stringify(cv));
+    check("the inbox shows it", (await call("/api/inbox")).json.items.some((i) => i.kind === "founding" && i.projectId === nid));
+    check("approving the foundations now → 409", (await post(`${N}/founding/checkpoint`, { action: "retry" })).status === 409);
+    const a = await post(`${N}/founding/checkpoint`, { action: "approve" });
+    check("vision approved → the lead takes over", a.status === 200 && a.json.phase === "foundation", JSON.stringify(a.json));
+    check("PRODUCT.md is written from the vision", readFileSync(join(nroot, "PRODUCT.md"), "utf8").includes("Online booking for dentists."));
+    const cf = await until("the foundations checkpoint", async () => { const v = (await call(`${N}/founding`)).json; return v.phase === "cp-foundation" || (v.foundation && v.foundation.questions.length) ? v : null; });
+    check("the lead got the vision, the machine, the other projects and the project to start from", cf && cf.phase === "cp-foundation", JSON.stringify(cf && cf.foundation));
+    const lead = readFileSync(log, "utf8").trim().split("\n").map((x) => JSON.parse(x)).filter((x) => x.cwd === nroot);
+    check("the vision runs read-only on the PO's model, the foundations on the lead's", lead[0].argv[lead[0].argv.indexOf("--model") + 1] === "opus" && /Write/.test(lead[0].argv[lead[0].argv.indexOf("--disallowedTools") + 1]));
+    check("approve the foundations → the skeleton", (await post(`${N}/founding/checkpoint`, { action: "approve" })).json.phase === "scaffold");
+    const cs = await until("the skeleton fails once", async () => { const v = (await call(`${N}/founding`)).json; return v.phase === "cp-scaffold" ? v : null; });
+    check("a failed skeleton opens its checkpoint, with the report", cs && /checks failed/.test(cs.error) && cs.scaffold && cs.scaffold.status === "failed", JSON.stringify(cs));
+    const sc = readFileSync(log, "utf8").trim().split("\n").map((x) => JSON.parse(x)).filter((x) => x.cwd === nroot && x.argv.includes("--allowedTools"));
+    check("the skeleton may run the plan's tools without asking — not a remover or a shell", sc.length && /Bash\(npm:\*\)/.test(sc[0].argv[sc[0].argv.indexOf("--allowedTools") + 1]) && !/Bash\((rm|sh|curl):/.test(sc[0].argv[sc[0].argv.indexOf("--allowedTools") + 1]), JSON.stringify(sc[0] && sc[0].argv));
+    check("retry → 200", (await post(`${N}/founding/checkpoint`, { action: "retry" })).status === 200);
+    const dn = await until("the project is ready", async () => { const v = (await call(`${N}/founding`)).json; return v.phase === "done" || v.phase === "cp-scaffold" ? v : null; }, 20000);
+    check("skeleton → pipeline set-up → done", dn && dn.phase === "done", JSON.stringify(dn && { phase: dn.phase, error: dn.error, stages: dn.stages.map((x) => x.stage + ":" + x.status) }));
+    const retry = readFileSync(log, "utf8").trim().split("\n").map((x) => JSON.parse(x)).filter((x) => x.cwd === nroot && x.argv.includes("--allowedTools") && /npm/.test(x.argv[x.argv.indexOf("--allowedTools") + 1]));
+    check("the retry ran one model up", retry.length === 2 && retry[1].argv[retry[1].argv.indexOf("--model") + 1] === "opus", JSON.stringify(retry.map((x) => x.argv[x.argv.indexOf("--model") + 1])));
+    const commits = git(nroot, "log", "--format=%s").stdout.trim().split("\n");
+    check("two commits: the skeleton, then the pipeline", commits.join("|") === "chore: set up the cohorte pipeline|chore: walking skeleton", commits.join("|"));
+    const st = (await call("/api/state")).json.projects.find((p) => p.id === nid);
+    check("no longer founding: an ordinary project", st && !st.founding, JSON.stringify(st));
+    const tk = (await call(`${N}/tickets`)).json.tickets;
+    check("the first version's tickets are in the backlog", tk.length === 2 && tk.every((t) => t.status === "backlog" && t.requester === "Dr. B"), JSON.stringify(tk));
+
+    const r0 = (await call(`${N}/remote`)).json;
+    check("no code host yet; gh is there and signed in", r0.origin === null && r0.gh.installed && r0.gh.authed && r0.gh.user === "octo", JSON.stringify(r0));
+    check("a bad remote URL is refused", (await post(`${N}/remote`, { kind: "url", url: "file:///etc" })).status === 400);
+    const rj = await post(`${N}/remote`, { kind: "github", name: "dentist", visibility: "private" });
+    check("create on GitHub → 202 (a job)", rj.status === 202 && rj.json.job, JSON.stringify(rj.json));
+    const r1 = await until("the remote", async () => { const x = (await call(`${N}/remote`)).json; return x.origin ? x : null; });
+    check("origin is the new repository", r1 && r1.origin === "https://github.com/octo/dentist.git");
+    check("gh created it private, from this folder, and pushed", JSON.parse(readFileSync(ghState, "utf8")).created.join(" ") === "repo create dentist --private --source . --remote origin --push");
+    const md = readFileSync(join(nroot, "PIPELINE.md"), "utf8");
+    check("the profile now points at it (so shipping opens PRs there), committed", /\n  host: github\n/.test(md) && /\n  remote: octo\/dentist\n/.test(md) && git(nroot, "log", "-1", "--format=%s").stdout.trim() === "chore: point the pipeline at octo/dentist", md);
+    check("a second remote → 409", (await post(`${N}/remote`, { kind: "github", name: "x" })).status === 409);
+  }
+
+  console.log("new project: an existing repository without cohorte");
+  {
+    const ex = join(home, "legacy");
+    mkdirSync(ex); git(ex, "init", "-q", "-b", "main"); writeFileSync(join(ex, "index.js"), "1\n"); git(ex, "add", "-A"); git(ex, "commit", "-qm", "init");
+    const add = await post("/api/projects", { path: ex });
+    check("adding it says it does not use cohorte yet", add.status === 400 && add.json.notCohorte === true, JSON.stringify(add.json));
+    const c = await post("/api/founding", { mode: "existing", path: ex });
+    check("set it up from here → the pipeline set-up starts", c.status === 201 && c.json.founding.phase === "setup", JSON.stringify(c.json));
+    const v = await until("ready", async () => { const x = (await call(`/api/projects/${c.json.project.id}/founding`)).json; return x.phase === "done" ? x : null; });
+    check("done, nothing committed for you", v && /not committed/.test(v.warning) && git(ex, "log", "--format=%s").stdout.trim() === "init", JSON.stringify(v));
+    check("a cohorte project cannot be set up twice", (await post("/api/founding", { mode: "existing", path: ex })).status === 409);
   }
 
   console.log("restart");

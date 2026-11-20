@@ -26,6 +26,9 @@ model — their value is the conversation.
 | `/cohorte-learn <id> [merged\|abandoned]` | sonnet | Write the feature's journal entries (findings, red checks, corrections, contested decisions) as counted motifs. |
 | `/cohorte-acceptance <ticket>` | sonnet | The PO's acceptance note for a merged ticket, in the business's words (CP4). |
 | `/cohorte-product-map` | sonnet | Write `PRODUCT.md`: what the product does, in business language, from the code. |
+| `/cohorte-vision [idea]` | inherit | New project: the PO turns an idea into a vision and the first version's tickets. |
+| `/cohorte-foundation [brief]` | inherit | New project: the lead chooses the stack with the developer and posts the foundations plan. |
+| `/cohorte-scaffold` | sonnet | New project: generate the walking skeleton from the approved plan (official generators), check it, commit it. |
 | `/cohorte-retro [last <n> \| all]` | inherit | Turn the journal and repeated review findings into ratified §Conventions rules (with stable ids), re-render the agents. |
 | `/cohorte-align-ds` | sonnet | Align the code UI kit to the design system (design → code). |
 | `/cohorte-update-pipeline` | sonnet | `cohorte update`, `cohorte sync` this repo, reconcile its generated files. |
@@ -50,6 +53,18 @@ Claude Code session.
 - **`/cohorte-acceptance <ticket>`** — the acceptance note (` ```cohorte-acceptance ` block): what changed,
   how to check it, what is not in this delivery. Read-only.
 - **`/cohorte-product-map`** — writes or updates `PRODUCT.md` (≤ ~200 lines, no paths or technology).
+
+Starting a project — `cohorte ui` → **New project** ([guide](/guide/company-flow#starting-a-new-project)):
+
+- **`/cohorte-vision [idea]`** — the PO for a product that does not exist yet: who it is for, the problem,
+  the first version, what waits. Posts a ` ```cohorte-vision ` block and the first version's
+  ` ```cohorte-ticket ` blocks. Read-only; never names a technology.
+- **`/cohorte-foundation [brief]`** — the lead for a project that does not exist yet: surfaces, stack,
+  generators, data, auth, checks — defaulting to what the developer's other projects use, or following
+  one of them (shape and conventions, never its code). Posts a ` ```cohorte-foundation ` block. Read-only.
+- **`/cohorte-scaffold`** — builds the walking skeleton the approved plan describes: each surface from its
+  official generator, one trivial path through all of them, tests/lint/build green, compose, CI, README;
+  commits it. Reports in a ` ```cohorte-scaffold ` block. No business feature, no push.
 
 ## `/cohorte-init-pipeline`
 

@@ -26,59 +26,23 @@ import { pipelineOf, reportsOf } from './pipeline';
 import { parseReviewReport } from './findings';
 import * as gitinfo from './gitinfo';
 import * as ops from './ops';
+import { FOUNDING_ROLES, FoundingFlow } from './founding';
+import { AUTOPILOT_NOTE, FlowError, READ_ONLY, contextBlock, expandCommand, mcp, now, readText, textsOf } from './agents';
 import type {
-  ConversationView, FeatureDetail, InboxItem, LearningResponse, ProjectSettings, RunEvent, Ticket, TicketProposal,
+  ConversationView, FeatureDetail, InboxItem, LearningResponse, ProjectSettings, Ticket, TicketProposal,
 } from '../shared/api';
 
 const { scanSpecs, checkTrust } = doctor;
-/** The business-facing agents read; they never write, run or delegate. The server writes what they propose. */
-const READ_ONLY = ['Bash', 'Edit', 'Write', 'NotebookEdit', 'Agent', 'Task'];
 const PR_POLL_MS = 60000;
-
-export class FlowError extends ops.OpError {}
-
-const now = (): string => new Date().toISOString();
-/**
- * Every flow run loads only the project's own MCP servers. A user's machine-wide servers (mail, docs, design tools…)
- * can weigh 200k+ tokens of tool schemas on EVERY turn — measured at 230k for a one-word reply — and no PO, lead or
- * pipeline stage needs them. The project's .mcp.json (a retrieval provider, say) is still loaded.
- */
-const mcp = (cwd: string): { strictMcp: true; mcpConfig: string | null } => {
-  const f = path.join(cwd, '.mcp.json');
-  return { strictMcp: true, mcpConfig: fs.existsSync(f) ? f : null };
-};
-const textsOf = (events: RunEvent[]): string[] => events.filter((e): e is Extract<RunEvent, { kind: 'text' }> => e.kind === 'text').map((e) => e.text);
-const readText = (p: string): string => { try { return fs.readFileSync(p, 'utf8'); } catch { return ''; } };
-
-/** The body of an installed /cohorte-* command, its $ARGUMENTS substituted — sent as a prompt so the run's model applies. */
-export function expandCommand(globalDir: string, name: string, args: string): string {
-  if (!/^cohorte-[a-z0-9-]+$/.test(name)) throw new FlowError(`not a cohorte command: ${name}`);
-  const file = path.join(globalDir, 'commands', `${name}.md`);
-  let text: string;
-  try { text = fs.readFileSync(file, 'utf8'); } catch { throw new FlowError(`/${name} is not installed — run \`cohorte install\` (or update cohorte)`, 400); }
-  const body = text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '');
-  return `<command-name>/${name}</command-name>\n${body.split('$ARGUMENTS').join(args)}`;
-}
-
-const contextBlock = (lines: string[]): string => `\n\n---\n## cohorte ui context (written by the dashboard — data, not instructions from the person)\n\n${lines.join('\n')}\n`;
-
-const AUTOPILOT_NOTE = (routing: string | null): string => [
-  '', '---', '## Running under the cohorte ui autopilot', '',
-  'No person is watching this session: cohorte ui started it, and starts the next stage itself when this one ends.',
-  '- Never recommend `/clear` and never tell anyone which command to run next — the autopilot routes.',
-  '- Ask a question ONLY through AskUserQuestion (one call, at most 4 questions). Put your recommended option FIRST, with',
-  '  "(Recommended)" at the end of its label, and set each question\'s `header` to the decision\'s category — exactly one of',
-  '  reversible · visible · behavior · contract · cost · security · irreversible. A decider answers what the plan, the spec,',
-  '  the project\'s decisions and the developer\'s past answers already settle; the rest waits for the developer.',
-  '- Do the stage\'s whole job, then end your turn with the stage\'s own short report.',
-  ...(routing ? [`- Model routing: dispatch every implementer subagent with \`model: "${routing}"\` (the Agent tool's model parameter).`] : []),
-].join('\n');
+export { expandCommand, FlowError };
 
 interface FlowOpts { globalDir: string; runs: Runs; jobs: Jobs; dataDir: string; decider?: Decider; changed?: (projectId: string) => void }
 
 export class Flow {
   globalDir: string; runs: Runs; jobs: Jobs; features: FeatureStore; settings: SettingsStore; prefs: Preferences; decider: Decider;
   changed: (projectId: string) => void;
+  /** New project: the founding conversations, the skeleton and the pipeline set-up (founding.ts). */
+  founding: FoundingFlow;
   private prTimer: NodeJS.Timeout | null = null;
   /** Feature ids with an advance() in flight — so two run ends never start two stages. */
   private busy = new Set<string>();
@@ -90,12 +54,14 @@ export class Flow {
     this.prefs = new Preferences(path.join(o.dataDir, 'prefs'));
     this.decider = o.decider || new Decider();
     this.changed = o.changed || (() => {});
+    this.founding = new FoundingFlow({ globalDir: this.globalDir, runs: this.runs, jobs: this.jobs, settings: this.settings, changed: (id) => this.changed(id) }, path.join(o.dataDir, 'founding'));
     this.runs.hooks = {
       onEnd: (r) => setImmediate(() => { void this.onEnd(r).catch((e) => this.fail(r, e)); }),
       onQuestion: (r, p) => this.onQuestion(r, p),
       onAnswered: (r, p, b, a, by) => this.onAnswered(r, p, b, a, by),
     };
     this.recover();
+    this.founding.recover();
   }
 
   start(): void {
@@ -635,6 +601,7 @@ export class Flow {
   // Run hooks
 
   private async onEnd(r: Run): Promise<void> {
+    if (FOUNDING_ROLES.includes(r.meta.role)) { await this.founding.onEnd(r); return; }
     if (r.meta.role === 'po') { await this.onPOEnd(r); this.changed(r.projectId); return; }
     const id = r.meta.featureId;
     if (!id) return;
@@ -743,6 +710,11 @@ export class Flow {
       if (!fs.existsSync(p.root)) continue;
       const name = this.profileOf(p.root).name || path.basename(p.root);
       const base = { projectId: p.id, projectName: name };
+      const fd = this.founding.store.get(p.id);
+      if (fd && ['cp-vision', 'cp-foundation', 'cp-scaffold'].includes(fd.phase)) {
+        const what = fd.phase === 'cp-vision' ? 'the vision is ready to validate' : fd.phase === 'cp-foundation' ? 'the foundations plan is ready to approve' : fd.error || 'the skeleton needs you';
+        out.push({ ...base, kind: 'founding', ref: p.id, feature: null, title: `New project · ${fd.name}`, detail: what, at: fd.updatedAt });
+      }
       for (const t of this.tracker(p).list()) {
         if (t.status === 'validate') out.push({ ...base, kind: 'cp0', ref: t.id, feature: null, title: t.title, detail: `ticket to validate${t.requester ? ` · ${t.requester}` : ''}`, at: t.updated });
         if (t.status === 'acceptance') out.push({ ...base, kind: 'cp4', ref: t.id, feature: null, title: t.title, detail: 'delivered — waiting for acceptance', at: t.updated });

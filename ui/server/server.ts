@@ -23,9 +23,10 @@ import * as docker from './docker';
 import { pipelineOf } from './pipeline';
 import { parseReviewReport } from './findings';
 import { Flow } from './flow';
+import { FOUNDING_ROLES } from './founding';
 import { DEFAULTS as SETTINGS_DEFAULTS } from './settings';
 import { TrackerError, connectObsidian, isTicketId } from './tracker';
-import type { ActivityItem, DiffListResponse, GitResponse, ProjectDetail, ProjectSummary, SpecDetail, StateResponse, StreamEvent } from '../shared/api';
+import type { NewProjectBody, ActivityItem, DiffListResponse, GitResponse, ProjectDetail, ProjectSummary, SpecDetail, StateResponse, StreamEvent } from '../shared/api';
 
 const { state, scanSpecs } = doctor;
 const pkgRoot = repo;
@@ -94,7 +95,11 @@ export function create({ globalDir, version, token = crypto.randomBytes(24).toSt
       for (const r of subs) { try { r.write(frame); } catch { subs.delete(r); } }
     }, 120);
   };
-  const flow = new Flow({ globalDir, runs, jobs, dataDir: path.join(globalDir, 'cohorte-ui'), changed: (projectId) => notify({ type: 'flow', projectId, id: projectId, status: 'changed' }) });
+  const flow = new Flow({ globalDir, runs, jobs, dataDir: path.join(globalDir, 'cohorte-ui'), changed: (projectId) => {
+    const pr = registry.get(globalDir, projectId);
+    if (pr) cacheDoctor.clear(pr.root); // a founding step may have just written PIPELINE.md
+    notify({ type: 'flow', projectId, id: projectId, status: 'changed' });
+  } });
   jobs.onChange = (j) => {
     notify({ type: 'job', projectId: j.projectId, id: j.id, status: j.status });
     try { flow.onJob(j); flow.onMergeJob(j); } catch { /* the flow never takes a job down */ }
@@ -111,11 +116,11 @@ export function create({ globalDir, version, token = crypto.randomBytes(24).toSt
       const s = await doctorOf(p.root);
       const counts: Record<string, number> = {};
       for (const sp of s.specs) counts[sp.status || 'unknown'] = (counts[sp.status || 'unknown'] || 0) + 1;
-      return { ...base, missing: false, title: s.profile && s.profile.name || base.name,
+      return { ...base, missing: false, founding: flow.founding.phaseOf(p.id), title: s.profile && s.profile.name || base.name,
         oneLiner: s.profile && s.profile.one_liner || '', summary: s.summary, specCounts: counts,
         specTotal: s.specs.length, core: s.versions && s.versions.core || null };
     } catch (e) {
-      return { ...base, missing: false, error: String((e as Error)?.message || e) };
+      return { ...base, missing: false, founding: flow.founding.phaseOf(p.id), error: String((e as Error)?.message || e) };
     }
   }
 
@@ -207,6 +212,18 @@ export function create({ globalDir, version, token = crypto.randomBytes(24).toSt
     if (parts[0] === 'discover' && method === 'GET') {
       return send(res, 200, { suggestions: registry.discover(globalDir, storePath) });
     }
+    if (parts[0] === 'founding' && parts.length === 1 && method === 'POST') {
+      let body: Record<string, any>;
+      try { body = await readBody(req); } catch (e) { return fail(res, 400, (e as Error).message); }
+      try {
+        const r = await flow.founding.create(body as NewProjectBody);
+        return send(res, 201, { project: await summary(r.project), founding: r.founding });
+      } catch (e) {
+        if (e instanceof ops.OpError) return send(res, e.code, { error: e.message });
+        if (e instanceof registry.RegistryError) return fail(res, 400, e.message);
+        throw e;
+      }
+    }
     if (parts[0] === 'projects' && parts.length === 1 && method === 'POST') {
       let body: Record<string, any>;
       try { body = await readBody(req); } catch (e) { return fail(res, 400, (e as Error).message); }
@@ -214,7 +231,7 @@ export function create({ globalDir, version, token = crypto.randomBytes(24).toSt
         const r = registry.add(globalDir, body.path);
         return send(res, r.created ? 201 : 200, { project: await summary(r.project), created: r.created });
       } catch (e) {
-        if (e instanceof registry.RegistryError) return fail(res, 400, e.message);
+        if (e instanceof registry.RegistryError) return send(res, 400, { error: e.message, notCohorte: /has no PIPELINE\.md/.test(e.message) });
         throw e;
       }
     }
@@ -248,6 +265,9 @@ export function create({ globalDir, version, token = crypto.randomBytes(24).toSt
         if (parts[4] === 'reply' && method === 'POST') {
           let body: Record<string, any>;
           try { body = await readBody(req); } catch (e) { return fail(res, 400, (e as Error).message); }
+          if (FOUNDING_ROLES.includes(run.meta.role)) {
+            try { flow.founding.reply(p.id, body.text); return send(res, 202, { run: runs.view(run, 0) }); } catch (e) { if (e instanceof ops.OpError) return fail(res, e.code, e.message); throw e; }
+          }
           if (run.meta.role === 'lead' && run.meta.featureId) {
             try { flow.replyLead(p.id, run.meta.featureId, body.text); return send(res, 202, { run: runs.view(run, 0) }); } catch (e) { if (e instanceof ops.OpError) return fail(res, e.code, e.message); throw e; }
           }
@@ -286,6 +306,15 @@ export function create({ globalDir, version, token = crypto.randomBytes(24).toSt
           }
           return flowCall(() => { cacheDoctor.clear(p.root); return { feature: flow.take(p.id, tid, { confirmed: b.confirmed === true }) }; }, 202);
         }
+      }
+      if (parts[2] === 'founding') {
+        if (parts.length === 3 && method === 'GET') return flowCall(() => flow.founding.view(p.id));
+        if (parts[3] === 'reply' && method === 'POST') { const b = await bodyOf(); if (!b) return; return flowCall(() => flow.founding.reply(p.id, b.text), 202); }
+        if (parts[3] === 'checkpoint' && method === 'POST') { const b = await bodyOf(); if (!b) return; return flowCall(async () => { const v = await flow.founding.checkpoint(p.id, b); cacheDoctor.clear(p.root); return v; }); }
+      }
+      if (parts[2] === 'remote' && parts.length === 3) {
+        if (method === 'GET') return flowCall(() => flow.founding.remote(p.id));
+        if (method === 'POST') { const b = await bodyOf(); if (!b) return; return flowCall(async () => ({ job: jobs.view(await flow.founding.connectRemote(p.id, b)) }), 202); }
       }
       if (parts[2] === 'po' && parts.length === 3 && method === 'POST') { const b = await bodyOf(); if (!b) return; return flowCall(() => ({ run: runs.view(flow.startPO(p.id, b), 0) }), 202); }
       if (parts[2] === 'features') {

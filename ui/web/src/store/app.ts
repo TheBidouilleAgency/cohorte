@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { ProjectDetail, ProjectSummary, Suggestion } from '../../../shared/api';
-import { api, errorMessage } from '../api/client';
+import { ApiError, api, errorMessage } from '../api/client';
 
 /** Registry of tabs: add one entry (and a component in features/shell/Tabs) to add a tab. */
 export const TABS = [
@@ -67,7 +67,15 @@ export const selectProject = (id: string, tab: TabId = 'overview') => useApp.get
 /** Home: no project selected — the cross-project overview and activity. */
 export const goHome = () => { if (useApp.getState().sel !== null) switchProject(null); };
 export const addProject = (path: string) => useApp.getState().guard(async () => {
-  const r = await api.addProject(path);
+  let r: Awaited<ReturnType<typeof api.addProject>>;
+  try { r = await api.addProject(path); } catch (e) {
+    if (e instanceof ApiError && e.body.notCohorte && window.confirm(`${e.message.replace(/ — run.*$/, '')}.\n\nSet cohorte up in this repository from here?`)) {
+      const { openNewProject } = await import('./founding');
+      openNewProject('existing', path);
+      return;
+    }
+    throw e;
+  }
   await useApp.getState().refresh();
   switchProject(r.project.id);
   await useApp.getState().loadDetail();

@@ -4,7 +4,7 @@
 // one that `git` itself lists for the worktree — the client never names a path git did not report.
 
 import { spawn } from 'child_process';
-import type { ChangedFile, FileDiff, GitInfo, PullInfo } from '../shared/api';
+import type { ChangedFile, FileDiff, GitInfo, PullInfo, RemoteInfo } from '../shared/api';
 
 interface Out { code: number | null; out: string; err: string }
 function run(file: string, args: string[], cwd: string, timeout = 8000, max = 400_000): Promise<Out> {
@@ -113,3 +113,23 @@ export async function fileDiff(wtPath: string, base: string | null, file: string
   const r = await git(wtPath, 'diff', '--no-color', '--no-ext-diff', range, '--', file);
   return { file, status: entry.status, diff: r.out.slice(0, 200_000), truncated: r.out.length > 200_000 };
 }
+
+const ghBin = (): string => process.env.COHORTE_GH_BIN || 'gh';
+/** Where the code is hosted, and whether `gh` could create a GitHub repository from here. Read-only. */
+export async function remoteInfo(root: string): Promise<RemoteInfo> {
+  const [origin, branch, ahead, ghv] = await Promise.all([
+    git(root, 'remote', 'get-url', 'origin'), git(root, 'rev-parse', '--abbrev-ref', 'HEAD'),
+    git(root, 'rev-list', '--count', '@{u}..HEAD'), run(ghBin(), ['--version'], root, 4000),
+  ]);
+  let authed = false; let user: string | null = null;
+  if (ghv.code === 0) {
+    const who = await run(ghBin(), ['api', 'user', '--jq', '.login'], root, 10000);
+    authed = who.code === 0 && !!who.out.trim();
+    user = authed ? who.out.trim().split('\n')[0].slice(0, 100) : null;
+  }
+  return { origin: origin.code === 0 ? origin.out.trim() || null : null, branch: branch.code === 0 ? branch.out.trim() || null : null,
+    ahead: ahead.code === 0 ? Number(ahead.out.trim()) || 0 : null, gh: { installed: ghv.code === 0, authed, user } };
+}
+
+/** A bounded, shell-less process run (tool probes for the foundations context). */
+export const probe = (file: string, args: string[], cwd: string, timeout = 4000): Promise<{ code: number | null; out: string; err: string }> => run(file, args, cwd, timeout, 20_000);

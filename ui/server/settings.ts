@@ -18,7 +18,7 @@ export const DEFAULTS: ProjectSettings = {
   autonomy: 'balanced',
   models: {
     po: 'opus', lead: 'opus', build: 'sonnet', implementer: 'sonnet', review: 'sonnet', fix: 'sonnet', verify: 'haiku',
-    ship: 'sonnet', learn: 'sonnet', acceptance: 'sonnet', productMap: 'sonnet', decider: 'haiku', deciderEscalation: 'sonnet',
+    ship: 'sonnet', learn: 'sonnet', acceptance: 'sonnet', productMap: 'sonnet', scaffold: 'sonnet', setup: 'sonnet', decider: 'haiku', deciderEscalation: 'sonnet',
   },
   deciderVotes: 3, maxRounds: 3, mergeMethod: 'squash', autopilot: true, requester: '',
 };

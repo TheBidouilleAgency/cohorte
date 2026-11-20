@@ -4,6 +4,7 @@ import { useApp } from '../../store/app';
 import { openSpec } from '../../store/specs';
 import { Cards, Muted, Pill, SectionTitle, Stat, Table, Button } from '../../ui/primitives';
 import { STATUS_TONE } from '../specs/Specs';
+import { RemoteCard } from '../founding/Remote';
 
 export function Overview({ d }: { d: ProjectDetail }) {
   const setTab = useApp((s) => s.setTab);
@@ -17,6 +18,7 @@ export function Overview({ d }: { d: ProjectDetail }) {
   const specCounts = Object.entries(counts).map(([k, v]) => `${v} ${k}`).join(', ');
   return (
     <div>
+      <RemoteCard compact />
       <Cards>
         <Stat value={s.bad ? `${s.bad} failing` : s.warn ? `${s.warn} to review` : 'Healthy'} label="pipeline health" tone={s.bad ? 'bad' : s.warn ? 'warn' : 'ok'} onClick={() => setTab('health')} />
         <Stat value={d.specs.length} label={`specs${specCounts ? ` · ${specCounts}` : ''}`} onClick={() => setTab('specs')} />

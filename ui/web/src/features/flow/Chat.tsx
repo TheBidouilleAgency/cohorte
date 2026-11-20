@@ -1,6 +1,7 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import type { Plan, RunEvent, Ticket, TicketProposal } from '../../../../shared/api';
-import { blocksOf, stripBlocks, toAcceptance, toPlan, toProposal } from '../../../../shared/blocks';
+import { blocksOf, stripBlocks, toAcceptance, toFoundation, toPlan, toProposal, toScaffold, toVision } from '../../../../shared/blocks';
+import { FoundationCard, ScaffoldCard, VisionCard } from '../founding/Cards';
 import { usd } from '../../lib/format';
 import type { Chat as ChatRun } from '../../store/flow';
 import { respondChat } from '../../store/flow';
@@ -43,6 +44,9 @@ function Blocks({ text, tickets, refs }: { text: string; tickets: Ticket[]; refs
     if (p) out.push(<ProposalCard key={`t${i}`} p={p} ticket={tickets.find((t) => t.id === refs[p.ref]) ?? null} />);
   });
   blocksOf(text, 'cohorte-plan').forEach((b, i) => { const p = toPlan(b); if (p) out.push(<PlanCard key={`p${i}`} plan={p} />); });
+  blocksOf(text, 'cohorte-vision').forEach((b, i) => { const v = toVision(b); if (v) out.push(<VisionCard key={`v${i}`} v={v} />); });
+  blocksOf(text, 'cohorte-foundation').forEach((b, i) => { const p = toFoundation(b); if (p) out.push(<FoundationCard key={`f${i}`} p={p} />); });
+  blocksOf(text, 'cohorte-scaffold').forEach((b, i) => { const r = toScaffold(b); if (r) out.push(<ScaffoldCard key={`s${i}`} r={r} />); });
   blocksOf(text, 'cohorte-acceptance').forEach((b, i) => {
     const a = toAcceptance(b);
     if (a) out.push(<Card key={`a${i}`} className="proposal"><Pill tone="info">Acceptance note</Pill><p className="pre-wrap">{a.summary}</p></Card>);

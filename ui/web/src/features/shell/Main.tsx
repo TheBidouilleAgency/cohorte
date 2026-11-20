@@ -16,6 +16,7 @@ import { Tickets } from '../tickets/Tickets';
 import { Features } from '../features/Features';
 import { Settings } from '../settings/Settings';
 import { Topbar } from './Topbar';
+import { Founding } from '../founding/Founding';
 
 const PANELS: Record<TabId, (d: ProjectDetail) => ReactNode> = {
   overview: (d) => <Overview d={d} />, health: (d) => <Health d={d} />, specs: (d) => <Specs d={d} />, run: (d) => <Run d={d} />,
@@ -41,10 +42,14 @@ export function Main() {
           <div className="head-actions"><Button onClick={() => { if (window.confirm('Remove this project from the dashboard? Nothing on disk is touched.')) void removeProject(sum.id); }}>Remove from dashboard</Button></div>
         </header>
       ) : null}
-      <Tabs tabs={TAB_DEFS} value={tab} onChange={onTab} label="Project sections" />
-      <div id="tabpanel" role="tabpanel" aria-labelledby={`tab-${tab}`}>
-        {!detail ? <EmptyState>{busy ? 'Loading…' : 'Nothing to show.'}</EmptyState> : PANELS[tab](detail)}
-      </div>
+      {sum.founding ? <Founding /> : (
+        <>
+          <Tabs tabs={TAB_DEFS} value={tab} onChange={onTab} label="Project sections" />
+          <div id="tabpanel" role="tabpanel" aria-labelledby={`tab-${tab}`}>
+            {!detail ? <EmptyState>{busy ? 'Loading…' : 'Nothing to show.'}</EmptyState> : PANELS[tab](detail)}
+          </div>
+        </>
+      )}
     </main>
   );
 }
