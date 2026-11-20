@@ -199,6 +199,11 @@ tree. For each surface in `surfaces`:
 > for your surface): <the surface's open `- [ ]` lines verbatim, or `none`>. Readiness gaps for YOUR
 > surface (§1.6 `RESERVATIONS` — the spec is silent here: implement the stated assumption and flag what
 > you assumed in your handoff): <that surface's `gaps` entries verbatim, or `none`>."
+>
+> **Model routing.** When your own prompt carries a `Model routing:` line (the `cohorte ui` autopilot
+> adds one), pass that model as the Agent tool's `model` parameter on every implementer dispatch — the
+> dispatch text above stays byte-identical. No such line ⇒ omit the parameter (the agent's own
+> `model:` applies).
 
 ## 3.5 Roll call — account for EVERY dispatch before integrating
 
@@ -222,6 +227,18 @@ to report". Silence is not a green light; treat it as the failure it is (`<core>
 
 When all return, flag any contract mismatch or failing test from the handoffs; otherwise print one
 status line per surface (`<key> · tests pass/fail · <n> TODOs`) — do not restate handoff content.
+
+**Questions, assumptions, learnings — route them, do not drop them.** In one Bash heredoc, append to
+`specs/reports/$ARGUMENTS.notes.md` (create it; one `## <surface> · build` heading per surface) the
+handoffs' `Assumptions` and `Learnings` lines verbatim — the human signs the assumptions off at ship
+time and `/cohorte-learn` keeps the learnings. Then, if any handoff has **Questions**, ask them all in
+ONE **AskUserQuestion** call (at most 4; merge duplicates across surfaces): the implementer's
+recommended option first with `(Recommended)` appended to its label, `header` = the question's class.
+For every answer that differs from the recommendation, append a Remediation item to the spec
+(`- [ ] MEDIUM · <file:line or surface> · decision · apply "<answer>" to <question>`, under a
+`### Decisions — build` subheading) so the next `/cohorte-fix` applies it; record each question and its
+answer in `notes.md` under `## Decisions`. A run without a human (an autopilot) gets its answers the
+same way — the call is answered for you or waits; never skip it.
 A dead surface (§3.5) prints `<key> · DEAD — unverified` and **the batch is never reported as ok**.
 Append **ONE line for the batch** to the **main checkout's** `<state>/pipeline-metrics.jsonl` —
 NOT the worktree's, which dies at teardown while metrics must accumulate across features. Resolve

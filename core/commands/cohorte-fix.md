@@ -69,6 +69,12 @@ When the agents return:
   fixed`) — the audit fact survives, but the per-item bulk stops growing the spec that every agent
   re-reads each loop. Keep any round with ≥1 still-open `- [ ]` item fully expanded (§2's skip logic
   needs those checkboxes).
+- **Questions, assumptions, learnings** — exactly as `/cohorte-build` §4: append the handoffs'
+  `Assumptions` and `Learnings` to `specs/reports/$ARGUMENTS.notes.md` under `## <surface> · fix <round>`,
+  and ask every handoff `Question` in ONE AskUserQuestion call (recommended option first, `header` = its
+  class); an answer that differs from what was built becomes a new open Remediation item.
+- **Model routing** — the same rule as `/cohorte-build` §3: a `Model routing:` line in your prompt sets
+  the Agent tool's `model` parameter on every re-dispatch.
 - Print one status line per surface (`<key> · items fixed <n>/<m> · tests pass/fail`) — do not restate
   handoff content — and append ONE metrics line for the batch to the **main checkout's**
   `$(dirname "$(git rev-parse --git-common-dir)")/<state>/pipeline-metrics.jsonl` (never a bare

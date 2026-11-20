@@ -24,9 +24,10 @@ const frontmatter = (text) => {
 // Interactive commands must stay unpinned (they inherit on purpose).
 const PINNED = ["cohorte-build", "cohorte-review", "cohorte-fix", "cohorte-ship",
   "cohorte-audit", "cohorte-refactor", "cohorte-doctor", "cohorte-align-ds",
-  "cohorte-update-pipeline", "cohorte-fleet", "cohorte-verify", "cohorte-revert"];
+  "cohorte-update-pipeline", "cohorte-fleet", "cohorte-verify", "cohorte-revert",
+  "cohorte-learn", "cohorte-acceptance", "cohorte-product-map"];
 const UNPINNED = ["cohorte-brainstorm", "cohorte-spec", "cohorte-init-pipeline", "cohorte-patch",
-  "cohorte-intake", "cohorte-retro"];
+  "cohorte-intake", "cohorte-retro", "cohorte-po", "cohorte-lead"];
 
 // Every command must carry the `cohorte-` prefix. This replaces the old RESERVED
 // blocklist, which chased collisions one name at a time and always lagged: a command

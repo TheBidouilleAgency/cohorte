@@ -4,8 +4,8 @@ import { api, errorMessage } from '../api/client';
 
 /** Registry of tabs: add one entry (and a component in features/shell/Tabs) to add a tab. */
 export const TABS = [
-  ['overview', 'Overview'], ['health', 'Health'], ['specs', 'Specs'], ['run', 'Run'],
-  ['worktrees', 'Worktrees'], ['docker', 'Docker'], ['cost', 'Cost'],
+  ['overview', 'Overview'], ['tickets', 'Tickets'], ['features', 'Features'], ['specs', 'Specs'], ['run', 'Run'],
+  ['worktrees', 'Worktrees'], ['docker', 'Docker'], ['health', 'Health'], ['cost', 'Cost'], ['settings', 'Settings'],
 ] as const;
 export type TabId = (typeof TABS)[number][0];
 

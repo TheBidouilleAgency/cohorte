@@ -62,7 +62,13 @@ export interface Command { name: string; description: string; argumentHint: stri
 
 export type RunStatus = 'running' | 'done' | 'failed' | 'stopped';
 export interface PendingQuestion { question: string; header: string; multiSelect: boolean; options: { label: string; description: string }[] }
-export interface PendingItem { requestId: string; kind: 'permission' | 'question'; tool: string; summary?: string; reason?: string; via?: string; questions?: PendingQuestion[] }
+/** The decider's read of a question it did not settle alone: what it would pick, and why it handed it to you. */
+export interface DecisionAdvice { choice: string | null; rationale: string; agreement: number; category: string; escalated: string }
+export interface PendingItem {
+  requestId: string; kind: 'permission' | 'question'; tool: string; summary?: string; reason?: string; via?: string; questions?: PendingQuestion[];
+  /** The decider is working on it — not yours yet. */
+  deciding?: boolean; advice?: DecisionAdvice;
+}
 export interface RunResult { ok: boolean; text: string; costUsd: number | null; durationMs: number | null; turns: number | null }
 export type RunEvent =
   | { t: number; kind: 'text'; text: string }
@@ -74,9 +80,13 @@ export type RunEvent =
   | { t: number; kind: 'stderr' | 'system'; text: string }
   | { t: number; kind: 'approval'; requestId: string; tool: string; summary: string; reason: string; via: string }
   | { t: number; kind: 'question'; requestId: string; tool: string; questions: PendingQuestion[] };
+/** What a run is for. `command` is a human-started /cohorte-* run (the Run tab); the others belong to the company flow. */
+export type RunRole = 'command' | 'po' | 'lead' | 'stage' | 'acceptance' | 'product-map';
+export interface RunMeta { role: RunRole; featureId?: string; ticketId?: string; stage?: string; title?: string }
 export interface RunView {
   id: string; command: string; cwd: string; permissionMode: string; status: RunStatus; startedAt: string; endedAt: string | null;
   result: RunResult | null; sessionId: string | null; pending: PendingItem[]; events?: RunEvent[]; cursor?: number;
+  meta?: RunMeta; model?: string | null;
 }
 
 export interface DockerService { name: string; state: string; health: string; status: string; ports: string[]; image: string }
@@ -111,6 +121,85 @@ export interface DiffListResponse { base: string | null; files: ChangedFile[] }
 
 // ---- live updates & activity ----
 /** One change notice on /api/stream. The page refetches the item it names (with its cursor); nothing sensitive rides here. */
-export interface StreamEvent { type: 'job' | 'run'; projectId: string; id: string; status: string; pending?: number }
+export interface StreamEvent { type: 'job' | 'run' | 'flow'; projectId: string; id: string; status: string; pending?: number }
 export interface ActivityItem { projectId: string; projectName: string; kind: 'dev' | 'job' | 'run' | 'docker'; id: string; label: string; status: string; pending: number; startedAt: string }
 export interface ActivityResponse { items: ActivityItem[] }
+
+// ---- company flow: tickets (business) → features (lead + autopilot) → PR → acceptance ----
+
+export type TicketType = 'feature' | 'bug' | 'tech';
+/** One per board column of the company layout (profile/schema/kanban.md), plus `rejected`. */
+export type TicketStatus = 'discussion' | 'validate' | 'backlog' | 'framing' | 'building' | 'checkpoint' | 'pr' | 'acceptance' | 'done' | 'rejected';
+export type Priority = 'high' | 'medium' | 'low';
+export type Size = 'S' | 'M' | 'L' | '?';
+export interface AcceptanceNote { summary: string; changes: string[]; howToTest: string[]; outOfScope: string[]; at: string }
+export interface Ticket {
+  id: string; title: string; type: TicketType; status: TicketStatus; requester: string; priority: Priority; size: Size;
+  created: string; updated: string; parent: string | null; pr: string | null; conversation: string | null;
+  need: string; value: string; criteria: string[]; outOfScope: string[]; notes: string;
+  acceptance: AcceptanceNote | null; feedback: string[];
+}
+/** A ticket as the PO agent proposes it, in a ```cohorte-ticket``` block. `ref` is stable across revisions in one conversation. */
+export interface TicketProposal {
+  ref: string; title: string; type: TicketType; need: string; value: string; criteria: string[]; outOfScope: string[];
+  priority: Priority; size: Size; parent?: string | null;
+}
+export interface TrackerInfo { kind: 'obsidian' | 'local'; dir: string; board: string | null; reason: string; projectName: string | null }
+export interface ConversationView {
+  runId: string; role: 'po' | 'lead'; title: string; status: RunStatus; startedAt: string; ticketId: string | null;
+  /** ref → ticket id: the draft tickets this conversation created (CP0 validates them). */
+  tickets: Record<string, string>; pending: number;
+}
+export interface TicketsResponse { tracker: TrackerInfo; tickets: Ticket[]; conversations: ConversationView[] }
+
+/** The lead's plan, from its ```cohorte-plan``` block — what CP1 asks you to validate. */
+export interface Plan {
+  summary: string; criteria: { id: string; text: string }[]; contract: string;
+  surfaces: { key: string; tasks: string[] }[]; risks: string[]; assumptions: string[]; questions: string[]; size: Size;
+}
+
+export type FeaturePhase =
+  | 'provisioning' | 'framing' | 'cp1' | 'freezing' | 'autopilot' | 'cp2' | 'cp3'
+  | 'shipping' | 'pr' | 'merging' | 'closing' | 'acceptance' | 'done' | 'abandoned' | 'failed';
+export type CheckpointKind = 'cp1' | 'cp2' | 'cp3';
+export interface Checkpoint { kind: CheckpointKind; reason: string; openedAt: string }
+export interface StageRecord { stage: string; runId: string; model: string; status: RunStatus; costUsd: number | null; startedAt: string; endedAt: string | null; note?: string }
+/** `recommendation`: a reversible choice nothing written settles — the asking agent's own recommended option was taken. */
+export interface DecisionSource { kind: 'spec' | 'decision' | 'convention' | 'preference' | 'code' | 'plan' | 'recommendation' | 'none'; ref: string; quote: string }
+export interface DecisionRecord {
+  id: string; at: string; runId: string; stage: string; question: string; header: string; options: string[]; chosen: string;
+  by: 'decider' | 'human'; agreement: number | null; category: string | null; source: DecisionSource | null; rationale: string;
+  contested: { at: string; note: string } | null; confirmed: boolean;
+}
+export interface Correction { at: string; checkpoint: CheckpointKind | 'pr'; text: string }
+export interface FeatureView {
+  id: string; projectId: string; ticketId: string; title: string; worktree: string | null; branch: string | null;
+  phase: FeaturePhase; checkpoint: Checkpoint | null; leadRunId: string | null; currentRunId: string | null;
+  stages: StageRecord[]; rounds: number; decisions: DecisionRecord[]; corrections: Correction[];
+  pr: { number: number; url: string; state: string; checks: PullInfo['checks'] } | null; plan: Plan | null;
+  error: string | null; warning: string | null; createdAt: string; updatedAt: string; costUsd: number;
+}
+export interface FeatureDetail extends FeatureView {
+  pipeline: PipelineInfo | null; ticket: Ticket | null;
+  /** CP3 material: what a human signs off. */
+  review: { verdict: string | null; findings: Finding[]; deferred: Finding[] } | null;
+  dod: { text: string; done: boolean }[]; assumptions: string[]; diff: { files: number; insertions: number; deletions: number } | null;
+}
+export interface FeaturesResponse { features: FeatureView[] }
+
+export type Autonomy = 'prudent' | 'balanced' | 'autonomous';
+export type ModelRole = 'po' | 'lead' | 'build' | 'implementer' | 'review' | 'fix' | 'verify' | 'ship' | 'learn' | 'acceptance' | 'productMap' | 'decider' | 'deciderEscalation';
+export interface ProjectSettings {
+  autonomy: Autonomy; models: Record<ModelRole, string>; deciderVotes: number; maxRounds: number;
+  mergeMethod: 'squash' | 'merge' | 'rebase'; autopilot: boolean; requester: string;
+}
+export interface SettingsResponse { settings: ProjectSettings; defaults: ProjectSettings; tracker: TrackerInfo; productMap: { exists: boolean; updated: string | null } }
+
+export type InboxKind = 'cp0' | 'cp1' | 'cp2' | 'cp3' | 'cp4' | 'question' | 'permission' | 'pr';
+/** `ref` is the ticket id (cp0, cp4), the feature id (cp1–cp3, pr) or the run id (question, permission); `feature` names the feature when there is one. */
+export interface InboxItem { projectId: string; projectName: string; kind: InboxKind; ref: string; feature: string | null; title: string; detail: string; at: string }
+export interface InboxResponse { items: InboxItem[] }
+export interface LearningResponse {
+  decisions: { total: number; byDecider: number; contested: number; confirmed: number };
+  preferences: number; stages: { stage: string; model: string; runs: number; ok: number; costUsd: number }[];
+}

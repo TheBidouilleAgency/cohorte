@@ -35,6 +35,7 @@ export default defineConfig({
         {
           text: 'Using the pipeline',
           items: [
+            { text: 'The company flow (cohorte ui)', link: '/guide/company-flow' },
             { text: 'The feature cycle', link: '/guide/feature-cycle' },
             { text: 'Workflows (multi-agent runs)', link: '/guide/workflows' },
             { text: 'Token economy', link: '/guide/token-economy' },

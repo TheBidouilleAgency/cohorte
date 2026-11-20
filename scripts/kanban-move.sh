@@ -67,22 +67,37 @@ TAB=$(printf '\t')
 # overrides it (tests, or a second board set).
 CONFIG="${COHORTE_CONFIG:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/cohorte.config.yaml}"
 
-# The nine pipeline stages and their default headings. A stage key given as the
+# The pipeline stages and their default headings. A stage key given as the
 # target column is mapped through the config (per-board `columns` first, then the
 # global `kanban.columns`) and falls back to these — so a stage key works even
 # with an explicit board path and no config at all. Anything not in this list is
 # taken as a literal heading, which keeps hand-written columns working.
+#
+# Two board layouts exist (schema/kanban.md "Layouts"): the `pipeline` one (one column
+# per command: Spec, Ready to build, Building…) and the `company` one cohorte ui creates
+# (Discussion, To validate · business, Backlog, Framing, In progress…). Every stage key
+# has a candidate per layout, and the move takes the FIRST candidate the board actually
+# has — so `/cohorte-build` moves a card to "Building" on a pipeline board and to
+# "In progress" on a company board, and neither layout ever exits 3 on a known stage.
 default_heading() {
   case "$1" in
     ideas)      echo "Ideas" ;;
-    brainstorm) echo "Brainstorm" ;;
-    spec)       echo "Spec" ;;
-    ready)      echo "Ready to build" ;;
-    building)   echo "Building" ;;
-    review)     echo "Review" ;;
-    fix)        echo "Fix" ;;
-    ship)       echo "Ship" ;;
-    shipped)    echo "Shipped" ;;
+    brainstorm) echo "Brainstorm|Discussion" ;;
+    discussion) echo "Discussion|Brainstorm" ;;
+    validate)   echo "To validate · business|Brainstorm" ;;
+    backlog)    echo "Backlog|Ideas" ;;
+    spec)       echo "Spec|Framing" ;;
+    ready)      echo "Ready to build|Framing" ;;
+    framing)    echo "Framing|Spec" ;;
+    building)   echo "Building|In progress" ;;
+    review)     echo "Review|In progress" ;;
+    fix)        echo "Fix|In progress" ;;
+    checkpoint) echo "To validate · dev|Ship" ;;
+    ship)       echo "Ship|To validate · dev" ;;
+    shipped)    echo "Shipped|PR open" ;;
+    pr)         echo "PR open|Shipped" ;;
+    acceptance) echo "Acceptance|Shipped" ;;
+    done)       echo "Done|Shipped" ;;
     *)          echo "" ;;
   esac
 }
@@ -222,11 +237,30 @@ if [ -n "$(default_heading "$col")" ]; then
 $cfg
 EOF
   IFS=$OLDIFS
-  [ -n "$heading" ] || heading=$(default_heading "$col")
-  col="$heading"
+  # Candidates, best first: the configured heading, then the layout defaults. The
+  # awk pass below keeps the first one the board has.
+  col="${heading:+$heading|}$(default_heading "$col")"
 fi
 
 [ -f "$board" ] || { echo "error: board not found: $board" >&2; exit 3; }
+
+# A stage key resolved to `a|b|c`: keep the first heading this board has (case-insensitive,
+# trailing spaces and CR ignored — the same comparison the move itself makes). None ⇒ the
+# first candidate, which the move then reports as the unknown column (exit 3).
+case "$col" in
+  *"|"*)
+    pick=$(COLS="$col" awk '
+      BEGIN { n = split(tolower(ENVIRON["COLS"]), cand, "|") }
+      /^## / { h = $0; sub(/\r$/, "", h); h = tolower(h); sub(/^## +/, "", h); gsub(/ +$/, "", h); have[h] = 1 }
+      END { for (i = 1; i <= n; i++) if (cand[i] in have) { print i; exit } }
+    ' "$board")
+    OLDIFS=$IFS; IFS='|'; set -f
+    # shellcheck disable=SC2086
+    set -- $col
+    set +f; IFS=$OLDIFS
+    if [ -n "$pick" ]; then eval "col=\${$pick}"; else col=$1; fi
+    ;;
+esac
 
 # Serialize the read-modify-write: parallel worktrees (/cohorte-fleet, the loop workflow) move
 # cards on ONE board, and two concurrent rewrites used to lose one of the moves.

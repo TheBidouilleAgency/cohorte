@@ -13,6 +13,29 @@ the current project's board: read `name` from `PIPELINE.md`, look up `kanban.boa
 board file is `<obsidian.vault_path>/<boards[name].board>`, its columns are `boards[name].columns` if
 present else `kanban.columns`. Not found ⇒ kanban off for this project.
 
+**Layouts.** Two board layouts exist, and every stage key works on both:
+
+| Layout | Columns, in order | Who creates it |
+| --- | --- | --- |
+| `pipeline` | Ideas · Brainstorm · Spec · Ready to build · Building · Review · Fix · Ship · Shipped | `/cohorte-init-pipeline` (and every board made before 4.0) |
+| `company` | Ideas · Discussion · To validate · business · Backlog · Framing · In progress · To validate · dev · PR open · Acceptance · Done | `cohorte ui` (Settings → Connect Obsidian) |
+
+The company layout mirrors the company flow (`docs/guide/company-flow.md`): the business discusses and
+validates tickets, a developer frames one with the lead, the autopilot builds it, the developer signs off,
+the PR merges, the requester accepts. Each stage key resolves to a **list of candidate headings** — the
+configured `columns` entry first, then the layout defaults (`building` → `Building` | `In progress`,
+`ship` → `Ship` | `To validate · dev`, `shipped` → `Shipped` | `PR open`, …) — and `kanban-move.sh` takes
+the first one the board actually has. So the pipeline commands move cards correctly on a company board
+without any config change, and the company flow's keys (`discussion` · `validate` · `backlog` · `framing`
+· `checkpoint` · `pr` · `acceptance` · `done`) land on the closest pipeline column of an older board.
+
+**Ticket notes (company flow).** `cohorte ui` keeps each ticket as a markdown note in a `Tickets/` folder
+next to the board (front-matter `id`, `title`, `type`, `status`, `requester`, `priority`, `size`, …,
+`tags: [cohorte-ticket]`; sections Need · Value · Acceptance criteria · Out of scope · Notes · Acceptance
+note · Feedback), and the card links to it: `- [ ] [[<folder>/Tickets/<id>|<title>]]  #<id>`. The ticket id
+is the feature id, so the ticket's card and the spec's card are the same card. Edit a note by hand if you
+like; the dashboard re-reads it.
+
 **Card format.** A card is a Kanban list item under a `## <column>` heading:
 `- [ ] <human title>  #<feature_id>`. The `#<feature_id>` tag is the join key between a card and its
 `specs/<feature_id>.md`; it is how every stage finds *its* card (Grep the board for `#<id>`). Free-text

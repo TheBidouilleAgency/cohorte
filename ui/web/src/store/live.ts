@@ -8,6 +8,7 @@ import { loadGit } from './git';
 import { useJobs } from './jobs';
 import { useRun } from './run';
 import { useUi } from './ui';
+import { pollChat, refreshFlow, useFlow } from './flow';
 
 export const useLive = create<{ status: StreamStatus }>(() => ({ status: 'connecting' }));
 export const isLive = (s: StreamStatus): boolean => s === 'live';
@@ -36,8 +37,10 @@ async function maybeNotify(ev: StreamEvent): Promise<void> {
 export function handleEvents(events: StreamEvent[]): void {
   const app = useApp.getState();
   for (const ev of events) {
+    if (ev.type === 'flow') { debounce('flow', 250, refreshFlow); continue; }
     void maybeNotify(ev);
-    if (ev.projectId !== app.sel) continue;
+    if (ev.type === 'run' && useFlow.getState().chat?.id === ev.id) debounce(`chat:${ev.id}`, 100, () => { void pollChat(); });
+    if (ev.projectId !== app.sel) { if (ev.type === 'run') debounce('flow', 400, refreshFlow); continue; }
     if (ev.type === 'job') {
       const j = useJobs.getState().job;
       if (j && j.id === ev.id) debounce(`job:${ev.id}`, 150, () => { void useJobs.getState().poll(); });
@@ -46,6 +49,7 @@ export function handleEvents(events: StreamEvent[]): void {
       const r = useRun.getState().run;
       if (r && r.id === ev.id) debounce(`run:${ev.id}`, 100, () => { void useRun.getState().poll(); });
       if (ev.status !== 'running') debounce('detail', 300, () => { void useApp.getState().reloadDetail(); });
+      debounce('flow', 400, refreshFlow);
     }
   }
   debounce('activity', 300, () => { void loadActivity(); });

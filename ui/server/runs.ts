@@ -1,10 +1,12 @@
 // cohorte ui — runs a pipeline command (`/cohorte-build f1`) through `claude -p`, headless, and turns the
 // stream into a short feed plus the decisions only a human can make.
 //
-// This is NOT a chat: there is no free-form message box. A run is one command in one worktree, and the
-// human's part is limited to the gates the CLI raises on its control channel — a permission ask (the
-// project's gate answering `ask`, or Claude Code's own prompt) and AskUserQuestion (the interview
-// commands). Protocol, verified against Claude Code 2.1.326:
+// A run is one Cohorte command in one worktree. The human's part is the gates the CLI raises on its control
+// channel — a permission ask (the project's gate answering `ask`, or Claude Code's own prompt) and
+// AskUserQuestion (the interview commands) — plus, once a turn has ended, a reply in the same session.
+// The company flow (flow.ts) starts runs of its own — the PO and lead conversations, the autopilot's stages —
+// with a role in `meta`, a model, and for the business-facing ones a read-only tool set. Protocol, verified
+// against Claude Code 2.1.326:
 //
 //   claude -p --output-format stream-json --input-format stream-json --permission-prompt-tool stdio --verbose
 //   stdin  ← {"type":"user","message":{"role":"user","content":[{"type":"text","text":"/cohorte-build f1"}]}}
@@ -20,7 +22,7 @@ import crypto from 'crypto';
 import readline from 'readline';
 import { spawn, type ChildProcess } from 'child_process';
 import type { RunStore } from './history';
-import type { PendingItem, PendingQuestion, RunEvent, RunResult, RunStatus, RunView } from '../shared/api';
+import type { DecisionAdvice, PendingItem, PendingQuestion, RunEvent, RunMeta, RunResult, RunStatus, RunView } from '../shared/api';
 
 const MAX_EVENTS = 3000;
 const QUIET_AFTER_RESULT_MS = 2000;
@@ -40,19 +42,44 @@ function summarize(name: string, input: unknown): string {
 }
 
 type EventInput = RunEvent extends infer E ? (E extends { t: number } ? Omit<E, 't'> : never) : never;
-interface Pending { requestId: string; kind: 'permission' | 'question'; tool: string; input: Record<string, any>; questions?: PendingQuestion[]; summary?: string; reason?: string; via?: string }
+export interface Pending {
+  requestId: string; kind: 'permission' | 'question'; tool: string; input: Record<string, any>; questions?: PendingQuestion[]; summary?: string; reason?: string; via?: string;
+  deciding?: boolean; advice?: DecisionAdvice;
+}
 export interface Run {
   id: string; projectId: string; cwd: string; command: string; permissionMode: string; status: RunStatus; startedAt: string; endedAt: string | null;
   events: RunEvent[]; dropped: number; pending: Map<string, Pending>; result: RunResult | null; sessionId: string | null;
   child: ChildProcess | null; closeTimer: NodeJS.Timeout | null; stopping: boolean; exitCode?: number | null;
+  /** Company-flow runs only: what the run is for, the model it runs on, the tools it may not use. */
+  meta: RunMeta; model: string | null; disallowedTools: string[];
+  /** Company-flow runs load only the project's own MCP servers (its .mcp.json, or none) — not every server of the user's. */
+  strictMcp: boolean; mcpConfig: string | null;
+  /** The flow's bookkeeping, persisted with the run: how far its events were processed, the draft tickets it created. */
+  seen: number; tickets: Record<string, string>;
 }
-export interface RunStartOpts { projectId: string; cwd: string; command: string; permissionMode?: unknown }
+export interface RunStartOpts {
+  projectId: string; cwd: string; command: string; permissionMode?: unknown;
+  /** The text sent as the first turn. Defaults to `command` (a slash command); the flow sends the expanded command body instead, so its model applies. */
+  prompt?: string; model?: string | null; disallowedTools?: string[]; meta?: RunMeta; strictMcp?: boolean; mcpConfig?: string | null;
+  /** Shown in the feed as what the person said (a conversation's first message), when the prompt itself is not. */
+  echo?: string;
+}
+export const MODEL = /^[A-Za-z0-9][A-Za-z0-9._:\[\]-]{0,80}$/;
+export interface RunHooks {
+  /** A turn ended (the process closed): done, failed or stopped. */
+  onEnd?: (run: Run) => void;
+  /** A question was parked. Return true to keep it away from the human while you work on it (deciding). */
+  onQuestion?: (run: Run, p: Pending) => boolean;
+  /** A parked item was answered — by the human over HTTP or by the flow. */
+  onAnswered?: (run: Run, p: Pending, behavior: 'allow' | 'deny', answers: Record<string, string>, by: 'human' | 'decider') => void;
+}
 
 export class Runs {
   runs = new Map<string, Run>();
   bin: string;
   onChange: (run: Run) => void = () => {};
   store: RunStore | null;
+  hooks: RunHooks = {};
   constructor({ bin, store }: { bin?: string; store?: RunStore } = {}) {
     this.bin = bin || process.env.COHORTE_CLAUDE_BIN || 'claude';
     this.store = store || null;
@@ -62,14 +89,18 @@ export class Runs {
   // opts: { projectId, cwd, command (e.g. "/cohorte-build f1"), permissionMode }
   start(opts: RunStartOpts): Run {
     const mode = typeof opts.permissionMode === 'string' && MODES.includes(opts.permissionMode) ? opts.permissionMode : 'default';
+    const model = typeof opts.model === 'string' && MODEL.test(opts.model) ? opts.model : null;
     const run: Run = {
       id: crypto.randomBytes(4).toString('hex'), projectId: opts.projectId, cwd: opts.cwd, command: opts.command,
       permissionMode: mode, status: 'running', startedAt: new Date().toISOString(), endedAt: null,
       events: [], dropped: 0, pending: new Map(), result: null, sessionId: null, child: null, closeTimer: null, stopping: false,
+      meta: opts.meta || { role: 'command' }, model, disallowedTools: (opts.disallowedTools || []).filter((t) => /^[A-Za-z][\w:-]{0,60}$/.test(t)),
+      seen: 0, tickets: {}, strictMcp: opts.strictMcp === true, mcpConfig: typeof opts.mcpConfig === 'string' ? opts.mcpConfig : null,
     };
     this.#spawn(run, null);
     this.runs.set(run.id, run);
-    this.#write(run, { type: 'user', message: { role: 'user', content: [{ type: 'text', text: opts.command }] } });
+    if (opts.echo) this.#push(run, { kind: 'reply', text: clip(opts.echo, 8000) });
+    this.#write(run, { type: 'user', message: { role: 'user', content: [{ type: 'text', text: opts.prompt || opts.command }] } });
     return run;
   }
 
@@ -77,6 +108,10 @@ export class Runs {
   #spawn(run: Run, resumeId: string | null): void {
     const args: string[] = ['-p', '--output-format', 'stream-json', '--input-format', 'stream-json', '--permission-prompt-tool', 'stdio', '--verbose'];
     if (run.permissionMode !== 'default') args.push('--permission-mode', run.permissionMode);
+    if (run.model) args.push('--model', run.model);
+    if (run.disallowedTools.length) args.push('--disallowedTools', run.disallowedTools.join(','));
+    if (run.strictMcp) args.push('--strict-mcp-config');
+    if (run.mcpConfig) args.push('--mcp-config', run.mcpConfig);
     if (resumeId) args.push('--resume', resumeId);
     const child = spawn(this.bin, args, { cwd: run.cwd, detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'], env: process.env });
     run.child = child;
@@ -115,7 +150,18 @@ export class Runs {
     if (run.events.length > MAX_EVENTS) { const cut = run.events.length - MAX_EVENTS; run.events.splice(0, cut); run.dropped += cut; }
   }
 
-  #end(run: Run, status: RunStatus): void { run.status = status; run.endedAt = new Date().toISOString(); run.pending.clear(); this.onChange(run); this.store?.schedule(run, true); }
+  #end(run: Run, status: RunStatus): void {
+    run.status = status; run.endedAt = new Date().toISOString(); run.pending.clear(); this.onChange(run); this.store?.schedule(run, true);
+    try { this.hooks.onEnd?.(run); } catch { /* the flow never takes a run down */ }
+  }
+
+  /** The flow updates a parked item (deciding → advice) without answering it. */
+  annotate(run: Run, requestId: string, patch: Partial<Pick<Pending, 'deciding' | 'advice'>>): void {
+    const p = run.pending.get(requestId);
+    if (!p) return;
+    Object.assign(p, patch);
+    this.onChange(run);
+  }
 
   #line(run: Run, line: string): void {
     if (!line.trim()) return;
@@ -157,7 +203,11 @@ export class Runs {
     if (req.tool_name === 'AskUserQuestion' && Array.isArray(input.questions) && input.questions.length) {
       const questions: PendingQuestion[] = input.questions.map((q: any) => ({ question: String(q.question || ''), header: String(q.header || ''), multiSelect: q.multiSelect === true,
         options: (Array.isArray(q.options) ? q.options : []).map((o: any) => ({ label: String(o.label || ''), description: String(o.description || '') })) }));
-      run.pending.set(v.request_id, { ...base, kind: 'question', input, questions });
+      const p: Pending = { ...base, kind: 'question', input, questions };
+      run.pending.set(v.request_id, p);
+      let held = false;
+      try { held = this.hooks.onQuestion?.(run, p) === true; } catch { held = false; }
+      if (held) p.deciding = true;
       this.#push(run, { kind: 'question', ...base, questions });
       return;
     }
@@ -173,10 +223,11 @@ export class Runs {
   }
 
   // behavior: 'allow' | 'deny'. For a question, `answers` maps each question text to the chosen label(s).
-  respond(run: Run, requestId: string, behavior: 'allow' | 'deny', answers?: Record<string, string | string[]>): boolean {
+  respond(run: Run, requestId: string, behavior: 'allow' | 'deny', answers?: Record<string, string | string[]>, by: 'human' | 'decider' = 'human'): boolean {
     const p = run.pending.get(requestId);
     if (!p) return false;
     let response: Record<string, unknown>;
+    let given: Record<string, string> = {};
     if (behavior === 'allow') {
       const updated: Record<string, unknown> = { ...p.input };
       if (p.kind === 'question') {
@@ -186,6 +237,7 @@ export class Runs {
           out[q.question] = Array.isArray(a) ? a.join(', ') : typeof a === 'string' ? a : '';
         }
         updated.answers = out;
+        given = out;
       }
       response = { behavior: 'allow', updatedInput: updated };
     } else {
@@ -194,6 +246,8 @@ export class Runs {
     run.pending.delete(requestId);
     this.#write(run, { type: 'control_response', response: { subtype: 'success', request_id: requestId, response } });
     this.#push(run, { kind: 'resolved', requestId, decision: behavior });
+    try { this.hooks.onAnswered?.(run, p, behavior, given, by); } catch { /* never fails an answer */ }
+    this.#maybeClose(run);
     return true;
   }
 
@@ -224,8 +278,9 @@ export class Runs {
 
   view(run: Run, since?: number): RunView {
     const out: RunView = { id: run.id, command: run.command, cwd: run.cwd, permissionMode: run.permissionMode, status: run.status, startedAt: run.startedAt,
-      endedAt: run.endedAt, result: run.result, sessionId: run.sessionId,
-      pending: [...run.pending.values()].map((p): PendingItem => ({ requestId: p.requestId, kind: p.kind, tool: p.tool, summary: p.summary, reason: p.reason, via: p.via, questions: p.questions })) };
+      endedAt: run.endedAt, result: run.result, sessionId: run.sessionId, meta: run.meta, model: run.model,
+      pending: [...run.pending.values()].map((p): PendingItem => ({ requestId: p.requestId, kind: p.kind, tool: p.tool, summary: p.summary, reason: p.reason, via: p.via, questions: p.questions,
+        deciding: p.deciding || undefined, advice: p.advice })) };
     if (since !== undefined) {
       out.events = run.events.slice(Math.max(0, since - run.dropped));
       out.cursor = run.dropped + run.events.length;

@@ -6,7 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import type { Run } from './runs';
 
-const KEEP_PER_PROJECT = 40;
+const KEEP_PER_PROJECT = 120; // the company flow keeps its conversations here too
 const KEEP_EVENTS = 400;
 const SAFE = /^[A-Za-z0-9._-]+$/;
 
@@ -36,7 +36,8 @@ export class RunStore {
       fs.mkdirSync(path.dirname(f), { recursive: true });
       const cut = Math.max(0, run.events.length - KEEP_EVENTS);
       const body = { v: 1, id: run.id, projectId: run.projectId, cwd: run.cwd, command: run.command, permissionMode: run.permissionMode, status: run.status,
-        startedAt: run.startedAt, endedAt: run.endedAt, result: run.result, sessionId: run.sessionId, dropped: run.dropped + cut, events: run.events.slice(cut) };
+        startedAt: run.startedAt, endedAt: run.endedAt, result: run.result, sessionId: run.sessionId, dropped: run.dropped + cut, events: run.events.slice(cut),
+        meta: run.meta, model: run.model, disallowedTools: run.disallowedTools, seen: run.seen, tickets: run.tickets, strictMcp: run.strictMcp, mcpConfig: run.mcpConfig };
       const tmp = `${f}.${process.pid}.tmp`;
       fs.writeFileSync(tmp, JSON.stringify(body));
       fs.renameSync(tmp, f);
@@ -66,7 +67,11 @@ export class RunStore {
           const interrupted = v.status === 'running';
           out.push({ id: v.id, projectId: v.projectId, cwd: v.cwd, command: v.command, permissionMode: v.permissionMode, status: interrupted ? 'stopped' : v.status,
             startedAt: v.startedAt, endedAt: v.endedAt || (interrupted ? new Date().toISOString() : null), events: Array.isArray(v.events) ? v.events : [], dropped: v.dropped || 0,
-            pending: new Map(), result: v.result || null, sessionId: v.sessionId || null, child: null, closeTimer: null, stopping: false });
+            pending: new Map(), result: v.result || null, sessionId: v.sessionId || null, child: null, closeTimer: null, stopping: false,
+            meta: v.meta && typeof v.meta === 'object' && typeof v.meta.role === 'string' ? v.meta : { role: 'command' }, model: typeof v.model === 'string' ? v.model : null,
+            disallowedTools: Array.isArray(v.disallowedTools) ? v.disallowedTools.filter((t: unknown) => typeof t === 'string') : [],
+            seen: typeof v.seen === 'number' ? v.seen : 0, tickets: v.tickets && typeof v.tickets === 'object' ? v.tickets : {},
+            strictMcp: v.strictMcp === true, mcpConfig: typeof v.mcpConfig === 'string' ? v.mcpConfig : null });
         } catch { /* a corrupt file is skipped */ }
       }
     }

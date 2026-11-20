@@ -368,5 +368,44 @@ if (process.platform !== "win32") {
 }
 
 for (const d of tmps) rmSync(d, { recursive: true, force: true });
+// ── company layout (cohorte ui's boards) ────────────────────────────────────
+// The same stage keys the commands use must land on a company board's headings,
+// and the new keys must still land on an old pipeline board.
+console.log("company layout");
+{
+  const COMPANY = ["Ideas", "Discussion", "To validate · business", "Backlog", "Framing",
+                   "In progress", "To validate · dev", "PR open", "Acceptance", "Done"];
+  const d = scratch();
+  const p = join(d, "Company.md");
+  writeFileSync(p, ["---", "", "kanban-plugin: board", "", "---", "",
+    ...COMPANY.flatMap((c) => ["## " + c, ""]),
+    "%% kanban:settings", "```", "{}", "```", "%%", ""].join("\n"));
+  const cases = [["building", "In progress"], ["review", "In progress"], ["ship", "To validate · dev"],
+    ["shipped", "PR open"], ["spec", "Framing"], ["ready", "Framing"], ["brainstorm", "Discussion"],
+    ["backlog", "Backlog"], ["validate", "To validate · business"], ["acceptance", "Acceptance"], ["done", "Done"]];
+  for (const [stage, want] of cases) {
+    const r = run([p, "co-1", stage]);
+    check(`company board: ${stage} → ${want}`, r.status === 0 && columnOf(p, "co-1") === want && r.out === `moved #co-1 -> ${want}`, `${r.status} ${r.out} ${r.err}`);
+  }
+  // the config maps `building: "Building"` (the template default) — a company board has no
+  // such heading, so the layout default is used instead of exiting 3
+  const cfgDir = scratch();
+  mkdirSync(join(cfgDir, "Demo"));
+  const cb = join(cfgDir, "Demo", "Tasks.md");
+  writeFileSync(cb, readFileSync(p, "utf8"));
+  profile(cfgDir, "demo");
+  const cfg = config(cfgDir, { vault: cfgDir });
+  const r = run(["auto", "co-2", "building"], { cwd: cfgDir, config: cfg });
+  check("a configured heading the board lacks falls back to the layout default", r.status === 0 && columnOf(cb, "co-2") === "In progress", `${r.status} ${r.out} ${r.err}`);
+
+  const legacy = board(scratch());
+  for (const [stage, want] of [["framing", "Spec"], ["checkpoint", "Ship"], ["pr", "Shipped"], ["done", "Shipped"], ["backlog", "Ideas"]]) {
+    const r2 = run([legacy, "lg-1", stage]);
+    check(`pipeline board: new key ${stage} → ${want}`, r2.status === 0 && columnOf(legacy, "lg-1") === want, `${r2.status} ${r2.out} ${r2.err}`);
+  }
+  const none = run([p, "co-3", "Nope"]);
+  check("a literal heading the board lacks is still exit 3", none.status === 3, `${none.status}`);
+}
+
 if (failures) { console.error(`\n${failures} failing check(s)`); process.exit(1); }
 console.log("\nall kanban checks passed");

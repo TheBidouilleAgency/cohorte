@@ -3,6 +3,7 @@ import { buildRoute, parseRoute } from '../../lib/route';
 import { goHome, isTab, selectProject, TABS, useApp } from '../../store/app';
 import { loadCommands } from '../../store/run';
 import { loadMetrics } from '../../store/specs';
+import { loadForTab } from '../../store/nav';
 
 const TAB_IDS = TABS.map(([id]) => id);
 
@@ -26,7 +27,7 @@ export function Router() {
       if (!cur.projects.some((p) => p.id === r.projectId)) return;
       const t = isTab(r.tab) ? r.tab : 'overview';
       if (r.projectId !== cur.sel) void selectProject(r.projectId, t);
-      else if (t !== cur.tab) { cur.setTab(t); if (t === 'run') void loadCommands(); if (t === 'cost') void loadMetrics(); }
+      else if (t !== cur.tab) { cur.setTab(t); if (t === 'run') void loadCommands(); if (t === 'cost') void loadMetrics(); loadForTab(t); }
     };
     window.addEventListener('hashchange', onHash);
     window.addEventListener('popstate', onHash);

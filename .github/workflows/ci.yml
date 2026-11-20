@@ -101,6 +101,9 @@ jobs:
       - name: Dashboard (registry, local HTTP security)
         run: node scripts/test-ui.mjs
 
+      - name: Company flow (PO → CP0 → lead → CP1 → autopilot + decider → CP3 → PR → acceptance)
+        run: node scripts/test-flow.mjs
+
       - name: End-to-end (install → sync → feature diff → preflight → gate → kanban → uninstall)
         run: node scripts/test-e2e.mjs
 
