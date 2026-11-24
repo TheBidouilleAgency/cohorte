@@ -205,6 +205,16 @@ tree. For each surface in `surfaces`:
 > dispatch text above stays byte-identical. No such line ⇒ omit the parameter (the agent's own
 > `model:` applies).
 
+**While they run, the developer only needs three facts.** If your turn ends while the agents work in
+the background, its last message — in the developer's language — says: what is being built, for each
+surface in a few user-visible words (not your task list); that **they have nothing to do**, the build
+carries on by itself and you come back when every surface has answered; and how long a surface usually
+takes when you know it. No pipeline vocabulary ("implementers", "integrate", "handoff", "roll call"):
+say "the API side" / "the app side", not "the backend implementer". For example: *"Two agents are
+building the feature at the same time: the API side (accounts, sign-in, the dashboard's data) and the
+app side (sign-in screen, offline mode, the dashboard screen). Nothing to do on your side — I'll pick
+up when both are done, usually within 10 minutes."*
+
 ## 3.5 Roll call — account for EVERY dispatch before integrating
 
 A surface's work can die: a rate limit mid-run, a transport error after retries, context exhausted.

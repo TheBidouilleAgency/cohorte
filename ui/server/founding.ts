@@ -84,7 +84,9 @@ export function scaffoldTools(plan: Foundation): string[] {
       if (w === 'docker' && words[1] === 'compose') { out.add('Bash(docker compose:*)'); continue; }
       if (NEVER.has(w)) continue;
       out.add(`Bash(${w}:*)`);
-      if (['npm', 'pnpm', 'yarn', 'bun'].includes(w)) { out.add('Bash(npx:*)'); out.add('Bash(node:*)'); }
+      // A generator run with CI=1 (the skill's answer to one that prompts) is still that tool.
+      out.add(`Bash(CI=1 ${w}:*)`);
+      if (['npm', 'pnpm', 'yarn', 'bun'].includes(w)) { out.add('Bash(npx:*)'); out.add('Bash(CI=1 npx:*)'); out.add('Bash(node:*)'); }
       if (w === 'uv') out.add('Bash(uvx:*)');
     }
   }
