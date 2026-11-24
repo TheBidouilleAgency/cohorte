@@ -155,7 +155,7 @@ export interface ConversationView {
   /** ref → ticket id: the draft tickets this conversation created (CP0 validates them). */
   tickets: Record<string, string>; pending: number;
 }
-export interface TicketsResponse { tracker: TrackerInfo; tickets: Ticket[]; conversations: ConversationView[] }
+export interface TicketsResponse { tracker: TrackerInfo; tickets: Ticket[]; conversations: ConversationView[]; adoptable?: AdoptableSpec[] }
 
 /** The lead's plan, from its ```cohorte-plan``` block — what CP1 asks you to validate. */
 export interface Plan {
@@ -187,6 +187,8 @@ export interface FeatureView {
   driver?: FeatureDriver | null;
 }
 export interface FeatureDriver { pid: number; by: 'ui' | 'cli'; at: string }
+/** A spec written outside the flow (a plain Claude Code session) that no feature record follows yet. */
+export interface AdoptableSpec { id: string; title: string; status: string | null; worktree: string | null; branch: string | null; ticket: boolean }
 export interface FeatureDetail extends FeatureView {
   pipeline: PipelineInfo | null; ticket: Ticket | null;
   /** CP3 material: what a human signs off. */

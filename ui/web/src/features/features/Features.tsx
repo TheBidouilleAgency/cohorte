@@ -152,6 +152,7 @@ function Detail({ f }: { f: FeatureDetail }) {
         <span className="muted mono">{f.branch ?? ''}</span><span className="muted">{usd(f.costUsd)}</span>
       </div>
       <Timeline f={f} />
+      {f.driver?.by === 'cli' ? <Card className="gate"><Muted>{`Driven from a terminal (pid ${f.driver.pid}) — its questions show up here and in the inbox; to follow it there: cohorte autopilot ${f.id} --follow`}</Muted></Card> : null}
       {f.error ? <Card tone="bad" className="gate"><div className="error pre-wrap">{f.error}</div></Card> : null}
       {f.warning ? <Card tone="warn" className="gate"><div className="pre-wrap">{f.warning}</div></Card> : null}
       <CheckpointCard f={f} />

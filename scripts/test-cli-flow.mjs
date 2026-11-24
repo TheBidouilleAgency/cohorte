@@ -12,7 +12,7 @@
 //   node scripts/test-cli-flow.mjs        (needs ui/dist-server: npm run build:ui)
 
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import http from "node:http";
 import { join } from "node:path";
@@ -40,7 +40,7 @@ const until = async (what, fn, ms = 20000) => {
   return null;
 };
 
-const { home, globalDir, storePath, proj } = standIns("cohorte-cliflow-");
+const { home, globalDir, storePath, proj, ghState } = standIns("cohorte-cliflow-");
 const env = { ...process.env, CLAUDE_CONFIG_DIR: globalDir, COHORTE_NO_VERSION_CHECK: "1" };
 const cliPath = join(root, "bin", "cli.js");
 /** One verb, to its end. stdin is a pipe (not a TTY): nothing is asked unless --interactive. */
@@ -181,6 +181,86 @@ try {
     const ls = cli(["ticket", "list", "--status", "backlog", "--json"]);
     check("a ticket filed on the page is listed by the CLI", ls.json?.tickets.some((x) => x.id === t.id));
     check("help lists the flow verbs", /cohorte autopilot <ticket>/.test(spawnSync(process.execPath, [cliPath, "--help"], { env, encoding: "utf8" }).stdout));
+    const v = cli(["ticket", "create", "--title", "Remind patients", "--status", "validate", "--need", "No-shows cost an hour a day", "--value", "1 h/day",
+      "--criteria", "a reminder goes out the day before", "--out-of-scope", "SMS", "--priority", "high", "--size", "S", "--requester", "Marie", "--json"]);
+    check("ticket create --status validate: the PO's way, CP0 still applies", v.code === 0 && v.json?.ticket.status === "validate" && v.json.ticket.value === "1 h/day"
+      && v.json.ticket.outOfScope[0] === "SMS" && v.json.ticket.priority === "high" && v.json.ticket.requester === "Marie", v.err || v.out);
+    check("…the page's inbox shows the CP0", (await call("/api/inbox")).json.items.some((i) => i.kind === "cp0" && i.ref === v.json?.ticket.id));
+    check("…and the requester validates it on the page", (await post(`${P}/tickets/${v.json?.ticket.id}/decide`, { action: "validate" })).json.ticket.status === "backlog");
+  }
+
+  console.log("--detach: a background drive, its question answered from the page");
+  {
+    const S = "second-export";
+    cli(["ticket", "create", "--title", "Second export", "--type", "feature"]);
+    check("take → CP1", cli(["take", S]).code === 2);
+    const t0 = Date.now();
+    const d = cli(["checkpoint", S, "approve", "--detach", "--json"]);
+    check("checkpoint approve --detach returns at once, with its pid and log", d.code === 0 && d.json?.detached?.pid && existsSync(d.json.detached.log) && Date.now() - t0 < 15000, `${d.code} ${d.out} ${d.err}`);
+    const log = d.json?.detached?.log;
+    const item = await until("the handed-over question is in the page's inbox", async () => (await call("/api/inbox")).json.items.find((i) => i.kind === "question" && i.feature === S), 30000);
+    const run = item && (await call(`${P}/runs/${item.ref}`)).json;
+    const q = run?.pending?.[0];
+    check("the page sees the parked question of a run another process drives", q && q.kind === "question" && /admin role/.test(q.questions[0].question) && !q.deciding, JSON.stringify(run?.pending));
+    const st = cli(["autopilot", S, "--status", "--json"]);
+    check("autopilot --status: the question it waits for, the drive running", st.code === 0 && st.json?.waiting.length === 1 && st.json.drive?.running === true, st.out.slice(0, 300));
+    const r = q && await post(`${P}/runs/${item.ref}/respond`, { requestId: q.requestId, behavior: "allow", answers: { [q.questions[0].question]: ["Yes (Recommended)"] } });
+    check("the page answers it", r && r.status === 200, JSON.stringify(r?.json));
+    const f3 = await until("the detached drive reaches CP3", async () => { const f = (await call(`${P}/features/${S}`)).json; return f.phase === "cp3" ? f : null; }, 30000);
+    check("…with the page's answer on the record", f3 && f3.decisions.some((x) => x.by === "human" && x.chosen === "Yes (Recommended)"), JSON.stringify(f3?.decisions));
+    await until("the drive released the feature", async () => !(await call(`${P}/features/${S}`)).json.driver);
+    const text = log ? readFileSync(log, "utf8") : "";
+    check("its log has the stages and the wait", /▶ build/.test(text) && /\? waiting for an answer \(fix\)/.test(text) && /✓ verify · done/.test(text) && /→ cp3/.test(text), text.slice(-800));
+    writeFileSync(ghState, JSON.stringify({ state: "OPEN" })); // the first feature's merge left the fake PR merged
+    const sh = cli(["checkpoint", S, "approve", "--detach", "--json"]);
+    check("CP3 approve --detach", sh.code === 0, `${sh.code} ${sh.err}`);
+    const fo = cli(["autopilot", S, "--follow", "--json"]);
+    check("autopilot --follow prints the drive until it ends, then where it rests", fo.code === 0 && fo.json?.rest.waiting === "pr" && /▶ ship/.test(fo.out + fo.err), `${fo.code} ${JSON.stringify(fo.json?.rest)} ${fo.err.slice(-600)}`);
+  }
+
+  console.log("adopt: work from a plain Claude Code session joins the flow");
+  {
+    const wt = join(home, "app-plain-spec");
+    spawnSync("git", ["-C", proj, "worktree", "add", "-q", "-b", "feature/plain-spec", wt]);
+    writeFileSync(join(wt, "specs", "plain-spec.md"), "---\nfeature_id: plain-spec\ntitle: Plain spec\nstatus: frozen\n---\n## 9. DoD\n- [ ] C1 works\n");
+    writeFileSync(join(proj, "specs", "draft-one.md"), "---\nfeature_id: draft-one\ntitle: Draft one\nstatus: draft\n---\n");
+    const ls = cli(["ticket", "list", "--json"]);
+    const a = ls.json?.adoptable || [];
+    check("ticket list shows the specs no feature follows (the worktree's)", a.some((x) => x.id === "plain-spec" && x.worktree === wt && x.status === "frozen") && a.some((x) => x.id === "draft-one"), JSON.stringify(a));
+    check("…and so does the page", ((await call(`${P}/tickets`)).json.adoptable || []).some((x) => x.id === "plain-spec"));
+    check("a draft is not adopted", cli(["adopt", "draft-one"]).code === 1);
+    const ad = cli(["adopt", "plain-spec", "--json"]);
+    check("adopt a frozen spec → CP2, continue builds it", ad.code === 2 && ad.json?.feature.phase === "cp2" && /continue runs build next/.test(ad.json.feature.checkpoint.reason) && ad.json.feature.worktree === wt, `${ad.code} ${ad.err} ${JSON.stringify(ad.json?.feature?.checkpoint)}`);
+    check("…its ticket is created with the same id", ad.json?.ticket?.id === "plain-spec" && ad.json.ticket.status === "building", JSON.stringify(ad.json?.ticket));
+    check("…the page shows the feature", (await call(`${P}/features/plain-spec`)).json.phase === "cp2");
+    check("adopting it twice → error", cli(["adopt", "plain-spec"]).code === 1);
+    // reviewed and verified in a plain session, in the main checkout: the page adopts it, straight to CP3
+    const R = (n, v) => writeFileSync(join(proj, "specs", "reports", n), JSON.stringify(v));
+    mkdirSync(join(proj, "specs", "reports"), { recursive: true });
+    writeFileSync(join(proj, "specs", "page-spec.md"), "---\nfeature_id: page-spec\ntitle: Page spec\nstatus: frozen\n---\n## 9. DoD\n- [x] C1 works\n");
+    R("page-spec.readiness.json", { verdict: "READY" }); R("page-spec.build.json", { id: "page-spec", surfaces: { api: "ok" }, dead: [] });
+    R("page-spec.verdict.json", { verdict: "SHIP", blocking: 0, severity: { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 }, unreviewed: [] }); R("page-spec.verify.json", { verdict: "PASS" });
+    const pa = await post(`${P}/adopt`, { id: "page-spec" });
+    check("the page's Adopt on a reviewed + verified spec → CP3", pa.status === 200 && pa.json.feature.phase === "cp3" && /main checkout/.test(pa.json.feature.warning || ""), JSON.stringify(pa.json));
+    check("…and the CLI sees it", cli(["ticket", "show", "page-spec", "--json"]).json?.feature?.phase === "cp3");
+  }
+
+  console.log("new-project: the Founding chain from a terminal");
+  {
+    const noGlobal = join(home, "gitconfig-empty"); writeFileSync(noGlobal, "");
+    const e2 = { ...env, GIT_CONFIG_GLOBAL: noGlobal, GIT_CONFIG_NOSYSTEM: "1" };
+    for (const k of ["GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "EMAIL"]) delete e2[k];
+    const answers = ["reply Receptionists, for dentists", "approve", "github", "approve", "retry", ""].join("\n");
+    const n = spawnSync(process.execPath, [cliPath, "new-project", "--idea", "Patients call all day to book", "--name", "dentist", "--parent", home, "--based-on", proj, "--interactive", "--json"],
+      { env: e2, input: answers, encoding: "utf8", timeout: 90000 });
+    let res = null; try { res = JSON.parse(n.stdout); } catch { /* checked below */ }
+    const nroot = join(home, "dentist");
+    check("idea → vision (a reply) → approve → foundations → identity (github) → approve → skeleton (retry) → set-up → done", n.status === 0 && res?.founding.phase === "done", `${n.status} ${n.stderr.slice(-1200)}`);
+    check("the PO's and the lead's words were printed, the checkpoints asked", /vision: Who books today/.test(n.stderr) && /■ cp-vision/.test(n.stderr) && /git identity/.test(n.stderr) && /■ cp-scaffold/.test(n.stderr), n.stderr.slice(-1500));
+    check("cohorte committed under the GitHub identity, in that repo only", spawnSync("git", ["-C", nroot, "log", "--format=%an <%ae>"], { env: e2, encoding: "utf8" }).stdout.trim().split("\n").every((x) => x === "Octo Cat <583231+octo@users.noreply.github.com>"));
+    const nt = spawnSync(process.execPath, [cliPath, "ticket", "list", "--project", nroot, "--json"], { env: e2, encoding: "utf8" });
+    check("the first version's tickets are in its backlog", nt.status === 0 && JSON.parse(nt.stdout).tickets.filter((x) => x.status === "backlog").length === 2, nt.stdout.slice(0, 300) + nt.stderr);
+    check("the page lists it as an ordinary project", (await call("/api/state")).json.projects.some((x) => x.root === nroot && !x.founding));
   }
 } catch (e) {
   failures++;

@@ -36,7 +36,7 @@ import * as ops from './ops';
 import { FOUNDING_ROLES, FoundingFlow } from './founding';
 import { AUTOPILOT_NOTE, FlowError, READ_ONLY, contextBlock, expandCommand, mcp, now, readText, textsOf } from './agents';
 import type {
-  ConversationView, FeatureDetail, InboxItem, LearningResponse, ProjectSettings, Ticket, TicketProposal,
+  AdoptableSpec, ConversationView, FeatureDetail, InboxItem, LearningResponse, ProjectSettings, Ticket, TicketProposal, TicketStatus,
 } from '../shared/api';
 
 const { scanSpecs, checkTrust } = doctor;
@@ -112,6 +112,12 @@ export class Flow {
   private mine(projectId: string, id: string): boolean {
     for (const r of this.runs.runs.values()) if (r.projectId === projectId && r.meta.featureId === id && r.status === 'running' && r.child) return true;
     return !!(this.jobs.find(projectId, 'worktree-create', id) || this.jobs.find(projectId, 'merge', id));
+  }
+  /** This process has hook work, or a run of the project, in flight — the founding steps, which have no feature. */
+  activeProject(projectId: string): boolean {
+    if (this.inflight > 0) return true;
+    for (const r of this.runs.runs.values()) if (r.projectId === projectId && r.status === 'running' && r.child) return true;
+    return false;
   }
   /** This process has a run or a job of the feature in flight, or hook work that may start one. */
   active(projectId: string, id: string): boolean { return this.inflight > 0 || this.mine(projectId, id); }
@@ -232,16 +238,25 @@ export class Flow {
     return next;
   }
 
-  /** A ticket that needs no business discussion (tech debt, an upgrade, a bug a developer found): straight to the backlog. */
+  /**
+   * A ticket that needs no business discussion (tech debt, an upgrade, a bug a developer found): straight to the backlog.
+   * `status: 'validate'` files it for CP0 instead — what /cohorte-po does in a plain session once the requester agreed
+   * to it in the chat (the page's PO turns do the same from their blocks). The other fields are the PO's block's.
+   */
   createTicket(projectId: string, body: Record<string, unknown>): Ticket {
     const p = this.project(projectId);
-    const title = typeof body.title === 'string' ? body.title.trim().slice(0, 200) : '';
+    const str = (v: unknown, n: number): string => (typeof v === 'string' ? v.trim().slice(0, n) : '');
+    const list = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && !!x.trim()).map((x) => x.trim()).slice(0, 30) : []);
+    const title = str(body.title, 200);
     if (!title) throw new FlowError('a title is required');
     const type = body.type === 'bug' || body.type === 'feature' ? body.type : 'tech';
-    const need = typeof body.need === 'string' ? body.need.trim().slice(0, 8000) : '';
-    const criteria = Array.isArray(body.criteria) ? body.criteria.filter((x): x is string => typeof x === 'string' && !!x.trim()).map((x) => x.trim()).slice(0, 30) : [];
+    const status = body.status === 'validate' ? 'validate' : 'backlog';
+    const pick = <T extends string>(v: unknown, all: readonly T[], d: T): T => ((all as readonly unknown[]).includes(v) ? (v as T) : d);
     const tr = this.tracker(p);
-    const t = tr.create({ title, type, need, criteria } as TicketProposal, { status: 'backlog', requester: this.settings.get(p.id).requester });
+    const parent = isTicketId(body.parent) && tr.get(body.parent) ? body.parent : null;
+    const t = tr.create({ title, type, need: str(body.need, 8000), value: str(body.value, 2000), criteria: list(body.criteria), outOfScope: list(body.outOfScope),
+      priority: pick(body.priority, ['high', 'medium', 'low'] as const, 'medium'), size: pick(body.size, ['S', 'M', 'L', '?'] as const, '?'), parent } as TicketProposal,
+    { status, requester: str(body.requester, 80) || this.settings.get(p.id).requester, parent });
     void tr.move(t);
     this.changed(p.id);
     return t;
@@ -357,6 +372,74 @@ export class Flow {
     } else if (r.status !== 'done') {
       this.features.phase(f, 'framing', null, `the lead run ${r.status}${r.result?.text ? `: ${r.result.text.slice(0, 300)}` : ''}`);
     }
+  }
+
+  // -------------------------------------------------------------------------------------------------------------
+  // Adopt — work started in a plain Claude Code session (/cohorte-spec, a branch) joins the flow
+
+  /** Specs in the main checkout or a feature worktree that no live feature record follows. A draft is listed, not adoptable. */
+  adoptable(projectId: string): AdoptableSpec[] {
+    const p = this.project(projectId);
+    const out = new Map<string, AdoptableSpec>();
+    const wts = registry.worktrees(p.root);
+    const prefix = this.profileOf(p.root).vcs?.feature_branch_prefix || 'feature/';
+    for (const [i, w] of wts.entries()) {
+      for (const s of scanSpecs(w.path) as { id: string; status?: string; title?: string }[]) {
+        if (!ops.FEATURE_ID.test(s.id)) continue;
+        const f = this.features.get(p.id, s.id);
+        if (f && !['abandoned', 'failed'].includes(f.phase)) continue;
+        if (s.status === 'merged' && this.ticketOf(p, s.id)?.status === 'done') continue;
+        const own = i > 0 && (w.branch === `${prefix}${s.id}` || path.basename(w.path) === `${path.basename(p.root)}-${s.id}`);
+        // the feature's own worktree wins over the main checkout's copy of the same spec
+        if (out.has(s.id) && !own) continue;
+        out.set(s.id, { id: s.id, title: s.title || s.id, status: s.status || null, worktree: i > 0 ? w.path : null, branch: w.branch || null, ticket: !!this.ticketOf(p, s.id) });
+      }
+    }
+    return [...out.values()].sort((a, b) => a.id.localeCompare(b.id));
+  }
+
+  /**
+   * Creates the feature record of a spec written outside the flow, at the phase its files say: a frozen or
+   * in-progress spec opens the checkpoint the autopilot would stop at next (CP3 when review and verify are clean,
+   * else CP2 — continue runs the next stage); shipped waits on its PR; merged goes on to the journal and the
+   * acceptance note. The ticket of the same id is linked (created from the spec when there is none).
+   */
+  async adopt(projectId: string, id: string): Promise<Feature> {
+    const p = this.project(projectId);
+    const existing = this.features.get(p.id, id);
+    if (existing) this.claim(existing);
+    if (existing && !['abandoned', 'failed'].includes(existing.phase)) throw new FlowError(`the flow already follows ${id} (it is ${existing.phase})`, 409);
+    const cand = this.adoptable(p.id).find((x) => x.id === id);
+    if (!cand) throw new FlowError(`no specs/${id}.md to adopt in the main checkout or a worktree`, 404);
+    if (!cand.status || cand.status === 'draft') throw new FlowError(`specs/${id}.md is a draft — freeze it first (/cohorte-spec), or take the ticket to frame it with the lead`, 409);
+    const tr = this.tracker(p);
+    let t = tr.get(id);
+    if (!t) t = tr.create({ title: cand.title, type: 'feature', need: `Started in a Claude Code session — see specs/${id}.md.` } as TicketProposal, { id, status: 'framing', requester: this.settings.get(p.id).requester });
+    const f = existing || this.features.create(p.id, id, t.title);
+    f.worktree = cand.worktree || p.root;
+    f.branch = cand.branch;
+    f.error = null; f.checkpoint = null;
+    f.warning = cand.worktree ? null : 'adopted in the main checkout: the autopilot stages run there, not in a worktree of their own';
+    this.features.save(f);
+    const spec = this.specOf(f);
+    let status: TicketStatus = 'building';
+    if (cand.status === 'shipped' || cand.status === 'merged') {
+      const pull = f.branch && (await gitinfo.ghAvailable()) ? await gitinfo.pullFor(p.root, f.branch) : null;
+      f.pr = pull ? { number: pull.number, url: pull.url, state: pull.state, checks: pull.checks } : null;
+      this.features.phase(f, 'pr');
+      status = 'pr';
+      this.setTicket(p, id, { status, pr: pull ? `#${pull.number}` : null });
+      if (cand.status === 'merged' || pull?.state === 'MERGED') await this.track(this.onMerged(p, f));
+    } else if (spec) {
+      const step = nextStep(f.id, this.signals(f, spec), f, this.settings.get(p.id));
+      const reason = step.kind === 'checkpoint' ? step.reason : `adopted from a Claude Code session — continue runs ${step.stage} next`;
+      const cp = step.kind === 'checkpoint' ? step.cp : 'cp2';
+      this.features.phase(f, cp, { kind: cp, reason, openedAt: now() });
+      status = cp === 'cp3' ? 'checkpoint' : 'building';
+      this.setTicket(p, id, { status });
+    }
+    this.changed(p.id);
+    return f;
   }
 
   // -------------------------------------------------------------------------------------------------------------

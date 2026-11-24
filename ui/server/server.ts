@@ -287,7 +287,7 @@ export function create({ globalDir, version, token = crypto.randomBytes(24).toSt
       };
       const bodyOf = async (): Promise<Record<string, any> | null> => { try { return await readBody(req); } catch (e) { fail(res, 400, (e as Error).message); return null; } };
       if (parts[2] === 'tickets') {
-        if (parts.length === 3 && method === 'GET') return flowCall(() => { const tr = flow.tracker(p); return { tracker: tr.info, tickets: tr.list(), conversations: flow.conversations(p.id) }; });
+        if (parts.length === 3 && method === 'GET') return flowCall(() => { const tr = flow.tracker(p); return { tracker: tr.info, tickets: tr.list(), conversations: flow.conversations(p.id), adoptable: flow.adoptable(p.id) }; });
         if (parts.length === 3 && method === 'POST') { const b = await bodyOf(); if (!b) return; return flowCall(() => ({ ticket: flow.createTicket(p.id, b) }), 201); }
         const tid = parts[3];
         if (!isTicketId(tid)) return fail(res, 404, 'unknown ticket');
@@ -314,6 +314,7 @@ export function create({ globalDir, version, token = crypto.randomBytes(24).toSt
         if (method === 'GET') return flowCall(() => flow.founding.remote(p.id));
         if (method === 'POST') { const b = await bodyOf(); if (!b) return; return flowCall(async () => ({ job: jobs.view(await flow.founding.connectRemote(p.id, b)) }), 202); }
       }
+      if (parts[2] === 'adopt' && parts.length === 3 && method === 'POST') { const b = await bodyOf(); if (!b) return; return flowCall(async () => { if (!isTicketId(b.id)) throw new ops.OpError('a spec id is required'); cacheDoctor.clear(p.root); return { feature: await flow.adopt(p.id, b.id) }; }); }
       if (parts[2] === 'po' && parts.length === 3 && method === 'POST') { const b = await bodyOf(); if (!b) return; return flowCall(() => ({ run: runs.view(flow.startPO(p.id, b), 0) }), 202); }
       if (parts[2] === 'features') {
         if (parts.length === 3 && method === 'GET') return send(res, 200, { features: flow.features.list(p.id) });

@@ -59,6 +59,7 @@ export const api = {
   createTicket: (id: string, body: { title: string; type: string; need: string; criteria: string[] }) => post<{ ticket: Ticket }>(`/projects/${id}/tickets`, body),
   decideTicket: (id: string, t: string, action: 'validate' | 'reject') => post<{ ticket: Ticket }>(`/projects/${id}/tickets/${t}/decide`, { action }),
   takeTicket: (id: string, t: string, body: { confirmed?: boolean; skipDockerCheck?: boolean } = {}) => post<{ feature: FeatureView }>(`/projects/${id}/tickets/${t}/take`, body),
+  adopt: (id: string, spec: string) => post<{ feature: FeatureView }>(`/projects/${id}/adopt`, { id: spec }),
   acceptance: (id: string, t: string, body: { action: 'accept' | 'not-quite'; text?: string }) => post<{ ticket: Ticket; run: RunView | null }>(`/projects/${id}/tickets/${t}/acceptance`, body),
   startPO: (id: string, body: { text: string; requester?: string; parent?: string }) => post<{ run: RunView }>(`/projects/${id}/po`, body),
   features: (id: string) => request<FeaturesResponse>(`/projects/${id}/features`),

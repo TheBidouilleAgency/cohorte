@@ -1,10 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import type { ProjectDetail, Ticket, TicketStatus } from '../../../../shared/api';
+import type { AdoptableSpec, ProjectDetail, Ticket, TicketStatus } from '../../../../shared/api';
 import { ago } from '../../lib/format';
 import { usePoll } from '../../lib/usePoll';
 import { isLive, useLive } from '../../store/live';
 import {
-  acceptance, createTicket, decideTicket, loadTickets, openChat, openFeature, pollChat, replyChat, selectTicket, startPO, takeTicket, useFlow,
+  acceptance, adoptSpec, createTicket, decideTicket, loadTickets, openChat, openFeature, pollChat, replyChat, selectTicket, startPO, takeTicket, useFlow,
 } from '../../store/flow';
 import { useApp } from '../../store/app';
 import { Button, Card, EmptyState, Muted, Pill, SectionTitle, type PillTone } from '../../ui/primitives';
@@ -120,6 +120,28 @@ function NewRequest() {
   );
 }
 
+/** Specs a plain Claude Code session wrote (/cohorte-spec, a branch) that the flow does not follow yet. */
+function Adoptable({ specs }: { specs: AdoptableSpec[] }) {
+  if (!specs.length) return null;
+  return (
+    <Card className="adoptable">
+      <SectionTitle>Started in a Claude Code session</SectionTitle>
+      <Muted>These specs have no feature here yet. Adopting one creates it at the step its files say — the autopilot or a checkpoint takes it from there.</Muted>
+      <ul className="convo-list">
+        {specs.map((s) => (
+          <li key={s.id} className="act-row">
+            <span className="act-label">{s.title}</span>
+            <span className="muted mono">{`${s.id} · ${s.status ?? 'no status'}${s.worktree ? '' : ' · main checkout'}`}</span>
+            {s.status && s.status !== 'draft'
+              ? <Button onClick={() => void adoptSpec(s.id)}>Adopt</Button>
+              : <Muted>a draft — freeze it first</Muted>}
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
 function NewTechTicket({ onDone }: { onDone: () => void }) {
   const [title, setTitle] = useState(''); const [type, setType] = useState('tech'); const [need, setNeed] = useState(''); const [crit, setCrit] = useState('');
   const submit = (e: FormEvent) => {
@@ -197,6 +219,7 @@ export function Tickets({ d }: { d: ProjectDetail }) {
       </div>
       <Muted>{data.tracker.kind === 'obsidian' ? `Tickets live in your Obsidian vault — ${data.tracker.dir}` : `Tickets live on this machine (${data.tracker.reason}).`}</Muted>
       {adding ? <NewTechTicket onDone={() => setAdding(false)} /> : null}
+      {view === 'board' ? <Adoptable specs={data.adoptable ?? []} /> : null}
       {view === 'board' ? (
         <>
           {tickets.length ? <Board tickets={tickets.filter((x) => x.status !== 'rejected')} /> : <EmptyState>No ticket yet. Talk to the product owner to create the first ones.</EmptyState>}

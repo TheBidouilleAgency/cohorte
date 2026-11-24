@@ -115,6 +115,15 @@ export const takeTicket = (t: string) => guard(async () => {
   useApp.getState().setTab('features');
   await loadFeature();
 });
+/** A spec written in a plain Claude Code session joins the flow: its feature record, at the phase its files say. */
+export const adoptSpec = (spec: string) => guard(async () => {
+  const id = sel(); if (!id) return;
+  await api.adopt(id, spec);
+  await after();
+  useFlow.setState({ featureId: spec });
+  useApp.getState().setTab('features');
+  await loadFeature();
+});
 export const checkpoint = (action: string, text?: string) => guard(async () => {
   const id = sel(); const f = useFlow.getState().featureId;
   if (!id || !f) return;
