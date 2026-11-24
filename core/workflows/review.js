@@ -92,17 +92,24 @@ const PROFILE = {
 // return, or nested under a single wrapper field. Anything already shaped like a profile
 // (has `surfaces`, or is the documented `{error}` failure shape) passes through untouched.
 const unwrapProfile = p => {
-  if (typeof p === 'string') { try { return JSON.parse(p) } catch { return null } }
-  if (!p || typeof p !== 'object') return null
-  if (Array.isArray(p.surfaces) || p.error) return p
-  for (const v of Object.values(p)) {
-    if (typeof v !== 'string') continue
+  // The reader may also serialize each nested value while keeping the top level.
+  const decode = o => Object.fromEntries(Object.entries(o).map(([k, v]) => {
+    if (typeof v !== 'string' || !/^\s*[[{]/.test(v)) return [k, v]
     try {
-      const inner = JSON.parse(v)
-      if (inner && typeof inner === 'object' && !Array.isArray(inner)) return inner
-    } catch {}
+      const parsed = JSON.parse(v)
+      return [k, parsed && typeof parsed === 'object' ? parsed : v]
+    } catch { return [k, v] }
+  }))
+  if (typeof p === 'string') { try { p = JSON.parse(p) } catch { return null } }
+  if (!p || typeof p !== 'object' || Array.isArray(p)) return null
+  const flat = decode(p)
+  if (Array.isArray(flat.surfaces) || flat.error) return flat
+  for (const v of Object.values(flat)) {
+    if (!v || typeof v !== 'object' || Array.isArray(v)) continue
+    const inner = decode(v)
+    if (Array.isArray(inner.surfaces)) return inner
   }
-  return p
+  return flat
 }
 
 const PREFLIGHT = {
@@ -221,7 +228,7 @@ const pre = await agent(
   '`date +%s` (return that number as `epoch` — the run\'s wall-clock origin for the metrics line):\n' +
   `<core>/pipeline/scripts/preflight.sh ${preflightReport} ` +
   checks.map(shq).join(' ') + '\n' +
-  '(<core> = "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/cohorte". ' +
+  '(<core> = the absolute path printed by `printf %s "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/cohorte"`. Run that lookup alone first (it does not count as any "one Bash call" below), then write the path out literally in every command: the gate denies a command name held in a variable. ' +
   'Script absent: run the quoted commands yourself, each appended to the same report file, stopping at the first failure.) ' +
   'Return pass=true only on a fully green run. On failure set pass=false, put the raw last 40 lines of the report ' +
   'in `tail` — verbatim, no summarizing — and in the same Bash call write the degraded machine verdict the ' +
@@ -250,7 +257,7 @@ const surfaceList = surfaces.map(s => `${s.key} → ${s.path}`).join(' · ') || 
 const FD = `<core>/pipeline/scripts/feature-diff.sh --default ${base}`
 const staged = await agent(
   `Stage the review inputs for cohorte feature ${feature}. Surfaces: ${surfaceList}. ` +
-  '(<core> = "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/cohorte".) Never use a bare `git diff` — it misses untracked files.\n' +
+  '(<core> = the absolute path printed by `printf %s "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/cohorte"`. Run that lookup alone first (it does not count as any "one Bash call" below), then write the path out literally in every command: the gate denies a command name held in a variable.) Never use a bare `git diff` — it misses untracked files.\n' +
   `1. ONE call: ${FD} --numstat > specs/reports/${feature}.stat.txt — never print it. Non-zero exit or script ` +
   'absent ⇒ return `error` with its stderr line and an empty surfaces array, and do nothing else.\n' +
   '2. Group the changed paths (3rd tab-separated column) by surface path prefix with one awk; paths under no surface are the `shared` remainder — attach them to the most relevant surface.\n' +
@@ -426,7 +433,7 @@ const verdictJson = JSON.stringify({
 })
 const staging = await agent(
   `Stage a cohorte review report and its metrics, mechanically ` +
-  '(<core> = "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/cohorte"):\n' +
+  '(<core> = the absolute path printed by `printf %s "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/cohorte"`. Run that lookup alone first (it does not count as any "one Bash call" below), then write the path out literally in every command: the gate denies a command name held in a variable):\n' +
   `1. Write EXACTLY this content to specs/reports/${feature}.md (overwrite):\n<<<REPORT\n${reportBody}\nREPORT\n` +
   `2. Write EXACTLY this to specs/reports/${feature}.verdict.json (overwrite), substituting <ISO now> with ` +
   '`date -u +%Y-%m-%dT%H:%M:%SZ` and <FP> with the fingerprint — computed in Bash, never by hand: ' +

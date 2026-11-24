@@ -152,17 +152,24 @@ const PROFILE = {
   },
 }
 const unwrapProfile = p => {
-  if (typeof p === 'string') { try { return JSON.parse(p) } catch { return null } }
-  if (!p || typeof p !== 'object') return null
-  if (Array.isArray(p.surfaces) || p.error) return p
-  for (const v of Object.values(p)) {
-    if (typeof v !== 'string') continue
+  // The reader may also serialize each nested value while keeping the top level.
+  const decode = o => Object.fromEntries(Object.entries(o).map(([k, v]) => {
+    if (typeof v !== 'string' || !/^\s*[[{]/.test(v)) return [k, v]
     try {
-      const inner = JSON.parse(v)
-      if (inner && typeof inner === 'object' && !Array.isArray(inner)) return inner
-    } catch {}
+      const parsed = JSON.parse(v)
+      return [k, parsed && typeof parsed === 'object' ? parsed : v]
+    } catch { return [k, v] }
+  }))
+  if (typeof p === 'string') { try { p = JSON.parse(p) } catch { return null } }
+  if (!p || typeof p !== 'object' || Array.isArray(p)) return null
+  const flat = decode(p)
+  if (Array.isArray(flat.surfaces) || flat.error) return flat
+  for (const v of Object.values(flat)) {
+    if (!v || typeof v !== 'object' || Array.isArray(v)) continue
+    const inner = decode(v)
+    if (Array.isArray(inner.surfaces)) return inner
   }
-  return p
+  return flat
 }
 
 // The precondition agent returns RAW FACTS (existence, mtimes, front-matter fields,
@@ -248,7 +255,7 @@ const spent = () => {
 
 // kanban-move.sh is optional infrastructure — every prompt that runs it defines <core>
 // and tolerates its absence, per profile/schema/kanban.md.
-const CORE_DEF = '(<core> = "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/cohorte" — ' +
+const CORE_DEF = '(<core> = the absolute path printed by `printf %s "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/cohorte"`. Run that lookup alone first (it does not count as any "one Bash call" below), then write the path out literally in every command: the gate denies a command name held in a variable — ' +
   'script absent ⇒ skip the kanban step, the board is optional.)'
 const METRICS_PATH = '$(dirname "$(git rev-parse --git-common-dir)")/.claude/pipeline-metrics.jsonl'
 
