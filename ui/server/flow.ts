@@ -14,14 +14,16 @@
 // Two front ends drive it on the same files: `cohorte ui` (server.ts) and the flow verbs of the CLI (`cohorte take`,
 // `checkpoint`, `autopilot`… — bin/flow.js), each a process of its own with its own runs (engine.ts builds either).
 // A run's hooks fire only in the process that spawned it, so a feature with a run in flight is LEASED to that
-// process (`driver`: its pid): the other refuses to move it (409) and never "recovers" it, until the run ends or the
-// process dies. Between runs — a checkpoint waiting, a PR open — nobody holds it, and either side may act.
+// process (lease.ts: a lock file taken with O_EXCL, holding its pid and start time; `driver` on the record mirrors it
+// for the page): the other refuses to move it (409) and never "recovers" it, until the run ends or the process dies.
+// Between runs — a checkpoint waiting, a PR open — nobody holds it, and either side may act; every transition takes
+// the lease first and re-reads the record, so two processes can never both start a stage.
 
 import fs from 'fs';
 import path from 'path';
 import { registry, doctor, type Project } from './legacy';
 import type { Jobs, Job } from './jobs';
-import type { Pending, Run, Runs } from './runs';
+import type { AnsweredBy, Pending, Run, Runs } from './runs';
 import { FeatureStore, type Feature } from './features';
 import { SettingsStore } from './settings';
 import { Decider, Preferences, conventionsOf, type DeciderContext } from './decider';
@@ -30,7 +32,8 @@ import { Tracker, isTicketId, ticketBrief, trackerFor } from './tracker';
 import { nextStep, type Signals, type Stage } from './next';
 import { pipelineOf, reportsOf } from './pipeline';
 import { parseReviewReport } from './findings';
-import { alive } from './history';
+import { Leases } from './lease';
+import { isSelf, self } from './proc';
 import * as gitinfo from './gitinfo';
 import * as ops from './ops';
 import { FOUNDING_ROLES, FoundingFlow } from './founding';
@@ -60,6 +63,9 @@ export class Flow {
   by: 'ui' | 'cli';
   /** Hook work not finished yet (a run end being processed, a question being decided): the CLI waits for it before it reads the state. */
   private inflight = 0;
+  /** Tracked work per feature (`project/id`) — the lease is kept while any is pending. */
+  private held = new Map<string, number>();
+  leases: Leases;
 
   constructor(o: FlowOpts) {
     this.globalDir = o.globalDir; this.runs = o.runs; this.jobs = o.jobs;
@@ -69,9 +75,10 @@ export class Flow {
     this.decider = o.decider || new Decider();
     this.changed = o.changed || (() => {});
     this.by = o.by || 'ui';
+    this.leases = new Leases(path.join(o.dataDir, 'leases'));
     this.founding = new FoundingFlow({ globalDir: this.globalDir, runs: this.runs, jobs: this.jobs, settings: this.settings, changed: (id) => this.changed(id) }, path.join(o.dataDir, 'founding'));
     this.runs.hooks = {
-      onEnd: (r) => { this.inflight += 1; setImmediate(() => { void this.onEnd(r).catch((e) => this.fail(r, e)).finally(() => { this.inflight -= 1; }); }); },
+      onEnd: (r) => { this.inflight += 1; setImmediate(() => { void this.onEnd(r).catch((e) => this.fail(r, e)).finally(() => { this.inflight -= 1; if (r.meta.featureId) this.release(r.projectId, r.meta.featureId); }); }); },
       onQuestion: (r, p) => this.onQuestion(r, p),
       onAnswered: (r, p, b, a, by) => this.onAnswered(r, p, b, a, by),
     };
@@ -95,20 +102,36 @@ export class Flow {
     return p;
   }
   tracker(p: Project): Tracker { return trackerFor(this.globalDir, p.root, p.id); }
-  private track<T>(work: Promise<T>): Promise<T> { this.inflight += 1; return work.finally(() => { this.inflight -= 1; }); }
+  /** Counts hook work; with a feature, the lease is kept until it is done (then released if nothing else runs). */
+  private track<T>(work: Promise<T>, f?: { projectId: string; id: string }): Promise<T> {
+    this.inflight += 1;
+    const key = f ? `${f.projectId}/${f.id}` : null;
+    if (key) this.held.set(key, (this.held.get(key) || 0) + 1);
+    return work.finally(() => {
+      this.inflight -= 1;
+      if (key && f) { this.held.set(key, (this.held.get(key) || 1) - 1); this.release(f.projectId, f.id); }
+    });
+  }
 
   // -------------------------------------------------------------------------------------------------------------
   // The lease: which process drives a feature while it has a run (or a worktree/merge job) in flight
 
-  /** Another live process has a run of this feature in flight. */
-  drivenElsewhere(f: Feature): boolean { return !!f.driver && f.driver.pid !== process.pid && alive(f.driver.pid); }
-  private claim(f: Feature): void {
-    if (!this.drivenElsewhere(f)) return;
-    const d = f.driver as NonNullable<Feature['driver']>;
-    throw new FlowError(`this feature is being driven by ${d.by === 'cli' ? 'a cohorte command in a terminal' : 'cohorte ui'} (pid ${d.pid}) — answer it there, or stop that process first`, 409);
+  /** Another live process holds this feature's lease (it has a run of it in flight). */
+  drivenElsewhere(f: Pick<Feature, 'projectId' | 'id'>): boolean { const h = this.leases.holder(f.projectId, f.id); return !!h && !isSelf(h); }
+  /**
+   * Takes the feature's lease for a transition — atomically: of two processes, one gets it — and re-reads the record
+   * (in place: features.ts) so the transition acts on the latest state. Throws 409 when another live process holds it.
+   */
+  private claim(projectId: string, id: string): void {
+    const h = this.leases.acquire(projectId, id, this.by);
+    if (h) throw new FlowError(`this feature is being driven by ${h.by === 'cli' ? 'a cohorte command in a terminal' : 'cohorte ui'} (pid ${h.pid}) — answer it there, or stop that process first (cohorte take-over clears a stuck one)`, 409);
+    this.features.get(projectId, id);
   }
-  /** Called before the save that follows a run (or job) start. */
-  private own(f: Feature): void { f.driver = { pid: process.pid, by: this.by, at: now() }; }
+  /** Called before the save that follows a run (or job) start: the lease is ours (claimed, or kept by a hook), mirrored on the record. */
+  private own(f: Feature): void {
+    if (this.leases.acquire(f.projectId, f.id, this.by)) throw new FlowError('another process took this feature', 409);
+    f.driver = { pid: self.pid, start: self.start, by: this.by, at: now() };
+  }
   private mine(projectId: string, id: string): boolean {
     for (const r of this.runs.runs.values()) if (r.projectId === projectId && r.meta.featureId === id && r.status === 'running' && r.child) return true;
     return !!(this.jobs.find(projectId, 'worktree-create', id) || this.jobs.find(projectId, 'merge', id));
@@ -123,10 +146,27 @@ export class Flow {
   active(projectId: string, id: string): boolean { return this.inflight > 0 || this.mine(projectId, id); }
   /** Drops this process's lease once it has nothing of the feature in flight. */
   private release(projectId: string, id: string): void {
+    if (this.mine(projectId, id) || (this.held.get(`${projectId}/${id}`) || 0) > 0) return;
+    this.leases.release(projectId, id);
     const f = this.features.get(projectId, id);
-    if (!f || f.driver?.pid !== process.pid || this.mine(projectId, id)) return;
+    if (f && f.driver && isSelf(f.driver)) { f.driver = null; this.features.save(f); }
+  }
+  /**
+   * `cohorte take-over`: a person clears a lease that is stuck (a holder that hung, a pid the OS reused). A feature
+   * left mid-run opens CP2, as after a restart. Returns who held it.
+   */
+  takeOver(projectId: string, id: string): { feature: Feature; was: { pid: number; by: string } | null } {
+    const p = this.project(projectId);
+    const was = this.leases.clear(p.id, id);
+    const f = this.mustFeature(p.id, id);
     f.driver = null;
-    this.features.save(f);
+    if (['autopilot', 'shipping', 'closing', 'freezing', 'merging', 'provisioning'].includes(f.phase) && !this.mine(p.id, id)) {
+      for (const st of f.stages) if (st.status === 'running') st.status = 'stopped';
+      f.currentRunId = null;
+      this.features.phase(f, 'cp2', { kind: 'cp2', reason: `taken over${was ? ` from ${was.by === 'cli' ? 'a terminal' : 'cohorte ui'} (pid ${was.pid})` : ''} — continue to resume`, openedAt: now() });
+    } else this.features.save(f);
+    this.changed(p.id);
+    return { feature: f, was: was ? { pid: was.pid, by: was.by } : null };
   }
   /** Resolves once this process has nothing of the feature in flight (runs ended, their hooks done). */
   async idle(projectId: string, id: string): Promise<void> {
@@ -270,11 +310,15 @@ export class Flow {
     const p = this.project(projectId);
     const t = this.ticketOf(p, ticketId);
     if (!t) throw new FlowError('unknown ticket', 404);
+    if (!ops.FEATURE_ID.test(ticketId)) throw new FlowError('the ticket id is not a valid feature id');
+    this.claim(p.id, ticketId);
+    try { return this.takeHeld(p, t, ticketId, confirmed, lead); } finally { this.release(p.id, ticketId); }
+  }
+
+  private takeHeld(p: Project, t: Ticket, ticketId: string, confirmed: boolean, lead: boolean): Feature {
     const existing = this.features.get(p.id, ticketId);
-    if (existing) this.claim(existing);
     if (existing && !['abandoned', 'failed'].includes(existing.phase)) throw new FlowError('this ticket is already being worked on', 409);
     if (!['backlog', 'framing'].includes(t.status) && !existing) throw new FlowError(`only a backlog ticket can be taken (this one is ${t.status})`, 409);
-    if (!ops.FEATURE_ID.test(ticketId)) throw new FlowError('the ticket id is not a valid feature id');
     const wt = this.worktreeFor(p, ticketId);
     const f = existing || this.features.create(p.id, ticketId, t.title);
     f.error = null; f.checkpoint = null; f.sessionLead = !lead;
@@ -341,8 +385,8 @@ export class Flow {
   /** The developer writes to the lead (framing, or after CP1/CP2 asked to re-frame). */
   replyLead(projectId: string, id: string, text: unknown): void {
     const p = this.project(projectId);
+    this.claim(p.id, id);
     const f = this.mustFeature(p.id, id);
-    this.claim(f);
     if (!['framing', 'cp1', 'cp2'].includes(f.phase)) throw new FlowError(`the lead is not in a conversation (the feature is in ${f.phase})`, 409);
     const run = f.leadRunId ? this.runs.get(f.leadRunId) : null;
     if (!run) throw new FlowError('the lead conversation is gone', 410);
@@ -408,20 +452,26 @@ export class Flow {
    */
   async adopt(projectId: string, id: string): Promise<Feature> {
     const p = this.project(projectId);
+    if (!ops.FEATURE_ID.test(id)) throw new FlowError('not a feature id');
+    this.claim(p.id, id);
+    try { return await this.adoptHeld(p, id); } finally { this.release(p.id, id); }
+  }
+
+  private async adoptHeld(p: Project, id: string): Promise<Feature> {
     const existing = this.features.get(p.id, id);
-    if (existing) this.claim(existing);
     if (existing && !['abandoned', 'failed'].includes(existing.phase)) throw new FlowError(`the flow already follows ${id} (it is ${existing.phase})`, 409);
     const cand = this.adoptable(p.id).find((x) => x.id === id);
     if (!cand) throw new FlowError(`no specs/${id}.md to adopt in the main checkout or a worktree`, 404);
     if (!cand.status || cand.status === 'draft') throw new FlowError(`specs/${id}.md is a draft — freeze it first (/cohorte-spec), or take the ticket to frame it with the lead`, 409);
+    // never on the default branch: the stages commit where they run
+    if (!cand.worktree) throw new FlowError(`specs/${id}.md is only in the main checkout, and the autopilot never runs on the default branch — take it with \`cohorte take ${id} --no-lead\` (it creates the feature's worktree), move the spec into that worktree, then \`cohorte checkpoint ${id} approve\` hands it to the autopilot`, 409);
     const tr = this.tracker(p);
     let t = tr.get(id);
     if (!t) t = tr.create({ title: cand.title, type: 'feature', need: `Started in a Claude Code session — see specs/${id}.md.` } as TicketProposal, { id, status: 'framing', requester: this.settings.get(p.id).requester });
     const f = existing || this.features.create(p.id, id, t.title);
-    f.worktree = cand.worktree || p.root;
+    f.worktree = cand.worktree;
     f.branch = cand.branch;
     f.error = null; f.checkpoint = null;
-    f.warning = cand.worktree ? null : 'adopted in the main checkout: the autopilot stages run there, not in a worktree of their own';
     this.features.save(f);
     const spec = this.specOf(f);
     let status: TicketStatus = 'building';
@@ -447,12 +497,22 @@ export class Flow {
   // -------------------------------------------------------------------------------------------------------------
   // Checkpoints
 
-  checkpoint(projectId: string, id: string, body: { action?: unknown; text?: unknown }): Feature {
+  checkpoint(projectId: string, id: string, body: { action?: unknown; text?: unknown; relayed?: unknown }): Feature {
     const p = this.project(projectId);
+    this.mustFeature(p.id, id);
+    this.claim(p.id, id);
+    try { return this.checkpointHeld(p, id, body); } finally { this.release(p.id, id); }
+  }
+
+  private checkpointHeld(p: Project, id: string, body: { action?: unknown; text?: unknown; relayed?: unknown }): Feature {
     const f = this.mustFeature(p.id, id);
-    this.claim(f);
     const text = typeof body.text === 'string' ? body.text.trim().slice(0, 4000) : '';
     const action = body.action;
+    // relayed: a CP1/CP2 answer a Claude Code session passed on, in the developer's words — recorded as such
+    if (body.relayed === true && f.checkpoint || body.relayed === true && f.sessionLead) {
+      this.features.addDecision(f, { runId: '', stage: f.checkpoint?.kind || 'cp1', question: `${(f.checkpoint?.kind || 'cp1').toUpperCase()} · ${f.checkpoint?.reason || 'the plan'}`, header: 'checkpoint',
+        options: [], chosen: String(action), by: 'remote', agreement: null, category: null, source: null, rationale: `relayed from a Claude Code session — the developer said: "${text}"` });
+    }
     const cp = f.checkpoint?.kind;
     if (action === 'abandon') {
       const run = f.currentRunId ? this.runs.get(f.currentRunId) : null;
@@ -470,7 +530,7 @@ export class Flow {
       if (text) f.corrections.push({ at: now(), checkpoint: 'cp1', text });
       this.features.phase(f, 'autopilot');
       this.setTicket(p, f.id, { status: 'building' });
-      void this.track(this.advance(p, f));
+      void this.track(this.advance(p, f), f);
       this.changed(p.id);
       return f;
     }
@@ -496,7 +556,7 @@ export class Flow {
         if (last && last.status === 'stopped') last.status = 'failed';
         if (text) f.corrections.push({ at: now(), checkpoint: 'cp2', text });
         this.features.phase(f, 'autopilot');
-        void this.track(this.advance(p, f));
+        void this.track(this.advance(p, f), f);
       } else if (action === 'correct') {
         if (!text) throw new FlowError('say what to correct');
         f.corrections.push({ at: now(), checkpoint: 'cp2', text });
@@ -515,6 +575,7 @@ export class Flow {
       } else throw new FlowError('CP2 takes continue, correct, reframe or abandon');
     } else if (cp === 'cp3') {
       if (action === 'approve') {
+        for (const d of f.decisions) if (d.by === 'remote' && !d.contested) d.confirmed = true; // signed off, never learned
         for (const d of f.decisions) if (d.by === 'decider' && !d.contested && !d.confirmed) {
           d.confirmed = true;
           this.prefs.add(p.id, { feature: f.id, question: d.question, header: d.header, answer: d.chosen, kind: 'confirmed' });
@@ -539,8 +600,12 @@ export class Flow {
   /** "I would not have decided that": the decision is marked, the preference learned, and the note queued as a correction. */
   contest(projectId: string, id: string, decisionId: string, note: unknown): Feature {
     const p = this.project(projectId);
+    this.claim(p.id, id);
+    try { return this.contestHeld(p, id, decisionId, note); } finally { this.release(p.id, id); }
+  }
+
+  private contestHeld(p: Project, id: string, decisionId: string, note: unknown): Feature {
     const f = this.mustFeature(p.id, id);
-    this.claim(f);
     const d = f.decisions.find((x) => x.id === decisionId);
     if (!d) throw new FlowError('unknown decision', 404);
     const n = typeof note === 'string' ? note.trim().slice(0, 2000) : '';
@@ -568,7 +633,10 @@ export class Flow {
   }
 
   async advance(p: Project, f: Feature): Promise<void> {
-    if (f.phase !== 'autopilot' || this.busy.has(f.id) || this.drivenElsewhere(f)) return;
+    if (f.phase !== 'autopilot' || this.busy.has(f.id)) return;
+    if (this.leases.acquire(p.id, f.id, this.by)) return; // another process drives it
+    this.features.get(p.id, f.id); // its latest state (in place)
+    if (f.phase !== 'autopilot') { this.release(p.id, f.id); return; }
     if (f.currentRunId) { const r = this.runs.get(f.currentRunId); if (r && r.status === 'running') return; }
     this.busy.add(f.id);
     try {
@@ -586,11 +654,14 @@ export class Flow {
       this.startStage(p, f, step.stage, step.model, step.args, step.note);
     } finally {
       this.busy.delete(f.id);
+      this.release(p.id, f.id);
       this.changed(p.id);
     }
   }
 
   private startStage(p: Project, f: Feature, stage: Stage | 'ship' | 'learn', model: string, args: string, note: string): Run {
+    if (this.drivenElsewhere(f)) throw new FlowError('another process drives this feature', 409);
+    this.features.get(p.id, f.id); // the latest record, right before the mutation
     if (!f.worktree) throw new FlowError('the feature has no worktree');
     const s = this.settings.get(p.id);
     const routing = stage === 'build' || stage === 'fix' ? s.models.implementer : null;
@@ -641,8 +712,12 @@ export class Flow {
 
   merge(projectId: string, id: string): Job {
     const p = this.project(projectId);
+    this.claim(p.id, id);
+    try { return this.mergeHeld(p, id); } finally { this.release(p.id, id); }
+  }
+
+  private mergeHeld(p: Project, id: string): Job {
     const f = this.mustFeature(p.id, id);
-    this.claim(f);
     if (f.phase !== 'pr' || !f.pr) throw new FlowError('there is no open PR for this feature', 409);
     if (f.pr.checks === 'failure') throw new FlowError('the PR checks are red — fix them first', 409);
     const method = this.settings.get(p.id).mergeMethod;
@@ -661,7 +736,7 @@ export class Flow {
     let p: Project;
     try { p = this.project(job.projectId); } catch { return; }
     if (job.status !== 'done') { this.features.phase(f, 'pr', null, `the merge failed:\n${job.lines.slice(-8).join('\n')}`); this.release(p.id, f.id); this.changed(p.id); return; }
-    void this.track(this.onMerged(p, f).finally(() => this.release(p.id, f.id)));
+    void this.track(this.onMerged(p, f), f);
   }
 
   async pollPRs(): Promise<void> {
@@ -680,7 +755,14 @@ export class Flow {
   }
 
   private async pollPR(p: Project, f: Feature): Promise<void> {
-    if (f.phase !== 'pr' || !f.branch || this.drivenElsewhere(f)) return;
+    if (f.phase !== 'pr' || !f.branch) return;
+    if (this.leases.acquire(p.id, f.id, this.by)) return; // another process drives it
+    try { await this.pollPRHeld(p, f); } finally { this.release(p.id, f.id); }
+  }
+
+  private async pollPRHeld(p: Project, f: Feature): Promise<void> {
+    this.features.get(p.id, f.id);
+    if (f.phase !== 'pr' || !f.branch) return;
     const pull = await gitinfo.pullFor(p.root, f.branch);
     if (!pull) return;
     f.pr = { number: pull.number, url: pull.url, state: pull.state, checks: pull.checks };
@@ -755,8 +837,11 @@ export class Flow {
     const t = tr.get(ticketId);
     if (!t) throw new FlowError('unknown ticket', 404);
     if (t.status !== 'acceptance') throw new FlowError(`this ticket is not waiting for acceptance (it is ${t.status})`, 409);
-    const held = this.features.get(p.id, ticketId);
-    if (held) this.claim(held);
+    if (this.features.get(p.id, ticketId)) this.claim(p.id, ticketId);
+    try { return this.acceptanceHeld(p, tr, t, ticketId, body); } finally { this.release(p.id, ticketId); }
+  }
+
+  private acceptanceHeld(p: Project, tr: Tracker, t: Ticket, ticketId: string, body: { action?: unknown; text?: unknown }): { ticket: Ticket; run: Run | null } {
     const text = typeof body.text === 'string' ? body.text.trim().slice(0, 4000) : '';
     let run: Run | null = null;
     let next: Ticket;
@@ -843,15 +928,17 @@ export class Flow {
   }
 
   /** What the developer answers by hand becomes a preference the decider reads next time. */
-  private onAnswered(r: Run, p: Pending, behavior: 'allow' | 'deny', answers: Record<string, string>, by: 'human' | 'decider'): void {
-    if (by !== 'human' || p.kind !== 'question' || behavior !== 'allow' || !r.meta.featureId) return;
+  private onAnswered(r: Run, p: Pending, behavior: 'allow' | 'deny', answers: Record<string, string>, by: AnsweredBy): void {
+    if (by === 'decider' || p.kind !== 'question' || behavior !== 'allow' || !r.meta.featureId) return;
     const f = this.features.get(r.projectId, r.meta.featureId);
     for (const q of p.questions || []) {
       const a = answers[q.question];
       if (!a) continue;
-      this.prefs.add(r.projectId, { feature: r.meta.featureId, question: q.question, header: q.header, answer: a, kind: 'answer' });
+      // only an answer typed where the run runs teaches the decider; one that came through a file is listed at CP3
+      if (by === 'human') this.prefs.add(r.projectId, { feature: r.meta.featureId, question: q.question, header: q.header, answer: a, kind: 'answer' });
+      const origin = by === 'remote' ? 'answered from another process (the page, or a terminal following the run)' : '';
       if (f && r.meta.role === 'stage') this.features.addDecision(f, { runId: r.id, stage: r.meta.stage || '', question: q.question, header: q.header, options: q.options.map((x) => x.label),
-        chosen: a, by: 'human', agreement: null, category: p.advice?.category || null, source: null, rationale: p.advice ? `the decider handed it over: ${p.advice.escalated}` : '' });
+        chosen: a, by, agreement: null, category: p.advice?.category || null, source: null, rationale: [origin, p.advice ? `the decider handed it over: ${p.advice.escalated}` : ''].filter(Boolean).join(' — ') });
     }
   }
 
@@ -860,12 +947,14 @@ export class Flow {
     for (const p of registry.load(this.globalDir)) {
       for (const f of this.features.list(p.id)) {
         if (!['autopilot', 'shipping', 'closing', 'freezing'].includes(f.phase)) continue;
-        if (this.drivenElsewhere(f)) continue; // a live process (the UI, a terminal) has its run in flight
+        if (this.leases.acquire(p.id, f.id, this.by)) continue; // a live process (the UI, a terminal) has its run in flight
         const r = f.currentRunId ? this.runs.get(f.currentRunId) : null;
-        if (r && r.status === 'running') continue;
+        if (r && r.status === 'running') { this.leases.release(p.id, f.id); continue; }
         for (const s of f.stages) if (s.status === 'running') s.status = 'stopped';
         f.currentRunId = null;
+        f.driver = null;
         this.features.phase(f, 'cp2', { kind: 'cp2', reason: 'cohorte ui restarted while this feature was running — continue to resume', openedAt: now() });
+        this.leases.release(p.id, f.id);
       }
     }
   }

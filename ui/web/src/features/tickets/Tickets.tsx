@@ -132,9 +132,9 @@ function Adoptable({ specs }: { specs: AdoptableSpec[] }) {
           <li key={s.id} className="act-row">
             <span className="act-label">{s.title}</span>
             <span className="muted mono">{`${s.id} · ${s.status ?? 'no status'}${s.worktree ? '' : ' · main checkout'}`}</span>
-            {s.status && s.status !== 'draft'
+            {s.status && s.status !== 'draft' && s.worktree
               ? <Button onClick={() => void adoptSpec(s.id)}>Adopt</Button>
-              : <Muted>a draft — freeze it first</Muted>}
+              : <Muted>{s.status && s.status !== 'draft' ? 'only in the main checkout — take its ticket to give it a worktree' : 'a draft — freeze it first'}</Muted>}
           </li>
         ))}
       </ul>
