@@ -14,10 +14,17 @@ from .findings import short
 
 
 class RuleChecks(object):
+    def branch_at(self, state):
+        """The branch checked out at state.cwd: the one an earlier `git switch -c` of this
+        chain created there, else HEAD on disk (None when detached / not a repo)."""
+        if state.branch is not None and state.branch[0] == state.cwd:
+            return state.branch[1]
+        return self.ctx.current_branch(state.cwd)
+
     def branch_gated(self, state, here_unknown):
         if here_unknown or state.sticky or not state.cwd_known:
             return True
-        b = self.ctx.current_branch(state.cwd)
+        b = self.branch_at(state)
         return b is None or self.ctx.is_default(b)
 
     # -- git push --------------------------------------------------------------
@@ -27,11 +34,14 @@ class RuleChecks(object):
             return set(), True
         cwd = state.cwd
         names = set()
-        cur = self.ctx.current_branch(cwd)
+        cur = self.branch_at(state)
         if cur is None:
             return set(), True
         names.add(cur)
-        for spec in ("@{push}", "@{upstream}"):
+        created = state.branch is not None and state.branch[0] == cwd
+        if created and state.branch[2]:
+            return names, True        # created from a start point / --track: upstream unknown
+        for spec in () if created else ("@{push}", "@{upstream}"):
             r = run_git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", spec], cwd)
             if r and r[0] == 0 and "/" in r[1].strip():
                 names.add(r[1].strip().split("/", 1)[1])
@@ -60,7 +70,7 @@ class RuleChecks(object):
                 continue
             if r.dynamic:
                 if BRANCH_SUBST_RE.match(r.raw) and not here_unknown:
-                    cur = self.ctx.current_branch(state.cwd)
+                    cur = self.branch_at(state)
                     if cur:
                         dests.add(cur)
                         continue
@@ -87,7 +97,11 @@ class RuleChecks(object):
             if n is None:
                 continue
             dests.add(n)
-            if ":" not in v and not here_unknown and n == src:
+            fresh = (state.branch is not None and state.branch[0] == state.cwd
+                     and state.branch[1] == src)
+            if fresh and state.branch[2] and ":" not in v:
+                unknown = True     # just created from a start point: its upstream isn't known
+            elif ":" not in v and not here_unknown and n == src and not fresh:
                 rr = run_git(["rev-parse", "--abbrev-ref", "--symbolic-full-name",
                               src + "@{upstream}"], state.cwd)
                 if rr and rr[0] == 0 and "/" in rr[1].strip():

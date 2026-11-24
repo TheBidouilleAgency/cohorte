@@ -12,8 +12,9 @@ import re
 import shlex
 
 from .shell import (
-    ASSIGN_RE, cmd_name, GIT_ENV_VARS, is_flag_word, parse_command, ParseError, PREFIXES_SEEN,
-    RESERVED_HEADER, RESERVED_SKIP, static_word, strip_prefixes,
+    ASSIGN_RE, cmd_name, DYN, GIT_ENV_VARS, is_flag_word, parse_command, ParseError,
+    PREFIXES_SEEN, rebound_vars, RESERVED_HEADER, RESERVED_SKIP, static_env, static_word,
+    strip_prefixes,
 )
 from .git import GIT_BUILTINS, parse_git
 from .patterns import flag_names, runner_core, wrapper_cores
@@ -28,20 +29,65 @@ WRITE_OPS = {">", ">>", ">|", "&>", "&>>", "<>"}
 
 
 class State(object):
-    def __init__(self, cwd):
+    def __init__(self, cwd, env=None):
         self.cwd = cwd
         self.cwd_known = cwd is not None
         self.sticky = False           # branch unknown for the rest of the chain
         self.written = set()
         self.git_aliases = {}
+        # (cwd, branch, may_track): the branch an earlier `git switch -c`/`checkout -b` of
+        # this chain created and checked out at cwd — HEAD on disk doesn't show it yet.
+        self.branch = None
+        self.env = static_env() if env is None else env   # variables the lexer resolves
 
     def copy(self):
-        s = State(self.cwd)
+        s = State(self.cwd, dict(self.env))
         s.cwd_known = self.cwd_known
         s.sticky = self.sticky
         s.written = set(self.written)
         s.git_aliases = dict(self.git_aliases)
+        s.branch = self.branch
         return s
+
+
+SWITCH_CREATE = {"switch": ({"-c", "-C", "--create", "--force-create", "--orphan"}, "cC", "dfmqt"),
+                 "checkout": ({"-b", "-B", "--orphan"}, "bB", "dfmqtl")}
+
+
+def created_branch(g):
+    """(name, may_track) for a `git switch -c|-C|--orphan <name>` / `git checkout -b|-B|--orphan
+    <name>` whose name is static, else None. may_track: a start point or --track was given, so
+    the new branch may have an upstream (and a bare push may go there)."""
+    spec = SWITCH_CREATE.get(g.sub)
+    if spec is None:
+        return None
+    longs, creators, plain = spec
+    a = g.args
+    for k, w in enumerate(a):
+        if w.dynamic:
+            return None
+        v = w.value
+        if v == "--":
+            return None
+        name = rest = None
+        if v in longs or (len(v) > 2 and v[0] == "-" and v[1] != "-" and v[-1] in creators
+                          and all(ch in plain for ch in v[1:-1])):
+            if k + 1 >= len(a) or a[k + 1].dynamic or a[k + 1].value.startswith("-"):
+                return None
+            name, rest = a[k + 1].value, a[k + 2:]
+        else:
+            for o in longs:
+                if o.startswith("--") and v.startswith(o + "="):
+                    name, rest = v.split("=", 1)[1], a[k + 1:]
+        if name is not None:
+            if not name:
+                return None
+            track = any(not x.dynamic and (x.value in ("-t", "--track")
+                                           or x.value.startswith("--track="))
+                        for x in a[:k] + rest)
+            starts = [x for x in rest if x.dynamic or not x.value.startswith("-")]
+            return name, bool(track or starts)
+    return None
 
 
 class Inv(object):
@@ -67,8 +113,12 @@ class Analyzer(Indirection, SelfProtection, RuleChecks, Findings):
         if depth > MAX_DEPTH:
             self.opaque("commands are nested too deep", text)
             return
+        blocked = rebound_vars(text, list(state.env))
+        if blocked:
+            # the text assigns (or otherwise names) one of them: its value is not the hook's
+            state.env = {k: v for k, v in state.env.items() if k not in blocked}
         try:
-            segs = parse_command(text)
+            segs = parse_command(text, state.env)
         except ParseError as e:
             self.unparseable(text, e)
             return
@@ -131,8 +181,11 @@ class Analyzer(Indirection, SelfProtection, RuleChecks, Findings):
             return None
         cmd = argv[0]
         if cmd.dynamic:
-            self.opaque("the command name is computed at run time", seg.text)
-            return None
+            base = static_basename(cmd)
+            if base is None:
+                self.opaque("the command name is computed at run time", seg.text)
+                return None
+            cmd = static_word(base)
         name = cmd_name(cmd.value)
         args = argv[1:]
         inv = Inv(name, args, seg)
@@ -159,7 +212,7 @@ class Analyzer(Indirection, SelfProtection, RuleChecks, Findings):
         self.match_config(inv, state, here_unknown)
         self.indirection(inv, seg, prev, prev_inv, state, depth)
         self.protect(inv, state, seg_unknown)
-        self.update_state(inv, seg, state, assigns)
+        self.update_state(inv, seg, state, assigns, prev, seg_unknown)
         return inv
 
     def expand_git(self, args, state, depth):
@@ -202,7 +255,7 @@ class Analyzer(Indirection, SelfProtection, RuleChecks, Findings):
                 return
 
     # -- chain state -----------------------------------------------------------------
-    def update_state(self, inv, seg, state, assigns):
+    def update_state(self, inv, seg, state, assigns, prev=None, seg_unknown=False):
         name, args = inv.name, inv.args
         if name == "cd":
             sep = seg.sep
@@ -236,6 +289,7 @@ class Analyzer(Indirection, SelfProtection, RuleChecks, Findings):
             if os.path.isdir(target):
                 state.cwd = os.path.realpath(target)
                 state.cwd_known = True
+                state.branch = None
             else:
                 state.cwd_known = False
             return
@@ -254,7 +308,14 @@ class Analyzer(Indirection, SelfProtection, RuleChecks, Findings):
             if g.relocated:
                 state.sticky = True
             sub = g.sub
-            if sub in ("switch", "bisect"):
+            made = created_branch(g) if sub in ("switch", "checkout") else None
+            if (made and seg.sep == "&&" and not g.relocated and not seg_unknown
+                    and state.cwd_known and (prev is None or prev.sep != "||")):
+                # `git switch -c feat && …`: the rest of the chain only runs once HEAD is on
+                # `feat`. Not after `;` (a failed switch leaves HEAD where it was) nor after
+                # `a || git switch -c x` (the switch may not run at all).
+                state.branch = (state.cwd, made[0], made[1])
+            elif sub in ("switch", "bisect"):
                 state.sticky = True
             elif sub == "checkout" and not any(w.value == "--" for w in g.args):
                 state.sticky = True
@@ -272,3 +333,16 @@ class Analyzer(Indirection, SelfProtection, RuleChecks, Findings):
         if "$" in t or "`" in t or "'" in t or '"' in t or "\\" in t:
             return None
         return t
+
+
+def static_basename(w):
+    """The program a run-time command name runs, when only its directory is computed:
+    `"$S/smoke.sh"` runs `smoke.sh`. None when the basename itself is computed, a glob, or the
+    word is unquoted (field splitting could make the command name any word)."""
+    if w.split or w.glob:
+        return None
+    tail = w.value.split(DYN)[-1]
+    if "/" not in tail:
+        return None
+    base = tail.rsplit("/", 1)[1]
+    return base or None
