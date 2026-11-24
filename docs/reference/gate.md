@@ -230,9 +230,20 @@ The gate follows indirection when the inner text is static:
 - `alias x='…'`
 - `preflight.sh`'s check commands, which it runs through `sh -c`
 
+Some run-time values are resolved first. `$HOME`, `${HOME}`, `~`, `$CLAUDE_CONFIG_DIR` and
+`${CLAUDE_CONFIG_DIR:-$HOME/.claude}` are the user's own environment, so they are expanded
+from the hook's environment: `"$HOME/.claude/cohorte/pipeline/scripts/kanban-move.sh"` is
+judged as that path. A command that assigns or otherwise names the variable itself
+(`HOME=/tmp; …`, `export HOME=…`, `for HOME in …`) keeps it a run-time value. Other run-time
+words are matched by their static parts. `node ace "$m:fresh"` may still be
+`node ace migration:fresh`, but a path-looking word (a static `/` or a file extension:
+`node "$S/smoke.mjs"`, `node $TMPDIR/cov.mjs`) is one path, never a pattern's literal word or
+a flag. A command name whose directory alone is computed (`"$S/smoke.sh"`) is judged by its
+basename.
+
 Some cases can't be judged statically:
 
-- a computed command name (`$x push`)
+- a computed command name (`$x push`, `$DIR/tool` unquoted)
 - `… | base64 -d | sh`
 - `eval "$CMD"`
 - running or sourcing a file written earlier in the same command
@@ -254,6 +265,13 @@ followed through a pipe.
 The branch becomes unknown for the rest of the chain after any of these:
 
 - `git checkout <branch>` or `git switch` (a file checkout `git checkout -- f` does not count)
+
+  The exception is a new branch with a static name chained with `&&`: after
+  `git switch -c <name> && …` or `git checkout -b <name> && …` (also `-C`/`-B`/`--orphan`), the
+  rest of the chain is on `<name>`, so `git switch -c feat/x && git commit …` runs freely. It
+  is not followed after `;` (a failed switch leaves HEAD where it was) or after
+  `a || git switch -c …`. A bare `git push` after a branch created from a start point
+  (`git switch -c x origin/main`) has an unknown destination, since the branch may track it.
 - `git bisect`, `git branch -m`
 - `pushd`/`popd`, `cd -`, `cd $OLDPWD`, a `cd` that can't be resolved, `cd … ||`
 - a subshell `( … )`
@@ -264,7 +282,7 @@ The branch becomes unknown for the rest of the chain after any of these:
 | `permission_mode` | An `ask` verdict becomes |
 | --- | --- |
 | `default`, `acceptEdits`, `plan`, absent | `ask` (a human confirms) |
-| `bypassPermissions`, `dontAsk` | **`deny`**, with the reason attached. Nobody can answer the prompt, and a clear refusal beats a prompt that silently auto-resolves. |
+| `bypassPermissions`, `dontAsk` | **`deny`**, with the reason attached. Nobody can answer the prompt, and a clear refusal beats a prompt that silently auto-resolves. The reason also says how a human can allow it: run it in `default`/`acceptEdits` mode, change the rule in the profile's gate block and run `/cohorte-update-pipeline` (gate-config.json has no allow list), work on a feature branch, or write the command with literal arguments. |
 
 The hook fires for every agent in the session: the lead, `/cohorte-build`'s implementers, and
 Workflow subagents. Those run in `acceptEdits`, which does not auto-approve Bash or subagent

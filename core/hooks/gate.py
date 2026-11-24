@@ -46,7 +46,8 @@ What it does, in order of authority:
 
 Matching. The command is lexed like a shell does it: quotes, escapes, `\\`-newline
 continuations, comments, heredocs (bodies are data unless fed to a shell), `$(…)`,
-backticks, `<(…)`, subshells, redirections, and the separators `; && || | |& &` and newline.
+backticks, `<(…)`, subshells, `case` clauses, `[[ … ]]`, redirections, and the separators
+`; && || | |& &` and newline.
 Each simple command loses its prefixes (`VAR=val`, `env`, `command`, `builtin`, `exec`,
 `nice`, `time`, `nohup`, `timeout`, `sudo`, …). Its basename is lowercased (`GIT`,
 `/usr/bin/git`, `\\git` and `"git"` are all `git`). A pattern is lexed the same way. It
@@ -57,6 +58,14 @@ compared by meaning: `-rf` = `-r -f` = `-fr` = `--recursive --force`. For git, g
 options can be abbreviated. For `git push`, every force form listed above satisfies a `-f`
 or `--force` pattern. Package runners are looked through: `npx`/`pnpm exec`/`yarn`/
 `bunx`/`uv run`/`python -m`… `prisma migrate reset` matches `prisma migrate reset`.
+
+`$HOME`, `${HOME}`, `~` and `$CLAUDE_CONFIG_DIR` (also `${CLAUDE_CONFIG_DIR:-$HOME/.claude}`)
+are the user's own environment: they are expanded from the hook's environment before
+anything is judged, unless the command itself assigns or otherwise names the variable. A
+run-time word is matched by its static parts: `"$m:fresh"` may be `migration:fresh`, but a
+path-looking word (a static `/` or file extension: `"$S/x.mjs"`, `$TMPDIR/cov.mjs`) is one
+path, never a pattern's literal word or a flag. A command name whose directory alone is
+computed (`"$S/smoke.sh"`) is judged by its basename.
 
 A pattern that itself contains a separator (`curl | sh`) matches a run of consecutive
 commands that each match their part, joined by the same separator.
@@ -72,11 +81,13 @@ Branch awareness. `ask_on_default_branch` patterns fire when the branch is the d
 branch or unknown. The branch is unknown on a detached HEAD, outside a repo, after a
 `cd` that can't be resolved, and for the rest of a chain after `git checkout`/`switch`,
 `pushd`/`popd`, a subshell, `git -C`, or `GIT_DIR`/`GIT_WORK_TREE`. A plain `cd <dir>`
-chained with `&&` or `;` is followed (never through `|`). For `git push`, the destination
+chained with `&&` or `;` is followed (never through `|`). So is a branch creation with a
+static name chained with `&&` (`git switch -c <name> && …`, `git checkout -b <name> && …`):
+the rest of the chain is on `<name>`. For `git push`, the destination
 also counts: `src:dst`, `HEAD`, the upstream/push target of a bare push, `--all`/`--mirror`.
 
 Permission modes. In `bypassPermissions` and `dontAsk` nobody answers a prompt, so every
-"ask" becomes a "deny" with the reason attached. `default`, `acceptEdits` and `plan` keep
+"ask" becomes a "deny" with the reason attached and what a human can do to allow it. `default`, `acceptEdits` and `plan` keep
 "ask".
 
 Fail closed. If the project is active and the payload is a Bash/Task/Agent call that
@@ -198,7 +209,7 @@ class ParseError(Exception):
 
 
 class Word(object):
-    __slots__ = ("value", "raw", "dynamic", "glob", "quoted", "substs")
+    __slots__ = ("value", "raw", "dynamic", "glob", "quoted", "substs", "split")
 
     def __init__(self, value="", raw=""):
         self.value = value
@@ -207,6 +218,7 @@ class Word(object):
         self.glob = False
         self.quoted = False
         self.substs = []      # inner command lists ($(…), `…`, <(…))
+        self.split = False    # holds an unquoted run-time expansion (field splitting applies)
 
     @property
     def head(self):
@@ -223,7 +235,51 @@ def static_word(v):
 def wildcard_word():
     w = Word(DYN, "$…")
     w.dynamic = True
+    w.split = True
     return w
+
+
+# ── variables the gate resolves itself ────────────────────────────────────────
+# $HOME and $CLAUDE_CONFIG_DIR are the user's own environment, inherited alike by this hook and
+# by the agent's Bash tool: a command can't choose them without assigning them, so the lexer
+# expands them statically (`"$HOME/.claude/…/kanban-move.sh"` is that literal path). A text that
+# names one of them other than as `$NAME`/`${NAME…}` (an assignment, `export`, `read`, `unset`,
+# a `for` variable, …) keeps it a run-time expansion — see `rebound_vars`. A value with blanks,
+# glob characters, quotes or `$` is never resolved (it would split or expand again).
+STATIC_VARS = ("HOME", "CLAUDE_CONFIG_DIR")
+SAFE_VALUE_RE = re.compile(r"^[^\s*?\[\]$`'\"\\{}]*$")
+
+
+def static_env():
+    """{name: value} for the variables the lexer may expand; value None = known to be unset."""
+    env = {}
+    for name in STATIC_VARS:
+        v = os.environ.get(name)
+        if v is None and name == "HOME":
+            v = os.path.expanduser("~")
+            if v == "~":
+                continue
+        if v is not None:
+            v = v.replace("\\", "/")        # a Windows value would read as shell escapes
+            if not SAFE_VALUE_RE.match(v):
+                continue
+        env[name] = v
+    return env
+
+
+def rebound_vars(text, names):
+    """The names in `names` that `text` mentions other than as an expansion ($X, ${X…})."""
+    out = set()
+    for name in names:
+        for m in re.finditer(r"(?<![A-Za-z0-9_])%s(?![A-Za-z0-9_])" % name, text):
+            before = text[:m.start()]
+            if not (before.endswith("$") or before.endswith("${")):
+                out.add(name)
+                break
+    return out
+
+
+BRACE_VAR_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)(?:(:?-)(.*))?$", re.S)
 
 
 class Redir(object):
@@ -310,12 +366,13 @@ def ansi_c(s):
 class Lexer(object):
     """Just enough of the POSIX/bash grammar to find every simple command and its words."""
 
-    def __init__(self, src):
+    def __init__(self, src, env=None):
         self.s = src
         self.n = len(src)
         self.i = 0
         self.pending = []      # heredocs waiting for the end of the line
         self.depth = 0         # $( … ) nesting, for `EOF)` heredoc ends
+        self.env = env or {}   # variables expanded statically (static_env)
 
     def peek(self, k=0):
         j = self.i + k
@@ -334,6 +391,7 @@ class Lexer(object):
     def parse_list(self, closer, subshell):
         segs = []
         seg = Seg(self.s, self.i, subshell)
+        cases = []      # one entry per open `case … in`: True while a pattern is expected
         while True:
             if self.i >= self.n:
                 if closer:
@@ -356,6 +414,35 @@ class Lexer(object):
                 self._push(segs, seg, "\n")
                 self._read_heredocs()
                 seg = Seg(self.s, self.i, subshell)
+                continue
+            if cases and cases[-1] and not seg.words and not seg.redirs:
+                # a `case` clause: `pat | pat )` — or the `esac` that closes it
+                if re.match(r"esac(?=[\s;&|)]|$)", self.s[self.i:]):
+                    cases.pop()
+                    seg.words.append(self.read_word())
+                    continue
+                else:
+                    marker = self._case_pattern(seg)
+                    if marker is not None:
+                        segs.append(marker)
+                    cases[-1] = False
+                    seg = Seg(self.s, self.i, subshell)
+                    continue
+            if c == ";" and cases and not cases[-1] and self.peek(1) in (";", "&"):
+                # `;;`, `;&`, `;;&` end a case clause: a pattern comes next
+                self._push(segs, seg, ";")
+                self.i += 2
+                if self.peek() == "&":
+                    self.i += 1
+                cases[-1] = True
+                seg = Seg(self.s, self.i, subshell)
+                continue
+            if c in "()|&<>" and self._in_test(seg):
+                # inside `[[ … ]]` these are operators of the test, not shell syntax
+                start = self.i
+                while self.i < self.n and self.s[self.i] in "()|&<>":
+                    self.i += 1
+                seg.words.append(static_word(self.s[start:self.i]))
                 continue
             if c == ";":
                 self.i += 1
@@ -403,6 +490,10 @@ class Lexer(object):
                 self._redir(seg, None)
                 continue
             if c == "(":
+                if seg.words and not seg.redirs and self._only_reserved(seg.words):
+                    # `do (…)`, `then (…)`, `! (…)`: a subshell after a reserved word
+                    self._push(segs, seg, None)
+                    seg = Seg(self.s, self.i, subshell)
                 if not seg.words and not seg.redirs:
                     self.i += 1
                     if self.peek() == "(":          # (( arithmetic ))
@@ -413,7 +504,9 @@ class Lexer(object):
                     segs.extend(inner)
                     seg = Seg(self.s, self.i, subshell)
                     continue
-                if self.peek(1) == ")" and len(seg.words) == 1:
+                fwords = seg.words[1:] if (seg.words and not seg.words[0].quoted
+                                           and seg.words[0].value == "function") else seg.words
+                if self.peek(1) == ")" and len(fwords) == 1:
                     self.i += 2
                     seg.funcdef = True
                     continue
@@ -429,6 +522,70 @@ class Lexer(object):
                 self._redir(seg, w.raw)
                 continue
             seg.words.append(w)
+            head = self._command_words(seg.words)
+            if cases and not cases[-1] and len(head) == 1 and not w.quoted and w.value == "esac":
+                cases.pop()
+            elif (len(head) == 3 and not head[0].quoted and head[0].value == "case"
+                  and not head[2].quoted and head[2].value == "in"):
+                # `case WORD in`: the header is its own (ignored) segment; clauses follow
+                self._push(segs, seg, ";")
+                cases.append(True)
+                seg = Seg(self.s, self.i, subshell)
+
+    @staticmethod
+    def _command_words(words):
+        k = 0
+        while k < len(words) and not words[k].quoted and words[k].value in RESERVED_SKIP:
+            k += 1
+        return words[k:]
+
+    @staticmethod
+    def _only_reserved(words):
+        return all(not w.quoted and w.value in RESERVED_SKIP for w in words)
+
+    def _in_test(self, seg):
+        """Inside `[[ … ]]` (its closing `]]` not read yet)."""
+        head = self._command_words(seg.words)
+        if not head or head[0].quoted or head[0].value != "[[":
+            return False
+        return not any(not w.quoted and w.value == "]]" for w in head[1:])
+
+    def _case_pattern(self, seg):
+        """Read one `case` clause pattern up to and including its `)`. Returns a segment
+        holding the pattern words when they run command substitutions (it starts with the
+        reserved word `in`, so it is walked for those and never judged as a command)."""
+        words = []
+        if self.peek() == "(":
+            self.i += 1
+        while True:
+            while self.peek() in (" ", "\t", "\r", "\n") and self.i < self.n:
+                self.i += 1
+            if self.peek() == "\\" and self.peek(1) == "\n":
+                self.i += 2
+                continue
+            c = self.peek()
+            if not c:
+                raise ParseError("unterminated `case` pattern")
+            if c == ")":
+                self.i += 1
+                break
+            if c == "|":
+                self.i += 1
+                continue
+            if c in ";&<>(":
+                raise ParseError("unexpected `%s` in a `case` pattern" % c)
+            start = self.i
+            w = self.read_word()
+            if self.i == start:
+                raise ParseError("unexpected `%s` in a `case` pattern" % c)
+            words.append(w)
+        if not any(w.substs for w in words):
+            return None
+        m = Seg(self.s, seg.start, seg.subshell)
+        m.words = [static_word("in")] + words
+        m.sep = ";"
+        m.end = self.i
+        return m
 
     def _redir(self, seg, fd):
         s, i = self.s, self.i
@@ -465,7 +622,7 @@ class Lexer(object):
                 lines.append(line)
                 self.i = nxt
             body = "\n".join(lines)
-            substs = [] if quoted else expansions_in(body)
+            substs = [] if quoted else expansions_in(body, self.env)
             seg.heredocs.append(Heredoc(body, quoted, substs))
 
     def _skip_arith(self):
@@ -549,7 +706,7 @@ class Lexer(object):
                 self._read_dollar(w, buf, False)
                 continue
             if c == "`":
-                self._read_backtick(w, buf)
+                self._read_backtick(w, buf, False)
                 continue
             if c in "*?[":
                 w.glob = True
@@ -588,7 +745,7 @@ class Lexer(object):
                 self._read_dollar(w, buf, True)
                 continue
             if c == "`":
-                self._read_backtick(w, buf)
+                self._read_backtick(w, buf, bool(term))
                 continue
             buf.append(c)
             self.i += 1
@@ -608,6 +765,7 @@ class Lexer(object):
                 w.substs.append(inner)
             buf.append(DYN)
             w.dynamic = True
+            w.split = w.split or not in_dq
             return
         if nx == "{":
             j = self.i + 2
@@ -632,9 +790,14 @@ class Lexer(object):
                 j += 1
             if j >= self.n:
                 raise ParseError("unterminated ${…}")
+            known = self._static_brace(s[self.i + 2:j])
             self.i = j + 1
+            if known or (known is not None and in_dq):
+                buf.append(known)
+                return
             buf.append(DYN)
             w.dynamic = True
+            w.split = w.split or not in_dq
             return
         if nx == "'" and not in_dq:
             j = self.i + 2
@@ -658,19 +821,47 @@ class Lexer(object):
             else:
                 while j < self.n and (s[j].isalnum() or s[j] == "_"):
                     j += 1
+            name = s[self.i + 1:j]
             self.i = j
+            if self.env.get(name) or (name in self.env and in_dq):
+                # (unquoted and empty, the word may vanish: left a run-time expansion)
+                buf.append(self.env[name] or "")
+                return
             buf.append(DYN)
             w.dynamic = True
+            w.split = w.split or not in_dq
             return
         if nx and nx in "@*#?$!-":
             self.i += 2
             buf.append(DYN)
             w.dynamic = True
+            w.split = w.split or not in_dq
             return
         buf.append("$")
         self.i += 1
 
-    def _read_backtick(self, w, buf):
+    def _static_brace(self, body):
+        """The value of `${NAME}`, `${NAME-word}` or `${NAME:-word}` when NAME is a variable
+        the gate resolves (static_env) and the default word is itself static; else None."""
+        m = BRACE_VAR_RE.match(body)
+        if not m or m.group(1) not in self.env:
+            return None
+        val = self.env[m.group(1)]
+        op = m.group(2)
+        if op is None:
+            return val or ""
+        if (val if op == ":-" else val is not None):
+            return val
+        word = m.group(3)
+        for name in self.env:
+            v = self.env[name] or ""
+            word = word.replace("${%s}" % name, v)
+            word = re.sub(r"\$%s(?![A-Za-z0-9_])" % name, lambda _m: v, word)
+        if not re.match(r"^[A-Za-z0-9_./~@%+,:=-]*$", word):
+            return None
+        return word
+
+    def _read_backtick(self, w, buf, in_dq):
         s = self.s
         j = self.i + 1
         inner = []
@@ -687,16 +878,17 @@ class Lexer(object):
         if j >= self.n:
             raise ParseError("unterminated backtick")
         self.i = j + 1
-        w.substs.append(Lexer("".join(inner)).parse())
+        w.substs.append(Lexer("".join(inner), self.env).parse())
         buf.append(DYN)
         w.dynamic = True
+        w.split = w.split or not in_dq
 
 
-def expansions_in(text):
+def expansions_in(text, env=None):
     """Command substitutions inside an unquoted heredoc body (they run when it expands)."""
     if "$(" not in text and "`" not in text:
         return []
-    lx = Lexer(text)
+    lx = Lexer(text, env)
     w = Word()
     try:
         lx._read_dq(w, [], None)
@@ -705,8 +897,8 @@ def expansions_in(text):
     return w.substs
 
 
-def parse_command(text):
-    return Lexer(text.replace("\x00", "")).parse()
+def parse_command(text, env=None):
+    return Lexer(text.replace("\x00", ""), env).parse()
 
 
 # ── command normalisation ────────────────────────────────────────────────────
@@ -1546,15 +1738,41 @@ def is_wildcard(tokens, idx):
     return True
 
 
+EXT_RE = re.compile(r"\.[A-Za-z0-9]{1,10}$")
+
+
+def path_like(w):
+    """A run-time word that visibly names a file: a static `/` (`"$S/smoke.mjs"`,
+    `$TMPDIR/cov.mjs`) or a static file extension at its end (`"$name.json"`). It is read as
+    one path: the gate does not assume a directory variable splits into several words."""
+    parts = [p for p in w.value.split(DYN)]
+    return any("/" in p for p in parts) or bool(EXT_RE.search(parts[-1]))
+
+
+def could_be(w, p):
+    """Could run-time word `w` expand to the pattern's literal word `p`? Its static parts must
+    appear in `p`, in order (`"$m:fresh"` can be `migration:fresh`, `"$S/x.mjs"` can't be
+    `ace`). An unquoted word that is not path-like can field-split into anything."""
+    if p.dynamic:
+        return True
+    if w.split and not path_like(w):
+        return True
+    rx = ".*".join(re.escape(part).replace(r"\*", ".*").replace(r"\?", ".").replace(r"\[", ".*")
+                   for part in w.value.split(DYN))
+    return re.match(r"(?s)\A%s\Z" % rx, p.value) is not None
+
+
 def wild_flag(tokens, idx):
     """A run-time word that could expand to flags: unquoted (field splitting) or visibly
-    starting with `-`, and not after `--`."""
+    starting with `-`, and not after `--`. A path-like word is one path, not flags."""
     if not is_wildcard(tokens, idx):
         return False
     if any(not t.dynamic and t.value == "--" for t in tokens[:idx]):
         return False
     w = tokens[idx]
-    return not w.raw.startswith('"') or w.head.startswith("-")
+    if w.head.startswith("-"):
+        return True
+    return not w.raw.startswith('"') and not path_like(w)
 
 
 def pos_match(ppos, tokens, eq):
@@ -1570,7 +1788,14 @@ def pos_match(ppos, tokens, eq):
         while j < len(tokens):
             w = tokens[j]
             if is_wildcard(tokens, j):
-                return "possible"
+                if could_be(w, ppos[pi]):
+                    return "possible"
+                # it can only be a positional other than ppos[pi]
+                if not prev_flag:
+                    return best
+                prev_flag = False
+                j += 1
+                continue
             if w.dynamic:
                 prev_flag = False
                 j += 1
@@ -1832,10 +2057,17 @@ class Findings(object):
 
 # ══ core/hooks/gate/rules.py ═════════════════════════════════════════════════
 class RuleChecks(object):
+    def branch_at(self, state):
+        """The branch checked out at state.cwd: the one an earlier `git switch -c` of this
+        chain created there, else HEAD on disk (None when detached / not a repo)."""
+        if state.branch is not None and state.branch[0] == state.cwd:
+            return state.branch[1]
+        return self.ctx.current_branch(state.cwd)
+
     def branch_gated(self, state, here_unknown):
         if here_unknown or state.sticky or not state.cwd_known:
             return True
-        b = self.ctx.current_branch(state.cwd)
+        b = self.branch_at(state)
         return b is None or self.ctx.is_default(b)
 
     # -- git push --------------------------------------------------------------
@@ -1845,11 +2077,14 @@ class RuleChecks(object):
             return set(), True
         cwd = state.cwd
         names = set()
-        cur = self.ctx.current_branch(cwd)
+        cur = self.branch_at(state)
         if cur is None:
             return set(), True
         names.add(cur)
-        for spec in ("@{push}", "@{upstream}"):
+        created = state.branch is not None and state.branch[0] == cwd
+        if created and state.branch[2]:
+            return names, True        # created from a start point / --track: upstream unknown
+        for spec in () if created else ("@{push}", "@{upstream}"):
             r = run_git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", spec], cwd)
             if r and r[0] == 0 and "/" in r[1].strip():
                 names.add(r[1].strip().split("/", 1)[1])
@@ -1878,7 +2113,7 @@ class RuleChecks(object):
                 continue
             if r.dynamic:
                 if BRANCH_SUBST_RE.match(r.raw) and not here_unknown:
-                    cur = self.ctx.current_branch(state.cwd)
+                    cur = self.branch_at(state)
                     if cur:
                         dests.add(cur)
                         continue
@@ -1905,7 +2140,11 @@ class RuleChecks(object):
             if n is None:
                 continue
             dests.add(n)
-            if ":" not in v and not here_unknown and n == src:
+            fresh = (state.branch is not None and state.branch[0] == state.cwd
+                     and state.branch[1] == src)
+            if fresh and state.branch[2] and ":" not in v:
+                unknown = True     # just created from a start point: its upstream isn't known
+            elif ":" not in v and not here_unknown and n == src and not fresh:
                 rr = run_git(["rev-parse", "--abbrev-ref", "--symbolic-full-name",
                               src + "@{upstream}"], state.cwd)
                 if rr and rr[0] == 0 and "/" in rr[1].strip():
@@ -2593,20 +2832,65 @@ WRITE_OPS = {">", ">>", ">|", "&>", "&>>", "<>"}
 
 
 class State(object):
-    def __init__(self, cwd):
+    def __init__(self, cwd, env=None):
         self.cwd = cwd
         self.cwd_known = cwd is not None
         self.sticky = False           # branch unknown for the rest of the chain
         self.written = set()
         self.git_aliases = {}
+        # (cwd, branch, may_track): the branch an earlier `git switch -c`/`checkout -b` of
+        # this chain created and checked out at cwd — HEAD on disk doesn't show it yet.
+        self.branch = None
+        self.env = static_env() if env is None else env   # variables the lexer resolves
 
     def copy(self):
-        s = State(self.cwd)
+        s = State(self.cwd, dict(self.env))
         s.cwd_known = self.cwd_known
         s.sticky = self.sticky
         s.written = set(self.written)
         s.git_aliases = dict(self.git_aliases)
+        s.branch = self.branch
         return s
+
+
+SWITCH_CREATE = {"switch": ({"-c", "-C", "--create", "--force-create", "--orphan"}, "cC", "dfmqt"),
+                 "checkout": ({"-b", "-B", "--orphan"}, "bB", "dfmqtl")}
+
+
+def created_branch(g):
+    """(name, may_track) for a `git switch -c|-C|--orphan <name>` / `git checkout -b|-B|--orphan
+    <name>` whose name is static, else None. may_track: a start point or --track was given, so
+    the new branch may have an upstream (and a bare push may go there)."""
+    spec = SWITCH_CREATE.get(g.sub)
+    if spec is None:
+        return None
+    longs, creators, plain = spec
+    a = g.args
+    for k, w in enumerate(a):
+        if w.dynamic:
+            return None
+        v = w.value
+        if v == "--":
+            return None
+        name = rest = None
+        if v in longs or (len(v) > 2 and v[0] == "-" and v[1] != "-" and v[-1] in creators
+                          and all(ch in plain for ch in v[1:-1])):
+            if k + 1 >= len(a) or a[k + 1].dynamic or a[k + 1].value.startswith("-"):
+                return None
+            name, rest = a[k + 1].value, a[k + 2:]
+        else:
+            for o in longs:
+                if o.startswith("--") and v.startswith(o + "="):
+                    name, rest = v.split("=", 1)[1], a[k + 1:]
+        if name is not None:
+            if not name:
+                return None
+            track = any(not x.dynamic and (x.value in ("-t", "--track")
+                                           or x.value.startswith("--track="))
+                        for x in a[:k] + rest)
+            starts = [x for x in rest if x.dynamic or not x.value.startswith("-")]
+            return name, bool(track or starts)
+    return None
 
 
 class Inv(object):
@@ -2632,8 +2916,12 @@ class Analyzer(Indirection, SelfProtection, RuleChecks, Findings):
         if depth > MAX_DEPTH:
             self.opaque("commands are nested too deep", text)
             return
+        blocked = rebound_vars(text, list(state.env))
+        if blocked:
+            # the text assigns (or otherwise names) one of them: its value is not the hook's
+            state.env = {k: v for k, v in state.env.items() if k not in blocked}
         try:
-            segs = parse_command(text)
+            segs = parse_command(text, state.env)
         except ParseError as e:
             self.unparseable(text, e)
             return
@@ -2696,8 +2984,11 @@ class Analyzer(Indirection, SelfProtection, RuleChecks, Findings):
             return None
         cmd = argv[0]
         if cmd.dynamic:
-            self.opaque("the command name is computed at run time", seg.text)
-            return None
+            base = static_basename(cmd)
+            if base is None:
+                self.opaque("the command name is computed at run time", seg.text)
+                return None
+            cmd = static_word(base)
         name = cmd_name(cmd.value)
         args = argv[1:]
         inv = Inv(name, args, seg)
@@ -2724,7 +3015,7 @@ class Analyzer(Indirection, SelfProtection, RuleChecks, Findings):
         self.match_config(inv, state, here_unknown)
         self.indirection(inv, seg, prev, prev_inv, state, depth)
         self.protect(inv, state, seg_unknown)
-        self.update_state(inv, seg, state, assigns)
+        self.update_state(inv, seg, state, assigns, prev, seg_unknown)
         return inv
 
     def expand_git(self, args, state, depth):
@@ -2767,7 +3058,7 @@ class Analyzer(Indirection, SelfProtection, RuleChecks, Findings):
                 return
 
     # -- chain state -----------------------------------------------------------------
-    def update_state(self, inv, seg, state, assigns):
+    def update_state(self, inv, seg, state, assigns, prev=None, seg_unknown=False):
         name, args = inv.name, inv.args
         if name == "cd":
             sep = seg.sep
@@ -2801,6 +3092,7 @@ class Analyzer(Indirection, SelfProtection, RuleChecks, Findings):
             if os.path.isdir(target):
                 state.cwd = os.path.realpath(target)
                 state.cwd_known = True
+                state.branch = None
             else:
                 state.cwd_known = False
             return
@@ -2819,7 +3111,14 @@ class Analyzer(Indirection, SelfProtection, RuleChecks, Findings):
             if g.relocated:
                 state.sticky = True
             sub = g.sub
-            if sub in ("switch", "bisect"):
+            made = created_branch(g) if sub in ("switch", "checkout") else None
+            if (made and seg.sep == "&&" and not g.relocated and not seg_unknown
+                    and state.cwd_known and (prev is None or prev.sep != "||")):
+                # `git switch -c feat && …`: the rest of the chain only runs once HEAD is on
+                # `feat`. Not after `;` (a failed switch leaves HEAD where it was) nor after
+                # `a || git switch -c x` (the switch may not run at all).
+                state.branch = (state.cwd, made[0], made[1])
+            elif sub in ("switch", "bisect"):
                 state.sticky = True
             elif sub == "checkout" and not any(w.value == "--" for w in g.args):
                 state.sticky = True
@@ -2837,6 +3136,19 @@ class Analyzer(Indirection, SelfProtection, RuleChecks, Findings):
         if "$" in t or "`" in t or "'" in t or '"' in t or "\\" in t:
             return None
         return t
+
+
+def static_basename(w):
+    """The program a run-time command name runs, when only its directory is computed:
+    `"$S/smoke.sh"` runs `smoke.sh`. None when the basename itself is computed, a glob, or the
+    word is unquoted (field splitting could make the command name any word)."""
+    if w.split or w.glob:
+        return None
+    tail = w.value.split(DYN)[-1]
+    if "/" not in tail:
+        return None
+    base = tail.rsplit("/", 1)[1]
+    return base or None
 
 
 # ══ core/hooks/gate/preflight.py ═════════════════════════════════════════════
@@ -3105,9 +3417,27 @@ def evaluate(payload):
     level, reason = decision
     if level == "ask" and mode in UNATTENDED_MODES:
         level = "deny"
-        reason += (" (denied outright: permission mode `%s` has nobody to confirm — re-run it "
-                   "interactively if it is intended)" % mode)
+        reason += unattended_hint(mode, reason)
     return level, "Cohorte gate: " + reason
+
+
+def unattended_hint(mode, reason):
+    """What a human can do about an "ask" that became a deny because nobody can answer it. The
+    gate has no allow list: a hook "ask" can't be pre-approved from settings.json."""
+    how = ["run it from a session in `default` or `acceptEdits` mode, where the gate asks "
+           "instead of refusing"]
+    if "gate-config.json" in reason or "is gated" in reason or "gated command" in reason:
+        how.append("if this rule should not stop unattended runs, change or remove it in the "
+                   "profile's gate block (PIPELINE.md) and run /cohorte-update-pipeline, which "
+                   "regenerates .claude/gate-config.json (`deny`/`ask`/`ask_on_default_branch`; "
+                   "there is no allow list)")
+    if "default branch" in reason:
+        how.append("or do it on a feature branch, where `ask_on_default_branch` rules don't fire")
+    if "run time" in reason or "can't parse" in reason or "can't check" in reason:
+        how.append("or write the command with literal paths and arguments so the gate can check it")
+    return (" (denied outright: permission mode `%s` has nobody to confirm. To allow it: %s. "
+            "Agent: report this to the human; don't reword the command to get past the gate.)"
+            % (mode, "; ".join(how)))
 
 
 # ══ core/hooks/gate/main.py ══════════════════════════════════════════════════

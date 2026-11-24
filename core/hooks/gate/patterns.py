@@ -6,9 +6,11 @@ words come first in order, and each of its flags is present by meaning (`-rf` = 
 `git push` force forms satisfy `-f`/`--force` patterns.
 """
 
+import re
+
 from .runtime import warn
 from .shell import (
-    cmd_name, INTERP_RE, is_assignment, is_flag_word, parse_command, ParseError, RESERVED_SKIP,
+    cmd_name, DYN, INTERP_RE, is_assignment, is_flag_word, parse_command, ParseError, RESERVED_SKIP,
     strip_prefixes,
 )
 from .git import analyze_push_args, parse_git
@@ -179,15 +181,41 @@ def is_wildcard(tokens, idx):
     return True
 
 
+EXT_RE = re.compile(r"\.[A-Za-z0-9]{1,10}$")
+
+
+def path_like(w):
+    """A run-time word that visibly names a file: a static `/` (`"$S/smoke.mjs"`,
+    `$TMPDIR/cov.mjs`) or a static file extension at its end (`"$name.json"`). It is read as
+    one path: the gate does not assume a directory variable splits into several words."""
+    parts = [p for p in w.value.split(DYN)]
+    return any("/" in p for p in parts) or bool(EXT_RE.search(parts[-1]))
+
+
+def could_be(w, p):
+    """Could run-time word `w` expand to the pattern's literal word `p`? Its static parts must
+    appear in `p`, in order (`"$m:fresh"` can be `migration:fresh`, `"$S/x.mjs"` can't be
+    `ace`). An unquoted word that is not path-like can field-split into anything."""
+    if p.dynamic:
+        return True
+    if w.split and not path_like(w):
+        return True
+    rx = ".*".join(re.escape(part).replace(r"\*", ".*").replace(r"\?", ".").replace(r"\[", ".*")
+                   for part in w.value.split(DYN))
+    return re.match(r"(?s)\A%s\Z" % rx, p.value) is not None
+
+
 def wild_flag(tokens, idx):
     """A run-time word that could expand to flags: unquoted (field splitting) or visibly
-    starting with `-`, and not after `--`."""
+    starting with `-`, and not after `--`. A path-like word is one path, not flags."""
     if not is_wildcard(tokens, idx):
         return False
     if any(not t.dynamic and t.value == "--" for t in tokens[:idx]):
         return False
     w = tokens[idx]
-    return not w.raw.startswith('"') or w.head.startswith("-")
+    if w.head.startswith("-"):
+        return True
+    return not w.raw.startswith('"') and not path_like(w)
 
 
 def pos_match(ppos, tokens, eq):
@@ -203,7 +231,14 @@ def pos_match(ppos, tokens, eq):
         while j < len(tokens):
             w = tokens[j]
             if is_wildcard(tokens, j):
-                return "possible"
+                if could_be(w, ppos[pi]):
+                    return "possible"
+                # it can only be a positional other than ppos[pi]
+                if not prev_flag:
+                    return best
+                prev_flag = False
+                j += 1
+                continue
             if w.dynamic:
                 prev_flag = False
                 j += 1

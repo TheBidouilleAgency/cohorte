@@ -121,6 +121,24 @@ def evaluate(payload):
     level, reason = decision
     if level == "ask" and mode in UNATTENDED_MODES:
         level = "deny"
-        reason += (" (denied outright: permission mode `%s` has nobody to confirm — re-run it "
-                   "interactively if it is intended)" % mode)
+        reason += unattended_hint(mode, reason)
     return level, "Cohorte gate: " + reason
+
+
+def unattended_hint(mode, reason):
+    """What a human can do about an "ask" that became a deny because nobody can answer it. The
+    gate has no allow list: a hook "ask" can't be pre-approved from settings.json."""
+    how = ["run it from a session in `default` or `acceptEdits` mode, where the gate asks "
+           "instead of refusing"]
+    if "gate-config.json" in reason or "is gated" in reason or "gated command" in reason:
+        how.append("if this rule should not stop unattended runs, change or remove it in the "
+                   "profile's gate block (PIPELINE.md) and run /cohorte-update-pipeline, which "
+                   "regenerates .claude/gate-config.json (`deny`/`ask`/`ask_on_default_branch`; "
+                   "there is no allow list)")
+    if "default branch" in reason:
+        how.append("or do it on a feature branch, where `ask_on_default_branch` rules don't fire")
+    if "run time" in reason or "can't parse" in reason or "can't check" in reason:
+        how.append("or write the command with literal paths and arguments so the gate can check it")
+    return (" (denied outright: permission mode `%s` has nobody to confirm. To allow it: %s. "
+            "Agent: report this to the human; don't reword the command to get past the gate.)"
+            % (mode, "; ".join(how)))

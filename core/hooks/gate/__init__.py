@@ -41,7 +41,8 @@ What it does, in order of authority:
 
 Matching. The command is lexed like a shell does it: quotes, escapes, `\\`-newline
 continuations, comments, heredocs (bodies are data unless fed to a shell), `$(…)`,
-backticks, `<(…)`, subshells, redirections, and the separators `; && || | |& &` and newline.
+backticks, `<(…)`, subshells, `case` clauses, `[[ … ]]`, redirections, and the separators
+`; && || | |& &` and newline.
 Each simple command loses its prefixes (`VAR=val`, `env`, `command`, `builtin`, `exec`,
 `nice`, `time`, `nohup`, `timeout`, `sudo`, …). Its basename is lowercased (`GIT`,
 `/usr/bin/git`, `\\git` and `"git"` are all `git`). A pattern is lexed the same way. It
@@ -52,6 +53,14 @@ compared by meaning: `-rf` = `-r -f` = `-fr` = `--recursive --force`. For git, g
 options can be abbreviated. For `git push`, every force form listed above satisfies a `-f`
 or `--force` pattern. Package runners are looked through: `npx`/`pnpm exec`/`yarn`/
 `bunx`/`uv run`/`python -m`… `prisma migrate reset` matches `prisma migrate reset`.
+
+`$HOME`, `${HOME}`, `~` and `$CLAUDE_CONFIG_DIR` (also `${CLAUDE_CONFIG_DIR:-$HOME/.claude}`)
+are the user's own environment: they are expanded from the hook's environment before
+anything is judged, unless the command itself assigns or otherwise names the variable. A
+run-time word is matched by its static parts: `"$m:fresh"` may be `migration:fresh`, but a
+path-looking word (a static `/` or file extension: `"$S/x.mjs"`, `$TMPDIR/cov.mjs`) is one
+path, never a pattern's literal word or a flag. A command name whose directory alone is
+computed (`"$S/smoke.sh"`) is judged by its basename.
 
 A pattern that itself contains a separator (`curl | sh`) matches a run of consecutive
 commands that each match their part, joined by the same separator.
@@ -67,11 +76,13 @@ Branch awareness. `ask_on_default_branch` patterns fire when the branch is the d
 branch or unknown. The branch is unknown on a detached HEAD, outside a repo, after a
 `cd` that can't be resolved, and for the rest of a chain after `git checkout`/`switch`,
 `pushd`/`popd`, a subshell, `git -C`, or `GIT_DIR`/`GIT_WORK_TREE`. A plain `cd <dir>`
-chained with `&&` or `;` is followed (never through `|`). For `git push`, the destination
+chained with `&&` or `;` is followed (never through `|`). So is a branch creation with a
+static name chained with `&&` (`git switch -c <name> && …`, `git checkout -b <name> && …`):
+the rest of the chain is on `<name>`. For `git push`, the destination
 also counts: `src:dst`, `HEAD`, the upstream/push target of a bare push, `--all`/`--mirror`.
 
 Permission modes. In `bypassPermissions` and `dontAsk` nobody answers a prompt, so every
-"ask" becomes a "deny" with the reason attached. `default`, `acceptEdits` and `plan` keep
+"ask" becomes a "deny" with the reason attached and what a human can do to allow it. `default`, `acceptEdits` and `plan` keep
 "ask".
 
 Fail closed. If the project is active and the payload is a Bash/Task/Agent call that
