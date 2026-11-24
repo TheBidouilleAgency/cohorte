@@ -119,6 +119,7 @@ export class Runs {
     this.stallMs = stallMs ?? STALL_MS;
     this.store = store || null;
     for (const r of this.store?.loadAll() || []) this.runs.set(r.id, r);
+    if (this.store) { const t = setInterval(() => this.#collect(), 300); t.unref(); }
   }
 
   // opts: { projectId, cwd, command (e.g. "/cohorte-build f1"), permissionMode }
@@ -204,6 +205,16 @@ export class Runs {
     if (!p) return;
     Object.assign(p, patch);
     this.onChange(run);
+    this.store?.schedule(run, true); // the other process (the page, a terminal) sees it is now a person's to answer
+  }
+
+  /** Answers another process left on disk for the runs this one drives (the page answering a terminal's run, or the reverse). */
+  #collect(): void {
+    if (!this.store) return;
+    for (const r of this.runs.values()) {
+      if (!this.#mine(r) || !r.pending.size) continue;
+      for (const a of this.store.takeAnswers(r)) this.respond(r, a.requestId, a.behavior, a.answers, 'human');
+    }
   }
 
   #line(run: Run, line: string): void {
@@ -290,6 +301,7 @@ export class Runs {
       try { held = this.hooks.onQuestion?.(run, p) === true; } catch { held = false; }
       if (held) p.deciding = true;
       this.#push(run, { kind: 'question', ...base, questions });
+      this.store?.schedule(run, true);
       return;
     }
     if (req.tool_name === 'AskUserQuestion') {
@@ -301,12 +313,19 @@ export class Runs {
     const ask: Pending = { ...base, kind: 'permission', input, summary: summarize(req.tool_name, input), reason, via };
     run.pending.set(v.request_id, ask);
     this.#push(run, { kind: 'approval', requestId: v.request_id, tool: req.tool_name, summary: ask.summary || '', reason, via });
+    this.store?.schedule(run, true);
   }
 
   // behavior: 'allow' | 'deny'. For a question, `answers` maps each question text to the chosen label(s).
   respond(run: Run, requestId: string, behavior: 'allow' | 'deny', answers?: Record<string, string | string[]>, by: 'human' | 'decider' = 'human'): boolean {
     const p = run.pending.get(requestId);
     if (!p) return false;
+    if (!this.#mine(run)) { // another process drives it: the answer goes to it through the store
+      if (!this.store?.answer(run, requestId, behavior, answers)) return false;
+      run.pending.delete(requestId);
+      this.onChange(run);
+      return true;
+    }
     let response: Record<string, unknown>;
     let given: Record<string, string> = {};
     if (behavior === 'allow') {
@@ -388,6 +407,7 @@ export class Runs {
     Object.assign(r, persisted, { child: null, stopping: false });
     this.#owned.delete(r.id);
     r.pending.clear(); r.tasks.clear();
+    for (const [k, v] of s.pending) r.pending.set(k, v);
   }
   find(projectId: string, cwd: string): Run | null { return [...this.runs.values()].find((r) => r.projectId === projectId && r.cwd === cwd && r.status === 'running') || null; }
 

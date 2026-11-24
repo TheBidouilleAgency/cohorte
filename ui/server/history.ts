@@ -4,12 +4,15 @@
 //
 // `cohorte ui` and the flow verbs of the CLI (`cohorte checkpoint`, `cohorte autopilot`) share these files: each run
 // records the pid of the process that drives it, a run still `running` in a live process stays `running` for the
-// others (read-only to them: its child and its parked questions are not theirs), and a file another process
-// rewrote since this one last saw it is read again (refresh).
+// others, and a file another process rewrote since this one last saw it is read again (refresh).
+//
+// What a run parked on a person (a question, a permission ask) is written with it, so the other process sees it
+// (the page's inbox, `cohorte autopilot --follow`); its answer cannot reach the run's stdin from there, so it is
+// dropped as a file under <runs>/<projectId>/answers/ that the driving process picks up (takeAnswers).
 
 import fs from 'fs';
 import path from 'path';
-import type { Run } from './runs';
+import type { Pending, Run } from './runs';
 
 const KEEP_PER_PROJECT = 120; // the company flow keeps its conversations here too
 const KEEP_EVENTS = 400;
@@ -52,7 +55,8 @@ export class RunStore {
       const cut = Math.max(0, run.events.length - KEEP_EVENTS);
       const body = { v: 1, id: run.id, projectId: run.projectId, cwd: run.cwd, command: run.command, permissionMode: run.permissionMode, status: run.status,
         startedAt: run.startedAt, endedAt: run.endedAt, result: run.result, sessionId: run.sessionId, dropped: run.dropped + cut, events: run.events.slice(cut),
-        pid: process.pid, meta: run.meta, model: run.model, disallowedTools: run.disallowedTools, allowedTools: run.allowedTools, addDirs: run.addDirs, seen: run.seen, tickets: run.tickets, strictMcp: run.strictMcp, mcpConfig: run.mcpConfig, systemNote: run.systemNote };
+        pid: process.pid, meta: run.meta, model: run.model, disallowedTools: run.disallowedTools, allowedTools: run.allowedTools, addDirs: run.addDirs, seen: run.seen, tickets: run.tickets, strictMcp: run.strictMcp, mcpConfig: run.mcpConfig, systemNote: run.systemNote,
+        pending: [...run.pending.values()].map(({ input: _i, ...x }) => x) };
       const tmp = `${f}.${process.pid}.tmp`;
       fs.writeFileSync(tmp, JSON.stringify(body));
       fs.renameSync(tmp, f);
@@ -77,6 +81,39 @@ export class RunStore {
       let names: string[] = [];
       try { names = fs.readdirSync(path.join(this.dir, p)).filter((n) => n.endsWith('.json')); } catch { continue; }
       for (const n of names) { const r = this.read(path.join(this.dir, p, n), p); if (r) out.push(r); }
+    }
+    return out;
+  }
+
+  private answersDir(projectId: string): string { return path.join(this.dir, projectId, 'answers'); }
+
+  /** Another process answers a run it does not drive: the answer waits on disk for the driving process. */
+  answer(run: Pick<Run, 'projectId' | 'id'>, requestId: string, behavior: 'allow' | 'deny', answers?: Record<string, string | string[]>): boolean {
+    if (!SAFE.test(run.projectId) || !SAFE.test(run.id) || !SAFE.test(requestId)) return false;
+    try {
+      const dir = this.answersDir(run.projectId);
+      fs.mkdirSync(dir, { recursive: true });
+      const f = path.join(dir, `${run.id}.${requestId}.json`);
+      fs.writeFileSync(`${f}.${process.pid}.tmp`, JSON.stringify({ requestId, behavior, answers: answers || {}, at: new Date().toISOString() }));
+      fs.renameSync(`${f}.${process.pid}.tmp`, f);
+      return true;
+    } catch { return false; }
+  }
+
+  /** The answers other processes left for `run` (consumed). */
+  takeAnswers(run: Pick<Run, 'projectId' | 'id'>): { requestId: string; behavior: 'allow' | 'deny'; answers: Record<string, string | string[]> }[] {
+    const out: { requestId: string; behavior: 'allow' | 'deny'; answers: Record<string, string | string[]> }[] = [];
+    if (!SAFE.test(run.projectId)) return out;
+    const dir = this.answersDir(run.projectId);
+    let names: string[] = [];
+    try { names = fs.readdirSync(dir).filter((n) => n.startsWith(`${run.id}.`) && n.endsWith('.json')); } catch { return out; }
+    for (const n of names) {
+      const f = path.join(dir, n);
+      try {
+        const v = JSON.parse(fs.readFileSync(f, 'utf8'));
+        fs.rmSync(f, { force: true });
+        if (typeof v.requestId === 'string' && (v.behavior === 'allow' || v.behavior === 'deny')) out.push({ requestId: v.requestId, behavior: v.behavior, answers: v.answers && typeof v.answers === 'object' ? v.answers : {} });
+      } catch { /* half-written: next time */ }
     }
     return out;
   }
@@ -112,9 +149,14 @@ export class RunStore {
       if (v.v !== 1 || !SAFE.test(v.id) || v.projectId !== p) return null;
       this.stamps.set(file, st);
       const interrupted = v.status === 'running' && (v.pid === process.pid || !alive(v.pid));
+      // what a live process parked on a person: visible (and answerable through answer()) from here
+      const pending = new Map<string, Pending>();
+      if (!interrupted && v.status === 'running' && Array.isArray(v.pending)) {
+        for (const x of v.pending) if (x && typeof x.requestId === 'string' && (x.kind === 'question' || x.kind === 'permission')) pending.set(x.requestId, { ...x, input: {} });
+      }
       return { id: v.id, projectId: v.projectId, cwd: v.cwd, command: v.command, permissionMode: v.permissionMode, status: interrupted ? 'stopped' : v.status,
         startedAt: v.startedAt, endedAt: v.endedAt || (interrupted ? new Date().toISOString() : null), events: Array.isArray(v.events) ? v.events : [], dropped: v.dropped || 0,
-        pending: new Map(), result: v.result || null, sessionId: v.sessionId || null, child: null, closeTimer: null, stopping: false,
+        pending, result: v.result || null, sessionId: v.sessionId || null, child: null, closeTimer: null, stopping: false,
         meta: v.meta && typeof v.meta === 'object' && typeof v.meta.role === 'string' ? v.meta : { role: 'command' }, model: typeof v.model === 'string' ? v.model : null,
         disallowedTools: Array.isArray(v.disallowedTools) ? v.disallowedTools.filter((t: unknown) => typeof t === 'string') : [],
         allowedTools: Array.isArray(v.allowedTools) ? v.allowedTools.filter((t: unknown) => typeof t === 'string') : [],
