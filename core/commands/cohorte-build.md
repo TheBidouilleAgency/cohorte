@@ -173,8 +173,9 @@ line with no duration). **Postcondition (if `contract.enabled`):**
 you dispatch §3, or the stateless agents have nothing to build against (the epoch output is §4's
 wall-clock start — no separate timing call).
 
-**`--readiness-only` stops here** — print the readiness verdict + contract path and point at the
-loop workflow (`{feature: "$ARGUMENTS"}`) or a plain `/cohorte-build $ARGUMENTS`.
+**`--readiness-only` stops here** — print the readiness verdict + contract path and point at
+**`/cohorte-loop $ARGUMENTS`** (the loop workflow, `{feature: "$ARGUMENTS"}` — it builds, reviews and
+fixes on its own; the recommended next step) or a plain `/cohorte-build $ARGUMENTS`.
 
 ## 3. Dispatch one implementer per surface — IN PARALLEL
 
@@ -254,7 +255,9 @@ anything went wrong. In the same call write the machine-readable batch result to
 never sees your chat:
 `{"id":"$ARGUMENTS","phase":"build","ts":"<ISO>","surfaces":{"<key>":"ok|error|dead",…},"dead":["<key>",…]}`
 — this is the evidence `<core>/pipeline/schema/specialization.md` asks for before splitting a surface.
-Then tell the human: run `/cohorte-review $ARGUMENTS`, and after its SHIP `/cohorte-verify $ARGUMENTS`
+Then tell the human the next step — **recommended: `/cohorte-loop $ARGUMENTS`**, which runs review →
+fix rounds unattended until nothing blocking is left (it reuses this build, it does not rebuild);
+or step by step, `/cohorte-review $ARGUMENTS` — and after either ends clean, `/cohorte-verify $ARGUMENTS`
 (when the profile has runtime commands — it runs the app and its migrations; until then exercise it
 by hand if it's worth it) —
 unless a surface is dead, in which case say so first and let them decide whether to re-run `/cohorte-build`
@@ -263,3 +266,9 @@ Do not run the app or migrations yourself here — building is not running; that
 job, through its script.
 **Recommend a `/clear` now** — the spec, contract and diff are all on
 disk, and the lead's history is re-sent at input price on every turn it survives.
+
+**Your last message to the developer** — in their language, in plain words: what happened, and
+what they need to do (often nothing, or one command). No pipeline jargon (DoD, readiness, contract mechanism, surface, dispatch, handoff…) — those
+terms stay in the files you write. If something stopped you (a permission, a missing tool), say in
+one plain sentence what they should do about it. A `/clear` tip is one optional sentence, never an
+order.

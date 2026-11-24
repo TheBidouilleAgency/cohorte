@@ -9,7 +9,7 @@ You are the **lead**. Dispatch the review for feature **$ARGUMENTS**.
 > Read `.claude/profile.json` `vcs.default_branch` (diff base) and the `surfaces`/`contract`/`commands` fields (the parsed `pipeline-profile` block; absent ⇒ read that block in `PIPELINE.md`).
 > _Skip the re-read if it's already in your context this session and unmodified since._
 >
-> **Kanban** (`<core>/pipeline/schema/kanban.md`): run
+> **Kanban** (`<core>/pipeline/schema/kanban.md`): run, as its own Bash call,
 > `<core>/pipeline/scripts/kanban-move.sh auto $ARGUMENTS review`. `auto` resolves the board from the config itself and
 > exits 0 with a `kanban: <reason>` line when there is none — so **never decide "no board is
 > configured" without running it**. _(PR mode — `--pr` below — skips this entirely: an incoming
@@ -30,9 +30,16 @@ Everything below this line is the normal pipeline-feature flow.
 
 ## 0. Deterministic pre-flight — no agents while red
 
-Run the profile's mechanical gates in ONE Bash call via the shipped script
-(`<core>/pipeline/scripts/preflight.sh`); note the epoch (`date +%s`) in the same call — §3's
-metrics line needs it:
+**One plain command per Bash call** in this step — never chain commands with `&&`, `;` or a
+pipe, and write files with the Write tool, not a `printf` tacked onto another call: a compound call
+stops on a permission prompt every time.
+
+1. Start the clock (§3's metrics line reads it back):
+   `<core>/pipeline/scripts/phase-clock.sh start $ARGUMENTS review` — it prints the epoch and keeps
+   it in `specs/reports/$ARGUMENTS.review.start`, inside this checkout (never a shared `/tmp` path:
+   two worktrees would overwrite each other's). Script absent (older core) ⇒ `date +%s` alone, and
+   keep the number for §3.
+2. Run the profile's mechanical gates via the shipped script, the command alone:
 
 ```
 <core>/pipeline/scripts/preflight.sh specs/reports/$ARGUMENTS.preflight.txt \
@@ -44,15 +51,24 @@ The bracketed tail is passed only when `commands.security` (a list, or one strin
 The marker comes first, then each command in order. Drop empty and `<placeholder>` entries. Any
 command containing `$`, a backtick or `\` is **single-quoted** (a `'` inside becomes `'\''`). In
 double quotes this shell would expand the scan's own variables first. Scans are checks like the
-others: a red one aborts below (`<core>/pipeline/schema/preflight.md` §Security scans).
+others: a red one aborts below (`<core>/pipeline/schema/preflight.md` §Security scans). No command
+left once placeholders are dropped ⇒ do not call the script: that is the exit-2 case below.
 
-- **Non-zero exit** ⇒ the script already printed the raw last-40 lines. **STOP: relay them verbatim
+- **Exit 2** (`preflight: no commands given` / `every command argument was empty`), **or the call was
+  denied** (a hook, the gate or the permission system refused it before it ran) ⇒ nothing was
+  checked. That is a **cohorte setup problem, not the code**: spawn NO agent, leave the spec status
+  alone, write the aborted verdict below with `"aborted":"pipeline-misconfigured"`, and tell the
+  developer plainly that the project's checks could not run because of the pipeline's setup, that
+  their code is not at fault, and to run `/cohorte-doctor` then `/cohorte-update-pipeline`. Never
+  report this as a red preflight.
+- **Exit 1** ⇒ the script already printed the raw last-40 lines. **STOP: relay them verbatim
   and spawn NO agent** — a compiler/test failure needs `/cohorte-fix` (or the human), not a review that
   rediscovers it at agent prices. This abort is the whole point of the step. Before stopping, write
   the **aborted verdict** (§3's contract, degraded form) so an automated driver gets a diagnosis
   rather than silence:
   `{"id":"$ARGUMENTS","phase":"review","ts":"<ISO>","aborted":"preflight","verdict":"BLOCK","blocking":null}`
-  → `specs/reports/$ARGUMENTS.verdict.json`. One `printf`, in the same Bash call.
+  → `specs/reports/$ARGUMENTS.verdict.json`, with the **Write tool** (`<ISO>` = the current UTC time;
+  `date -u +%Y-%m-%dT%H:%M:%SZ` as its own call if you need it).
 - **Zero exit** ⇒ it stamped `<state>/preflight.ok`, which the gate hook checks before letting
   `cohorte-review` dispatches through (`<core>/pipeline/schema/preflight.md`). Continue.
 - Script absent (older core) ⇒ run the same commands yourself (marker and security scans
@@ -135,9 +151,10 @@ merged findings** by the one verdict rule (`cohorte-review` agent §Severity & v
 unreviewed") — never "the worst verdict a reviewer returned", which can disagree with the counts.
 Each surface's verdict in the JSON is the same rule over that surface's findings. The `## Deferred` sections merge the same way (dedupe by
 `file` + problem) and stay **out of the severity table and out of the verdict** — see §3.5, which
-routes them. Append ONE metrics line for the batch to the **main checkout's**
-`$(dirname "$(git rev-parse --git-common-dir)")/<state>/pipeline-metrics.jsonl` (rules in
-`/cohorte-build` §4; never a bare relative path — from a worktree that strands the lines): `{"ts":"<ISO>","feature":"$ARGUMENTS","phase":"review","seconds":<wall-clock>,"surfaces":{"<key>":"<verdict>:<finding count>",…}}`.
+routes them. Append ONE metrics line for the batch — one plain command, which computes `seconds`
+from §0's start file and appends to the **main checkout's** `<state>/pipeline-metrics.jsonl` (from a
+worktree too; write the line even when a surface died):
+`<core>/pipeline/scripts/phase-clock.sh metrics $ARGUMENTS review '{"<key>":"<verdict>:<finding count>",…}'`.
 **Stage the full report to `specs/reports/$ARGUMENTS.md`** (overwrite) — a gitignored buffer so a
 `/cohorte-fix` after a `/clear` can still read the findings; the `specs/reports/` subfolder is skipped by the
 non-recursive `specs/*.md` glob, so it's never mistaken for a spec (no phantom card, no bogus stage).
@@ -215,7 +232,8 @@ surviving severity** — exactly one row applies:
 - **`/cohorte-fix` route** — it appends the report to the spec's `## Remediation` and re-dispatches
   ONLY the surfaces with findings. The full path (`/cohorte-spec` Mode B then `/cohorte-build`) remains
   for findings that change the contract in ways that ripple into clean surfaces. The report is
-  staged, so you can `/clear` first — `/cohorte-fix` reads the findings back from disk.
+  staged, so you can `/clear` first — `/cohorte-fix` reads the findings back from disk. To let the
+  fix → review rounds run on their own until nothing blocking is left, offer `/cohorte-loop $ARGUMENTS`.
 - **Parking MEDIUMs** — only MEDIUMs the human *explicitly* chooses to live with (never a HIGH, never
   CRITICAL/security): route each through §3.5 (the backlog, `deferred:$ARGUMENTS`), then **rewrite
   `verdict.json` to match** — subtract them from `findings` and `severity.MEDIUM`, add them to
@@ -237,3 +255,9 @@ surviving severity** — exactly one row applies:
     `.claude/` excluded, so DoD ticks and the ship status flip don't trip it).
   - Park the leftover LOWs through §3.5 (never as `## Remediation` items — those re-trigger the fix
     loop), then tell the human they can `/cohorte-ship` — **recommend a `/clear` first**.
+
+**Your last message to the developer** — in their language, in plain words: what happened, and
+what they need to do (often nothing, or one command). No pipeline jargon (DoD, readiness, preflight, freshness stamp, verdict.json, fingerprint…) — those
+terms stay in the files you write. If something stopped you (a permission, a missing tool), say in
+one plain sentence what they should do about it. A `/clear` tip is one optional sentence, never an
+order.
