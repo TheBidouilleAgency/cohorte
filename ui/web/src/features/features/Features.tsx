@@ -43,7 +43,7 @@ function Decisions({ f }: { f: FeatureDetail }) {
   if (!f.decisions.length) return null;
   const row = (d: DecisionRecord) => (
     <tr key={d.id}>
-      <td><Pill tone={d.by === 'decider' ? 'info' : ''}>{d.by === 'decider' ? 'decider' : 'you'}</Pill></td>
+      <td><Pill tone={d.by === 'human' ? '' : d.by === 'remote' ? 'warn' : 'info'}>{d.by === 'decider' ? 'decider' : d.by === 'remote' ? 'from elsewhere' : 'you'}</Pill></td>
       <td>{d.question}{d.header ? <span className="muted">{` · ${d.header}`}</span> : null}</td>
       <td><strong>{d.chosen}</strong>{d.source && d.source.kind !== 'none' ? <div className="muted">{`${d.source.kind}${d.source.ref ? ` · ${d.source.ref}` : ''}${d.source.quote ? ` — “${d.source.quote}”` : ''}`}</div> : null}</td>
       <td>
@@ -100,7 +100,7 @@ function CheckpointCard({ f }: { f: FeatureDetail }) {
 
 function ShipSignoff({ f, text, setText, act, abandon }: { f: FeatureDetail; text: string; setText: (s: string) => void; act: (a: string, t?: boolean) => void; abandon: () => void }) {
   const open = f.dod.filter((x) => !x.done);
-  const byDecider = f.decisions.filter((d) => d.by === 'decider' && !d.contested);
+  const byDecider = f.decisions.filter((d) => d.by !== 'human' && !d.contested);
   return (
     <>
       <div className="rc-row">
@@ -112,7 +112,7 @@ function ShipSignoff({ f, text, setText, act, abandon }: { f: FeatureDetail; tex
       {f.dod.length ? <><div className="label">{`Definition of done — ${f.dod.length - open.length}/${f.dod.length}`}</div>
         <ul className="rc-list dod">{f.dod.map((x, i) => <li key={i} className={x.done ? 'add' : 'muted'}>{`${x.done ? '✓' : '○'} ${x.text}`}</li>)}</ul></> : null}
       {f.assumptions.length ? <><div className="label">Assumed by the implementers — veto any</div><ul className="rc-list">{f.assumptions.map((a, i) => <li key={i}>{a}</li>)}</ul></> : null}
-      {byDecider.length ? <Muted>{`${byDecider.length} decision${byDecider.length === 1 ? '' : 's'} taken on your behalf — listed below. Shipping confirms them.`}</Muted> : null}
+      {byDecider.length ? <Muted>{`${byDecider.length} decision${byDecider.length === 1 ? '' : 's'} taken on your behalf — by the decider, or answered from another process ("from elsewhere") — listed below. Shipping confirms them.`}</Muted> : null}
       <textarea rows={3} value={text} onChange={(e) => setText(e.target.value)} placeholder="What to correct before shipping" aria-label="Correction" />
       <div className="actions"><Button variant="primary" onClick={() => act('approve')}>Ship it — open the PR</Button>
         <Button disabled={!text.trim()} onClick={() => act('correct', true)}>Correct first</Button><Button onClick={abandon}>Abandon</Button></div>

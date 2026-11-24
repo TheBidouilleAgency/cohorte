@@ -100,8 +100,11 @@ export interface RunHooks {
   /** A question was parked. Return true to keep it away from the human while you work on it (deciding). */
   onQuestion?: (run: Run, p: Pending) => boolean;
   /** A parked item was answered — by the human over HTTP or by the flow. */
-  onAnswered?: (run: Run, p: Pending, behavior: 'allow' | 'deny', answers: Record<string, string>, by: 'human' | 'decider') => void;
+  /** `remote`: answered from another process (the page answering a terminal's run, or the reverse) — a question only. */
+  onAnswered?: (run: Run, p: Pending, behavior: 'allow' | 'deny', answers: Record<string, string>, by: AnsweredBy) => void;
 }
+
+export type AnsweredBy = 'human' | 'decider' | 'remote';
 
 export class Runs {
   runs = new Map<string, Run>();
@@ -157,7 +160,9 @@ export class Runs {
     if (resumeId) args.push('--resume', resumeId);
     run.tasks.clear(); run.awaitingTurn = false; // a new process: the old one's background tasks went with it
     this.#owned.add(run.id);
-    const child = spawn(this.bin, args, { cwd: run.cwd, detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'], env: process.env });
+    // COHORTE_RUN_ID tells the `cohorte` CLI it is called by an agent of a run: it then refuses every flow transition
+    const env = { ...process.env, COHORTE_RUN_ID: run.id, COHORTE_RUN_PROJECT: run.projectId };
+    const child = spawn(this.bin, args, { cwd: run.cwd, detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'], env });
     run.child = child;
     child.stdin?.on('error', () => { /* the child went away first */ });
     child.on('error', (e: Error) => { this.#push(run, { kind: 'system', text: `could not start ${this.bin}: ${e.message}` }); if (run.child === child) this.#end(run, 'failed'); });
@@ -208,12 +213,19 @@ export class Runs {
     this.store?.schedule(run, true); // the other process (the page, a terminal) sees it is now a person's to answer
   }
 
-  /** Answers another process left on disk for the runs this one drives (the page answering a terminal's run, or the reverse). */
+  /**
+   * Answers another process left on disk for the runs this one drives (the page answering a terminal's run, or the
+   * reverse). Questions only, and only those the decider let go: a file never answers a permission ask.
+   */
   #collect(): void {
     if (!this.store) return;
     for (const r of this.runs.values()) {
       if (!this.#mine(r) || !r.pending.size) continue;
-      for (const a of this.store.takeAnswers(r)) this.respond(r, a.requestId, a.behavior, a.answers, 'human');
+      for (const a of this.store.takeAnswers(r)) {
+        const p = r.pending.get(a.requestId);
+        if (!p || p.kind !== 'question' || p.deciding) continue;
+        this.respond(r, a.requestId, a.behavior, a.answers, 'remote');
+      }
     }
   }
 
@@ -317,10 +329,11 @@ export class Runs {
   }
 
   // behavior: 'allow' | 'deny'. For a question, `answers` maps each question text to the chosen label(s).
-  respond(run: Run, requestId: string, behavior: 'allow' | 'deny', answers?: Record<string, string | string[]>, by: 'human' | 'decider' = 'human'): boolean {
+  respond(run: Run, requestId: string, behavior: 'allow' | 'deny', answers?: Record<string, string | string[]>, by: AnsweredBy = 'human'): boolean {
     const p = run.pending.get(requestId);
     if (!p) return false;
-    if (!this.#mine(run)) { // another process drives it: the answer goes to it through the store
+    if (!this.#mine(run)) { // another process drives it: a question's answer goes to it through the store; a permission never
+      if (p.kind !== 'question' || p.deciding) return false;
       if (!this.store?.answer(run, requestId, behavior, answers)) return false;
       run.pending.delete(requestId);
       this.onChange(run);
@@ -401,6 +414,7 @@ export class Runs {
   }
   /** A run this process is driving right now (its child is ours): never re-read from disk. */
   #mine(r: Run): boolean { return r.status === 'running' && !!r.child; }
+  mine(r: Run): boolean { return this.#mine(r); }
   /** Another process's write of a run, taken into the object this process holds (references stay valid). */
   #adopt(r: Run, s: Run): void {
     const { child: _c, closeTimer: _t, pending: _p, tasks: _k, ...persisted } = s;

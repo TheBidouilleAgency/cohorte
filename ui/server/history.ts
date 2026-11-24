@@ -7,23 +7,22 @@
 // others, and a file another process rewrote since this one last saw it is read again (refresh).
 //
 // What a run parked on a person (a question, a permission ask) is written with it, so the other process sees it
-// (the page's inbox, `cohorte autopilot --follow`); its answer cannot reach the run's stdin from there, so it is
-// dropped as a file under <runs>/<projectId>/answers/ that the driving process picks up (takeAnswers).
+// (the page's inbox, `cohorte autopilot --follow`). An answer to a QUESTION cannot reach the run's stdin from
+// there, so it is dropped as a file under <runs>/<projectId>/answers/ that the driving process picks up
+// (takeAnswers) and records as answered `remote`ly. A PERMISSION ask is never answered from a file: any process of
+// the user — an agent's background shell included — could write one, and approve its own ask. It is answered
+// where its run runs (that terminal, or the page over its authenticated API when the page runs it).
 
 import fs from 'fs';
 import path from 'path';
 import type { Pending, Run } from './runs';
+import { alive, isSelf, self } from './proc';
 
 const KEEP_PER_PROJECT = 120; // the company flow keeps its conversations here too
 const KEEP_EVENTS = 400;
 const SAFE = /^[A-Za-z0-9._-]+$/;
 
-/** Whether a process is alive on this machine (EPERM: alive, someone else's). */
-export const alive = (pid: unknown): boolean => {
-  if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0) return false;
-  if (pid === process.pid) return true;
-  try { process.kill(pid, 0); return true; } catch (e) { return (e as NodeJS.ErrnoException).code === 'EPERM'; }
-};
+export { alive };
 const stamp = (file: string): string | null => { try { const st = fs.statSync(file); return `${st.mtimeMs}:${st.size}`; } catch { return null; } };
 
 export class RunStore {
@@ -55,7 +54,7 @@ export class RunStore {
       const cut = Math.max(0, run.events.length - KEEP_EVENTS);
       const body = { v: 1, id: run.id, projectId: run.projectId, cwd: run.cwd, command: run.command, permissionMode: run.permissionMode, status: run.status,
         startedAt: run.startedAt, endedAt: run.endedAt, result: run.result, sessionId: run.sessionId, dropped: run.dropped + cut, events: run.events.slice(cut),
-        pid: process.pid, meta: run.meta, model: run.model, disallowedTools: run.disallowedTools, allowedTools: run.allowedTools, addDirs: run.addDirs, seen: run.seen, tickets: run.tickets, strictMcp: run.strictMcp, mcpConfig: run.mcpConfig, systemNote: run.systemNote,
+        pid: self.pid, pidStart: self.start, meta: run.meta, model: run.model, disallowedTools: run.disallowedTools, allowedTools: run.allowedTools, addDirs: run.addDirs, seen: run.seen, tickets: run.tickets, strictMcp: run.strictMcp, mcpConfig: run.mcpConfig, systemNote: run.systemNote,
         pending: [...run.pending.values()].map(({ input: _i, ...x }) => x) };
       const tmp = `${f}.${process.pid}.tmp`;
       fs.writeFileSync(tmp, JSON.stringify(body));
@@ -87,7 +86,7 @@ export class RunStore {
 
   private answersDir(projectId: string): string { return path.join(this.dir, projectId, 'answers'); }
 
-  /** Another process answers a run it does not drive: the answer waits on disk for the driving process. */
+  /** Another process answers a QUESTION of a run it does not drive: the answer waits on disk for the driving process. */
   answer(run: Pick<Run, 'projectId' | 'id'>, requestId: string, behavior: 'allow' | 'deny', answers?: Record<string, string | string[]>): boolean {
     if (!SAFE.test(run.projectId) || !SAFE.test(run.id) || !SAFE.test(requestId)) return false;
     try {
@@ -148,7 +147,10 @@ export class RunStore {
       const v = JSON.parse(fs.readFileSync(file, 'utf8'));
       if (v.v !== 1 || !SAFE.test(v.id) || v.projectId !== p) return null;
       this.stamps.set(file, st);
-      const interrupted = v.status === 'running' && (v.pid === process.pid || !alive(v.pid));
+      // a run is live only while the very process that wrote it runs (pid AND start time: a pid gets reused)
+      // (this pid with no start recorded: an older file a previous process left — this one never wrote it running)
+      const live = v.pid === process.pid ? typeof v.pidStart === 'number' && isSelf({ pid: v.pid, start: v.pidStart }) : alive(v.pid, v.pidStart);
+      const interrupted = v.status === 'running' && !live;
       // what a live process parked on a person: visible (and answerable through answer()) from here
       const pending = new Map<string, Pending>();
       if (!interrupted && v.status === 'running' && Array.isArray(v.pending)) {

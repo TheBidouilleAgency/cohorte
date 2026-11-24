@@ -173,7 +173,10 @@ export interface StageRecord { stage: string; runId: string; model: string; stat
 export interface DecisionSource { kind: 'spec' | 'decision' | 'convention' | 'preference' | 'code' | 'plan' | 'recommendation' | 'none'; ref: string; quote: string }
 export interface DecisionRecord {
   id: string; at: string; runId: string; stage: string; question: string; header: string; options: string[]; chosen: string;
-  by: 'decider' | 'human'; agreement: number | null; category: string | null; source: DecisionSource | null; rationale: string;
+  /** `remote`: answered from another process than the one running the stage (the page for a terminal's run, a terminal
+   *  for the page's), or a checkpoint relayed from a Claude Code session — someone did, but not provably the developer
+   *  at the run's own screen: listed at CP3 with the decider's, never learned as a preference. */
+  by: 'decider' | 'human' | 'remote'; agreement: number | null; category: string | null; source: DecisionSource | null; rationale: string;
   contested: { at: string; note: string } | null; confirmed: boolean;
 }
 export interface Correction { at: string; checkpoint: CheckpointKind | 'pr'; text: string }
@@ -186,7 +189,7 @@ export interface FeatureView {
   /** The process with a run of this feature in flight — `cohorte ui`, or a `cohorte` verb in a terminal. Absent when idle. */
   driver?: FeatureDriver | null;
 }
-export interface FeatureDriver { pid: number; by: 'ui' | 'cli'; at: string }
+export interface FeatureDriver { pid: number; start?: number | null; by: 'ui' | 'cli'; at: string }
 /** A spec written outside the flow (a plain Claude Code session) that no feature record follows yet. */
 export interface AdoptableSpec { id: string; title: string; status: string | null; worktree: string | null; branch: string | null; ticket: boolean }
 export interface FeatureDetail extends FeatureView {

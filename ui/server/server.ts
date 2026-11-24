@@ -274,6 +274,8 @@ export function create({ globalDir, version, token = crypto.randomBytes(24).toSt
           let body: Record<string, any>;
           try { body = await readBody(req); } catch (e) { return fail(res, 400, (e as Error).message); }
           if (body.behavior !== 'allow' && body.behavior !== 'deny') return fail(res, 400, 'behavior must be allow or deny');
+          const parked = run.pending.get(String(body.requestId));
+          if (parked && !runs.mine(run) && parked.kind === 'permission') return fail(res, 409, 'a terminal runs this command: its permission ask is answered there, not from the page');
           return runs.respond(run, String(body.requestId), body.behavior, body.answers) ? send(res, 200, { ok: true }) : fail(res, 404, 'no such pending request');
         }
       }
