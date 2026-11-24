@@ -285,6 +285,41 @@ console.log("doctor.js — the /cohorte-doctor port");
     by(s.checks, "core").status === "bad" && /update/.test(by(s.checks, "core").fix || ""), by(s.checks, "core").detail);
 }
 
+{
+  // The git identity row. Unset, git signs commits <os user>@<hostname> (enzo@Mac.lan): the code host cannot
+  // link them and the fix is a history rewrite — a founded project's first three commits went out that way.
+  const { spawnSync } = require("node:child_process");
+  const keys = ["GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "EMAIL", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM"];
+  const saved = Object.fromEntries(keys.map(k => [k, process.env[k]]));
+  for (const k of keys) delete process.env[k];
+  const g = scratch(); const d = scratch();
+  writeFileSync(join(g, "empty.gitconfig"), "");
+  process.env.GIT_CONFIG_GLOBAL = join(g, "empty.gitconfig"); process.env.GIT_CONFIG_NOSYSTEM = "1";
+  try {
+    const by = (s) => s.checks.find(c => c.id === "identity");
+    let s = await state({ projectRoot: d, globalDir: g, cliVersion: "9.9.9", offline: true });
+    eq("not a git repo ⇒ the identity check is skipped", by(s).status, "skip");
+    spawnSync("git", ["init", "-q", d]);
+    s = await state({ projectRoot: d, globalDir: g, cliVersion: "9.9.9", offline: true });
+    check("no user.email ⇒ bad, with the exact repo-local fix",
+      by(s).status === "bad" && /no user\.email/.test(by(s).detail)
+        && /^git config user\.name ".+" && git config user\.email ".+"/.test(by(s).fix || ""), JSON.stringify(by(s)));
+    spawnSync("git", ["-C", d, "config", "user.name", "Enzo"]);
+    spawnSync("git", ["-C", d, "config", "user.email", "enzo@Enzos-MBP.lan"]);
+    s = await state({ projectRoot: d, globalDir: g, cliVersion: "9.9.9", offline: true });
+    check("a hostname email (.lan) ⇒ warn", by(s).status === "warn" && /local network/.test(by(s).detail), JSON.stringify(by(s)));
+    spawnSync("git", ["-C", d, "config", "user.email", "enzo@devbox"]);
+    s = await state({ projectRoot: d, globalDir: g, cliVersion: "9.9.9", offline: true });
+    check("no dot in the domain ⇒ warn", by(s).status === "warn" && /no dot/.test(by(s).detail), JSON.stringify(by(s)));
+    spawnSync("git", ["-C", d, "config", "user.email", "1+enzo@users.noreply.github.com"]);
+    s = await state({ projectRoot: d, globalDir: g, cliVersion: "9.9.9", offline: true });
+    check("a real address ⇒ ok, naming where it comes from",
+      by(s).status === "ok" && /1\+enzo@users\.noreply\.github\.com/.test(by(s).detail) && /\.git\/config/.test(by(s).detail), JSON.stringify(by(s)));
+  } finally {
+    for (const k of keys) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; }
+  }
+}
+
 for (const d of tmps) { try { rmSync(d, { recursive: true, force: true }); } catch { /* best effort */ } }
 console.log("");
 if (failures) { console.error(`test-lib: ${failures} failure(s)`); process.exit(1); }

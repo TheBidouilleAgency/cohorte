@@ -237,7 +237,18 @@ export interface FoundingView {
   projectId: string; root: string; name: string; mode: FoundingMode; phase: FoundingPhase; brief: string; basedOn: string | null; requester: string;
   vision: Vision | null; tickets: TicketProposal[]; foundation: Foundation | null; scaffold: ScaffoldReport | null;
   currentRunId: string | null; stages: FoundingStage[]; error: string | null; warning: string | null; createdAt: string; updatedAt: string; costUsd: number;
+  /** Who cohorte's commits in this folder would be authored by — `null` once the founding is over. Not `ok` ⇒ nothing is committed until it is set. */
+  identity: GitIdentity | null;
 }
+/** The git identity a commit in a repository would carry (lib/identity.js). `missing`: git would invent `<os user>@<hostname>`. */
+export interface GitIdentity {
+  name: string; email: string; nameOrigin: string; emailOrigin: string; effective: string;
+  status: 'ok' | 'missing' | 'suspicious'; reason: string;
+}
+/** The signed-in GitHub account, as a commit identity: its no-reply address links commits to the account. */
+export interface GitHubIdentity { login: string; name: string; email: string }
+export interface IdentityInfo { identity: GitIdentity; github: GitHubIdentity | null; gh: { installed: boolean; authed: boolean } }
+export interface IdentityBody { source?: 'github' | 'manual'; name?: string; email?: string }
 export interface NewProjectBody { mode: FoundingMode; name?: string; parent?: string; path?: string; brief?: string; basedOn?: string | null; requester?: string }
 /** Where the code is hosted: the `origin` remote, and whether `gh` can create a GitHub repo from here. */
 export interface RemoteInfo { origin: string | null; branch: string | null; ahead: number | null; gh: { installed: boolean; authed: boolean; user: string | null } }

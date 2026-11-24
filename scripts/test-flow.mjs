@@ -62,7 +62,7 @@ const fs = require("fs"); const st = ${JSON.stringify(ghState)};
 const a = process.argv.slice(2); const s = JSON.parse(fs.readFileSync(st, "utf8"));
 if (a[0] === "--version") { console.log("gh version 9.9.9"); process.exit(0); }
 if (a[0] === "pr" && a[1] === "list") { console.log(JSON.stringify([{ number: 7, state: s.state, url: "https://example.test/pr/7", title: "feat", isDraft: false, reviewDecision: null, statusCheckRollup: [{ conclusion: "SUCCESS", state: "SUCCESS", status: "COMPLETED" }] }])); process.exit(0); }
-if (a[0] === "api" && a[1] === "user") { console.log("octo"); process.exit(0); }
+if (a[0] === "api" && a[1] === "user") { console.log(a.includes("--jq") ? "octo" : JSON.stringify({ login: "octo", id: 583231, name: "Octo Cat" })); process.exit(0); }
 if (a[0] === "repo" && a[1] === "create") { require("child_process").spawnSync("git", ["remote", "add", "origin", "https://github.com/octo/" + a[2] + ".git"], { cwd: process.cwd() }); s.created = a; fs.writeFileSync(st, JSON.stringify(s)); console.log("created"); process.exit(0); }
 if (a[0] === "pr" && a[1] === "merge") { s.state = "MERGED"; s.merged = a; fs.writeFileSync(st, JSON.stringify(s)); console.log("merged"); process.exit(0); }
 process.exit(1);
@@ -349,7 +349,11 @@ try {
 
   console.log("new project: idea → vision → foundations → skeleton → pipeline → code host");
   {
-    for (const [k, v] of Object.entries({ GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" })) process.env[k] = v;
+    // No identity anywhere — the machine of the incident: git would sign cohorte's commits <user>@<hostname>.
+    const noGlobal = join(home, "gitconfig-empty"); writeFileSync(noGlobal, "");
+    const saved = {};
+    for (const k of ["GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "EMAIL", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM"]) { saved[k] = process.env[k]; delete process.env[k]; }
+    process.env.GIT_CONFIG_GLOBAL = noGlobal; process.env.GIT_CONFIG_NOSYSTEM = "1";
     check("a bad folder name is refused", (await post("/api/founding", { mode: "idea", name: "../x", parent: home, brief: "x" })).status === 400);
     check("an idea needs a brief", (await post("/api/founding", { mode: "idea", name: "dentist", parent: home })).status === 400);
     mkdirSync(join(home, "taken")); writeFileSync(join(home, "taken", "f"), "x");
@@ -371,6 +375,15 @@ try {
     check("the lead got the vision, the machine, the other projects and the project to start from", cf && cf.phase === "cp-foundation", JSON.stringify(cf && cf.foundation));
     const lead = readFileSync(log, "utf8").trim().split("\n").map((x) => JSON.parse(x)).filter((x) => x.cwd === nroot);
     check("the vision runs read-only on the PO's model, the foundations on the lead's", lead[0].argv[lead[0].argv.indexOf("--model") + 1] === "opus" && /Write/.test(lead[0].argv[lead[0].argv.indexOf("--disallowedTools") + 1]));
+    check("the view says the identity is missing", cf && cf.identity && cf.identity.status === "missing", JSON.stringify(cf && cf.identity));
+    const blocked = await post(`${N}/founding/checkpoint`, { action: "approve" });
+    check("no identity → approving the foundations is refused (nothing gets committed under <user>@<hostname>)", blocked.status === 409 && /git identity/.test(blocked.json.error) && (await call(`${N}/founding`)).json.phase === "cp-foundation", JSON.stringify(blocked.json));
+    const idi = (await call(`${N}/founding/identity`)).json;
+    check("the signed-in GitHub identity is proposed, with its no-reply address", idi.github && idi.github.name === "Octo Cat" && idi.github.email === "583231+octo@users.noreply.github.com" && idi.gh.authed, JSON.stringify(idi));
+    check("a hostname email is refused", (await post(`${N}/founding/identity`, { source: "manual", name: "x", email: "x@Mac.lan" })).status === 400);
+    const setId = await post(`${N}/founding/identity`, { source: "github" });
+    check("use my GitHub identity → set, ok", setId.status === 200 && setId.json.identity.status === "ok" && setId.json.identity.email === "583231+octo@users.noreply.github.com", JSON.stringify(setId.json.identity));
+    check("…in this repository only", git(nroot, "config", "--local", "user.email").stdout.trim() === "583231+octo@users.noreply.github.com" && readFileSync(noGlobal, "utf8") === "");
     check("approve the foundations → the skeleton", (await post(`${N}/founding/checkpoint`, { action: "approve" })).json.phase === "scaffold");
     const cs = await until("the skeleton fails once", async () => { const v = (await call(`${N}/founding`)).json; return v.phase === "cp-scaffold" ? v : null; });
     check("a failed skeleton opens its checkpoint, with the report", cs && /checks failed/.test(cs.error) && cs.scaffold && cs.scaffold.status === "failed", JSON.stringify(cs));
@@ -383,6 +396,8 @@ try {
     check("the retry ran one model up", retry.length === 2 && retry[1].argv[retry[1].argv.indexOf("--model") + 1] === "opus", JSON.stringify(retry.map((x) => x.argv[x.argv.indexOf("--model") + 1])));
     const commits = git(nroot, "log", "--format=%s").stdout.trim().split("\n");
     check("two commits: the skeleton, then the pipeline", commits.join("|") === "chore: set up the cohorte pipeline|chore: walking skeleton", commits.join("|"));
+    const authors = git(nroot, "log", "--format=%an <%ae>").stdout.trim().split("\n");
+    check("both authored by the GitHub identity", authors.every((x) => x === "Octo Cat <583231+octo@users.noreply.github.com>"), authors.join("|"));
     const st = (await call("/api/state")).json.projects.find((p) => p.id === nid);
     check("no longer founding: an ordinary project", st && !st.founding, JSON.stringify(st));
     const tk = (await call(`${N}/tickets`)).json.tickets;
@@ -399,6 +414,8 @@ try {
     const md = readFileSync(join(nroot, "PIPELINE.md"), "utf8");
     check("the profile now points at it (so shipping opens PRs there), committed", /\n  host: github\n/.test(md) && /\n  remote: octo\/dentist\n/.test(md) && git(nroot, "log", "-1", "--format=%s").stdout.trim() === "chore: point the pipeline at octo/dentist", md);
     check("a second remote → 409", (await post(`${N}/remote`, { kind: "github", name: "x" })).status === 409);
+    for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+    for (const [k, v] of Object.entries({ GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.com", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.com" })) process.env[k] = v;
   }
 
   console.log("new project: an existing repository without cohorte");

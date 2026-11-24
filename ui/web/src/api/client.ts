@@ -1,7 +1,7 @@
 import type {
   ActivityResponse, ApiErrorBody, DiffListResponse, FileDiff, GitResponse, Command, DiscoverResponse, DockerStatus, JobView, MetricsResponse, ProjectDetail,
   ProjectSummary, RunView, SpecDetail, StateResponse, TicketsResponse, Ticket, FeaturesResponse, FeatureDetail, FeatureView, SettingsResponse,
-  ProjectSettings, InboxResponse, LearningResponse, TrackerInfo, FoundingView, NewProjectBody, RemoteInfo,
+  ProjectSettings, InboxResponse, LearningResponse, TrackerInfo, FoundingView, NewProjectBody, RemoteInfo, IdentityInfo, IdentityBody,
 } from '../../../shared/api';
 import { readToken } from '../lib/token';
 
@@ -75,6 +75,8 @@ export const api = {
   founding: (id: string) => request<FoundingView>(`/projects/${id}/founding`),
   foundingReply: (id: string, text: string) => post<FoundingView>(`/projects/${id}/founding/reply`, { text }),
   foundingCheckpoint: (id: string, body: { action: string; text?: string }) => post<FoundingView>(`/projects/${id}/founding/checkpoint`, body),
+  foundingIdentity: (id: string) => request<IdentityInfo>(`/projects/${id}/founding/identity`),
+  setFoundingIdentity: (id: string, body: IdentityBody) => post<FoundingView>(`/projects/${id}/founding/identity`, body),
   remote: (id: string) => request<RemoteInfo>(`/projects/${id}/remote`),
   connectRemote: (id: string, body: { kind: 'github' | 'url'; name?: string; visibility?: string; url?: string }) => post<{ job: JobView }>(`/projects/${id}/remote`, body),
   learning: (id: string) => request<LearningResponse>(`/projects/${id}/learning`),
