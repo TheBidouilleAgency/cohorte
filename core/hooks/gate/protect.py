@@ -24,7 +24,8 @@ PROTECTED_HINT_RE = re.compile(r"(^|/)\.claude(/|$)|gate-config\.json|preflight\
 
 # -- inside a cohorte run (COHORTE_RUN_ID in the hook's environment: the hook is a child of the run) --------------
 # The `cohorte` verbs an agent of a run may call: reads only. Everything else moves the company flow.
-READ_VERBS = {"doctor", "specs", "metrics", "version", "--version", "-v", "help", "--help", "-h"}
+READ_VERBS = {"doctor", "specs", "metrics", "version", "--version", "-v", "help", "--help", "-h",
+              "sync"}  # sync re-wires the project's own files (the founding's set-up stage runs it), never the flow's state
 PTY_TOOLS = {"script", "expect", "unbuffer", "socat", "empty", "ttyrec", "tmux", "screen", "faketty", "pty"}
 ENV_TAMPER_RE = re.compile(r"(^|[\s;&|(])env\s+(?:\S+\s+)*?(-u\b|--unset\b|-i\b|--ignore-environment\b|-\s)|"
                            r"(^|[\s;&|(])(unset|export|declare|typeset|readonly)\b[^;&|]*\bCOHORTE_|\bCOHORTE_\w*\+?=")

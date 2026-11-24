@@ -305,6 +305,18 @@ console.log("gate.py — commands handed to pipeline scripts need an approval");
     // still judged by the rules even when declared: a deny stays a deny
     [`${V} --check "smoke=pnpm -r test; rm -rf /"`, "deny"],
   ], ISOLATED_USER);
+  // the autopilot's own stages run these inside a cohorte run (COHORTE_RUN_ID): its legitimate flow stays unprompted,
+  // and the run guard still reaches inside what is handed (a flow verb handed to a pipeline script is denied)
+  const IN_RUN = { env: { ...ISOLATED_USER.env, COHORTE_RUN_ID: "r1", COHORTE_RUN_PROJECT: "p1" } };
+  table("pipeline scripts, inside a cohorte run", d, [
+    [`${V} --migrate "pnpm db:migrate" --migrate-down "pnpm db:rollback" --db local --dev "pnpm dev" --ready "http://localhost:3000/health" ` +
+      `--check "smoke=curl -sf http://localhost:3000/health" --check "e2e=pnpm exec playwright test"`, "allow"],
+    [`${P} "pnpm -r typecheck" "pnpm -r lint 2>&1 | tail -40" "pnpm -r test 2>&1 | tail -40" ": cohorte-security-scans" "pnpm audit --prod"`, "allow"],
+    ["bash ~/.claude/cohorte/pipeline/scripts/phase-clock.sh start x build", "allow"],
+    ["cohorte doctor", "allow"], ["cohorte sync .", "allow"], ["cohorte ticket show x --json", "allow"],
+    [`${V} --check "smoke=cohorte checkpoint x approve --note ok"`, "deny"],
+    [`${P} "cohorte accept x ok"`, "deny"],
+  ], IN_RUN);
   const headless = run(bash(`${V} --check "smoke=python3 -c 'print(1)'"`, d, { permission_mode: "bypassPermissions" }),
     { projectDir: d, ...ISOLATED_USER });
   check("unapproved handed command + bypassPermissions ⇒ deny, naming the command and the fix",
