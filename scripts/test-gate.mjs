@@ -664,6 +664,8 @@ console.log("gate.py — self-protection");
     ["export COHORTE_RUN_ID=", "deny"], ["env -i sh -c 'echo hi'", "deny"], ["env - PATH=/bin sh", "deny"],
     ["script -q /dev/null cohorte ticket list", "deny"], ["expect -c 'spawn cohorte'", "deny"], ["unbuffer cohorte ticket list", "deny"],
     ["python3 -c \"import pty; pty.spawn(['sh'])\"", "deny"], ["node -e \"require('node-pty')\"", "deny"],
+    ["npm exec cohorte -- checkpoint t approve", "deny"], ["npm x cohorte take t", "deny"], ["c=cohorte; $c take t", "deny"],
+    ["$(which cohorte) accept t ok", "deny"], ["\"$C\" merge t", "deny"],
     ["cohorte ticket list --json", "allow"], ["cohorte ticket show t --json", "allow"], ["cohorte ticket --json", "allow"],
     ["cohorte autopilot t --status --json", "allow"], ["cohorte doctor", "allow"], ["npm test", "allow"], ["env FOO=1 npm test", "allow"],
   ], { env: inRun });

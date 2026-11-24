@@ -2764,7 +2764,7 @@ class SelfProtection(object):
         elif name in ("node", "nodejs", "bun") and vals and (vals[0].endswith("bin/cli.js") or vals[0].endswith("bin/flow.js")
                                                               or os.path.basename(vals[0]) == "cohorte"):
             rest = vals[1:]
-        elif name in RUNNERS or (name in DLX and vals[:1] in (["dlx"], ["exec"], ["x"])):
+        elif name in RUNNERS or (name in DLX and vals[:1] in (["dlx"], ["exec"], ["x"])) or (name == "npm" and vals[:1] in (["exec"], ["x"])):
             for k, v in enumerate(vals):
                 if re.match(r"^cohorte(@\S*)?$", v):
                     rest = vals[k + 1:]
@@ -2779,6 +2779,15 @@ class SelfProtection(object):
             self.deny("an agent of a cohorte run may read the company flow (`cohorte ticket list|show`, "
                       "`cohorte autopilot <id> --status`), never move it (`cohorte %s`) — say what you need in your "
                       "answer: the developer decides" % verb)
+
+    def run_opaque_name(self, seg):
+        """Inside a cohorte run, a command whose name is computed at run time (`$c take x`, `$(which cohorte) …`)
+        could be the `cohorte` CLI: denied, not merely asked. Returns True when it denied."""
+        if os.environ.get("COHORTE_RUN_ID") is None:
+            return False
+        self.deny("an agent of a cohorte run may not run a command whose name is computed at run time (`%s`) — "
+                  "it could move the company flow" % seg.text.strip()[:120])
+        return True
 
     # -- git checkout / restore / reset --hard: they overwrite worktree files ------------
     def git_restore(self, g, state, relocated):
@@ -3464,12 +3473,12 @@ class Analyzer(Indirection, SelfProtection, RuleChecks, Findings):
         cmd = argv[0]
         if STATIC_VAR_ALONE_RE.match(cmd.raw):
             # `$HOME` as the whole command name: whatever it holds is the command
-            self.opaque("the command name is computed at run time", seg.text)
+            self.run_opaque_name(seg) or self.opaque("the command name is computed at run time", seg.text)
             return None
         if cmd.dynamic:
             base = static_basename(cmd)
             if base is None:
-                self.opaque("the command name is computed at run time", seg.text)
+                self.run_opaque_name(seg) or self.opaque("the command name is computed at run time", seg.text)
                 return None
             cmd = static_word(base)
         name = cmd_name(cmd.value)
