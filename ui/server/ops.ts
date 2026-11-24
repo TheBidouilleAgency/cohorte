@@ -47,7 +47,10 @@ export function gateVerdict(root: string, command: string, cwd?: string): Verdic
   const r = spawnSync('python3', [gate, '--check', '--cwd', cwd || root, '--', command], { encoding: 'utf8', timeout: 15000 });
   if (r.error) return { verdict: 'ask', reason: `the gate could not run (${r.error.message})` };
   const reason = (r.stdout || '').trim();
-  return { verdict: r.status === 0 ? 'allow' : r.status === 2 ? 'deny' : 'ask', reason };
+  // 3 = defer: no gate rule matched. Every command this server runs is its own (the profile's
+  // commands.dev, the isolation scripts, a fixed docker/git invocation), never client-supplied, so
+  // a defer is not a reason to ask; for pipeline scripts running handed commands it is (verify-run.sh).
+  return { verdict: r.status === 0 || r.status === 3 ? 'allow' : r.status === 2 ? 'deny' : 'ask', reason };
 }
 
 export function isolationScripts(root: string): { create: boolean; remove: boolean } {
