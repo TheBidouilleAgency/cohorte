@@ -4,8 +4,8 @@ import { precedingText, showResultText } from '../../lib/feed';
 
 function Row({ e, last }: { e: RunEvent; last: string | undefined }) {
   switch (e.kind) {
-    case 'text': return <div className="ev">{e.text}</div>;
-    case 'tool': return <div className="ev muted mono">{`▸ ${e.name}  ${e.summary}`}</div>;
+    case 'text': return e.sub ? <div className="ev muted"><span className="muted">via subagent · </span>{e.text}</div> : <div className="ev">{e.text}</div>;
+    case 'tool': return <div className="ev muted mono">{`${e.sub ? '  ↳ ' : '▸ '}${e.name}  ${e.summary}`}</div>;
     case 'tool_result': return e.error ? <div className="ev error mono">{`✗ ${e.text}`}</div> : null;
     case 'reply': return <div className="ev reply"><span className="muted">you · </span>{e.text}</div>;
     case 'resolved': return <div className="ev muted">{`gate: ${e.decision}`}</div>;

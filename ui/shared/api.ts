@@ -73,9 +73,10 @@ export interface PendingItem {
 }
 export interface RunResult { ok: boolean; text: string; costUsd: number | null; durationMs: number | null; turns: number | null }
 export type RunEvent =
-  | { t: number; kind: 'text'; text: string }
-  | { t: number; kind: 'tool'; id: string; name: string; summary: string }
-  | { t: number; kind: 'tool_result'; id: string; error: boolean; text: string }
+  // `sub`: said or done by a subagent the run dispatched (the stream's parent_tool_use_id) — not the run's own words.
+  | { t: number; kind: 'text'; text: string; sub?: true }
+  | { t: number; kind: 'tool'; id: string; name: string; summary: string; sub?: true }
+  | { t: number; kind: 'tool_result'; id: string; error: boolean; text: string; sub?: true }
   | { t: number; kind: 'reply'; text: string }
   | { t: number; kind: 'resolved'; requestId: string; decision: 'allow' | 'deny' }
   | ({ t: number; kind: 'result' } & RunResult)

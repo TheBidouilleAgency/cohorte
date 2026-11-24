@@ -57,11 +57,13 @@ function Blocks({ text, tickets, refs }: { text: string; tickets: Ticket[]; refs
 function Row({ e, quiet, tickets, refs, agent }: { e: RunEvent; quiet: boolean; tickets: Ticket[]; refs: Record<string, string>; agent: string }) {
   switch (e.kind) {
     case 'text': {
+      // A subagent's report is its own, not the agent's message: a muted line, never a bubble or a card.
+      if (e.sub) return quiet ? null : <div className="ev muted pre-wrap">{`via subagent · ${e.text}`}</div>;
       const t = stripBlocks(e.text);
       return <>{t ? <div className="bubble bubble-agent"><div className="bubble-who">{agent}</div><div className="pre-wrap">{t}</div></div> : null}<Blocks text={e.text} tickets={tickets} refs={refs} /></>;
     }
     case 'reply': return <div className="bubble bubble-you"><div className="bubble-who">you</div><div className="pre-wrap">{e.text}</div></div>;
-    case 'tool': return quiet ? null : <div className="ev muted mono">{`▸ ${e.name}  ${e.summary}`}</div>;
+    case 'tool': return quiet ? null : <div className="ev muted mono">{`${e.sub ? '  ↳ ' : '▸ '}${e.name}  ${e.summary}`}</div>;
     case 'tool_result': return !quiet && e.error ? <div className="ev error mono">{`✗ ${e.text}`}</div> : null;
     case 'result': return e.ok ? (quiet ? null : <div className="ev muted">{`turn done${e.costUsd != null ? ` · ${usd(e.costUsd)}` : ''}`}</div>) : <div className="ev error">{`The agent stopped: ${e.text}`}</div>;
     case 'stderr': case 'system': return quiet ? null : <div className="ev error mono">{e.text}</div>;
