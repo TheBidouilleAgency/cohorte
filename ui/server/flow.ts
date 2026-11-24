@@ -10,6 +10,12 @@
 //
 // Every agent run here is a Runs run (runs.ts) with a role; this module reacts to their ends (hooks), owns the
 // tracker writes and the feature record, and never lets its own failure take a run down.
+//
+// Two front ends drive it on the same files: `cohorte ui` (server.ts) and the flow verbs of the CLI (`cohorte take`,
+// `checkpoint`, `autopilot`… — bin/flow.js), each a process of its own with its own runs (engine.ts builds either).
+// A run's hooks fire only in the process that spawned it, so a feature with a run in flight is LEASED to that
+// process (`driver`: its pid): the other refuses to move it (409) and never "recovers" it, until the run ends or the
+// process dies. Between runs — a checkpoint waiting, a PR open — nobody holds it, and either side may act.
 
 import fs from 'fs';
 import path from 'path';
@@ -24,6 +30,7 @@ import { Tracker, isTicketId, ticketBrief, trackerFor } from './tracker';
 import { nextStep, type Signals, type Stage } from './next';
 import { pipelineOf, reportsOf } from './pipeline';
 import { parseReviewReport } from './findings';
+import { alive } from './history';
 import * as gitinfo from './gitinfo';
 import * as ops from './ops';
 import { FOUNDING_ROLES, FoundingFlow } from './founding';
@@ -36,7 +43,11 @@ const { scanSpecs, checkTrust } = doctor;
 const PR_POLL_MS = 60000;
 export { expandCommand, FlowError };
 
-interface FlowOpts { globalDir: string; runs: Runs; jobs: Jobs; dataDir: string; decider?: Decider; changed?: (projectId: string) => void }
+interface FlowOpts {
+  globalDir: string; runs: Runs; jobs: Jobs; dataDir: string; decider?: Decider; changed?: (projectId: string) => void;
+  /** Which front end this process is — recorded on the features it drives, named in the other's refusals. */
+  by?: 'ui' | 'cli';
+}
 
 export class Flow {
   globalDir: string; runs: Runs; jobs: Jobs; features: FeatureStore; settings: SettingsStore; prefs: Preferences; decider: Decider;
@@ -46,6 +57,9 @@ export class Flow {
   private prTimer: NodeJS.Timeout | null = null;
   /** Feature ids with an advance() in flight — so two run ends never start two stages. */
   private busy = new Set<string>();
+  by: 'ui' | 'cli';
+  /** Hook work not finished yet (a run end being processed, a question being decided): the CLI waits for it before it reads the state. */
+  private inflight = 0;
 
   constructor(o: FlowOpts) {
     this.globalDir = o.globalDir; this.runs = o.runs; this.jobs = o.jobs;
@@ -54,9 +68,10 @@ export class Flow {
     this.prefs = new Preferences(path.join(o.dataDir, 'prefs'));
     this.decider = o.decider || new Decider();
     this.changed = o.changed || (() => {});
+    this.by = o.by || 'ui';
     this.founding = new FoundingFlow({ globalDir: this.globalDir, runs: this.runs, jobs: this.jobs, settings: this.settings, changed: (id) => this.changed(id) }, path.join(o.dataDir, 'founding'));
     this.runs.hooks = {
-      onEnd: (r) => setImmediate(() => { void this.onEnd(r).catch((e) => this.fail(r, e)); }),
+      onEnd: (r) => { this.inflight += 1; setImmediate(() => { void this.onEnd(r).catch((e) => this.fail(r, e)).finally(() => { this.inflight -= 1; }); }); },
       onQuestion: (r, p) => this.onQuestion(r, p),
       onAnswered: (r, p, b, a, by) => this.onAnswered(r, p, b, a, by),
     };
@@ -80,11 +95,60 @@ export class Flow {
     return p;
   }
   tracker(p: Project): Tracker { return trackerFor(this.globalDir, p.root, p.id); }
+  private track<T>(work: Promise<T>): Promise<T> { this.inflight += 1; return work.finally(() => { this.inflight -= 1; }); }
+
+  // -------------------------------------------------------------------------------------------------------------
+  // The lease: which process drives a feature while it has a run (or a worktree/merge job) in flight
+
+  /** Another live process has a run of this feature in flight. */
+  drivenElsewhere(f: Feature): boolean { return !!f.driver && f.driver.pid !== process.pid && alive(f.driver.pid); }
+  private claim(f: Feature): void {
+    if (!this.drivenElsewhere(f)) return;
+    const d = f.driver as NonNullable<Feature['driver']>;
+    throw new FlowError(`this feature is being driven by ${d.by === 'cli' ? 'a cohorte command in a terminal' : 'cohorte ui'} (pid ${d.pid}) — answer it there, or stop that process first`, 409);
+  }
+  /** Called before the save that follows a run (or job) start. */
+  private own(f: Feature): void { f.driver = { pid: process.pid, by: this.by, at: now() }; }
+  private mine(projectId: string, id: string): boolean {
+    for (const r of this.runs.runs.values()) if (r.projectId === projectId && r.meta.featureId === id && r.status === 'running' && r.child) return true;
+    return !!(this.jobs.find(projectId, 'worktree-create', id) || this.jobs.find(projectId, 'merge', id));
+  }
+  /** This process has a run or a job of the feature in flight, or hook work that may start one. */
+  active(projectId: string, id: string): boolean { return this.inflight > 0 || this.mine(projectId, id); }
+  /** Drops this process's lease once it has nothing of the feature in flight. */
+  private release(projectId: string, id: string): void {
+    const f = this.features.get(projectId, id);
+    if (!f || f.driver?.pid !== process.pid || this.mine(projectId, id)) return;
+    f.driver = null;
+    this.features.save(f);
+  }
+  /** Resolves once this process has nothing of the feature in flight (runs ended, their hooks done). */
+  async idle(projectId: string, id: string): Promise<void> {
+    while (this.active(projectId, id)) await new Promise((r) => setTimeout(r, 50));
+  }
+  /**
+   * Stops what this process runs for the feature, leaving it where a restart of cohorte ui would: an autopilot stage
+   * becomes CP2 (`reason`), a lead turn goes back to framing. For a terminal that cannot answer what a run asks.
+   */
+  async park(projectId: string, id: string, reason: string): Promise<Feature> {
+    const p = this.project(projectId);
+    const f = this.mustFeature(p.id, id);
+    if (['autopilot', 'shipping', 'closing'].includes(f.phase)) {
+      this.features.phase(f, 'cp2', { kind: 'cp2', reason, openedAt: now() });
+      this.setTicket(p, f.id, { status: 'building' });
+    }
+    for (const r of this.runs.runs.values()) if (r.projectId === p.id && r.meta.featureId === f.id && r.status === 'running' && r.child) this.runs.stop(r);
+    await this.idle(p.id, f.id);
+    this.changed(p.id);
+    return this.mustFeature(p.id, id);
+  }
+
   private fail(r: Run, e: unknown): void {
     const id = r.meta.featureId;
     if (!id) return;
     const f = this.features.get(r.projectId, id);
     if (f) this.features.phase(f, 'cp2', { kind: 'cp2', reason: `cohorte ui hit an error: ${String((e as Error)?.message || e)}`, openedAt: now() });
+    this.release(r.projectId, id);
     this.changed(r.projectId);
   }
   private profileOf(root: string) { return ops.readProfile(root); }
@@ -191,6 +255,7 @@ export class Flow {
     const t = this.ticketOf(p, ticketId);
     if (!t) throw new FlowError('unknown ticket', 404);
     const existing = this.features.get(p.id, ticketId);
+    if (existing) this.claim(existing);
     if (existing && !['abandoned', 'failed'].includes(existing.phase)) throw new FlowError('this ticket is already being worked on', 409);
     if (!['backlog', 'framing'].includes(t.status) && !existing) throw new FlowError(`only a backlog ticket can be taken (this one is ${t.status})`, 409);
     if (!ops.FEATURE_ID.test(ticketId)) throw new FlowError('the ticket id is not a valid feature id');
@@ -203,6 +268,7 @@ export class Flow {
       this.startLead(p, f);
     } else {
       ops.createWorktree(this.jobs, p, ticketId, { confirmed }); // throws OpError (gate ask, bad id) before anything is recorded
+      this.own(f);
       this.features.phase(f, 'provisioning');
     }
     this.setTicket(p, ticketId, { status: 'framing' });
@@ -224,14 +290,16 @@ export class Flow {
     try { p = this.project(job.projectId); } catch { return; }
     if (job.status !== 'done') {
       this.features.phase(f, 'failed', null, `the worktree could not be created:\n${job.lines.slice(-12).join('\n')}`);
+      this.release(p.id, f.id);
       this.changed(p.id);
       return;
     }
     const wt = this.worktreeFor(p, f.id);
-    if (!wt) { this.features.phase(f, 'failed', null, 'the worktree job finished but no worktree was found for this feature'); this.changed(p.id); return; }
+    if (!wt) { this.features.phase(f, 'failed', null, 'the worktree job finished but no worktree was found for this feature'); this.release(p.id, f.id); this.changed(p.id); return; }
     f.worktree = wt.path; f.branch = wt.branch;
     this.features.save(f);
     try { this.startLead(p, f); } catch (e) { this.features.phase(f, 'failed', null, String((e as Error).message || e)); }
+    this.release(p.id, f.id);
     this.changed(p.id);
   }
 
@@ -249,6 +317,7 @@ export class Flow {
     const run = this.runs.start({ ...mcp(f.worktree), projectId: p.id, cwd: f.worktree, command: `/cohorte-lead ${f.id}`, prompt, model: s.models.lead, permissionMode: 'acceptEdits',
       meta: { role: 'lead', featureId: f.id, ticketId: f.id, title: t.title } });
     f.leadRunId = run.id;
+    this.own(f);
     this.features.phase(f, 'framing');
   }
 
@@ -256,12 +325,14 @@ export class Flow {
   replyLead(projectId: string, id: string, text: unknown): void {
     const p = this.project(projectId);
     const f = this.mustFeature(p.id, id);
+    this.claim(f);
     if (!['framing', 'cp1', 'cp2'].includes(f.phase)) throw new FlowError(`the lead is not in a conversation (the feature is in ${f.phase})`, 409);
     const run = f.leadRunId ? this.runs.get(f.leadRunId) : null;
     if (!run) throw new FlowError('the lead conversation is gone', 410);
     const err = this.runs.reply(run, text);
     if (err) throw new FlowError(err, 409);
     if (f.phase === 'cp2') f.corrections.push({ at: now(), checkpoint: 'cp2', text: String(text) });
+    this.own(f);
     this.features.phase(f, 'framing');
     this.changed(p.id);
   }
@@ -294,6 +365,7 @@ export class Flow {
   checkpoint(projectId: string, id: string, body: { action?: unknown; text?: unknown }): Feature {
     const p = this.project(projectId);
     const f = this.mustFeature(p.id, id);
+    this.claim(f);
     const text = typeof body.text === 'string' ? body.text.trim().slice(0, 4000) : '';
     const action = body.action;
     const cp = f.checkpoint?.kind;
@@ -316,6 +388,7 @@ export class Flow {
           'Freeze the spec now (status: frozen, decisions journal, design brief if any), exactly as your instructions say for the freeze, then end your turn with one line.',
         ].filter(Boolean).join('\n'));
         if (err) throw new FlowError(err, 409);
+        this.own(f);
         this.features.phase(f, 'freezing');
       } else if (action === 'reply') {
         this.replyLead(p.id, id, text);
@@ -327,7 +400,7 @@ export class Flow {
         if (last && last.status === 'stopped') last.status = 'failed';
         if (text) f.corrections.push({ at: now(), checkpoint: 'cp2', text });
         this.features.phase(f, 'autopilot');
-        void this.advance(p, f);
+        void this.track(this.advance(p, f));
       } else if (action === 'correct') {
         if (!text) throw new FlowError('say what to correct');
         f.corrections.push({ at: now(), checkpoint: 'cp2', text });
@@ -341,6 +414,7 @@ export class Flow {
         const err = this.runs.reply(run, `The autopilot paused at CP2: ${f.checkpoint?.reason}.\nThe developer asks you to re-frame: ${text}\nUpdate the spec (it may be frozen: edit it in place, keep it frozen) and post a new cohorte-plan block.`);
         if (err) throw new FlowError(err, 409);
         f.corrections.push({ at: now(), checkpoint: 'cp2', text });
+        this.own(f);
         this.features.phase(f, 'framing');
       } else throw new FlowError('CP2 takes continue, correct, reframe or abandon');
     } else if (cp === 'cp3') {
@@ -370,6 +444,7 @@ export class Flow {
   contest(projectId: string, id: string, decisionId: string, note: unknown): Feature {
     const p = this.project(projectId);
     const f = this.mustFeature(p.id, id);
+    this.claim(f);
     const d = f.decisions.find((x) => x.id === decisionId);
     if (!d) throw new FlowError('unknown decision', 404);
     const n = typeof note === 'string' ? note.trim().slice(0, 2000) : '';
@@ -397,7 +472,7 @@ export class Flow {
   }
 
   async advance(p: Project, f: Feature): Promise<void> {
-    if (f.phase !== 'autopilot' || this.busy.has(f.id)) return;
+    if (f.phase !== 'autopilot' || this.busy.has(f.id) || this.drivenElsewhere(f)) return;
     if (f.currentRunId) { const r = this.runs.get(f.currentRunId); if (r && r.status === 'running') return; }
     this.busy.add(f.id);
     try {
@@ -430,6 +505,7 @@ export class Flow {
       meta: { role: 'stage', featureId: f.id, ticketId: f.ticketId, stage, title: f.title } });
     f.stages.push({ stage, runId: run.id, model, status: 'running', costUsd: null, startedAt: run.startedAt, endedAt: null, note: note || undefined });
     f.currentRunId = run.id;
+    this.own(f);
     this.features.save(f);
     return run;
   }
@@ -470,11 +546,13 @@ export class Flow {
   merge(projectId: string, id: string): Job {
     const p = this.project(projectId);
     const f = this.mustFeature(p.id, id);
+    this.claim(f);
     if (f.phase !== 'pr' || !f.pr) throw new FlowError('there is no open PR for this feature', 409);
     if (f.pr.checks === 'failure') throw new FlowError('the PR checks are red — fix them first', 409);
     const method = this.settings.get(p.id).mergeMethod;
     const job = this.jobs.start({ projectId: p.id, kind: 'merge', tag: f.id, label: `merge · PR #${f.pr.number}`, cwd: p.root, file: process.env.COHORTE_GH_BIN || 'gh',
       args: ['pr', 'merge', String(f.pr.number), `--${method}`] });
+    this.own(f);
     this.features.phase(f, 'merging');
     this.changed(p.id);
     return job;
@@ -486,23 +564,33 @@ export class Flow {
     if (!f || f.phase !== 'merging') return;
     let p: Project;
     try { p = this.project(job.projectId); } catch { return; }
-    if (job.status !== 'done') { this.features.phase(f, 'pr', null, `the merge failed:\n${job.lines.slice(-8).join('\n')}`); this.changed(p.id); return; }
-    void this.onMerged(p, f);
+    if (job.status !== 'done') { this.features.phase(f, 'pr', null, `the merge failed:\n${job.lines.slice(-8).join('\n')}`); this.release(p.id, f.id); this.changed(p.id); return; }
+    void this.track(this.onMerged(p, f).finally(() => this.release(p.id, f.id)));
   }
 
   async pollPRs(): Promise<void> {
     if (!(await gitinfo.ghAvailable())) return;
     for (const p of registry.load(this.globalDir)) {
-      for (const f of this.features.list(p.id)) {
-        if (f.phase !== 'pr' || !f.branch) continue;
-        const pull = await gitinfo.pullFor(p.root, f.branch);
-        if (!pull) continue;
-        f.pr = { number: pull.number, url: pull.url, state: pull.state, checks: pull.checks };
-        this.features.save(f);
-        if (pull.state === 'MERGED') await this.onMerged(p, f);
-        this.changed(p.id);
-      }
+      for (const f of this.features.list(p.id)) await this.pollPR(p, f);
     }
+  }
+
+  /** One feature's PR, now (the CLI's `autopilot` on a feature at `pr`): merged ⇒ learn → acceptance, as the poll does. */
+  async checkPR(projectId: string, id: string): Promise<Feature> {
+    const p = this.project(projectId);
+    const f = this.mustFeature(p.id, id);
+    if (await gitinfo.ghAvailable()) await this.track(this.pollPR(p, f));
+    return f;
+  }
+
+  private async pollPR(p: Project, f: Feature): Promise<void> {
+    if (f.phase !== 'pr' || !f.branch || this.drivenElsewhere(f)) return;
+    const pull = await gitinfo.pullFor(p.root, f.branch);
+    if (!pull) return;
+    f.pr = { number: pull.number, url: pull.url, state: pull.state, checks: pull.checks };
+    this.features.save(f);
+    if (pull.state === 'MERGED') await this.onMerged(p, f);
+    this.changed(p.id);
   }
 
   private async onMerged(p: Project, f: Feature): Promise<void> {
@@ -537,6 +625,7 @@ export class Flow {
     const run = this.runs.start({ ...mcp(p.root), projectId: p.id, cwd: p.root, command: `/cohorte-acceptance ${f.id}`, prompt, model: s.models.acceptance, disallowedTools: READ_ONLY,
       meta: { role: 'acceptance', featureId: f.id, ticketId: f.id, title: t.title } });
     f.stages.push({ stage: 'acceptance', runId: run.id, model: s.models.acceptance, status: 'running', costUsd: null, startedAt: run.startedAt, endedAt: null });
+    this.own(f);
     this.features.save(f);
   }
 
@@ -557,6 +646,7 @@ export class Flow {
         const run = this.runs.start({ ...mcp(f.worktree), projectId: p.id, cwd: f.worktree, command: `/cohorte-ship ${f.id}`, prompt: expandCommand(this.globalDir, 'cohorte-ship', f.id) + AUTOPILOT_NOTE(null),
           model: this.settings.get(p.id).models.ship, permissionMode: 'acceptEdits', meta: { role: 'stage', featureId: f.id, ticketId: f.id, stage: 'reconcile', title: f.title } });
         f.stages.push({ stage: 'reconcile', runId: run.id, model: run.model || '', status: 'running', costUsd: null, startedAt: run.startedAt, endedAt: null });
+        this.own(f);
         this.features.save(f);
       } catch { /* the reconcile is a convenience; doctor does the same */ }
     }
@@ -569,6 +659,8 @@ export class Flow {
     const t = tr.get(ticketId);
     if (!t) throw new FlowError('unknown ticket', 404);
     if (t.status !== 'acceptance') throw new FlowError(`this ticket is not waiting for acceptance (it is ${t.status})`, 409);
+    const held = this.features.get(p.id, ticketId);
+    if (held) this.claim(held);
     const text = typeof body.text === 'string' ? body.text.trim().slice(0, 4000) : '';
     let run: Run | null = null;
     let next: Ticket;
@@ -613,6 +705,7 @@ export class Flow {
       await this.onStageEnd(r, f);
       if (r.meta.stage === 'learn' && f.phase === 'closing') this.startAcceptance(this.project(r.projectId), f);
     }
+    this.release(r.projectId, id);
     this.changed(r.projectId);
   }
 
@@ -621,7 +714,7 @@ export class Flow {
     if (r.meta.role !== 'stage' || !r.meta.featureId || ['ship', 'reconcile'].includes(r.meta.stage || '')) return false;
     const f = this.features.get(r.projectId, r.meta.featureId);
     if (!f) return false;
-    void this.decide(r, p, f).catch(() => this.runs.annotate(r, p.requestId, { deciding: false }));
+    void this.track(this.decide(r, p, f).catch(() => this.runs.annotate(r, p.requestId, { deciding: false })));
     return true;
   }
 
@@ -671,6 +764,7 @@ export class Flow {
     for (const p of registry.load(this.globalDir)) {
       for (const f of this.features.list(p.id)) {
         if (!['autopilot', 'shipping', 'closing', 'freezing'].includes(f.phase)) continue;
+        if (this.drivenElsewhere(f)) continue; // a live process (the UI, a terminal) has its run in flight
         const r = f.currentRunId ? this.runs.get(f.currentRunId) : null;
         if (r && r.status === 'running') continue;
         for (const s of f.stages) if (s.status === 'running') s.status = 'stopped';

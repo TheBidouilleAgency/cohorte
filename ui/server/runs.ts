@@ -103,6 +103,8 @@ export interface RunHooks {
 
 export class Runs {
   runs = new Map<string, Run>();
+  /** Runs this process spawned a turn of: the only ones it writes back to the store (another process owns the rest). */
+  #owned = new Set<string>();
   bin: string;
   onChange: (run: Run) => void = () => {};
   store: RunStore | null;
@@ -149,6 +151,7 @@ export class Runs {
     if (run.mcpConfig) args.push('--mcp-config', run.mcpConfig);
     if (resumeId) args.push('--resume', resumeId);
     run.tasks.clear(); run.awaitingTurn = false; // a new process: the old one's background tasks went with it
+    this.#owned.add(run.id);
     const child = spawn(this.bin, args, { cwd: run.cwd, detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'], env: process.env });
     run.child = child;
     child.stdin?.on('error', () => { /* the child went away first */ });
@@ -342,7 +345,7 @@ export class Runs {
   }
 
   stop(run: Run): boolean {
-    if (run.status !== 'running') return false;
+    if (run.status !== 'running' || !run.child) return false; // no child: another process drives it
     run.stopping = true;
     try { run.child?.stdin?.end(); } catch { /* closed */ }
     const pid = run.child?.pid;
@@ -353,10 +356,35 @@ export class Runs {
     return true;
   }
 
-  flush(): void { this.store?.flush(this.runs.values()); }
+  flush(): void { this.store?.flush([...this.runs.values()].filter((r) => this.#owned.has(r.id))); }
   stopAll(): void { for (const r of this.runs.values()) this.stop(r); }
-  get(id: string): Run | null { return this.runs.get(id) || null; }
-  forProject(projectId: string): Run[] { return [...this.runs.values()].filter((r) => r.projectId === projectId); }
+  /**
+   * A run by id. Another process (the UI, or a flow verb in a terminal) may have started it, resumed it or ended it
+   * since this one loaded the store: what is not running HERE is re-read when its file changed.
+   */
+  get(id: string): Run | null {
+    const r = this.runs.get(id);
+    if (!r) {
+      const s = this.store?.find(id);
+      if (s) this.runs.set(s.id, s);
+      return s || null;
+    }
+    if (!this.#mine(r)) { const s = this.store?.refresh(r); if (s) this.#adopt(r, s); }
+    return r;
+  }
+  forProject(projectId: string): Run[] {
+    for (const id of this.store?.ids(projectId) || []) this.get(id);
+    return [...this.runs.values()].filter((r) => r.projectId === projectId);
+  }
+  /** A run this process is driving right now (its child is ours): never re-read from disk. */
+  #mine(r: Run): boolean { return r.status === 'running' && !!r.child; }
+  /** Another process's write of a run, taken into the object this process holds (references stay valid). */
+  #adopt(r: Run, s: Run): void {
+    const { child: _c, closeTimer: _t, pending: _p, tasks: _k, ...persisted } = s;
+    Object.assign(r, persisted, { child: null, stopping: false });
+    this.#owned.delete(r.id);
+    r.pending.clear(); r.tasks.clear();
+  }
   find(projectId: string, cwd: string): Run | null { return [...this.runs.values()].find((r) => r.projectId === projectId && r.cwd === cwd && r.status === 'running') || null; }
 
   view(run: Run, since?: number): RunView {

@@ -183,7 +183,10 @@ export interface FeatureView {
   stages: StageRecord[]; rounds: number; decisions: DecisionRecord[]; corrections: Correction[];
   pr: { number: number; url: string; state: string; checks: PullInfo['checks'] } | null; plan: Plan | null;
   error: string | null; warning: string | null; createdAt: string; updatedAt: string; costUsd: number;
+  /** The process with a run of this feature in flight — `cohorte ui`, or a `cohorte` verb in a terminal. Absent when idle. */
+  driver?: FeatureDriver | null;
 }
+export interface FeatureDriver { pid: number; by: 'ui' | 'cli'; at: string }
 export interface FeatureDetail extends FeatureView {
   pipeline: PipelineInfo | null; ticket: Ticket | null;
   /** CP3 material: what a human signs off. */

@@ -14,15 +14,13 @@ import path from 'path';
 import crypto from 'crypto';
 import { spawn } from 'child_process';
 import { registry, doctor, report, repo, uiDir, type Project, type SpecScan } from './legacy';
-import { Jobs } from './jobs';
-import { Runs } from './runs';
-import { RunStore } from './history';
 import * as gitinfo from './gitinfo';
 import * as ops from './ops';
 import * as docker from './docker';
 import { pipelineOf } from './pipeline';
 import { parseReviewReport } from './findings';
-import { Flow } from './flow';
+import { createEngine, watchState } from './engine';
+import type { Jobs } from './jobs';
 import { FOUNDING_ROLES } from './founding';
 import { DEFAULTS as SETTINGS_DEFAULTS } from './settings';
 import { TrackerError, connectObsidian, isTicketId } from './tracker';
@@ -75,8 +73,6 @@ export interface CreateOpts { globalDir: string; version: string; token?: string
 export function create({ globalDir, version, token = crypto.randomBytes(24).toString('hex'), storePath }: CreateOpts) {
   const cacheDoctor = memo<Awaited<ReturnType<typeof state>>>(8000);
   const cacheMetrics = memo<unknown>(60000);
-  const jobs = new Jobs();
-  const runs = new Runs({ store: new RunStore(path.join(globalDir, 'cohorte-ui', 'runs')) });
   const cachePulls = memo<Awaited<ReturnType<typeof gitinfo.pullFor>>>(60000);
   let ghOk: Promise<boolean> | null = null;
 
@@ -95,15 +91,15 @@ export function create({ globalDir, version, token = crypto.randomBytes(24).toSt
       for (const r of subs) { try { r.write(frame); } catch { subs.delete(r); } }
     }, 120);
   };
-  const flow = new Flow({ globalDir, runs, jobs, dataDir: path.join(globalDir, 'cohorte-ui'), changed: (projectId) => {
+  const flowChanged = (projectId: string): void => {
     const pr = registry.get(globalDir, projectId);
     if (pr) cacheDoctor.clear(pr.root); // a founding step may have just written PIPELINE.md
     notify({ type: 'flow', projectId, id: projectId, status: 'changed' });
-  } });
-  jobs.onChange = (j) => {
-    notify({ type: 'job', projectId: j.projectId, id: j.id, status: j.status });
-    try { flow.onJob(j); flow.onMergeJob(j); } catch { /* the flow never takes a job down */ }
   };
+  const { jobs, runs, flow } = createEngine({ globalDir, by: 'ui', changed: flowChanged,
+    onJob: (j) => notify({ type: 'job', projectId: j.projectId, id: j.id, status: j.status }) });
+  // A `cohorte take|checkpoint|autopilot` in a terminal writes the same files: the page hears of it here.
+  let unwatch: (() => void) | null = null;
   runs.onChange = (r) => notify({ type: 'run', projectId: r.projectId, id: r.id, status: r.status, pending: [...r.pending.values()].filter((x) => !x.deciding).length });
   let origin: string | null = null; // set once listening
 
@@ -452,8 +448,9 @@ export function create({ globalDir, version, token = crypto.randomBytes(24).toSt
   }
 
   flow.start();
+  unwatch = watchState(globalDir, flowChanged);
   return { server, listen, token, jobs, runs, flow, close: () => {
-    flow.stop(); jobs.stopAll(); runs.stopAll(); runs.flush();
+    flow.stop(); unwatch?.(); jobs.stopAll(); runs.stopAll(); runs.flush();
     for (const r of subs) { try { r.end(); } catch { /* closed */ } }
     subs.clear();
     return new Promise<void>((r) => { server.close(() => r()); (server as http.Server & { closeAllConnections?: () => void }).closeAllConnections?.(); });

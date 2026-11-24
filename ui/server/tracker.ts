@@ -26,6 +26,8 @@ export const COMPANY_COLUMNS: [string, string][] = [
   ['building', 'In progress'], ['checkpoint', 'To validate · dev'], ['pr', 'PR open'], ['acceptance', 'Acceptance'], ['done', 'Done'],
 ];
 const QUEUE = new Map<string, Promise<string>>();
+/** Resolves once every card move asked so far has landed — a CLI verb waits for it before it exits. */
+export const settleMoves = async (): Promise<void> => { while (QUEUE.size) await Promise.allSettled([...QUEUE.values()]); };
 const STAGE_OF: Record<TicketStatus, string> = {
   discussion: 'discussion', validate: 'validate', backlog: 'backlog', framing: 'framing', building: 'building', checkpoint: 'checkpoint',
   pr: 'pr', acceptance: 'acceptance', done: 'done', rejected: 'done',
