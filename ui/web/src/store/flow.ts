@@ -139,9 +139,11 @@ export const saveSettings = (patch: Partial<ProjectSettings>) => guard(async () 
   const id = sel(); if (!id) return;
   useFlow.setState({ settings: await api.saveSettings(id, patch) });
 });
-export const connectObsidian = (vault: string, board: string) => guard(async () => {
+/** `onMigrated` gets how many local tickets were moved into the vault. */
+export const connectObsidian = (vault: string, board: string, onMigrated?: (n: number) => void) => guard(async () => {
   const id = sel(); if (!id) return;
-  await api.connectObsidian(id, { vault, board: board || undefined });
+  const r = await api.connectObsidian(id, { vault, board: board || undefined });
+  onMigrated?.(r.migrated);
   await Promise.all([loadSettings(), loadTickets()]);
 });
 export const startProductMap = () => guard(async () => {

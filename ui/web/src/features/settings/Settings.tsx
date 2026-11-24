@@ -23,21 +23,23 @@ const ROLES: { r: ModelRole; label: string }[] = [
 function Obsidian() {
   const s = useFlow((x) => x.settings);
   const [vault, setVault] = useState(''); const [board, setBoard] = useState('');
+  const [migrated, setMigrated] = useState<number | null>(null);
   if (!s) return null;
   const t = s.tracker;
-  const submit = (e: FormEvent) => { e.preventDefault(); if (vault.trim()) void connectObsidian(vault.trim(), board.trim()); };
+  const submit = (e: FormEvent) => { e.preventDefault(); if (vault.trim()) void connectObsidian(vault.trim(), board.trim(), setMigrated); };
   return (
     <Card>
       {t.kind === 'obsidian'
         ? <><Pill tone="ok">Obsidian connected</Pill><div className="mono gap-top">{t.board}</div><Muted>{`Tickets are notes in ${t.dir}. The board is moved for you at every step.`}</Muted></>
         : <><Pill tone="warn">Local tickets</Pill><Muted>{t.reason}</Muted></>}
+      {migrated !== null ? <Muted>{migrated ? `${migrated} ticket${migrated > 1 ? 's' : ''} moved to the vault — the local copies are kept as a backup.` : 'No local ticket to move — the vault already has them all.'}</Muted> : null}
       <form onSubmit={submit} className="gap-top">
         <div className="row-form wrap">
           <input value={vault} onChange={(e) => setVault(e.target.value)} placeholder="Vault folder — the absolute path you open in Obsidian" aria-label="Obsidian vault path" />
           <input value={board} onChange={(e) => setBoard(e.target.value)} placeholder={`Board file in the vault (default ${t.projectName ?? '<project>'}/Tasks.md)`} aria-label="Board file" />
           <Button type="submit" disabled={!vault.trim()}>{t.kind === 'obsidian' ? 'Reconnect' : 'Connect Obsidian'}</Button>
         </div>
-        <Muted>Creates the board (company layout) if it does not exist, and a Tickets folder next to it. Needs the Obsidian Kanban plugin to show the board.</Muted>
+        <Muted>Creates the board (company layout) if it does not exist, and a Tickets folder next to it, where the tickets of this machine are copied. Needs the Obsidian Kanban plugin to show the board.</Muted>
       </form>
     </Card>
   );
