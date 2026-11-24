@@ -108,8 +108,24 @@ Explicit mode, for scripts and humans:
     cohorte-gate.py --check [--cwd DIR] [--unattended] [--] <command…>
     cohorte-gate.py --check-dispatch [--cwd DIR] [--unattended] [--] <subagent_type>
 
-It prints `gate: allow` / `gate: ask — …` / `gate: deny — …` and exits 0 / 1 / 2. Options
-are only read before the command (or before `--`). A legacy `--runtime claude` argument is
+It prints `gate: allow` / `gate: ask — …` / `gate: deny — …` / `gate: defer — …` and exits
+0 / 1 / 2 / 3. `--check` answers allow only for a command the gate approves: no rule denies or
+asks, and it is a command of `.claude/profile.json` or covered by a permissions.allow rule (see
+"Pipeline scripts"), or the gate is inert there. Defer (3) means no gate rule matched, so only
+Claude Code's permission would decide: a script about to run the command unprompted must treat
+it as an ask. Options are only read before the command (or before `--`).
+
+Pipeline scripts. `preflight.sh` and `verify-run.sh` execute the commands they are handed, and
+Claude Code approves the outer call through the allowlisted `<core>/pipeline/scripts/`. Each
+handed command is judged like any command (deny/ask rules, floor, self-protection) and, when
+nothing denies or asks, it may run unprompted only if it is exactly a command the project's
+profile declares (`commands.*`, a surface's `*_cmd`, `verify.surfaces.<key>.smoke`, each also
+with the ` 2>&1 | tail -40` fallback; ports may differ, for a worktree slot) or every simple
+command in it matches a `Bash(…)` rule of permissions.allow in the Claude Code settings
+(`${CLAUDE_CONFIG_DIR:-~/.claude}/settings.json`, the project's `.claude/settings.json` and
+`.claude/settings.local.json`); a matching permissions.deny / ask rule denies / asks. Anything
+else gets "ask" for the outer call, naming the inner command. A handed command built at run time
+always gets "ask". A legacy `--runtime claude` argument is
 accepted and ignored.
 
 This is a strong guard against agent mistakes on the common forms, not a sandbox. A script

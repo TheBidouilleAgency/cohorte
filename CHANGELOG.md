@@ -7,6 +7,18 @@ short, user-facing, most recent first. One `## <version> — <YYYY-MM-DD>` secti
 > They are history and are deliberately not rewritten — every command gained a `cohorte-` prefix
 > in 2.0.0.
 
+## 4.1.4 — 2026-11-24
+
+Security fix — update now.
+
+- **A command handed to a pipeline script no longer runs without approval.** `verify-run.sh` and
+  `preflight.sh` are pre-approved, so Claude Code never prompted for the commands passed to them; when the
+  gate had no rule for such a command it only deferred, and the command then ran with nobody asked. Now a
+  handed command runs without a prompt only when it is one of your profile's own commands (`PIPELINE.md`)
+  or matches one of your Claude Code allow rules; anything else asks you first (and is refused when nobody
+  is there to confirm). The normal review and verify flows ask nothing new.
+- `verify-run.sh --screenshot` accepts http(s) URLs only and no longer pastes them into a shell command.
+
 ## 4.1.3 — 2026-11-24
 
 More from the first real company-flow project: clearer messages, fewer prompts, honest aborts.

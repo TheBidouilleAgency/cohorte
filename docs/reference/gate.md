@@ -236,7 +236,29 @@ The gate follows indirection when the inner text is static:
 - `$(…)` and backticks, judged on their own
 - `find -exec`, `xargs`, `watch`, `timeout`, `env -S`
 - `alias x='…'`
-- `preflight.sh`'s check commands, which it runs through `sh -c`
+- `preflight.sh`'s check commands, which it runs through `sh -c`, and `verify-run.sh`'s
+  `--dev` / `--ready` / `--check` / `--migrate` / `--migrate-down` commands (see below)
+
+### Commands handed to pipeline scripts
+
+`cohorte sync` allowlists `<core>/pipeline/scripts/` in `.claude/settings.json`, so Claude Code
+approves a `preflight.sh …` or `verify-run.sh …` call without a prompt, and the commands those
+scripts run get no prompt of their own. So each handed command is judged like any command (deny,
+ask, floor, self-protection) and then, when nothing denied or asked, it runs unprompted only if:
+
+- it is exactly a command the project's committed `.claude/profile.json` declares:
+  `commands.*` (a string or a list, like `commands.security`), a surface's `*_cmd`, or
+  `verify.surfaces.<key>.smoke`, each also with the ` 2>&1 | tail -40` fallback. Whitespace runs
+  and port numbers (a worktree slot's) may differ;
+- or every simple command in it matches a `Bash(…)` rule of `permissions.allow` in the settings
+  Claude Code reads (`${CLAUDE_CONFIG_DIR:-~/.claude}/settings.json`, the project's
+  `.claude/settings.json` and `.claude/settings.local.json`), with Claude Code's semantics
+  (`prefix:*`, `*` wildcards, exact). A part with a substitution, subshell, heredoc or a file
+  redirection never matches. A matching `permissions.deny` / `ask` rule denies / asks.
+
+Anything else gets **ask** for the outer call, naming the inner command — **deny** when nobody can
+answer (`bypassPermissions`, `dontAsk`). A handed command built at run time always gets ask.
+`verify-run.sh`'s own `--confirmed` flag changes none of this: the agent can set it.
 
 Some run-time values are resolved first. `$HOME`, `${HOME}`, `~`, `$CLAUDE_CONFIG_DIR` and
 `${CLAUDE_CONFIG_DIR:-$HOME/.claude}` are the user's own environment, so they are expanded
@@ -325,8 +347,12 @@ cohorte-gate.py --check [--cwd DIR] [--unattended] [--] <command…>
 cohorte-gate.py --check-dispatch [--cwd DIR] [--unattended] [--] <subagent_type>
 ```
 
-It prints one line (`gate: allow` / `gate: ask — …` / `gate: deny — …`) and exits 0 / 1 / 2,
-so `&&` stops on anything but a clean allow. `--unattended` escalates ask to deny. Options are
+It prints one line (`gate: allow` / `gate: ask — …` / `gate: deny — …` / `gate: defer — …`)
+and exits 0 / 1 / 2 / 3, so `&&` stops on anything but a clean allow. Allow means the gate
+approves the command: no rule denies or asks, and it is a command of `.claude/profile.json` or
+covered by a `permissions.allow` rule (see [Commands handed to pipeline scripts](#commands-handed-to-pipeline-scripts)),
+or the gate is inert there. Defer means no gate rule matched, so only Claude Code's own
+permission would decide; a script about to run the command without a prompt treats it as ask. `--unattended` escalates ask to deny. Options are
 only read before the command (or before `--`): a `--cwd=` or `--unattended` inside the command
 is part of the command. Pass the command as one quoted string; several arguments are re-quoted.
 A legacy `--runtime claude` argument is accepted and ignored.

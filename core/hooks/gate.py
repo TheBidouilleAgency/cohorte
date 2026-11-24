@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # GENERATED from core/hooks/gate/*.py by scripts/build-gate.mjs — edit the modules, then run
 # `node scripts/build-gate.mjs`. validate-core fails when this file and the modules disagree.
-# Build order: runtime, shell, git, config, ownership, patterns, context, findings, rules,
-# protect, indirect, analyze, preflight, evaluate, main.
+# Build order: runtime, shell, git, config, ownership, patterns, approve, context, findings,
+# rules, protect, indirect, analyze, preflight, evaluate, main.
 """Cohorte PreToolUse gate for Claude Code (3.0 — Claude Code only).
 
 Installed per project as `.claude/hooks/cohorte-gate.py` and registered in the project's
@@ -113,8 +113,24 @@ Explicit mode, for scripts and humans:
     cohorte-gate.py --check [--cwd DIR] [--unattended] [--] <command…>
     cohorte-gate.py --check-dispatch [--cwd DIR] [--unattended] [--] <subagent_type>
 
-It prints `gate: allow` / `gate: ask — …` / `gate: deny — …` and exits 0 / 1 / 2. Options
-are only read before the command (or before `--`). A legacy `--runtime claude` argument is
+It prints `gate: allow` / `gate: ask — …` / `gate: deny — …` / `gate: defer — …` and exits
+0 / 1 / 2 / 3. `--check` answers allow only for a command the gate approves: no rule denies or
+asks, and it is a command of `.claude/profile.json` or covered by a permissions.allow rule (see
+"Pipeline scripts"), or the gate is inert there. Defer (3) means no gate rule matched, so only
+Claude Code's permission would decide: a script about to run the command unprompted must treat
+it as an ask. Options are only read before the command (or before `--`).
+
+Pipeline scripts. `preflight.sh` and `verify-run.sh` execute the commands they are handed, and
+Claude Code approves the outer call through the allowlisted `<core>/pipeline/scripts/`. Each
+handed command is judged like any command (deny/ask rules, floor, self-protection) and, when
+nothing denies or asks, it may run unprompted only if it is exactly a command the project's
+profile declares (`commands.*`, a surface's `*_cmd`, `verify.surfaces.<key>.smoke`, each also
+with the ` 2>&1 | tail -40` fallback; ports may differ, for a worktree slot) or every simple
+command in it matches a `Bash(…)` rule of permissions.allow in the Claude Code settings
+(`${CLAUDE_CONFIG_DIR:-~/.claude}/settings.json`, the project's `.claude/settings.json` and
+`.claude/settings.local.json`); a matching permissions.deny / ask rule denies / asks. Anything
+else gets "ask" for the outer call, naming the inner command. A handed command built at run time
+always gets "ask". A legacy `--runtime claude` argument is
 accepted and ignored.
 
 This is a strong guard against agent mistakes on the common forms, not a sandbox. A script
@@ -1903,6 +1919,153 @@ def match_push(pat_args, cargs, pi):
     return res
 
 
+# ══ core/hooks/gate/approve.py ═══════════════════════════════════════════════
+# ── approvals ────────────────────────────────────────────────────────────────
+# /cohorte-review's documented fallback when a surface has no bridled variant
+# (profile/schema/output-discipline.md), and the no-op marker review.js puts before the scans.
+QUIET_SUFFIX = " 2>&1 | tail -40"
+SECURITY_MARKER = ": cohorte-security-scans"
+# The slot's port replaces the profile's in a feature worktree (profile/schema/verify.md §Ports).
+PORT_RE = re.compile(r"(?<=:)\d{2,5}(?![0-9])")
+RULE_RE = re.compile(r"^\s*Bash\s*(?:\((.*)\))?\s*$", re.S)
+DUP_TARGET_RE = re.compile(r"^(\d+|-)$")
+
+
+def norm_cmd(s):
+    """Whitespace collapsed, ports blanked: how a profile command and a handed one compare."""
+    return PORT_RE.sub("<port>", " ".join(s.split()))
+
+
+def profile_commands(prof):
+    """Every command string `.claude/profile.json` declares: `commands.*` (a string, or a list
+    like `commands.security`), each surface's `*_cmd`, and `verify.surfaces.<key>.smoke`."""
+    out = []
+
+    def add(v):
+        if isinstance(v, list):
+            for x in v:
+                add(x)
+        elif isinstance(v, str) and v.strip() and not v.strip().startswith("<"):
+            out.append(v.strip())
+
+    if not isinstance(prof, dict):
+        return out
+    cmds = prof.get("commands")
+    if isinstance(cmds, dict):
+        for v in cmds.values():
+            add(v)
+    for s in prof.get("surfaces") if isinstance(prof.get("surfaces"), list) else []:
+        if isinstance(s, dict):
+            for k, v in s.items():
+                if isinstance(k, str) and k.endswith("_cmd"):
+                    add(v)
+    ver = prof.get("verify")
+    vs = ver.get("surfaces") if isinstance(ver, dict) else None
+    if isinstance(vs, dict):
+        for v in vs.values():
+            if isinstance(v, dict):
+                add(v.get("smoke"))
+    return out
+
+
+def rule_matches(content, text):
+    """Claude Code's `Bash(…)` rule semantics for one simple command: no content or `*` = any
+    command; `prefix:*` = the prefix as whole words; a `*` elsewhere = any run of characters;
+    otherwise the exact command."""
+    if content is None or content.strip() in ("", "*"):
+        return True
+    c = content.strip()
+    if c.endswith(":*"):
+        p = c[:-2].rstrip()
+        return text == p or text.startswith(p + " ")
+    if "*" in c:
+        rx = ".*".join(re.escape(part) for part in c.split("*"))
+        return re.match("^" + rx + "$", text, re.S) is not None
+    return text == c
+
+
+class Approvals(object):
+    def __init__(self, roots):
+        self.profile = set()
+        self.rules = {"allow": [], "ask": [], "deny": []}
+        for r in roots:
+            p = os.path.join(r, ".claude", "profile.json")
+            prof = self._load(p)
+            for c in profile_commands(prof):
+                self.profile.add(norm_cmd(c))
+                self.profile.add(norm_cmd(c + QUIET_SUFFIX))
+        self.profile.add(norm_cmd(SECURITY_MARKER))
+        cfg = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
+        files = [os.path.join(cfg, "settings.json")]
+        for r in roots:
+            files += [os.path.join(r, ".claude", "settings.json"),
+                      os.path.join(r, ".claude", "settings.local.json")]
+        for f in files:
+            data = self._load(f)
+            perms = data.get("permissions") if isinstance(data, dict) else None
+            if not isinstance(perms, dict):
+                continue
+            for kind in ("allow", "ask", "deny"):
+                lst = perms.get(kind)
+                for rule in lst if isinstance(lst, list) else []:
+                    m = RULE_RE.match(rule) if isinstance(rule, str) else None
+                    if m:
+                        self.rules[kind].append((rule.strip(), m.group(1)))
+
+    @staticmethod
+    def _load(path):
+        if not os.path.isfile(path):
+            return None
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                return json.load(fh)
+        except Exception as e:
+            warn("%s is unreadable (%s) — its commands and rules approve nothing" % (path, e))
+            return None
+
+    @staticmethod
+    def simple_commands(text):
+        """[(text, plain)] for each simple command, where plain = no substitution, subshell,
+        heredoc, function or file redirection (only those can be approved by an allow rule);
+        None when the text can't be parsed."""
+        try:
+            segs = parse_command(text)
+        except ParseError:
+            return None
+        out = []
+        for seg in segs:
+            if not seg.words:
+                continue
+            plain = not (seg.subshell or seg.funcdef or seg.heredocs
+                         or any(w.substs for w in seg.words)
+                         or any(r.target.substs for r in seg.redirs))
+            for r in seg.redirs:
+                if r.target.dynamic:
+                    plain = False
+                elif not (r.op == ">&" and DUP_TARGET_RE.match(r.target.value)) \
+                        and not (r.op in (">", ">>", "&>") and r.target.value == "/dev/null"):
+                    plain = False
+            out.append((" ".join(w.raw for w in seg.words), plain))
+        return out
+
+    def judge(self, cmd):
+        """("deny"|"ask", why) for a settings deny/ask rule, "allow" when approved, else None."""
+        parts = self.simple_commands(cmd)
+        for kind in ("deny", "ask"):
+            for text, _ in parts or []:
+                for rule, content in self.rules[kind]:
+                    if content is not None and content.strip() not in ("", "*") \
+                            and rule_matches(content, text):
+                        return kind, ("`%s` matches `%s` in permissions.%s of the Claude Code "
+                                      "settings" % (text, rule, kind))
+        if norm_cmd(cmd) in self.profile:
+            return "allow"
+        if parts and all(plain and any(rule_matches(c, t) for _, c in self.rules["allow"])
+                         for t, plain in parts):
+            return "allow"
+        return None
+
+
 # ══ core/hooks/gate/context.py ═══════════════════════════════════════════════
 # ── context ──────────────────────────────────────────────────────────────────
 class Ctx(object):
@@ -1957,7 +2120,14 @@ class Ctx(object):
         self._branches = {}
         self._aliases = {}
         self.owner = None             # Ownership, set by evaluate() for a surface agent
+        self._approvals = None
         self._build_protected()
+
+    def approvals(self):
+        """What a pipeline script may run unprompted (approve.py), read once per evaluation."""
+        if self._approvals is None:
+            self._approvals = Approvals(self.roots)
+        return self._approvals
 
     def _build_protected(self):
         write, delete = set(), set()
@@ -2964,35 +3134,61 @@ class Indirection(object):
             return
         self.check_path(args[0], state, "write", "preflight.sh's report argument")
         for a in args[1:]:
-            if a.dynamic:
-                self.opaque("preflight.sh runs a check command built at run time", a.raw)
-            else:
-                self.analyze_text(a.value, state.copy(), depth + 1)
+            self.handed_command("preflight.sh", a, a.raw if a.dynamic else a.value, state, depth)
 
     # verify-run.sh run <id> --dev "<cmd>" --check "<name>=<cmd>" --migrate "<cmd>" …: every
     # command it is handed runs through a shell, so judge each one here — the script also asks
-    # the gate itself, but its `--confirmed` flag is the lead's word, and a DENIED command must
-    # stay denied whatever the flag says.
+    # the gate itself, but its `--confirmed` flag is the agent's to set, and a DENIED command must
+    # stay denied, an unapproved one asked, whatever the flag says.
     VERIFY_CMD_FLAGS = {"--dev": False, "--ready": False, "--migrate": False,
                         "--migrate-down": False, "--check": True}
 
     def verify_args(self, args, state, depth):
         k = 0
         while k < len(args):
-            flag = args[k].value
+            a = args[k]
+            flag = a.value
+            if a.dynamic and a.split:
+                # an unquoted expansion may be any words — `--check "x=…"` included
+                if not self.raw_deny(a.raw):
+                    self.ask("verify-run.sh is handed arguments built at run time (`%s`), so the "
+                             "commands it would run can't be checked — confirm" % a.raw)
+                k += 1
+                continue
             if flag in self.VERIFY_CMD_FLAGS and k + 1 < len(args):
                 a = args[k + 1]
-                if a.dynamic:
-                    self.opaque("verify-run.sh runs a command built at run time", a.raw)
-                else:
-                    cmd = a.value
-                    if self.VERIFY_CMD_FLAGS[flag] and "=" in cmd:
-                        cmd = cmd.split("=", 1)[1]          # --check "<name>=<cmd>"
-                    if not (flag == "--ready" and re.match(r"^https?://", cmd.strip())):
-                        self.analyze_text(cmd, state.copy(), depth + 1)
+                cmd = a.raw if a.dynamic else a.value
+                if self.VERIFY_CMD_FLAGS[flag] and "=" in cmd:
+                    cmd = cmd.split("=", 1)[1]          # --check "<name>=<cmd>"
+                if not (flag == "--ready" and not a.dynamic and re.match(r"^https?://", cmd.strip())):
+                    self.handed_command("verify-run.sh", a, cmd, state, depth)
                 k += 2
                 continue
             k += 1
+
+    def handed_command(self, script, word, cmd, state, depth):
+        """A command a pipeline script will execute. Claude Code approved only the script call
+        (`cohorte sync` allowlists <core>/pipeline/scripts/), so the inner command runs with no
+        prompt of its own: the gate's rules judge it, and when nothing denies or asks, it runs
+        unprompted only if the profile declares it or a permissions.allow rule covers it."""
+        if word.dynamic:
+            if not self.raw_deny(word.raw):
+                self.ask("%s would run a command built at run time (`%s`), which the gate can't "
+                         "check — confirm" % (script, short(word.raw)))
+            return
+        if not cmd.strip():
+            return
+        self.analyze_text(cmd, state.copy(), depth + 1)
+        verdict = self.ctx.approvals().judge(cmd)
+        if verdict == "allow":
+            return
+        if verdict is not None:
+            (self.deny if verdict[0] == "deny" else self.ask)(
+                "%s would run `%s`: %s" % (script, short(cmd), verdict[1]))
+            return
+        self.ask("%s would run `%s` without a permission prompt of its own, and it is neither a "
+                 "command of the project's profile (.claude/profile.json) nor covered by a "
+                 "permissions.allow rule — confirm it" % (script, short(cmd)))
 
     def interp_code(self, name, args):
         lang = lang_of(name)
@@ -3724,6 +3920,10 @@ def unattended_hint(mode, reason):
                    "there is no allow list)")
     if "default branch" in reason:
         how.append("or do it on a feature branch, where `ask_on_default_branch` rules don't fire")
+    if "without a permission prompt of its own" in reason:
+        how.append("or, for a command the pipeline should run unattended, declare it in the "
+                   "profile (PIPELINE.md `commands`, a surface's `*_cmd`) and run `cohorte sync`, "
+                   "or add a `Bash(…)` rule to permissions.allow in .claude/settings.json")
     if "run time" in reason or "can't parse" in reason or "can't check" in reason:
         how.append("or write the command with literal paths and arguments so the gate can check it")
     return (" (denied outright: permission mode `%s` has nobody to confirm. To allow it: %s. "
@@ -3815,13 +4015,38 @@ def check_cli(argv):
         payload["tool_input"] = {"subagent_type": subject}
     try:
         decision = evaluate(payload)
+        if not decision and mode == "--check":
+            decision = approval(payload)
     except Exception as e:
         decision = ("deny", "Cohorte gate failed closed: %s: %s" % (type(e).__name__, e))
     if not decision:
         print("gate: allow")
         return 0
+    if decision[0] == "defer":
+        print("gate: defer — %s" % decision[1])
+        return 3
     print("gate: %s — %s" % decision)
     return 2 if decision[0] == "deny" else 1
+
+
+def approval(payload):
+    """For `--check` once no gate rule denies or asks: None (allow) when the gate is inert here
+    or the command is approved (approve.py), else ("defer", why) — Claude Code's own permission
+    would decide, so a script running the command unprompted must treat it as an "ask"."""
+    ctx = Ctx(payload["cwd"], payload["permission_mode"])
+    if not ctx.active:
+        return None
+    verdict = ctx.approvals().judge(payload["tool_input"]["command"])
+    if verdict == "allow":
+        return None
+    if verdict is not None:
+        level, why = verdict
+        if level == "ask" and payload["permission_mode"] in UNATTENDED_MODES:
+            level = "deny"
+        return level, "Cohorte gate: " + why
+    return ("defer", "no gate rule matches; it is not a command of the project's profile "
+            "(.claude/profile.json) nor covered by a permissions.allow rule, so Claude Code's "
+            "own permission would decide — a script must ask before running it")
 
 
 def strip_runtime(argv):

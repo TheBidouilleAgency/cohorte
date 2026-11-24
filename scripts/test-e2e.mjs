@@ -73,7 +73,7 @@ write(join(repo, "PIPELINE.md"), [
   "    agent: api", "    label: API", "  - key: web", "    path: apps/web", "    agent: web", "    label: Web",
   "contract:", "  enabled: true", "  path: packages/contract", "gate:", "  default_branch: main", "  deny:", "    - git push --force",
   "  ask: []", "  ask_on_default_branch:", "    - git commit", "  preflight:", "    enabled: true",
-  "    agents: [cohorte-review]", "    max_age_minutes: 30", "```", "",
+  "    agents: [cohorte-review]", "    max_age_minutes: 30", "commands:", "  test: npm test --silent", "```", "",
 ].join("\n"));
 write(join(repo, ".claude/agents/api.md"), "---\nname: api\ndescription: e2e surface\ntools: Read, Write, Edit, Bash\nmodel: sonnet\n---\nImplements apps/api.\n");
 write(join(repo, ".claude/agents/web.md"), "---\nname: web\ndescription: e2e surface\ntools: Read, Write, Edit, Bash\nmodel: sonnet\n---\nImplements apps/web.\n");
@@ -135,6 +135,12 @@ check("the agent cannot rewrite the gate config from the shell",
   hook("Bash|Task|Agent", "Bash", { command: "echo {} > .claude/gate-config.json" }) === "deny");
 check("an Edit of the gate config needs the human",
   hook("Write|Edit|MultiEdit|NotebookEdit", "Edit", { file_path: join(repo, ".claude/gate-config.json"), old_string: "a", new_string: "b" }) === "ask");
+// preflight.sh runs what it is handed and Claude Code approves the call (the scripts folder is
+// allowlisted): the profile's own command goes through, anything else needs the human.
+const pre = (c) => hook("Bash|Task|Agent", "Bash", { command: `"${script("preflight.sh")}" specs/reports/mul.preflight.txt ${c}` });
+check("preflight.sh with the profile's own command (synced into profile.json) goes through", pre('"npm test --silent"') === "allow", pre('"npm test --silent"'));
+check("…and its quiet fallback too", pre('"npm test --silent 2>&1 | tail -40"') === "allow");
+check("preflight.sh handed a command the profile does not declare ⇒ ask", pre(`"node -e 'require(1)'"`) === "ask", pre(`"node -e 'require(1)'"`));
 check("an ordinary Write passes", hook("Write|Edit|MultiEdit|NotebookEdit", "Write", { file_path: join(repo, "apps/api/x.js"), content: "x" }) === "allow");
 // Ownership, through the whole chain: PIPELINE.md → `cohorte sync` → .claude/profile.json → the
 // registered hook. A field-name or path-resolution mismatch anywhere would only show in a session.

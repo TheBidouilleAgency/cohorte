@@ -141,6 +141,10 @@ def unattended_hint(mode, reason):
                    "there is no allow list)")
     if "default branch" in reason:
         how.append("or do it on a feature branch, where `ask_on_default_branch` rules don't fire")
+    if "without a permission prompt of its own" in reason:
+        how.append("or, for a command the pipeline should run unattended, declare it in the "
+                   "profile (PIPELINE.md `commands`, a surface's `*_cmd`) and run `cohorte sync`, "
+                   "or add a `Bash(…)` rule to permissions.allow in .claude/settings.json")
     if "run time" in reason or "can't parse" in reason or "can't check" in reason:
         how.append("or write the command with literal paths and arguments so the gate can check it")
     return (" (denied outright: permission mode `%s` has nobody to confirm. To allow it: %s. "

@@ -45,7 +45,8 @@ optionally screenshots (a local Playwright only), runs migrations up — and dow
 worktree has its own DB), and **stops the server on every exit path**. Writes
 `specs/reports/<id>.verify.json` (`PASS`/`FAIL`/`SKIPPED`, checks, evidence, the digest of the tree it
 verified — `/cohorte-ship` compares it). Every command it is handed is judged by the gate first; the
-gate also inspects its arguments directly, so a denied command never runs. `verify-run.sh stop <id>`
+gate also inspects its arguments directly, so a denied command never runs, and one that is not the
+profile's own (or covered by a `permissions.allow` rule) needs the human's yes. `verify-run.sh stop <id>`
 reaps a server a killed run left behind; `rollback-check <spec>` exits 1 when `migrations: true` and
 `## Rollback` is empty.
 
@@ -146,7 +147,8 @@ The gate ships as **one** stdlib-only file, `core/hooks/gate.py`: `lib/install.j
 Its source is split into modules under `core/hooks/gate/` — `runtime` (time budget, git runner),
 `shell` (lexer, prefix stripping), `git` (global options, push semantics), `config`
 (gate-config.json validation, project roots), `ownership` (profile.json surfaces), `patterns`
-(pattern matching), `context` (`Ctx`), then the Bash analyzer: `findings` (the deny/ask list,
+(pattern matching), `approve` (which commands handed to a pipeline script may run unprompted:
+the profile's own and `permissions.allow`), `context` (`Ctx`), then the Bash analyzer: `findings` (the deny/ask list,
 hidden-text judgement), `rules` (the push floor, config rules, branch awareness), `protect`
 (self-protection, Bash-side ownership), `indirect` (`sh -c`, `eval`, inline code, xargs, …) —
 mixins that `analyze` composes into `Analyzer` with the command walk and chain state —

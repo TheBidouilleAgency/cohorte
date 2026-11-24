@@ -14,7 +14,7 @@ import sys
 
 from .runtime import warn
 from .context import Ctx
-from .evaluate import default_cwd, DISPATCH_TOOLS, evaluate
+from .evaluate import default_cwd, DISPATCH_TOOLS, evaluate, UNATTENDED_MODES
 
 # ── entry points ─────────────────────────────────────────────────────────────
 def emit(decision, reason):
@@ -99,13 +99,38 @@ def check_cli(argv):
         payload["tool_input"] = {"subagent_type": subject}
     try:
         decision = evaluate(payload)
+        if not decision and mode == "--check":
+            decision = approval(payload)
     except Exception as e:
         decision = ("deny", "Cohorte gate failed closed: %s: %s" % (type(e).__name__, e))
     if not decision:
         print("gate: allow")
         return 0
+    if decision[0] == "defer":
+        print("gate: defer — %s" % decision[1])
+        return 3
     print("gate: %s — %s" % decision)
     return 2 if decision[0] == "deny" else 1
+
+
+def approval(payload):
+    """For `--check` once no gate rule denies or asks: None (allow) when the gate is inert here
+    or the command is approved (approve.py), else ("defer", why) — Claude Code's own permission
+    would decide, so a script running the command unprompted must treat it as an "ask"."""
+    ctx = Ctx(payload["cwd"], payload["permission_mode"])
+    if not ctx.active:
+        return None
+    verdict = ctx.approvals().judge(payload["tool_input"]["command"])
+    if verdict == "allow":
+        return None
+    if verdict is not None:
+        level, why = verdict
+        if level == "ask" and payload["permission_mode"] in UNATTENDED_MODES:
+            level = "deny"
+        return level, "Cohorte gate: " + why
+    return ("defer", "no gate rule matches; it is not a command of the project's profile "
+            "(.claude/profile.json) nor covered by a permissions.allow rule, so Claude Code's "
+            "own permission would decide — a script must ask before running it")
 
 
 def strip_runtime(argv):
