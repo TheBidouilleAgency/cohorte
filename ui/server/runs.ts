@@ -41,6 +41,7 @@ const MAX_TEXT = 200_000;
 const SUB_TEXT = 8000;
 /** A tool_result that means the tool's work goes on in the background, past the tool call. */
 const BACKGROUNDED = /Async agent launched successfully|running in background with ID|moved to the background/;
+const ASYNC_AGENT = /Async agent launched successfully/;
 export const MODES = ['default', 'acceptEdits', 'plan']; // never bypassPermissions: the gate's asks would turn into denials
 const DENY_MESSAGE = 'cohorte ui: the user denied this tool call.';
 
@@ -75,8 +76,9 @@ export interface Run {
   strictMcp: boolean; mcpConfig: string | null;
   /** The flow's bookkeeping, persisted with the run: how far its events were processed, the draft tickets it created. */
   seen: number; tickets: Record<string, string>;
-  /** Tasks (subagents, shells) this process launched and has not seen finish, by task id: the tool call that launched it, and whether it outlives that call. */
-  tasks: Map<string, { tool: string | null; bg: boolean }>;
+  /** Tasks (subagents, shells) this process launched and has not seen finish, by task id: the tool call that launched it,
+   *  whether it outlives that call, and whether it is an agent — only agents hold the input open (they are what asks). */
+  tasks: Map<string, { tool: string | null; bg: boolean; agent: boolean }>;
   /** A lead-level task finished after the last `result`: the CLI wakes the lead for another turn — keep input open for it. */
   awaitingTurn: boolean;
 }
@@ -215,7 +217,7 @@ export class Runs {
       for (const b of v.message.content) {
         if (b.type !== 'tool_result') continue;
         const text = Array.isArray(b.content) ? b.content.map((c: any) => c.text || '').join('\n') : String(b.content ?? '');
-        if (BACKGROUNDED.test(text)) this.#backgrounded(run, b.tool_use_id);
+        if (BACKGROUNDED.test(text)) this.#backgrounded(run, b.tool_use_id, ASYNC_AGENT.test(text));
         else this.#settled(run, null, b.tool_use_id, true); // a task that ran in the foreground ended with its tool call
         this.#push(run, { kind: 'tool_result', id: b.tool_use_id, error: b.is_error === true, text: clip(text, 1500), ...sub });
       }
@@ -223,9 +225,15 @@ export class Runs {
       const tool = typeof v.tool_use_id === 'string' ? v.tool_use_id : null;
       let bg = v.is_backgrounded === true;
       for (const [k, t] of run.tasks) if (k.startsWith('tool:') && t.tool === tool) { bg = true; run.tasks.delete(k); } // the tool_result came first
-      run.tasks.set(v.task_id, { tool, bg });
+      // `local_agent`, `remote_agent`… hold the run; a shell (`local_bash`) does not. No task_type at all: assume an agent.
+      const agent = typeof v.subagent_type === 'string' || typeof v.task_type !== 'string' || /agent/i.test(v.task_type);
+      run.tasks.set(v.task_id, { tool, bg, agent });
     } else if (v.type === 'system' && v.subtype === 'task_notification') {
-      const had = this.#settled(run, typeof v.task_id === 'string' ? v.task_id : null, typeof v.tool_use_id === 'string' ? v.tool_use_id : null, false);
+      const tool = typeof v.tool_use_id === 'string' && v.tool_use_id ? v.tool_use_id : null;
+      let had = this.#settled(run, typeof v.task_id === 'string' ? v.task_id : null, tool, false);
+      // A completion that names no tool call cannot be matched to a placeholder: it settles the oldest one, so N
+      // launches and N completions always balance and a placeholder never pins the run until the stall timeout.
+      if (!had && !tool) for (const k of run.tasks.keys()) if (k.startsWith('tool:')) { run.tasks.delete(k); had = true; break; }
       // The notification is queued to whoever launched the task: the lead's own wakes it for another turn, which
       // may take a while to show (the model thinks first). A subagent's own (owned_by_subagent) wakes the subagent.
       if (had && v.owned_by_subagent !== true && v.ambient !== true) run.awaitingTurn = true;
@@ -242,10 +250,11 @@ export class Runs {
   }
 
   /** A tool call returned while its work goes on (an async agent, a background shell): tracked until its task_notification. */
-  #backgrounded(run: Run, tool: string): void {
+  #backgrounded(run: Run, tool: string, agent: boolean): void {
     let known = false;
     for (const t of run.tasks.values()) if (t.tool === tool) { t.bg = true; known = true; }
-    if (!known) run.tasks.set(`tool:${tool}`, { tool, bg: true }); // no task_started seen for it (an older CLI)
+    // No task_started seen for it (an older CLI): a placeholder, for an agent only — a shell never holds the run.
+    if (!known && agent) run.tasks.set(`tool:${tool}`, { tool, bg: true, agent: true });
   }
 
   /** Forgets the tasks matching a finished task id or tool call. `foreground` spares the ones that outlive their call. */
@@ -316,16 +325,18 @@ export class Runs {
     return true;
   }
 
-  // Every line re-arms the timer, so both delays count silence. With background work still out the short one
-  // would cut its permission channel: the long one only guards against a CLI that never reports the end.
+  // Every line re-arms the timer, so both delays count silence. With a background agent still out the short one
+  // would cut its permission channel: the long one only guards against a CLI that never reports the end. A
+  // background shell does not count — a dev server never ends while the process lives, and a shell asks nothing.
   #maybeClose(run: Run): void {
     if (run.closeTimer) { clearTimeout(run.closeTimer); run.closeTimer = null; }
     if (run.status !== 'running' || !run.result || run.pending.size) return;
-    const busy = run.tasks.size > 0 || run.awaitingTurn;
+    const agents = [...run.tasks.values()].filter((t) => t.agent).length;
+    const busy = agents > 0 || run.awaitingTurn;
     run.closeTimer = setTimeout(() => {
       run.closeTimer = null;
       if (run.status !== 'running' || run.pending.size) return;
-      if (busy) this.#push(run, { kind: 'system', text: `no output for ${this.stallMs >= 60_000 ? `${Math.round(this.stallMs / 60_000)} min` : `${this.stallMs} ms`} with ${run.tasks.size} background task(s) still out — closing the run's input` });
+      if (busy) this.#push(run, { kind: 'system', text: `no output for ${this.stallMs >= 60_000 ? `${Math.round(this.stallMs / 60_000)} min` : `${this.stallMs} ms`} with ${agents} background agent(s) still out — closing the run's input` });
       try { run.child?.stdin?.end(); } catch { /* closed */ }
     }, busy ? this.stallMs : this.quietMs);
   }
