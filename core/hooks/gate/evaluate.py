@@ -112,6 +112,13 @@ def evaluate(payload):
         for fp in targets if decision is None else ():
             p = fp if os.path.isabs(fp) else os.path.join(ctx.cwd0 or ".", fp)
             p = os.path.expanduser(p)
+            if ctx.in_core(os.path.abspath(p)):
+                decision = ("deny", "`%s` of `%s` refused: it is inside the machine-wide cohorte "
+                            "install (the core every project runs, cohorte ui's state, the global "
+                            "cohorte-* commands, agents and workflows) — agents never write there "
+                            "(self-protection); `cohorte update`, run by the human, is how it "
+                            "changes" % (tool, fp))
+                break
             if os.path.normpath(p) in ctx.protected or os.path.realpath(p) in ctx.protected:
                 decision = ("ask", "`%s` edits `%s`, a file the Cohorte gate depends on "
                             "(self-protection) — confirm this change is intended" % (tool, fp))

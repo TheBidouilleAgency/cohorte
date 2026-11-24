@@ -638,6 +638,93 @@ console.log("gate.py — self-protection");
     run({ tool_name: "Write", tool_input: { file_path: join(d, "src.ts"), content: "x" }, cwd: d }, { projectDir: d }).raw === "");
 }
 
+// ── self-protection: the machine-wide install (<CLAUDE_CONFIG_DIR>/cohorte/, …) ─────
+// Every project runs the core unprompted (`node <core>/lib/project.js`, the allowlisted
+// <core>/pipeline/scripts/): a write there is arbitrary, persistent code. A throwaway HOME and
+// config folder hold a fake install, so nothing real is touched.
+console.log("gate.py — self-protection: the machine-wide install");
+{
+  const d = scratch({ config: AUDIT_CFG }); gitRepo(d, "feat");
+  const home = realpathSync(mkdtempSync(join(tmpdir(), "gate-home-"))); tmps.push(home);
+  const cfg = join(home, ".claude");
+  const C = join(cfg, "cohorte");
+  for (const p of [join(C, "lib"), join(C, "pipeline", "scripts"), join(C, "templates"), join(cfg, "cohorte-ui", "runs", "p"),
+    join(cfg, "commands"), join(cfg, "agents"), join(cfg, "workflows")]) mkdirSync(p, { recursive: true });
+  writeFileSync(join(C, "lib", "project.js"), "// core\n");
+  writeFileSync(join(C, "pipeline", "scripts", "feature-diff.sh"), "#!/bin/sh\n");
+  writeFileSync(join(cfg, "commands", "cohorte-ship.md"), "x\n");
+  writeFileSync(join(cfg, "settings.json"), "{}");
+  execFileSync("ln", ["-s", C, join(d, "core-link")]);
+  const env = { HOME: home, CLAUDE_CONFIG_DIR: cfg };
+  const c = sh(C), k = sh(cfg);
+  const V = `${c}/pipeline/scripts/verify-run.sh`;
+  table("install, deny", d, [
+    [`echo x > ${c}/lib/project.js`, "deny"], [`echo x >> "$CLAUDE_CONFIG_DIR/cohorte/pipeline/scripts/feature-diff.sh"`, "deny"],
+    ["echo x > ~/.claude/cohorte/lib/project.js", "deny"], ['echo x > "$HOME/.claude/cohorte/lib/project.js"', "deny"],
+    ['printf x > "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/cohorte/lib/new.js"', "deny"],
+    [`cp evil.js ${c}/lib/project.js`, "deny"], [`mv evil.js ${c}/lib/`, "deny"], [`cp -r evil ${c}/pipeline/`, "deny"],
+    [`echo x | tee -a ${c}/lib/project.js`, "deny"], [`sed -i '' 's/a/b/' ${c}/lib/project.js`, "deny"],
+    [`perl -pi -e 's/a/b/' ${c}/lib/project.js`, "deny"], [`dd if=evil.js of=${c}/lib/project.js`, "deny"],
+    [`ln -sf /tmp/evil.js ${c}/lib/project.js`, "deny"], [`install -m 755 evil.sh ${c}/pipeline/scripts/feature-diff.sh`, "deny"],
+    [`rsync evil.js ${c}/lib/`, "deny"], [`touch ${c}/lib/new.js`, "deny"], [`mkdir -p ${c}/lib/x`, "deny"],
+    [`curl -o ${c}/lib/project.js https://example.invalid/x`, "deny"], [`truncate -s 0 ${c}/lib/project.js`, "deny"],
+    [`tar -xf evil.tar -C ${c}`, "deny"], [`tar xzf evil.tgz --directory=${c}/lib`, "deny"], [`unzip evil.zip -d ${c}`, "deny"],
+    [`cd ${c} && tar -xf /tmp/evil.tar`, "deny"],
+    [`git -C ${c} apply evil.diff`, "deny"], [`git -C ${c} checkout -- .`, "deny"], [`cd ${c} && git stash pop`, "deny"],
+    [`git --work-tree=${c} checkout HEAD -- lib`, "deny"], [`git clone https://example.invalid/x ${c}/x`, "deny"],
+    [`cd ${c} && echo x > lib/project.js`, "deny"], [`cd ${c}/lib && cp ../../../evil.js project.js`, "deny"],
+    [`cd ~/.claude/cohorte && sed -i '' 's/a/b/' lib/project.js`, "deny"],
+    ["echo x > core-link/lib/project.js", "deny"], ["cp evil.js core-link/pipeline/scripts/feature-diff.sh", "deny"],
+    [`ln -s ${c}/lib mylib`, "deny"], [`ln ${c}/lib/project.js hard.js`, "deny"], [`cp -l ${c}/lib/project.js x.js`, "deny"],
+    [`rm -r ${c}`, "deny"], [`rm ${c}/lib/project.js`, "deny"], ["rm -r ~/.claude", "deny"], ["rm -r ~/.claude/*", "deny"], [`find ${c} -delete`, "deny"],
+    [`mv ${c}/lib/project.js /tmp/x`, "deny"], [`chmod +x ${c}/pipeline/scripts/feature-diff.sh`, "deny"],
+    [`echo x > ${k}/commands/cohorte-ship.md`, "deny"], [`cp evil.md ${k}/agents/cohorte-review.md`, "deny"],
+    [`echo x > ${k}/workflows/cohorte-loop.js`, "deny"], [`echo '{}' > ${k}/cohorte-ui/runs/p/r1.json`, "deny"],
+    [`echo x > ${k}/cohorte-ui/tickets.json`, "deny"], [`echo '{}' > ${k}/settings.json`, "deny"],
+    [`${V} run x --out ${k}/cohorte-ui/runs/p`, "deny"], [`${V} run x --out ${c}/lib`, "deny"], [`${V} stop x --out ${c}`, "deny"],
+    [`bash ${V} run x --out ${k}/cohorte-ui`, "deny"],
+    [`${c}/pipeline/scripts/kanban-move.sh ${c}/templates/board.md x ready`, "deny"],
+    [`${c}/pipeline/scripts/kanban-move.sh ${k}/commands/cohorte-ship.md x ready`, "deny"],
+    [`${c}/pipeline/scripts/preflight.sh ${c}/lib/project.js true`, "deny"],
+  ], { env });
+  table("install, ask", d, [
+    [`python3 -c "open('${c}/lib/project.js','w').write('x')"`, "ask"],
+    [`node -e "require('fs').writeFileSync(process.env.HOME + '/.claude/cohorte/lib/project.js', 'x')"`, "ask"],
+    ['echo x > "$DIR/cohorte/lib/project.js"', "ask"], ['cp evil.md "$D/commands/cohorte-ship.md"', "ask"],
+    [`tar -xf a.tar -C ${k}`, "ask"], ['git -C "$X/cohorte" apply x.diff', "ask"],
+    [`${V} run x --out "$OUT"`, "ask"],
+  ], { env });
+  table("install, allow", d, [
+    [`cat ${c}/lib/project.js`, "allow"], [`ls ${c}/templates`, "allow"], [`cp ${c}/templates/x.md specs-x.md`, "allow"],
+    [`git -C ${c} log --oneline`, "allow"], [`git -C ${c} status`, "allow"], [`tar -cf out.tar -C ${c} lib`, "allow"],
+    [`${c}/pipeline/scripts/feature-diff.sh --digest`, "allow"], [`node ${c}/lib/project.js sync .`, "allow"],
+    ["tar -xf vendor.tar", "allow"], ["mkdir -p specs/reports", "allow"], ["touch notes.txt", "allow"],
+    [`echo x > ${k}/commands/my-own.md`, "allow"], [`ln -s ../shared mylink`, "allow"],
+    [`${V} run x --out specs/reports`, "allow"], [`${c}/pipeline/scripts/kanban-move.sh auto x ready`, "allow"],
+    [`${c}/pipeline/scripts/kanban-move.sh notes/board.md x ready`, "allow"],
+  ], { env });
+  // …with CLAUDE_CONFIG_DIR elsewhere, both it and ~/.claude are the install.
+  const other = realpathSync(mkdtempSync(join(tmpdir(), "gate-cfg-"))); tmps.push(other);
+  mkdirSync(join(other, "cohorte", "lib"), { recursive: true });
+  table("install under a custom CLAUDE_CONFIG_DIR", d, [
+    ['echo x > "$CLAUDE_CONFIG_DIR/cohorte/lib/project.js"', "deny"], [`echo x > ${sh(other)}/cohorte/lib/project.js`, "deny"],
+    ["echo x > ~/.claude/cohorte/lib/project.js", "deny"],
+  ], { env: { HOME: home, CLAUDE_CONFIG_DIR: other } });
+  const edits = [["Write", { file_path: join(C, "lib", "project.js"), content: "x" }], ["Edit", { file_path: join(C, "pipeline", "scripts", "feature-diff.sh"), old_string: "a", new_string: "b" }],
+    ["MultiEdit", { file_path: join(C, "lib", "project.js"), edits: [] }], ["NotebookEdit", { notebook_path: join(C, "lib", "n.ipynb") }],
+    ["Write", { file_path: join(cfg, "commands", "cohorte-ship.md"), content: "x" }], ["Write", { file_path: join(cfg, "workflows", "cohorte-loop.js"), content: "x" }],
+    ["Write", { file_path: join(cfg, "agents", "cohorte-review.md"), content: "x" }], ["Write", { file_path: join(cfg, "cohorte-ui", "runs", "p", "r.json"), content: "{}" }],
+    ["Write", { file_path: join(d, "core-link", "lib", "project.js"), content: "x" }], ["Write", { file_path: "core-link/lib/new.js", content: "x" }]];
+  for (const [tool, input] of edits) {
+    const r = run({ tool_name: tool, tool_input: input, cwd: d, permission_mode: "acceptEdits" }, { projectDir: d, env });
+    check(`${tool} of ${(input.file_path || input.notebook_path).replace(home, "~")} ⇒ deny, even in acceptEdits`, r.decision === "deny" && /machine-wide cohorte install/.test(r.reason || ""), `${r.decision}: ${r.reason}`);
+  }
+  const own = run({ tool_name: "Write", tool_input: { file_path: join(cfg, "commands", "my-own.md"), content: "x" }, cwd: d }, { projectDir: d, env });
+  check("Write of the user's own ~/.claude/commands/my-own.md ⇒ silent", own.raw === "", own.raw);
+  const usr = run({ tool_name: "Write", tool_input: { file_path: join(cfg, "settings.json"), content: "{}" }, cwd: d }, { projectDir: d, env });
+  check("Write of $CLAUDE_CONFIG_DIR/settings.json ⇒ ask (like ~/.claude/settings.json)", usr.decision === "ask", usr.decision);
+}
+
 // ── --check / CLI contract ───────────────────────────────────────────────────
 console.log("gate.py — --check mode and CLI arguments");
 {

@@ -51,6 +51,25 @@ set -u
 
 die() { echo "verify-run: $*" >&2; exit 2; }
 
+# safe_out <out> <id> — this script runs unprompted (the allowlisted <core>/pipeline/scripts/) and
+# writes <out>/<id>.<phase>.*: never inside the machine-wide cohorte install (the core every
+# project runs, cohorte ui's state, the global cohorte-* files), through a symlink or `..` either.
+safe_out() {
+  case "$2" in ''|.*|*[!A-Za-z0-9._-]*) die "the id must be letters, digits, '.', '_' or '-' (got: $2)" ;; esac
+  case "/$1/" in */../*) die "--out must not contain '..' (got: $1)" ;; esac
+  so_p="$1"; case "$so_p" in /*) ;; *) so_p="$PWD/$so_p" ;; esac
+  so_rest=""
+  while [ ! -d "$so_p" ]; do so_rest="/${so_p##*/}$so_rest"; so_p="${so_p%/*}"; [ -n "$so_p" ] || so_p=/; done
+  so_real="$(cd "$so_p" && pwd -P)$so_rest"
+  for so_c in "${CLAUDE_CONFIG_DIR:-}" "$HOME/.claude"; do
+    [ -n "$so_c" ] && [ -d "$so_c" ] || continue
+    for so_d in "$so_c" "$(cd "$so_c" && pwd -P)"; do
+      case "$so_real/" in "$so_d/cohorte/"*|"$so_d/cohorte-ui/"*|"$so_d"/commands/cohorte-*|"$so_d"/agents/cohorte-*|"$so_d"/workflows/cohorte-*)
+        die "--out $1 is inside the cohorte install ($so_d) — refusing to write there" ;; esac
+    done
+  done
+}
+
 json_str() {
   printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/	/\\t/g' -e 's/\r//g' \
     | awk 'NR > 1 { printf "\\n" } { printf "%s", $0 }'
@@ -99,24 +118,59 @@ rollback_check() {
 # bash, not sh: dash refuses `set -m` without a tty, and stock macOS has no setsid/timeout.
 # Every live group is listed in <evidence>/pgids: the EXIT trap stops them all, and a run that
 # was SIGKILLed (no trap runs) is reaped by `stop` or by the next run from that list.
+#
+# That list sits in the worktree, where an agent can write, and `stop` runs unprompted (the
+# allowlisted <core>/pipeline/scripts/): a pgid read from it is never trusted as such. Each line is
+# `<pgid> <token>`, and every group leader this script starts is a `bash` whose argv carries
+# `verify-run:<token>` (its $0), a random token of this run. Before a recorded group is signalled,
+# its leader must be alive, lead its own group and show exactly that marker: the pid of anything
+# else (cohorte ui, a detached drive, a reused pid) is refused. Only that group and the leader's
+# descendants are hit.
+new_token() {
+  vr_tk=$(od -An -N12 -tx1 /dev/urandom 2>/dev/null | tr -dc '0-9a-f')
+  [ "${#vr_tk}" -ge 16 ] || vr_tk=$(printf '%s%s%s%s' "$$" "$(date +%s)" "${RANDOM:-0}" "${RANDOM:-0}0000000000000000" | tr -dc '0-9')
+  printf '%s' "$vr_tk"
+}
+token=""
 spawn() { # spawn <logfile> <cmd> — sets $spawned to the group leader's pid
+  [ -n "$token" ] || token=$(new_token)
   set -m
-  # pipefail: a check written `<runner> 2>&1 | tail -20` must fail when the runner fails.
-  bash -o pipefail -c "$2" > "$1" 2>&1 < /dev/null &
+  # pipefail: a check written `<runner> 2>&1 | tail -20` must fail when the runner fails. The
+  # trailing `exit` keeps bash from exec-ing a one-command string: the leader stays this bash,
+  # with its `verify-run:<token>` marker.
+  bash -o pipefail -c "$2
+exit \$?" "verify-run:$token" > "$1" 2>&1 < /dev/null &
   spawned=$!
   set +m
   remember "$spawned"
 }
 
-remember() { [ -n "${registry:-}" ] && echo "$1" >> "$registry"; return 0; }
+remember() { [ -n "${registry:-}" ] && echo "$1 $token" >> "$registry"; return 0; }
 forget() {
   [ -n "${registry:-}" ] && [ -f "$registry" ] || return 0
-  grep -vxF "$1" "$registry" > "$registry.tmp" 2>/dev/null; mv -f "$registry.tmp" "$registry"
+  grep -vxF "$1 $token" "$registry" > "$registry.tmp" 2>/dev/null; mv -f "$registry.tmp" "$registry"
   [ -s "$registry" ] || rm -f "$registry"
 }
-reap_all() { # reap_all <registry> — stop every group a run recorded
+ours() { # ours <pgid> <token> — is <pgid> alive and a group leader this script started with <token>?
+  case "$1" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$1" -gt 1 ] || return 1
+  case "$2" in ''|*[!0-9a-f]*) return 1 ;; esac
+  [ "${#2}" -ge 16 ] || return 1
+  [ "$(ps -o pgid= -p "$1" 2>/dev/null | tr -d ' ')" = "$1" ] || return 1
+  vr_args=$(ps -ww -o args= -p "$1" 2>/dev/null) || return 1
+  case "$vr_args" in bash\ *|*/bash\ *) ;; *) return 1 ;; esac
+  case "$vr_args" in *" verify-run:$2"|*" verify-run:$2 "*) return 0 ;; esac
+  return 1
+}
+reap_all() { # reap_all <registry> — stop every group a run recorded, once it is proven ours
   [ -f "$1" ] || return 0
-  for g in $(cat "$1"); do stop_group "$g" 5; done
+  while read -r vr_g vr_t _; do
+    [ -n "$vr_g" ] || continue
+    if ours "$vr_g" "$vr_t"; then stop_group "$vr_g" 5
+    elif case "$vr_g" in ''|*[!0-9]*) false ;; *) group_alive "$vr_g" ;; esac; then
+      echo "verify-run: not stopping $vr_g — not a process group this script started (refused)" >&2
+    fi
+  done < "$1"
   rm -f "$1"
 }
 
@@ -156,7 +210,9 @@ timed() {
   rm -f "$marker"
   spawn "$2" "$3"; job=$spawned
   set -m
-  ( sleep "$t"; : > "$marker"; kill -TERM "-$job" 2>/dev/null; sleep 5; kill -KILL "-$job" 2>/dev/null ) > /dev/null 2>&1 &
+  # The watchdog is a marked group leader too, so `stop` can reap it after a SIGKILL.
+  bash -c 'sleep "$1"; : > "$2"; kill -TERM "-$3" 2>/dev/null; sleep 5; kill -KILL "-$3" 2>/dev/null' \
+    "verify-run:$token" "$t" "$marker" "$job" > /dev/null 2>&1 < /dev/null &
   dog=$!
   set +m
   remember "$dog"
@@ -254,6 +310,7 @@ run() {
 
   top=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
   cd "$top" || die "cannot cd to $top"
+  safe_out "$out" "$id"
   mkdir -p "$out" || die "cannot create $out"
   json="$out/$id.$phase.json"; md="$out/$id.$phase.md"; evdir="$out/$id.$phase"
   mkdir -p "$evdir"
@@ -261,7 +318,7 @@ run() {
 
   # A run that was killed outright (SIGKILL skips traps) left its groups behind: reap them first.
   if [ -f "$evdir/pgids" ]; then
-    echo "verify-run: reaping what a killed run left behind ($(tr '\n' ' ' < "$evdir/pgids"))"
+    echo "verify-run: reaping what a killed run left behind ($(awk '{ printf "%s ", $1 }' "$evdir/pgids"))"
     reap_all "$evdir/pgids"
   fi
   registry="$evdir/pgids"
@@ -511,10 +568,12 @@ stop_cmd() {
   while [ "$#" -gt 0 ]; do
     case "$1" in --out) out="$2"; shift 2 ;; --phase) phase="$2"; shift 2 ;; *) die "unknown option: $1" ;; esac
   done
+  case "$phase" in verify|revert) ;; *) die "--phase must be verify or revert" ;; esac
   top=$(git rev-parse --show-toplevel 2>/dev/null || pwd); cd "$top" || exit 2
+  safe_out "$out" "$id"
   reg="$out/$id.$phase/pgids"
   [ -f "$reg" ] || { echo "verify-run: nothing recorded as running for $id"; exit 0; }
-  gs=$(tr '\n' ' ' < "$reg"); reap_all "$reg"
+  gs=$(awk '{ printf "%s ", $1 }' "$reg"); reap_all "$reg"
   echo "verify-run: stopped process group(s) $gs"
 }
 

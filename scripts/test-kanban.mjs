@@ -407,5 +407,30 @@ console.log("company layout");
   check("a literal heading the board lacks is still exit 3", none.status === 3, `${none.status}`);
 }
 
+// The script runs unprompted and rewrites its board in place: never a file of the cohorte install.
+console.log("kanban-move.sh — never writes into the cohorte install");
+{
+  const cfgDir = scratch();
+  const saved = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = cfgDir;
+  mkdirSync(join(cfgDir, "cohorte", "templates"), { recursive: true }); mkdirSync(join(cfgDir, "commands"));
+  const inCore = board(join(cfgDir, "cohorte", "templates"), { Spec: ["- [ ] a  #k-1"] });
+  const cmd = board(join(cfgDir, "commands"), { Spec: ["- [ ] a  #k-1"] }, "cohorte-ship.md");
+  const before = [readFileSync(inCore, "utf8"), readFileSync(cmd, "utf8")];
+  for (const [label, p] of [["a board inside <config>/cohorte/", inCore], ["a global cohorte-* command", cmd]]) {
+    const r = run([p, "k-1", "Building", "--title", "x"]);
+    check(`${label} ⇒ refused (exit 2)`, r.status === 2 && /install/.test(r.err), `${r.status} ${r.err}`);
+  }
+  const v = join(cfgDir, "vault"); mkdirSync(v);
+  const lnk = join(v, "Board.md"); spawnSync("ln", ["-s", inCore, lnk]);
+  check("…through a symlink too", run([lnk, "k-1", "Building"]).status === 2);
+  const proj = scratch(); profile(proj, "demo");
+  const cfg = config(proj, { vault: join(cfgDir, "cohorte"), boardRel: "templates/Tasks.md" });
+  check("…or named by the config under `auto`", run(["auto", "k-1", "building"], { cwd: proj, config: cfg }).status === 2);
+  check("a board that is not Markdown ⇒ refused", (() => { const f = join(v, "x.js"); writeFileSync(f, "## Building\n"); return run([f, "k-1", "Building"]).status === 2; })());
+  check("the install files are unchanged", readFileSync(inCore, "utf8") === before[0] && readFileSync(cmd, "utf8") === before[1]);
+  if (saved === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = saved;
+}
+
 if (failures) { console.error(`\n${failures} failing check(s)`); process.exit(1); }
 console.log("\nall kanban checks passed");

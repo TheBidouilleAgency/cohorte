@@ -24,7 +24,9 @@ command as an argument, exactly as the profile spells it, and handles the proces
 - It runs the checks under timeouts, in order: `smoke`, `smoke:<surface>`, `e2e`.
 - When a local Playwright CLI resolves, it takes the screenshots.
 - It **always stops the server**, on every exit path (stale groups from a SIGKILLed run are
-  reaped by `verify-run.sh stop <id>` or by the next run).
+  reaped by `verify-run.sh stop <id>` or by the next run — only groups the script itself started:
+  each recorded group leader carries a per-run marker it checks before signalling, so a pid
+  written into the list by anyone else is refused).
 - It refuses when the ready probe already answers before the start, because that is someone
   else's server.
 - It never touches git: no checkout, commit, push or merge.

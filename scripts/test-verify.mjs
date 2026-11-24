@@ -193,6 +193,52 @@ async function assertStopped(d, port, label) {
   check("sigkill: the in-flight check and its watchdog were reaped as well", checkPid(d) > 0 && !alive(checkPid(d)) && watchdogs() === "", watchdogs());
 }
 
+// ── 6c. the pgids file is the agent's to write: `stop` kills only groups it started ──
+{
+  console.log("forged pgids");
+  const d = repo();
+  // A detached process of the user's (cohorte ui, a detached drive): its own group leader.
+  const victim = spawn("node", ["-e", "setTimeout(()=>{},30000)"], { stdio: "ignore", detached: true });
+  const bashVictim = spawn("bash", ["-c", "sleep 30; true", "x"], { stdio: "ignore", detached: true });
+  await new Promise((r) => setTimeout(r, 300));
+  mkdirSync(join(d, "specs/reports/x.verify"), { recursive: true });
+  const fake = "0123456789abcdef0123";
+  writeFileSync(join(d, "specs/reports/x.verify/pgids"),
+    [`${victim.pid}`, `${victim.pid} ${fake}`, `${bashVictim.pid} ${fake}`, `-1 ${fake}`, `0 ${fake}`, `1 ${fake}`, `${process.pid} ${fake}`, "$(touch pwned) x"].join("\n") + "\n");
+  const r = run(d, ["stop", "x"]);
+  check("stop exits 0 and says it refused", r.status === 0 && /refused/.test(r.stderr), r.stdout + r.stderr);
+  check("a process this script did not start is left alone", alive(victim.pid) && alive(bashVictim.pid));
+  check("nothing in the file is evaluated", !existsSync(join(d, "pwned")));
+  // the same file met at the start of a run is not trusted either
+  writeFileSync(join(d, "specs/reports/x.verify/pgids"), `${victim.pid} ${fake}\n`);
+  run(d, ["run", "x", "--check", "smoke=true"]);
+  check("…nor by the reap at the start of the next run", alive(victim.pid));
+  victim.kill("SIGKILL"); bashVictim.kill("SIGKILL");
+}
+
+// ── 6d. --out and the id never reach the machine-wide install ───────────────────
+{
+  console.log("outputs stay out of the cohorte install");
+  const d = repo();
+  const cfg = mkdtempSync(join(tmpdir(), "verify-cfg-")); tmps.push(cfg);
+  mkdirSync(join(cfg, "cohorte", "lib"), { recursive: true }); mkdirSync(join(cfg, "cohorte-ui"), { recursive: true });
+  const e = { env: { ...process.env, CLAUDE_CONFIG_DIR: cfg } };
+  for (const [label, args] of [
+    ["--out in <config>/cohorte-ui", ["run", "x", "--out", join(cfg, "cohorte-ui", "runs"), "--check", "smoke=true"]],
+    ["--out in the core", ["run", "x", "--out", join(cfg, "cohorte", "lib"), "--check", "smoke=true"]],
+    ["--out through a symlink into the core", ["run", "x", "--out", "core-link/x", "--check", "smoke=true"]],
+    ["--out with ..", ["run", "x", "--out", "specs/../../x", "--check", "smoke=true"]],
+    ["an id with a slash", ["run", "../../x", "--check", "smoke=true"]],
+    ["stop with --out in the core", ["stop", "x", "--out", join(cfg, "cohorte")]],
+  ]) {
+    if (label.includes("symlink")) spawnSync("ln", ["-sfn", join(cfg, "cohorte"), join(d, "core-link")]);
+    const r = run(d, args, e);
+    check(`${label} ⇒ refused (exit 2)`, r.status === 2 && /install|id must|\.\./.test(r.stderr), `${r.status} ${r.stderr}`);
+  }
+  check("nothing was written into the install", spawnSync("find", [cfg, "-type", "f"], { encoding: "utf8" }).stdout.trim() === "");
+  check("the default --out still works", run(d, ["run", "x", "--check", "smoke=true"], e).status === 0);
+}
+
 // ── 7. check timeout ⇒ FAIL 124, the check's own children killed ──────────────
 {
   console.log("check timeout");

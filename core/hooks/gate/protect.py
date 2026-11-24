@@ -16,6 +16,7 @@ from .runtime import run_git, warn
 from .shell import DYN, is_flag_word, static_word
 from .config import git_top_and_common
 from .patterns import flag_names
+from .context import CORE_TAIL_RE, CORE_TEXT_RE
 
 
 PROTECTED_HINT_RE = re.compile(r"(^|/)\.claude(/|$)|gate-config\.json|preflight\.ok|"
@@ -28,7 +29,10 @@ PROTECTED_BASENAMES = {"gate-config.json", "preflight.ok", "settings.json", "set
 
 def suspicious(tail, raw):
     """For a path the gate can't resolve: could it name a protected file? Its static tail
-    decides — `…/.claude/pipeline-metrics.jsonl` can't, `$DIR/.claude/settings.json` can."""
+    decides — `…/.claude/pipeline-metrics.jsonl` can't, `$DIR/.claude/settings.json` can, and
+    neither can `$DIR/cohorte/lib/project.js` be told from the machine-wide core."""
+    if tail and (CORE_TAIL_RE.search(tail) or CORE_TEXT_RE.search(tail)):
+        return True
     base = os.path.basename(tail.rstrip("/")) if tail else ""
     if tail and "/" in tail and base not in PROTECTED_BASENAMES and not tail.endswith("/"):
         return False
@@ -53,6 +57,7 @@ class SelfProtection(object):
         if len(t) >= 2 and t[0] == t[-1] == '"':
             t = t[1:-1]
         for var, val in (("CLAUDE_PROJECT_DIR", os.environ.get("CLAUDE_PROJECT_DIR")),
+                         ("CLAUDE_CONFIG_DIR", os.environ.get("CLAUDE_CONFIG_DIR")),
                          ("HOME", os.path.expanduser("~")),
                          ("PWD", state.cwd if state.cwd_known else None)):
             if val and var not in state.rebound:
@@ -82,6 +87,15 @@ class SelfProtection(object):
         targets = [v]
         if w.glob:
             pat = os.path.normpath(v)
+            static = re.split(r"[*?\[]", pat, 1)[0]
+            if ctx.in_core(pat) or (static.endswith(os.sep) and ctx.in_core(static.rstrip(os.sep))):
+                return "core"
+            if mode in ("delete", "recursive", "chmod") and static and \
+                    ctx.core_below(os.path.dirname(static) if not static.endswith(os.sep) else static):
+                # `rm -rf ~/.claude/*`: the glob may reach the install
+                if any(fnmatch.fnmatchcase(d, pat) for d in ctx.core_dirs) or \
+                        any(fnmatch.fnmatchcase(os.path.dirname(g), pat) for g in ctx.core_globs):
+                    return "core" if mode == "delete" else "suspect"
             if any(fnmatch.fnmatchcase(p, pat) for p in prot):
                 return "protected"
             try:
@@ -90,9 +104,13 @@ class SelfProtection(object):
                 targets = []
         for t in targets:
             for cand in {os.path.normpath(os.path.abspath(t)), os.path.realpath(t)}:
+                if ctx.in_core(cand):
+                    return "core"
                 if cand in prot:
                     return "protected"
                 if mode in ("delete", "recursive", "chmod"):
+                    if ctx.core_below(cand):
+                        return "core" if mode == "delete" else "suspect"
                     pre = cand if cand.endswith(os.sep) else cand + os.sep
                     if any(p.startswith(pre) for p in prot):
                         return "protected" if mode == "delete" else "suspect"
@@ -130,13 +148,21 @@ class SelfProtection(object):
             return
         verb = {"write": "overwrite", "delete": "delete or move", "recursive": "overwrite",
                 "chmod": "change the permissions of"}[mode]
-        if kind == "protected" and mode in ("write", "delete"):
+        if kind == "core":
+            self.deny_core(via, verb, w.raw)
+        elif kind == "protected" and mode in ("write", "delete"):
             self.deny("%s would %s `%s`, which the Cohorte gate depends on (self-protection). "
                       "Edit gate rules through PIPELINE.md and /cohorte-update-pipeline, or ask "
                       "the human" % (via, verb, w.raw))
         else:
             self.ask("%s may %s a file the Cohorte gate depends on (`%s`) — confirm"
                      % (via, verb, w.raw))
+
+    def deny_core(self, via, verb, raw):
+        self.deny("%s would %s `%s`, inside the machine-wide cohorte install (the core every "
+                  "project runs, cohorte ui's state, the global cohorte-* commands, agents and "
+                  "workflows) — agents never write there (self-protection). `cohorte update`, "
+                  "run by the human, is how it changes" % (via, verb, raw))
 
     def protect(self, inv, state, relocated):
         name, args = inv.name, inv.args
@@ -193,6 +219,23 @@ class SelfProtection(object):
                           if not target.dynamic else target, name, mv=(name == "mv"))
             elif len(pos) >= 2:
                 copy_like(pos[:-1], pos[-1], name, mv=(name == "mv"))
+            fl = flag_names(args)
+            if name == "ln" or (name == "cp" and fl & {"-l", "-s", "--link", "--symbolic-link"}) \
+                    or (name == "rsync" and any(not w.dynamic and w.value.startswith("--link-dest")
+                                                for w in args)):
+                # A link to a file of the install is a way to write it later (a hard link
+                # even hides where it points): its source counts as a write.
+                srcs = pos if target is not None or len(pos) < 2 else pos[:-1]
+                for p in srcs:
+                    self.check_core(p, state, "`%s`" % name, relocated, link=True)
+        elif name == "touch":
+            for p in positionals(args, ("-r", "--reference", "-t", "-d", "--date")):
+                self.check_path(p, state, "write", "`touch`", relocated)
+        elif name in ("mkdir", "mkfifo", "mknod"):
+            for p in positionals(args, ("-m", "--mode", "-Z", "--context")):
+                self.check_path(p, state, "write", "`%s`" % name, relocated)
+        elif name in ("tar", "bsdtar", "gtar", "unzip", "7z", "cpio"):
+            self.extract_targets(name, args, state, relocated)
         elif name == "tee":
             for p in positionals(args):
                 self.check_path(p, state, "write", "`tee`", relocated)
@@ -234,7 +277,9 @@ class SelfProtection(object):
                 if w.value.startswith("-") or w.value in ("(", "!", ")"):
                     break
                 self.check_path(w, state, "delete", "`find -delete`", relocated)
-        elif name == "git" and inv.git and inv.git.sub in ("checkout", "restore", "reset"):
+        if name == "git" and inv.git:
+            self.git_core(inv.git, state, relocated)
+        if name == "git" and inv.git and inv.git.sub in ("checkout", "restore", "reset"):
             self.git_restore(inv.git, state, relocated or inv.git.relocated)
         elif name == "git" and inv.git and inv.git.sub in ("rm", "mv"):
             g = inv.git
@@ -247,6 +292,142 @@ class SelfProtection(object):
                 for p in pos[:-1]:
                     self.check_path(p, state, "delete", "`git mv`", reloc)
                 self.check_path(pos[-1], state, "write", "`git mv`", reloc)
+
+    # -- the machine-wide install: folders a command works in, sources of links -------------
+    def core_place(self, w, state, relocated, base=None):
+        """Where a path argument points: an absolute path, "suspect" (computed at run time, and
+        it may name the install), or None (can't tell, and nothing suggests the install)."""
+        if w.dynamic:
+            t = self.known_text(w, state)
+            if t is None:
+                tail = w.value.split(DYN)[-1]
+                return "suspect" if (CORE_TAIL_RE.search(tail) or CORE_TEXT_RE.search(w.raw)) \
+                    else None
+            v = t
+        else:
+            v = w.value
+        v = os.path.expanduser(v)
+        if not os.path.isabs(v):
+            if base is None:
+                if relocated or not state.cwd_known:
+                    return "suspect" if CORE_TEXT_RE.search(v) else None
+                base = state.cwd
+            v = os.path.join(base, v)
+        return os.path.normpath(v)
+
+    def check_core(self, w, state, via, relocated, link=False, into=False):
+        """Deny when `w` is inside the install; ask when it may be (`into`: a folder a command
+        writes into that holds the install — `tar -x -C ~/.claude`)."""
+        p = self.core_place(w, state, relocated)
+        if p is None:
+            return
+        if p == "suspect":
+            self.ask("%s may write inside the machine-wide cohorte install (`%s` is computed at "
+                     "run time) — confirm" % (via, w.raw))
+        elif self.ctx.in_core(p):
+            self.deny_core(via, "link to" if link else "write into", w.raw)
+        elif into and self.ctx.core_below(p):
+            self.ask("%s writes into `%s`, which holds the machine-wide cohorte install — "
+                     "confirm" % (via, w.raw))
+
+    def extract_targets(self, name, args, state, relocated):
+        """Archive tools write their members into a folder: -C/--directory, -d, -o<dir>, or the
+        current one — judged against the install only (a project folder holding .claude/ is the
+        ordinary case). `tar -cf <file>` writes <file>."""
+        dirs = []
+        extract = False
+        short = re.compile(r"^-[A-Za-z]+$")
+        if name in ("tar", "bsdtar", "gtar"):
+            first = args[0].value if args and not args[0].dynamic else ""
+            old = bool(re.match(r"^[A-Za-z]+$", first))   # `tar xzf a.tgz`
+            st = [w.value for w in args if not w.dynamic]
+            extract = any(v in ("-x", "--extract", "--get") or (short.match(v) and "x" in v)
+                          for v in st) or (old and "x" in first)
+            creating = any(v in ("-c", "--create", "-r", "--append", "-u", "--update")
+                           or (short.match(v) and set("cru") & set(v)) for v in st) \
+                or (old and set("cru") & set(first))
+            for k, w in enumerate(args):
+                v = w.value
+                if w.dynamic:
+                    continue
+                if v in ("-C", "--directory", "--cd") and k + 1 < len(args):
+                    dirs.append(args[k + 1])
+                elif v.startswith("--directory="):
+                    dirs.append(static_word(v.split("=", 1)[1]))
+                elif creating and not extract and v in ("-f", "--file") and k + 1 < len(args):
+                    self.check_path(args[k + 1], state, "write", "`%s -f`" % name, relocated)
+                elif creating and not extract and v.startswith("--file="):
+                    self.check_path(static_word(v.split("=", 1)[1]), state, "write",
+                                    "`%s --file`" % name, relocated)
+        elif name == "unzip":
+            extract = True
+            for k, w in enumerate(args):
+                if not w.dynamic and w.value == "-d" and k + 1 < len(args):
+                    dirs.append(args[k + 1])
+        elif name == "7z":
+            extract = bool(args) and not args[0].dynamic and args[0].value in ("x", "e")
+            for w in args:
+                if not w.dynamic and w.value.startswith("-o") and len(w.value) > 2:
+                    dirs.append(static_word(w.value[2:]))
+                elif w.dynamic and w.raw.startswith("-o"):
+                    dirs.append(w)
+        elif name == "cpio":
+            extract = any(not w.dynamic and (w.value in ("-i", "--extract") or
+                                             (short.match(w.value) and "i" in w.value))
+                          for w in args)
+            for k, w in enumerate(args):
+                if not w.dynamic and w.value in ("-D", "--directory") and k + 1 < len(args):
+                    dirs.append(args[k + 1])
+        if not extract:
+            return
+        for d in dirs or [static_word(".")]:
+            self.check_core(d, state, "`%s`" % name, relocated, into=True)
+
+    GIT_READ_ONLY = set("""status log diff show ls-files ls-tree ls-remote rev-parse rev-list
+        describe blame annotate grep cat-file shortlog name-rev for-each-ref show-ref help version
+        whatchanged count-objects var check-ignore check-attr check-ref-format merge-base cherry
+        diff-tree diff-files diff-index show-branch range-diff verify-commit verify-tag""".split())
+
+    def git_core(self, g, state, relocated):
+        """git working in the install (`git -C <core> apply`, `cd <core> && git checkout x`) with
+        anything but a read-only subcommand, and git creating a repository or worktree there."""
+        via = "`git %s`" % (g.sub or "")
+        writes = bool(g.sub) and g.sub not in self.GIT_READ_ONLY
+        here = state.cwd if (state.cwd_known and not relocated) else None
+        places = []
+        for opt, w in g.places:
+            p = self.core_place(w, state, here is None, base=here)
+            if p is None or p == "suspect":
+                if p == "suspect" and writes:
+                    self.ask("%s runs in `%s`, computed at run time, which may be inside the "
+                             "machine-wide cohorte install — confirm" % (via, w.raw))
+                if opt == "-C":
+                    here = None
+                continue
+            places.append(p)
+            if opt == "-C":
+                here = p
+        if here is not None:
+            places.append(here)
+        if writes and any(self.ctx.in_core(p) for p in places):
+            self.deny_core(via, "change files or refs in",
+                           [p for p in places if self.ctx.in_core(p)][0])
+            return
+        pos = [w for w in g.args if not is_flag_word(w)]
+        dest = []
+        if g.sub == "clone" and len(pos) >= 2:
+            dest = [pos[-1]]
+        elif g.sub == "init":
+            dest = pos[:1]
+        elif g.sub == "worktree" and pos and pos[0].value == "add" and len(pos) >= 2:
+            dest = [pos[1]]
+        for w in dest:
+            p = self.core_place(w, state, here is None, base=here)
+            if p == "suspect":
+                self.ask("%s writes into `%s`, computed at run time, which may be inside the "
+                         "machine-wide cohorte install — confirm" % (via, w.raw))
+            elif p is not None and self.ctx.in_core(p):
+                self.deny_core(via, "write into", w.raw)
 
     # -- git checkout / restore / reset --hard: they overwrite worktree files ------------
     def git_restore(self, g, state, relocated):
@@ -366,7 +547,7 @@ class SelfProtection(object):
         else:
             target = os.path.normpath(os.path.join(state.cwd, rel))
         if not glob_like and not v.endswith("/"):
-            if self.classify_path(static_word(target), state, "write") == "protected":
+            if self.classify_path(static_word(target), state, "write") in ("protected", "core"):
                 self.check_path(static_word(target), state, "write", via)
                 return
             if self.ctx.owner is not None:
