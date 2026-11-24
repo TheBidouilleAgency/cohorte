@@ -12,7 +12,7 @@
 //   node scripts/test-kanban.mjs
 
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, readdirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, readdirSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -422,8 +422,13 @@ console.log("kanban-move.sh — never writes into the cohorte install");
     check(`${label} ⇒ refused (exit 2)`, r.status === 2 && /install/.test(r.err), `${r.status} ${r.err}`);
   }
   const v = join(cfgDir, "vault"); mkdirSync(v);
-  const lnk = join(v, "Board.md"); spawnSync("ln", ["-s", inCore, lnk]);
-  check("…through a symlink too", run([lnk, "k-1", "Building"]).status === 2);
+  const lnk = join(v, "Board.md");
+  let linked = true;
+  try { symlinkSync(inCore, lnk, "file"); } catch (e) {
+    linked = false;
+    console.log(`  - skipped the file-symlink case: ${e.code || e.message} (no symlink privilege, e.g. Windows without developer mode)`);
+  }
+  if (linked) check("…through a symlink too", run([lnk, "k-1", "Building"]).status === 2);
   const proj = scratch(); profile(proj, "demo");
   const cfg = config(proj, { vault: join(cfgDir, "cohorte"), boardRel: "templates/Tasks.md" });
   check("…or named by the config under `auto`", run(["auto", "k-1", "building"], { cwd: proj, config: cfg }).status === 2);

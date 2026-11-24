@@ -230,6 +230,29 @@ def warn(msg):
         pass
 
 
+# ── the home folder ──────────────────────────────────────────────────────────
+# `~` and $HOME mean what they mean to the shell that runs the agent's command: bash (Git Bash on
+# Windows) reads $HOME, while Python's expanduser reads USERPROFILE on Windows. So $HOME wins
+# when it is set (an MSYS spelling `/c/Users/x` is read as `C:/Users/x`).
+def home_dir():
+    h = os.environ.get("HOME")
+    if h:
+        if os.name == "nt":
+            m = re.match(r"^/([A-Za-z])(/.*)?$", h.replace("\\", "/"))
+            if m:
+                h = m.group(1).upper() + ":" + (m.group(2) or "/")
+        if os.path.isabs(h):
+            return os.path.normpath(h)
+    return os.path.expanduser("~")
+
+
+def expand_home(p):
+    """`~` / `~/…` expanded like the shell does; `~user` left to expanduser."""
+    if p == "~" or p.startswith("~/") or p.startswith("~\\"):
+        return home_dir() + p[1:]
+    return os.path.expanduser(p) if p.startswith("~") else p
+
+
 # ══ core/hooks/gate/shell.py ═════════════════════════════════════════════════
 # ── lexer ────────────────────────────────────────────────────────────────────
 DYN = "\x00"   # stands for a run-time expansion inside a word's value
@@ -295,7 +318,7 @@ def static_env():
     for name in STATIC_VARS:
         v = os.environ.get(name)
         if v is None and name == "HOME":
-            v = os.path.expanduser("~")
+            v = home_dir()
             if v == "~":
                 continue
         if v is not None:
@@ -1420,7 +1443,7 @@ def resolve_roots(cwd):
             add(top)
         else:
             d = os.path.realpath(cwd)
-            home = os.path.realpath(os.path.expanduser("~"))
+            home = os.path.realpath(home_dir())
             while True:
                 c = os.path.join(d, ".claude")
                 if (os.path.isfile(os.path.join(c, "gate-config.json"))
@@ -2007,7 +2030,7 @@ class Approvals(object):
                 self.profile.add(norm_cmd(c))
                 self.profile.add(norm_cmd(c + QUIET_SUFFIX))
         self.profile.add(norm_cmd(SECURITY_MARKER))
-        cfg = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
+        cfg = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(home_dir(), ".claude")
         files = [os.path.join(cfg, "settings.json")]
         for r in roots:
             files += [os.path.join(r, ".claude", "settings.json"),
@@ -2093,10 +2116,10 @@ def config_dirs():
     (the default, and where a 2.x install or a second account may still live)."""
     out = []
     env = os.environ.get("CLAUDE_CONFIG_DIR")
-    home = os.path.join(os.path.expanduser("~"), ".claude")
+    home = os.path.join(home_dir(), ".claude")
     for d in (env, home):
-        if d and os.path.isabs(os.path.expanduser(d)):
-            d = os.path.normpath(os.path.expanduser(d))
+        if d and os.path.isabs(expand_home(d)):
+            d = os.path.normpath(expand_home(d))
             if d not in out:
                 out.append(d)
     return out
@@ -2192,16 +2215,16 @@ class Ctx(object):
         for cfg in cfg_dirs:
             for c in (cfg, os.path.realpath(cfg)):
                 for sub in ("cohorte", "cohorte-ui"):
-                    dirs.add(os.path.normpath(os.path.join(c, sub)))
+                    dirs.add(os.path.normcase(os.path.normpath(os.path.join(c, sub))))
                 for sub, pat in (("commands", "cohorte-*.md"), ("agents", "cohorte-*.md"),
                                  ("workflows", "cohorte-*.js")):
-                    globs.add(os.path.normpath(os.path.join(c, sub, pat)))
+                    globs.add(os.path.normcase(os.path.normpath(os.path.join(c, sub, pat))))
         self.core_dirs = sorted(dirs)
         self.core_globs = sorted(globs)
 
     def in_core(self, p):
         """Is `p` (absolute) inside the machine-wide install — through a symlink too?"""
-        for cand in {os.path.normpath(p), os.path.realpath(p)}:
+        for cand in {os.path.normcase(os.path.normpath(p)), os.path.normcase(os.path.realpath(p))}:
             for d in self.core_dirs:
                 if cand == d or cand.startswith(d + os.sep):
                     return True
@@ -2212,7 +2235,7 @@ class Ctx(object):
 
     def core_below(self, p):
         """Does the directory `p` (absolute) hold part of the machine-wide install?"""
-        for cand in {os.path.normpath(p), os.path.realpath(p)}:
+        for cand in {os.path.normcase(os.path.normpath(p)), os.path.normcase(os.path.realpath(p))}:
             pre = cand.rstrip(os.sep) + os.sep
             if any(d.startswith(pre) for d in self.core_dirs) or \
                     any(os.path.dirname(g).startswith(pre) or os.path.dirname(g) == cand
@@ -2224,8 +2247,9 @@ class Ctx(object):
         """Does a piece of inline code name the machine-wide install?"""
         if CORE_TEXT_RE.search(text):
             return True
-        return any(d in text for d in self.core_dirs) or \
-            any(os.path.dirname(g) + os.sep + "cohorte-" in text for g in self.core_globs)
+        t = os.path.normcase(text)     # Windows: case-insensitive, either slash
+        return any(d in t for d in self.core_dirs) or \
+            any(os.path.dirname(g) + os.sep + "cohorte-" in t for g in self.core_globs)
 
     # git state, cached
     def current_branch(self, cwd):
@@ -2552,7 +2576,7 @@ def suspicious(tail, raw):
 
 class SelfProtection(object):
     def path_key(self, w, state):
-        v = os.path.expanduser(w.value)
+        v = expand_home(w.value)
         if not os.path.isabs(v) and state.cwd_known:
             v = os.path.join(state.cwd, v)
         return os.path.normpath(v)
@@ -2569,7 +2593,7 @@ class SelfProtection(object):
             t = t[1:-1]
         for var, val in (("CLAUDE_PROJECT_DIR", os.environ.get("CLAUDE_PROJECT_DIR")),
                          ("CLAUDE_CONFIG_DIR", os.environ.get("CLAUDE_CONFIG_DIR")),
-                         ("HOME", os.path.expanduser("~")),
+                         ("HOME", home_dir()),
                          ("PWD", state.cwd if state.cwd_known else None)):
             if val and var not in state.rebound:
                 # Forward slashes: a Windows value (C:\\Users\\…) would otherwise read as
@@ -2587,7 +2611,7 @@ class SelfProtection(object):
             if t is None:
                 return "suspect" if suspicious(w.value.split(DYN)[-1], w.raw) else None
             w = static_word(t)
-        v = os.path.expanduser(w.value)
+        v = expand_home(w.value)
         if not v:
             return None
         if not os.path.isabs(v):
@@ -2604,8 +2628,9 @@ class SelfProtection(object):
             if mode in ("delete", "recursive", "chmod") and static and \
                     ctx.core_below(os.path.dirname(static) if not static.endswith(os.sep) else static):
                 # `rm -rf ~/.claude/*`: the glob may reach the install
-                if any(fnmatch.fnmatchcase(d, pat) for d in ctx.core_dirs) or \
-                        any(fnmatch.fnmatchcase(os.path.dirname(g), pat) for g in ctx.core_globs):
+                npat = os.path.normcase(pat)
+                if any(fnmatch.fnmatchcase(d, npat) for d in ctx.core_dirs) or \
+                        any(fnmatch.fnmatchcase(os.path.dirname(g), npat) for g in ctx.core_globs):
                     return "core" if mode == "delete" else "suspect"
             if any(fnmatch.fnmatchcase(p, pat) for p in prot):
                 return "protected"
@@ -2635,7 +2660,7 @@ class SelfProtection(object):
             t = self.known_text(w, state) if w.dynamic else w.value
             if not t:
                 return
-            v = os.path.expanduser(t)
+            v = expand_home(t)
             if not os.path.isabs(v):
                 if relocated or not state.cwd_known:
                     return
@@ -2817,7 +2842,7 @@ class SelfProtection(object):
             v = t
         else:
             v = w.value
-        v = os.path.expanduser(v)
+        v = expand_home(v)
         if not os.path.isabs(v):
             if base is None:
                 if relocated or not state.cwd_known:
@@ -3016,7 +3041,7 @@ class SelfProtection(object):
         v = w.value
         if v in (".", "..") or v.startswith(":") or w.glob:
             return True
-        return state.cwd_known and os.path.exists(os.path.join(state.cwd, os.path.expanduser(v)))
+        return state.cwd_known and os.path.exists(os.path.join(state.cwd, expand_home(v)))
 
     def restore_spec(self, spec, state, relocated, via, broad):
         if spec.dynamic:
@@ -3037,7 +3062,7 @@ class SelfProtection(object):
             rel, base = v[2:], None
         else:
             magic = False
-            rel, base = os.path.expanduser(v), "cwd"
+            rel, base = expand_home(v), "cwd"
         if base == "cwd" and not os.path.isabs(rel) and (relocated or not state.cwd_known):
             # relative to a directory the gate can't resolve
             if suspicious(rel, v) or rel in ("", ".", "./") or glob_like:
@@ -3759,7 +3784,7 @@ class Analyzer(Indirection, SelfProtection, RuleChecks, Findings):
             if pos and pos[0].value == "--" and not pos[0].dynamic:
                 pos = pos[1:]
             if not pos:
-                target = os.path.expanduser("~")
+                target = home_dir()
             else:
                 w = pos[0]
                 if w.value == "-" and not w.dynamic:
@@ -3772,7 +3797,7 @@ class Analyzer(Indirection, SelfProtection, RuleChecks, Findings):
                         return
                     target = k
                 else:
-                    target = os.path.expanduser(w.value)
+                    target = expand_home(w.value)
             if not os.path.isabs(target):
                 if not state.cwd_known:
                     return
@@ -3819,7 +3844,7 @@ class Analyzer(Indirection, SelfProtection, RuleChecks, Findings):
             t = t[1:-1]
         # Only $HOME: CLAUDE_PROJECT_DIR is set for hooks but usually NOT in the agent's
         # Bash call, so resolving it here could judge the branch in the wrong directory.
-        val = os.path.expanduser("~")
+        val = home_dir()
         t = t.replace("${HOME}", val).replace("$HOME", val)
         if "$" in t or "`" in t or "'" in t or '"' in t or "\\" in t:
             return None
@@ -4043,7 +4068,7 @@ def edit_ownership(ctx, tool, targets):
                 "(surface ownership) — refused" % (tool, ctx.owner.agent))
     for fp in targets:
         try:
-            p = os.path.expanduser(fp)
+            p = expand_home(fp)
             if not os.path.isabs(p):
                 p = os.path.join(ctx.cwd0 or os.getcwd(), p)
             why = ctx.owner.judge(p)
@@ -4095,7 +4120,7 @@ def evaluate(payload):
             decision = edit_ownership(ctx, tool, targets)
         for fp in targets if decision is None else ():
             p = fp if os.path.isabs(fp) else os.path.join(ctx.cwd0 or ".", fp)
-            p = os.path.expanduser(p)
+            p = expand_home(p)
             if ctx.in_core(os.path.abspath(p)):
                 decision = ("deny", "`%s` of `%s` refused: it is inside the machine-wide cohorte "
                             "install (the core every project runs, cohorte ui's state, the global "

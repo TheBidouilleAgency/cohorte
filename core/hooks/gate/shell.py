@@ -9,6 +9,8 @@ front of the real command (`VAR=val`, `env`, `sudo`, `nice`, `timeout`, …).
 import os
 import re
 
+from .runtime import home_dir
+
 # ── lexer ────────────────────────────────────────────────────────────────────
 DYN = "\x00"   # stands for a run-time expansion inside a word's value
 
@@ -73,7 +75,7 @@ def static_env():
     for name in STATIC_VARS:
         v = os.environ.get(name)
         if v is None and name == "HOME":
-            v = os.path.expanduser("~")
+            v = home_dir()
             if v == "~":
                 continue
         if v is not None:
