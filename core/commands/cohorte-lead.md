@@ -8,17 +8,26 @@ business already validated *what* (the ticket, below, at CP0). With the develope
 one conversation, so that once they approve your plan (**CP1**) the pipeline can build, review, fix and
 verify **without needing them** — every question you leave open now becomes an interruption later.
 
-> You normally run inside `cohorte ui`, in the feature's own worktree, and the ticket is inlined in a
-> context block at the end of this prompt. Without it, read the ticket the developer pastes.
+> **Where you run.** Inside `cohorte ui` you run in the feature's own worktree, the ticket is inlined in a
+> context block at the end of this prompt, the dashboard moves its card and tells you when the developer
+> approves — the plain-session steps below do not apply. In a **plain Claude Code session** (no context
+> block), the CLI does what the dashboard does — one plain command per Bash call — no `&&`, `;`, `|`, redirect or `$(…)`: the gate and the permission rules read it whole:
+>
+> 1. Read the ticket: `cohorte ticket show $ARGUMENTS --json`. Not found ⇒ ask the developer for the
+>    ticket id (`cohorte ticket list` shows them), or to paste the ticket, and wait.
+> 2. Its `feature` is null ⇒ take it, with yourself as the lead: `cohorte take $ARGUMENTS --no-lead --json`
+>    — a worktree and the feature record (its id is the ticket id), the card moved to Framing. Its
+>    `feature.worktree` is where every file of this feature goes: write there, by absolute path. Already
+>    taken ⇒ work in its `feature.worktree`.
+> 3. On approval, §4 says what to run.
+>
 > Read `.claude/profile.json` (the parsed `pipeline-profile` block; absent ⇒ that block in `PIPELINE.md`):
 > `surfaces`, `contract`, `design.enabled`, `project.kind`; then `PIPELINE.md` §Conventions, and
 > `specs/_decisions.md` §Live if it exists (`<core>/pipeline/schema/decisions.md`) — the standing
 > decisions this feature must not silently contradict. Read `PRODUCT.md` if it exists.
 >
-> **Kanban** (`<core>/pipeline/schema/kanban.md`): `cohorte ui` moves the ticket's card itself. In a
-> plain session, when the spec opens run `<core>/pipeline/scripts/kanban-move.sh auto $ARGUMENTS framing --title "<ticket title>"`;
-> `auto` resolves the board from the config and exits 0 with a `kanban: <reason>` line when there is
-> none — never decide "no board is configured" without running it.
+> **Kanban** (`<core>/pipeline/schema/kanban.md`): `cohorte ui` and `cohorte take` move the ticket's card
+> themselves — never move it by hand.
 
 ## 1. Read, then open with a proposal — not a questionnaire
 
@@ -76,12 +85,21 @@ If the developer replies instead of approving, revise and post a new block.
 
 ## 4. On approval — freeze
 
-When the developer approves (in `cohorte ui`: a message starting **`CP1 APPROVED`**), do the freeze
-exactly as `/cohorte-spec` Mode A steps 5–6 say: `status: frozen` (postcondition
-`grep -q '^status: frozen' specs/$ARGUMENTS.md`), the decisions that outlive this feature appended to
-`specs/_decisions.md` §Live (0–3 lines, zero is normal), the design brief to `specs/design/$ARGUMENTS.md`
-when the feature has UI. Then end your turn with one line. Do not build, and do not tell anyone to run a
-command next: the autopilot starts the build itself.
+When the developer approves (in `cohorte ui`: a message starting **`CP1 APPROVED`**; in a plain session:
+they say so in the chat), do the freeze exactly as `/cohorte-spec` Mode A steps 5–6 say: `status: frozen`
+(postcondition: Read `specs/$ARGUMENTS.md` and see `status: frozen` in its front-matter), the decisions
+that outlive this feature appended to `specs/_decisions.md` §Live (0–3 lines, zero is normal), the design
+brief to `specs/design/$ARGUMENTS.md` when the feature has UI.
+
+- **In `cohorte ui`:** end your turn with one line. Do not build, and do not tell anyone to run a command
+  next: the autopilot starts the build itself.
+- **In a plain session:** start the autopilot in the background — `cohorte checkpoint $ARGUMENTS approve --detach --json`
+  (it refuses a spec that is not frozen: fix the freeze, then run it again). Do not build yourself. Then
+  tell the developer, in plain words: the autopilot now builds, reviews, fixes and verifies on its own,
+  each step in a fresh session; what it cannot settle from the spec appears as a question in the
+  `cohorte ui` inbox, and in a terminal with `cohorte autopilot $ARGUMENTS --follow` (which also shows its
+  progress); `cohorte autopilot $ARGUMENTS --status` says where it is at any time; it stops at CP3, where
+  they sign off the result (`cohorte checkpoint $ARGUMENTS approve` ships it, or the dashboard's Ship).
 
 ## 5. When the autopilot sends you back
 

@@ -11,11 +11,29 @@ wrote one:
 
 **$ARGUMENTS**
 
-> You normally run inside `cohorte ui` ("New project"). A context block at the end of this prompt gives
+> Inside `cohorte ui` ("New project"), or `cohorte new-project` in a terminal, a context block at the end of this prompt gives
 > the vision the business validated (when there is one — else the brief above is all there is), the
 > tools installed on this machine, the stacks of the developer's other projects, and — when they asked
 > to start from one of them — that project's structure and conventions. Read `PRODUCT.md` if it exists.
 > Do not explore the rest of the disk.
+>
+> **In a plain Claude Code session** (no context block) the founding is run by the CLI, with the same
+> checkpoints as the dashboard's New project, and you relay it — one plain command per Bash call — no `&&`, `;`, `|`, redirect or `$(…)`: the gate and the permission rules read it whole, each with a 600000 ms timeout:
+>
+> 1. Ask the name of the folder to create and where (an absolute parent folder), then start it:
+>    `cohorte new-project --stack --brief "<what they want to build>" --name <folder> --parent <absolute parent> --json`.
+> 2. It runs the conversation and returns when someone has to answer (`waiting`: the agent's question,
+>    or a checkpoint — `cp-vision`, `cp-foundation`, `cp-scaffold`). Show the person what it printed — the
+>    agent's words, the vision, the plan — and ask them.
+> 3. Pass their answer on: `cohorte new-project --resume --project <the new folder> reply --note "<their words>" --json`,
+>    or `approve`, `retry`, `continue`, `abandon` at a checkpoint. Before the foundations are approved,
+>    cohorte checks the git identity it will commit with: offer `--identity github` (their signed-in GitHub
+>    account) or `--identity "Name <email>"`, set in that repository only.
+> 4. Repeat until it says the project is ready (`done`): its first-version tickets are then in its
+>    backlog (`cohorte ticket list --project <folder>`).
+>
+> Do not run the conversation yourself in that case — the CLI's agents are the ones whose words the
+> dashboard keeps.
 
 ## 1. Open with a proposal — not a questionnaire
 

@@ -9,7 +9,10 @@ person who asked for it now has to check it is what they wanted. Write them the 
 against.
 
 > `cohorte ui` inlines the ticket, the spec the developers built and the PR in a context block at the end
-> of this prompt. You are read-only: Read/Grep/Glob are there to look something up, never to change it.
+> of this prompt, and records the requester's answer from its buttons. In a plain Claude Code session (no
+> context block), read the ticket with `cohorte ticket show $ARGUMENTS --json` and the spec in
+> `specs/$ARGUMENTS.md`, write the note, and record the requester's verdict yourself (§Their answer).
+> You are otherwise read-only: Read/Grep/Glob are there to look something up, never to change it.
 
 ## What the note is
 
@@ -33,3 +36,14 @@ A two-line message to the requester, then exactly one block:
 ```
 
 The JSON must parse: double quotes, no trailing commas. Never include real customer data.
+
+## Their answer (plain session only)
+
+When the requester has checked it and answers in the chat, record it — one plain command per Bash call — no `&&`, `;`, `|`, redirect or `$(…)`: the gate and the permission rules read it whole:
+
+- it is what they asked for: `cohorte accept $ARGUMENTS ok --note "<what they said, in a line>" --json`;
+- not quite: `cohorte accept $ARGUMENTS not-quite --note "<what is not right, in their words>" --json` — the
+  ticket is closed and a follow-up conversation with the product owner opens on it (in `cohorte ui`).
+
+It refuses a ticket that is not waiting for acceptance (the flow puts it there once the PR is merged):
+then tell the person where the ticket stands (`cohorte ticket show`) and record nothing.
