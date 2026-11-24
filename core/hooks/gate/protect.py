@@ -1,7 +1,8 @@
 """`SelfProtection`: Bash writes to the files the gate depends on, and Bash-side ownership.
 
 `protect` finds what a command writes, moves, deletes or chmods (cp/mv/rm, tee, truncate,
-sed -i, dd of=, curl -o, find -delete, git rm/mv, …); `check_path` denies a write or delete
+sed -i, dd of=, curl -o, find -delete, git rm/mv, git checkout/restore of paths, git reset
+--hard, …); `check_path` denies a write or delete
 of a protected file, asks when the target can't be resolved but may name one (`suspicious`),
 and, when profile.json ownership applies, denies a write outside the agent's surfaces.
 """
@@ -11,8 +12,9 @@ import glob
 import os
 import re
 
-from .runtime import warn
+from .runtime import run_git, warn
 from .shell import DYN, is_flag_word, static_word
+from .config import git_top_and_common
 from .patterns import flag_names
 
 
@@ -232,6 +234,8 @@ class SelfProtection(object):
                 if w.value.startswith("-") or w.value in ("(", "!", ")"):
                     break
                 self.check_path(w, state, "delete", "`find -delete`", relocated)
+        elif name == "git" and inv.git and inv.git.sub in ("checkout", "restore", "reset"):
+            self.git_restore(inv.git, state, relocated or inv.git.relocated)
         elif name == "git" and inv.git and inv.git.sub in ("rm", "mv"):
             g = inv.git
             pos = positionals(g.args)
@@ -243,3 +247,156 @@ class SelfProtection(object):
                 for p in pos[:-1]:
                     self.check_path(p, state, "delete", "`git mv`", reloc)
                 self.check_path(pos[-1], state, "write", "`git mv`", reloc)
+
+    # -- git checkout / restore / reset --hard: they overwrite worktree files ------------
+    def git_restore(self, g, state, relocated):
+        """`git checkout [<rev>] -- <pathspec>…`, `git restore [--source=<rev>] <pathspec>…`
+        and `git reset --hard|--merge|--keep [<rev>]` rewrite files in the worktree. A pathspec
+        naming a protected file is a write to it. A broader one (`.`, `.claude/`, `:/`, a glob)
+        counts only when a protected file it covers differs from the source — asked of git;
+        when git can't say, the call gets "ask". Index-only forms (`git restore --staged`,
+        `git reset [<rev>] -- <path>`) don't touch the worktree."""
+        a = g.args
+        sub = g.sub
+        via = "`git %s`" % sub
+        source = None
+        specs = []
+        if sub == "reset":
+            fl = flag_names(a)
+            if not fl & {"--hard", "--merge", "--keep"}:
+                return
+            pos = [w for w in a if not is_flag_word(w) and w.value != "--"]
+            source = pos[0] if pos else static_word("HEAD")
+            specs = [static_word(":/")]
+        elif sub == "checkout":
+            if flag_names(a) & {"-b", "-B", "--orphan"} or any(
+                    not w.dynamic and len(w.value) > 2 and w.value[0] == "-" and w.value[1] != "-"
+                    and w.value[-1] in "bB" for w in a):
+                return                     # a branch operation (handled by update_state)
+            if any(not w.dynamic and w.value.startswith("--pathspec-from-file") for w in a):
+                specs = [static_word(":/")]
+            if any(not w.dynamic and w.value == "--" for w in a):
+                k = [i for i, w in enumerate(a) if not w.dynamic and w.value == "--"][0]
+                before = [w for w in a[:k] if not is_flag_word(w)]
+                source = before[0] if before else None
+                specs += a[k + 1:]
+            else:
+                pos = [w for w in a if not is_flag_word(w)]
+                if pos and not self.pathish(pos[0], state):
+                    source, pos = pos[0], pos[1:]
+                specs += pos
+        else:                              # restore
+            fl = flag_names(a)
+            if ("-S" in fl or "--staged" in fl) and not ("-W" in fl or "--worktree" in fl):
+                return
+            k = 0
+            end = False
+            while k < len(a):
+                w = a[k]
+                v = w.value
+                if not end and not w.dynamic and v == "--":
+                    end = True
+                elif not end and not w.dynamic and v in ("-s", "--source"):
+                    source = a[k + 1] if k + 1 < len(a) else None
+                    k += 1
+                elif not end and not w.dynamic and v.startswith("--source="):
+                    source = static_word(v.split("=", 1)[1])
+                elif not end and not w.dynamic and v.startswith("-s") and len(v) > 2 \
+                        and not v.startswith("--"):
+                    source = static_word(v[2:])
+                elif not end and not w.dynamic and v.startswith("--pathspec-from-file"):
+                    specs.append(static_word(":/"))
+                elif not end and is_flag_word(w):
+                    pass
+                else:
+                    specs.append(w)
+                k += 1
+        broad = []
+        for spec in specs:
+            self.restore_spec(spec, state, relocated, via, broad)
+        if broad:
+            self.restore_broad(broad, source, state, via)
+
+    def pathish(self, w, state):
+        """Is `git checkout`'s first positional (no `--`) a path rather than a revision?"""
+        if w.dynamic:
+            return w.glob or "/" in w.value.split(DYN)[-1]
+        v = w.value
+        if v in (".", "..") or v.startswith(":") or w.glob:
+            return True
+        return state.cwd_known and os.path.exists(os.path.join(state.cwd, os.path.expanduser(v)))
+
+    def restore_spec(self, spec, state, relocated, via, broad):
+        if spec.dynamic:
+            t = self.known_text(spec, state)
+            if t is None:
+                if suspicious(spec.value.split(DYN)[-1], spec.raw):
+                    self.ask("%s may overwrite a file the Cohorte gate depends on (`%s`) — confirm"
+                             % (via, spec.raw))
+                return
+            spec = static_word(t)
+        v = spec.value
+        glob_like = spec.glob or any(c in v for c in "*?[")
+        if v.startswith(":") and not v.startswith(":/"):
+            magic = True                   # :(glob)…, :!…, :^… — judged as the whole repo
+            rel, base = "", None
+        elif v.startswith(":/"):
+            magic = False
+            rel, base = v[2:], None
+        else:
+            magic = False
+            rel, base = os.path.expanduser(v), "cwd"
+        if base == "cwd" and not os.path.isabs(rel) and (relocated or not state.cwd_known):
+            # relative to a directory the gate can't resolve
+            if suspicious(rel, v) or rel in ("", ".", "./") or glob_like:
+                self.ask("%s rewrites `%s` in a directory the gate can't resolve — it may "
+                         "overwrite a file the Cohorte gate depends on; confirm" % (via, v))
+            return
+        top = None
+        if base is None or magic:
+            if not state.cwd_known or relocated:
+                self.ask("%s rewrites `%s` in a checkout the gate can't resolve — confirm"
+                         % (via, v))
+                return
+            top = git_top_and_common(state.cwd)[0]
+            if top is None:
+                return
+            target = os.path.normpath(os.path.join(top, "" if magic else rel))
+            glob_like = glob_like or magic
+        else:
+            target = os.path.normpath(os.path.join(state.cwd, rel))
+        if not glob_like and not v.endswith("/"):
+            if self.classify_path(static_word(target), state, "write") == "protected":
+                self.check_path(static_word(target), state, "write", via)
+                return
+            if self.ctx.owner is not None:
+                self.check_owner(static_word(target), state, "write", via)
+        pre = target.rstrip(os.sep) + os.sep
+        for p in sorted(self.ctx.protected):
+            if p.startswith(pre) or (glob_like and not magic and fnmatch.fnmatchcase(p, target)) \
+                    or (magic and p.startswith((top or target).rstrip(os.sep) + os.sep)):
+                if p not in broad:
+                    broad.append(p)
+
+    def restore_broad(self, files, source, state, via):
+        """Protected files a broad pathspec covers: a write only if one differs from what
+        the command restores (the index, or <rev>)."""
+        if source is not None and source.dynamic:
+            self.ask("%s restores from a revision computed at run time over files the Cohorte "
+                     "gate depends on — confirm" % via)
+            return
+        args = ["diff", "--name-only", "--no-renames"]
+        if source is not None:
+            args.append(source.value)
+        r = run_git(args + ["--"] + files, state.cwd)
+        if r is None or r[0] != 0:
+            self.ask("%s covers files the Cohorte gate depends on and git can't tell whether it "
+                     "would change them — confirm" % via)
+            return
+        changed = [ln.strip() for ln in r[1].splitlines() if ln.strip()]
+        if not changed:
+            return
+        top = git_top_and_common(state.cwd)[0] or state.cwd
+        for c in changed:
+            self.check_path(static_word(os.path.normpath(os.path.join(top, c))), state, "write",
+                            via)
