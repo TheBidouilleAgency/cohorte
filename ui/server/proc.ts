@@ -53,6 +53,22 @@ export function alive(pid: unknown, start?: unknown): boolean {
   return now === null ? process.platform === 'win32' : Math.abs(now - start) <= SLACK_S;
 }
 
+function parentOf(pid: number): number | null {
+  if (process.platform === 'linux') {
+    try { const st = fs.readFileSync(`/proc/${pid}/stat`, 'utf8'); return Number(st.slice(st.lastIndexOf(')') + 2).split(' ')[1]) || null; } catch { return null; }
+  }
+  if (process.platform === 'win32') return null;
+  const r = spawnSync('ps', ['-o', 'ppid=', '-p', String(pid)], { encoding: 'utf8', timeout: 3000 });
+  return r.status === 0 ? Number((r.stdout || '').trim()) || null : null;
+}
+
+/** This process's ancestors, nearest first, each with its start time — to tell whether a cohorte run is one of them. */
+export function ancestors(max = 40): ProcId[] {
+  const out: ProcId[] = [];
+  for (let pid = parentOf(process.pid); pid && pid > 1 && out.length < max; pid = parentOf(pid)) out.push({ pid, start: startOf(pid) });
+  return out;
+}
+
 /** Whether a record names this very process. */
 export const isSelf = (h: { pid?: unknown; start?: unknown } | null | undefined): boolean =>
   !!h && h.pid === process.pid && (typeof h.start !== 'number' || Math.abs(h.start - (self.start as number)) <= SLACK_S);

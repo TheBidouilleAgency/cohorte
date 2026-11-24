@@ -6,7 +6,7 @@ import os from 'os';
 import path from 'path';
 import { spawn } from 'child_process';
 import { afterAll, describe, expect, it } from 'vitest';
-import { Runs, type Run } from './runs';
+import { Runs, remoteAnswerable, type Run } from './runs';
 import { RunStore } from './history';
 import { Leases } from './lease';
 import { alive, isSelf, self, startOf } from './proc';
@@ -24,7 +24,7 @@ rl.on('line', (l) => {
   if (v.type === 'user') {
     out({ type: 'system', subtype: 'init', session_id: 's1' });
     out({ type: 'control_request', request_id: 'r1', request: { subtype: 'can_use_tool', tool_name: q ? 'AskUserQuestion' : 'Bash',
-      input: q ? { questions: [{ question: 'Which?', header: 'visible', multiSelect: false, options: [{ label: 'A', description: '' }, { label: 'B', description: '' }] }] } : { command: 'rm -rf /tmp/x' } } });
+      input: q ? { questions: [{ question: 'Which?', header: process.env.FAKE_HEADER || 'visible', multiSelect: false, options: [{ label: 'A', description: '' }, { label: 'B', description: '' }] }] } : { command: 'rm -rf /tmp/x' } } });
   }
   if (v.type === 'control_response') {
     out({ type: 'assistant', message: { content: [{ type: 'text', text: 'got ' + v.response.response.behavior + ' ' + JSON.stringify(v.response.response.updatedInput && v.response.response.updatedInput.answers || null) }] } });
@@ -99,6 +99,30 @@ describe.skipIf(process.platform === 'win32')('answers across processes', () => 
     mine.stop(run);
   });
 
+  it('a security, irreversible or cost question — or one of the ship stage — is answered only where its run runs', async () => {
+    const q = (header: string, category?: string) => ({ kind: 'question' as const, questions: [{ question: 'x', header, multiSelect: false, options: [] }],
+      advice: category ? { choice: null, rationale: '', agreement: 0, category, escalated: '' } : undefined });
+    expect(remoteAnswerable({ meta: { role: 'stage', stage: 'build' } }, q('visible'))).toBe(true);
+    for (const h of ['security', 'Irreversible', 'cost']) expect(remoteAnswerable({ meta: { role: 'stage', stage: 'fix' } }, q(h))).toBe(false);
+    expect(remoteAnswerable({ meta: { role: 'stage', stage: 'fix' } }, q('visible', 'security'))).toBe(false);
+    expect(remoteAnswerable({ meta: { role: 'stage', stage: 'ship' } }, q('visible'))).toBe(false);
+    // end to end: the store's answer file for a security question is not applied, and another process cannot write one
+    const store = path.join(dir, 'runs-sec');
+    const mine = runs(store);
+    process.env.FAKE_HEADER = 'security';
+    const run = start(mine, 'question');
+    delete process.env.FAKE_HEADER;
+    expect(await until(() => run.pending.size === 1)).toBe(true);
+    await sleep(100);
+    const other = runs(store);
+    expect(other.respond(other.get(run.id) as Run, 'r1', 'allow', { 'Which?': 'A' })).toBe(false);
+    fs.mkdirSync(path.join(store, 'p1', 'answers'), { recursive: true });
+    fs.writeFileSync(path.join(store, 'p1', 'answers', `${run.id}.r1.json`), JSON.stringify({ requestId: 'r1', behavior: 'allow', answers: { 'Which?': 'A' } }));
+    await sleep(700);
+    expect(run.pending.has('r1')).toBe(true);
+    mine.stop(run);
+  });
+
   it('agents of a run carry COHORTE_RUN_ID (the CLI refuses them every transition)', async () => {
     const envDump = path.join(dir, 'env-dump.js');
     fs.writeFileSync(envDump, `#!/usr/bin/env node\nrequire('fs').writeFileSync(${JSON.stringify(path.join(dir, 'env.json'))}, JSON.stringify({ id: process.env.COHORTE_RUN_ID, p: process.env.COHORTE_RUN_PROJECT }));\nprocess.stdin.resume(); process.stdin.on('end', () => process.exit(0));\n`);
@@ -147,5 +171,19 @@ describe.skipIf(process.platform === 'win32')('process identity and the lease', 
     L.release('p1', 'f1');
     expect(fs.existsSync(file)).toBe(false);
     child.kill();
+  });
+
+  it('a lock being written (unreadable, young) is live; an old unreadable one is stale', () => {
+    const L = new Leases(path.join(dir, 'leases2'));
+    const file = path.join(dir, 'leases2', 'p1', 'f2.lock');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, '');
+    expect(L.holder('p1', 'f2')).not.toBeNull();
+    expect(L.acquire('p1', 'f2', 'ui')).not.toBeNull(); // not taken from under its writer
+    const old = new Date(Date.now() - 60000);
+    fs.utimesSync(file, old, old);
+    expect(L.holder('p1', 'f2')).toBeNull();
+    expect(L.acquire('p1', 'f2', 'ui')).toBeNull();
+    expect(JSON.parse(fs.readFileSync(file, 'utf8')).pid).toBe(process.pid); // whole, never empty
   });
 });

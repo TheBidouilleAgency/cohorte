@@ -76,6 +76,8 @@ export interface Run {
   strictMcp: boolean; mcpConfig: string | null;
   /** Appended to Claude Code's system prompt (`--append-system-prompt`), on every turn of the run. */
   systemNote: string | null;
+  /** The `claude` process of the run's current turn, by pid and start — so the CLI can tell it is called from inside it. */
+  childPid?: number | null; childStart?: number | null;
   /** The flow's bookkeeping, persisted with the run: how far its events were processed, the draft tickets it created. */
   seen: number; tickets: Record<string, string>;
   /** Tasks (subagents, shells) this process launched and has not seen finish, by task id: the tool call that launched it,
@@ -105,6 +107,20 @@ export interface RunHooks {
 }
 
 export type AnsweredBy = 'human' | 'decider' | 'remote';
+
+/** The question classes a person answers at the run's own terminal (or the page that runs it) — never from a file. */
+const HUMAN_ONLY_CLASSES = /^(security|irreversible|cost)$/i;
+/**
+ * Whether a parked item may be answered by ANOTHER process (through the store): a question only, not one the decider
+ * holds, not one of the ship stage, not one whose class (its header, or the decider's reading) is security,
+ * irreversible or cost. A permission ask never.
+ */
+export function remoteAnswerable(run: Pick<Run, 'meta'>, p: Pick<Pending, 'kind' | 'deciding' | 'questions' | 'advice'>): boolean {
+  if (p.kind !== 'question' || p.deciding) return false;
+  if (['ship', 'reconcile'].includes(run.meta.stage || '')) return false;
+  if ((p.questions || []).some((q) => HUMAN_ONLY_CLASSES.test((q.header || '').trim()))) return false;
+  return !(p.advice && HUMAN_ONLY_CLASSES.test(p.advice.category || ''));
+}
 
 export class Runs {
   runs = new Map<string, Run>();
@@ -164,6 +180,8 @@ export class Runs {
     const env = { ...process.env, COHORTE_RUN_ID: run.id, COHORTE_RUN_PROJECT: run.projectId };
     const child = spawn(this.bin, args, { cwd: run.cwd, detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'], env });
     run.child = child;
+    run.childPid = child.pid || null;
+    run.childStart = child.pid ? Math.round(Date.now() / 1000) : null;
     child.stdin?.on('error', () => { /* the child went away first */ });
     child.on('error', (e: Error) => { this.#push(run, { kind: 'system', text: `could not start ${this.bin}: ${e.message}` }); if (run.child === child) this.#end(run, 'failed'); });
     readline.createInterface({ input: child.stdout as NodeJS.ReadableStream }).on('line', (line: string) => { if (run.child === child) this.#line(run, line); });
@@ -223,7 +241,7 @@ export class Runs {
       if (!this.#mine(r) || !r.pending.size) continue;
       for (const a of this.store.takeAnswers(r)) {
         const p = r.pending.get(a.requestId);
-        if (!p || p.kind !== 'question' || p.deciding) continue;
+        if (!p || !remoteAnswerable(r, p)) continue;
         this.respond(r, a.requestId, a.behavior, a.answers, 'remote');
       }
     }
@@ -333,7 +351,7 @@ export class Runs {
     const p = run.pending.get(requestId);
     if (!p) return false;
     if (!this.#mine(run)) { // another process drives it: a question's answer goes to it through the store; a permission never
-      if (p.kind !== 'question' || p.deciding) return false;
+      if (!remoteAnswerable(run, p)) return false;
       if (!this.store?.answer(run, requestId, behavior, answers)) return false;
       run.pending.delete(requestId);
       this.onChange(run);

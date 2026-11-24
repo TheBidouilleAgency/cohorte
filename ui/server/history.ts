@@ -54,7 +54,7 @@ export class RunStore {
       const cut = Math.max(0, run.events.length - KEEP_EVENTS);
       const body = { v: 1, id: run.id, projectId: run.projectId, cwd: run.cwd, command: run.command, permissionMode: run.permissionMode, status: run.status,
         startedAt: run.startedAt, endedAt: run.endedAt, result: run.result, sessionId: run.sessionId, dropped: run.dropped + cut, events: run.events.slice(cut),
-        pid: self.pid, pidStart: self.start, meta: run.meta, model: run.model, disallowedTools: run.disallowedTools, allowedTools: run.allowedTools, addDirs: run.addDirs, seen: run.seen, tickets: run.tickets, strictMcp: run.strictMcp, mcpConfig: run.mcpConfig, systemNote: run.systemNote,
+        pid: self.pid, pidStart: self.start, meta: run.meta, model: run.model, disallowedTools: run.disallowedTools, allowedTools: run.allowedTools, addDirs: run.addDirs, seen: run.seen, tickets: run.tickets, strictMcp: run.strictMcp, mcpConfig: run.mcpConfig, systemNote: run.systemNote, childPid: run.childPid ?? null, childStart: run.childStart ?? null,
         pending: [...run.pending.values()].map(({ input: _i, ...x }) => x) };
       const tmp = `${f}.${process.pid}.tmp`;
       fs.writeFileSync(tmp, JSON.stringify(body));
@@ -165,7 +165,8 @@ export class RunStore {
         addDirs: Array.isArray(v.addDirs) ? v.addDirs.filter((t: unknown) => typeof t === 'string') : [],
         seen: typeof v.seen === 'number' ? v.seen : 0, tickets: v.tickets && typeof v.tickets === 'object' ? v.tickets : {}, tasks: new Map(), awaitingTurn: false,
         strictMcp: v.strictMcp === true, mcpConfig: typeof v.mcpConfig === 'string' ? v.mcpConfig : null,
-        systemNote: typeof v.systemNote === 'string' ? v.systemNote : null };
+        systemNote: typeof v.systemNote === 'string' ? v.systemNote : null,
+        childPid: typeof v.childPid === 'number' ? v.childPid : null, childStart: typeof v.childStart === 'number' ? v.childStart : null };
     } catch { return null; /* a corrupt file is skipped */ }
   }
 }
