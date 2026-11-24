@@ -26,7 +26,10 @@ human-driven cycle moves `frozen` → `in-review` → `shipped` → `merged`. Th
 **loop workflow** (`cohorte-loop.js`, from `core/workflows/loop.js` — the successor of the
 2.2.0-retired conversational driver): it stamps `in-progress` at each round, `in-review` when a
 run ends at zero blocking findings, and `blocked` when a round gives up, with the reason in
-`specs/reports/<id>.loop.json`. A **resumable** stop (a dead agent, a red preflight, an
+`specs/reports/<id>.loop.json` — but only once a review in that run has got past its preflight.
+Before that the spec keeps its status, and a `pipeline-misconfigured` stop (the checks never ran:
+no commands, or a pipeline script denied) changes neither the status nor the board — it is a setup
+problem for `/cohorte-doctor`, not a verdict on the code. A **resumable** stop (a dead agent, a red preflight, an
 unreviewed surface, a report that never landed) writes `reason` and **no** `outcome`, and
 re-invoking the loop resumes at that round; a **terminal** one (treading water, max rounds, a
 contract-change finding) writes both, and the next run starts fresh once a human re-entered

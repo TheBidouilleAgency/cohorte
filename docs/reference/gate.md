@@ -95,6 +95,14 @@ Paths are resolved through `cd`, globs, `~`, `$HOME`, `$PWD` and `$CLAUDE_PROJEC
 target the gate can't resolve but that looks like one of these files gets **ask**. So do
 `chmod`/`chown` on them and inline `python -c` / `node -e` code that mentions them.
 
+`git checkout [<rev>] -- <file>` and `git restore [--source=<rev>] <file>` naming one of them
+are writes to it, and are **denied** like any other. A broader pathspec (`.`, `.claude/`,
+`:/`, a glob, `:(glob)…`) and `git reset --hard|--merge|--keep` count only when a protected
+file they cover differs from what they restore. The gate asks git (`git diff --name-only
+[<rev>] -- <files>`); when git can't answer, the revision is computed at run time, or the
+directory can't be resolved, the call gets **ask**. Index-only forms (`git restore --staged`,
+`git reset [<rev>] -- <file>`) are free.
+
 Reading them (`cat`, `jq`) is free. `preflight.sh` itself is allowed to write the stamp, but a
 direct `date +%s > .claude/preflight.ok` is not. A `Write`/`Edit`/`MultiEdit` aimed at one of
 these files gets **ask**, which becomes **deny** in unattended modes (see below). The hook is

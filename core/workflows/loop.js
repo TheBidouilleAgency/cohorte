@@ -1,6 +1,6 @@
 // cohorte — the loop workflow (cohorte-loop.js): build → review → [fix → review]* for ONE
-// feature, unattended. There is no /cohorte-loop slash command — the human asks for "the
-// loop workflow" and the Workflow tool runs this file by its meta.name.
+// feature, unattended. There is no command file behind it — the human types `/cohorte-loop
+// <id>` (or asks for "the loop workflow") and the Workflow tool runs this file by its meta.name.
 //
 // WORKFLOW-ONLY, on purpose: there is no core/commands/cohorte-loop.md and there must never
 // be one (validate-core.mjs enforces it). If the Workflow runtime is unavailable, this
@@ -82,7 +82,22 @@ const maxRounds = Math.max(1, Math.min(10, Number(ARGS.maxRounds) || 5))
 const RESUMABLE = new Set([
   'review-died', 'review-aborted', 'no-verdict', 'unreviewed', 'preflight', 'stage-diff', 'empty-diff', 'profile',
   'report-not-staged', 'ingest-died', 'no-fix-items', 'dead-implementers', 'review-workflow-unavailable',
+  'pipeline-misconfigured',
 ])
+// Child aborts that happen BEFORE the review's preflight has passed: the project's checks
+// either never ran or ran red. Until one review in THIS run gets past them, the loop has
+// not established anything about the code, so it changes no spec status (a frozen spec
+// flipped to in-progress → blocked over a setup problem read as "your code is broken").
+const PRE_PREFLIGHT = new Set(['profile', 'preflight', 'pipeline-misconfigured'])
+// `pipeline-misconfigured` = the checks never ran at all (preflight got zero commands, or a
+// pipeline script was denied by the gate / permissions). That is cohorte's setup, not the
+// code — the message says so, and the spec and the board are left exactly as they were.
+const MISCONFIGURED_DETAIL = 'this is a cohorte setup problem, not a problem in your code: the project\'s checks ' +
+  '(typecheck, lint, tests) never ran, so nothing was judged and the spec was left as it was. ' +
+  'Run /cohorte-doctor to see what is wrong, then /cohorte-update-pipeline to repair it, and re-run the loop (it resumes where it stopped)'
+// How the caller relays any result of this workflow to the developer (cohorte ui shows it).
+const RELAY = 'Tell the developer in their own language, in plain words: what happened, and what they need to do ' +
+  '(often nothing). No pipeline jargon (no DoD, readiness, preflight, freshness, round/phase names) — those stay in the files.'
 const TERMINAL = new Set(['treading-water', 'max-rounds', 'contract-change'])
 
 // ── The reducer — the whole design, as one pure function ─────────────────────
@@ -149,6 +164,11 @@ const PROFILE = {
         properties: { key: { type: 'string' }, path: { type: 'string' }, agent: { type: 'string' } },
       },
     },
+    // Declared so the reader returns them as objects, not JSON text: a `commands` string
+    // once gave preflight zero checks to run, and a `contract` string switched the gate off.
+    commands: { type: 'object', additionalProperties: true, description: 'the profile `commands` map, as an object — never a JSON string' },
+    contract: { type: 'object', additionalProperties: true, description: 'the profile `contract` block, as an object — never a JSON string' },
+    vcs: { type: 'object', additionalProperties: true, description: 'the profile `vcs` block, as an object — never a JSON string' },
   },
 }
 const unwrapProfile = p => {
@@ -329,7 +349,7 @@ const startedAt = (resumed && resumed.startedAt) || (facts.now && facts.now.iso)
 // empty bug).
 const fresh = f => !!(f && f.exists && typeof f.mtimeEpoch === 'number' && f.mtimeEpoch >= baselineMtime)
 
-const abortPre = detail => ({ id: feature, outcome: 'abort', reason: 'precondition', rounds: 0, detail })
+const abortPre = detail => ({ id: feature, outcome: 'abort', reason: 'precondition', rounds: 0, detail, relay: RELAY })
 
 // 1. The spec, in a buildable state. `in-progress` is accepted because THIS script
 //    stamps it — a resumed loop must not refuse its own footprint. `blocked` is accepted
@@ -484,20 +504,27 @@ const writeState = async ({ label, phaseName, outcome, reason, status: st, kanba
 // Close the run: final loop.json + status + kanban, then the return object. Status
 // doctrine (profile/schema/spec-status.md): `blocked` = a round gave up, reason named in
 // loop.json; `in-review` = zero blocking, awaiting /cohorte-ship; precondition aborts
-// never stamped anything, so they change nothing here either. A RESUMABLE abort leaves
+// never stamped anything, so they change nothing here either. The spec status is only
+// touched once a review in this run got past its preflight (`preflightPassed`): before
+// that the spec keeps whatever status it had, so an abort then changes nothing, and
+// `pipeline-misconfigured` never touches status or board. A RESUMABLE abort leaves
 // loop.json without `outcome` (phase kept, reason set), so the next invocation resumes at
 // this round; a terminal one (and a ship) records the outcome, so the next run is fresh.
 const close = async (outcome, reason, extra = {}) => {
   // Every abort that reaches close() is a round giving up — preconditions abort via
-  // abortPre() before anything was stamped and never come through here. An abort left
-  // outside this list once stranded the spec at `in-progress` forever.
+  // abortPre() before anything was stamped and never come through here. Once the loop
+  // owns the status (preflightPassed), an abort left outside this list once stranded the
+  // spec at `in-progress` forever.
   const gaveUp = outcome === 'abort'
   const resumable = gaveUp && RESUMABLE.has(reason)
+  // No status (and no board move) for a setup problem, and no status at all while no
+  // review in this run has got past its preflight — see PRE_PREFLIGHT.
+  const misconfigured = reason === 'pipeline-misconfigured'
   if (gaveUp && !resumable && !TERMINAL.has(reason)) log(`abort reason '${reason}' is in neither RESUMABLE nor TERMINAL — recorded as terminal`)
   const closed = await writeState({
     label: 'close', phaseName: resumable ? 'stopped' : 'done', outcome: resumable ? undefined : outcome, reason,
-    status: outcome === 'ship' ? 'in-review' : gaveUp ? 'blocked' : undefined,
-    kanban: outcome === 'ship' ? 'review' : gaveUp ? 'fix' : undefined,
+    status: outcome === 'ship' ? 'in-review' : (gaveUp && preflightPassed && !misconfigured) ? 'blocked' : undefined,
+    kanban: outcome === 'ship' ? 'review' : (gaveUp && !misconfigured) ? 'fix' : undefined,
     closing: true,
   })
   return {
@@ -508,6 +535,7 @@ const close = async (outcome, reason, extra = {}) => {
     history, report: `specs/reports/${feature}.md`,
     ...(closed ? {} : { stateWarning: 'the closing state agent died — loop.json/status/kanban may not reflect this outcome' }),
     ...extra,
+    relay: RELAY,
   }
 }
 
@@ -517,13 +545,15 @@ const close = async (outcome, reason, extra = {}) => {
 // §2 (readiness + contract) and writes no build.json — so the loop builds, as it does when
 // build.json is stale, absent, or carries dead[] (a full re-dispatch — implementers are
 // idempotent against a frozen contract, the same property fix rounds already rely on).
+// Set once a review in this run got past its preflight — see PRE_PREFLIGHT.
+let preflightPassed = false
 let mark = spent()
 if (fresh(facts.build) && !(facts.build.dead || []).length) {
   log('build.json is fresh with no dead surfaces — skipping the build phase, entering at review')
-  await writeState({ label: 'state:enter', phaseName: 'review', status: 'in-progress', kanban: 'review' })
+  await writeState({ label: 'state:enter', phaseName: 'review', kanban: 'review' })
 } else {
   phase('Build')
-  await writeState({ label: 'state:build', phaseName: 'build', status: 'in-progress', kanban: 'building' })
+  await writeState({ label: 'state:build', phaseName: 'build', kanban: 'building' })
   const jobs = wantedKeys.map(k => ({
     s: byKey[k], design: designSlot(byKey[k]), items: 'none',
     gaps: gapsFor(k).join(' · ') || 'none',
@@ -550,7 +580,7 @@ if (fresh(facts.build) && !(facts.build.dead || []).length) {
 // ── Phases 3–5 — the loop body: review → decide → fix → … ────────────────────
 while (true) {
   phase('Review')
-  await writeState({ label: `state:round-${round}`, phaseName: 'review', status: 'in-progress', kanban: 'review' })
+  await writeState({ label: `state:round-${round}`, phaseName: 'review', status: preflightPassed ? 'in-progress' : undefined, kanban: 'review' })
   const roundMark = spent()
   let review
   try {
@@ -567,6 +597,11 @@ while (true) {
   // fix phase's delta clean of it. History carries the round's review cost.
   mark = spent()
   const verdict = decide(review, lastKey, round, maxRounds)
+  // The review got past its preflight (it has a verdict, or aborted later than the checks):
+  // from here on the loop owns the spec's status.
+  if (review && typeof review === 'object' && !(review.verdict === 'ABORTED' && PRE_PREFLIGHT.has(review.aborted))) {
+    preflightPassed = true
+  }
   if (review && typeof review.blocking === 'number') {
     history.push({
       round, blocking: review.blocking,
@@ -588,7 +623,14 @@ while (true) {
   if (verdict.outcome === 'abort') {
     return close('abort', verdict.reason, {
       ...(verdict.reason === 'unreviewed' ? { unreviewed: review.unreviewedSurfaces } : {}),
-      ...(verdict.reason === 'preflight' ? { detail: 'preflight red — mechanical failures need /cohorte-fix or the human, not more rounds' } : {}),
+      ...(verdict.reason === 'preflight' ? {
+        detail: `the project's own checks (typecheck, lint or tests) failed on the current code — see specs/reports/${feature}.preflight.txt; ` +
+          `fix them by hand or with /cohorte-fix ${feature}, then re-run the loop (it resumes where it stopped)`,
+        ...(review.failures ? { failures: review.failures } : {}),
+      } : {}),
+      ...(verdict.reason === 'pipeline-misconfigured' ? {
+        detail: MISCONFIGURED_DETAIL + (review.reason ? ` (what the review saw: ${review.reason})` : ''),
+      } : {}),
       ...(verdict.reason === 'treading-water' ? { detail: `round ${round} left the same ${review.blocking} blocking finding(s) as round ${round - 1} — the fix rounds are not converging; a human look is cheaper than ${maxRounds - round} more rounds` } : {}),
       ...(verdict.reason === 'max-rounds' ? { detail: `${review.blocking} blocking finding(s) still open after ${maxRounds} round(s)` } : {}),
     })
@@ -667,7 +709,7 @@ while (true) {
   // The metrics line is written EVEN WHEN a surface died — an incomplete batch is
   // exactly the batch worth recording (profile/schema/dead-agents.md), so it lands before
   // the dead-implementers abort, with the dead surfaces named.
-  await writeState({ label: `state:fixed-${round}`, phaseName: 'review', metrics: {
+  await writeState({ label: `state:fixed-${round}`, phaseName: 'review', status: 'in-progress', metrics: {
     phase: 'fix', tokens: Math.max(0, spent() - mark),
     surfaces: Object.fromEntries(fixed.map(f => [f.key, f.handoff == null ? 'dead' : 'ok'])),
   } })

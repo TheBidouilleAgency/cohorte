@@ -31,6 +31,17 @@
    a `gate.ask`/`gate.deny` pattern. Mention the human can widen it later with
    `/fewer-permission-prompts`) + the PostToolUse formatter hook (detected formatter). Do **not**
    write the gate hook here — step 8 (`<sync>`) registers it.
+   **The formatter hook formats only files inside this repo.** Write and Edit also touch files
+   outside it (an Obsidian board, a note in another vault, `~/.claude/…`), and a formatter run on
+   those rewrites them (prettier once reflowed a Kanban board's `%% kanban:settings %%` block). So
+   the hook reads the edited path and runs the formatter only when that path is under
+   `$CLAUDE_PROJECT_DIR` and has one of the formatter's extensions; anything else is a silent no-op.
+   Reference form (adapt the formatter and the extensions to what was detected):
+   ```json
+   "PostToolUse": [{ "matcher": "Write|Edit|MultiEdit", "hooks": [{ "type": "command",
+     "command": "f=$(jq -r '.tool_input.file_path // empty'); case \"$f\" in *..*) exit 0 ;; \"$CLAUDE_PROJECT_DIR\"/*.ts|\"$CLAUDE_PROJECT_DIR\"/*.tsx|\"$CLAUDE_PROJECT_DIR\"/*.md) npx prettier --write \"$f\" >/dev/null 2>&1 || true ;; esac" }] }]
+   ```
+   An existing formatter hook without that path check is upgraded to this form, not kept.
    Preserve any existing custom keys.
 6. **Wire the retrieval provider** (skip if `retrieval.provider: none`):
    - **serena:** if the `serena` CLI is missing, have the human install it (`uv tool install -p 3.13

@@ -8,6 +8,10 @@ variants, then any `commands.security` scans — below) with all output redirect
   there: zero agents are spawned.** A reviewer dispatched onto code that doesn't compile burns its
   whole run rediscovering what `tsc` already printed for free — the failure goes straight to the
   human (or `/cohorte-fix`) instead.
+- **Nothing ran** (no command given / every argument empty ⇒ exit 2, or the call was denied by the
+  gate or the permission system) ⇒ the abort is `pipeline-misconfigured`, not a red preflight: a
+  cohorte setup problem, the code was never judged. The message says so and points at
+  `/cohorte-doctor` then `/cohorte-update-pipeline`; the loop leaves the spec status untouched.
 - **All green** ⇒ the script stamps `<state>/preflight.ok` (`<epoch> <HEAD sha> <tree digest>` —
   local and **gitignored**; a versioned stamp describes the tree *before* its own commit and rides
   into every clone and worktree, which breaks the gate both ways).
