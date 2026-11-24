@@ -80,6 +80,11 @@ const PROFILE = {
         properties: { key: { type: 'string' }, path: { type: 'string' }, agent: { type: 'string' } },
       },
     },
+    // Declared so the reader returns them as objects, not JSON text: a `commands` string
+    // once gave preflight zero checks to run, and a `contract` string switched the gate off.
+    commands: { type: 'object', additionalProperties: true, description: 'the profile `commands` map, as an object — never a JSON string' },
+    contract: { type: 'object', additionalProperties: true, description: 'the profile `contract` block, as an object — never a JSON string' },
+    vcs: { type: 'object', additionalProperties: true, description: 'the profile `vcs` block, as an object — never a JSON string' },
   },
 }
 

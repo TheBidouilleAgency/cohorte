@@ -120,6 +120,19 @@ are the forms you execute (dot reporter / failures-only); when a quiet variant i
 run `set -o pipefail; <full cmd> 2>&1 | tail -40` (without `pipefail` a red run through `| tail` exits 0). Never print a full runner log into your context — redirect to a
 file and grep it if you need more than the tail.
 
+**Long test runs — foreground, bounded, and nothing left behind.**
+- Run tests in the **foreground** with an explicit Bash timeout sized for the suite (up to
+  600000 ms), never at the 120 s default. Never send a test run to the background, and never let
+  it drift there: a run that hit the timeout and kept going is an orphan, not a pending result.
+- **Leave nothing running at handoff.** Any process you started (a test runner, a watcher, a
+  server) is stopped before you return. Kill only what you started, by the PID you got for it.
+- **Port already taken** (often the developer's own dev server): do **not** kill that process — it
+  is not yours. Run your tests on another port through the env var the project reads (`PORT=…`,
+  `TEST_PORT=…`, or whatever its test config uses).
+- **A test that hangs** (no progress until the timeout) is a result: stop it, and report it in your
+  handoff's `## Tests` as hung — the command, where it stopped, what it was waiting on. Do not
+  wait it out or rerun it in a loop.
+
 ## Definition of done
 
 Your surface's `test_cmd` green, `lint_cmd` clean, `typecheck_cmd` clean for your code, and every part

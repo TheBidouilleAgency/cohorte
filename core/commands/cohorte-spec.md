@@ -97,6 +97,13 @@ Detect the mode from the pasted content:
      profile change needed. (They can also paste the links into the spec's `design_files` themselves.)
      **Recommend a `/clear` before `/cohorte-build`** — the frozen spec + `specs/design/<id>.md` are the whole
      handoff.
+7. **Tell the human the next step** (with or without a design brief):
+   - **Recommended — let it run on its own:** `/cohorte-build <id> --readiness-only` (checks the spec
+     and writes the contract, dispatches nothing), then `/cohorte-loop <id>` — it builds, reviews and
+     fixes, round after round, until nothing blocking is left, and stops to ask only when a human
+     decision is needed. With a design brief, hand the design links to that `/cohorte-build` first.
+   - **Step by step instead:** `/cohorte-build <id>`, then `/cohorte-review <id>` and `/cohorte-fix <id>`.
+   Say it in the developer's language, in plain words — no pipeline jargon.
 
 ## Mode B — review return (input is a REVIEW REPORT)
 
@@ -108,7 +115,9 @@ Detect the mode from the pasted content:
    (Keep prior items; add the new round under a dated/numbered subheading.)
 3. If a finding implies the **contract** must change, update §5 and flag it so the lead re-authors the
    contract file.
-4. Set `status: in-review`. Tell the human to run `/cohorte-build <id>` to re-dispatch fresh agents.
+4. Set `status: in-review`. Tell the human to run `/cohorte-build <id>` to re-dispatch fresh agents —
+   or, to let the build → review → fix rounds run unattended, `/cohorte-build <id> --readiness-only`
+   then `/cohorte-loop <id>`.
    **Recommend a `/clear` before `/cohorte-build`** — the spec is the whole handoff.
 
 In both modes the spec is the single source of truth; agents are stateless and read only it + the diff.

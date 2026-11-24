@@ -104,3 +104,9 @@ ticked. Then route:
   human whether to ship unverified.
 
 **Recommend a `/clear`.** The verdict, logs and ticks are all on disk.
+
+**Your last message to the developer** — in their language, in plain words: what happened, and
+what they need to do (often nothing, or one command). No pipeline jargon (DoD, runtime item, verify.json, freshness, digest…) — those
+terms stay in the files you write. If something stopped you (a permission, a missing tool), say in
+one plain sentence what they should do about it. A `/clear` tip is one optional sentence, never an
+order.
