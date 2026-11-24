@@ -56,11 +56,13 @@ or `--force` pattern. Package runners are looked through: `npx`/`pnpm exec`/`yar
 
 `$HOME`, `${HOME}`, `~` and `$CLAUDE_CONFIG_DIR` (also `${CLAUDE_CONFIG_DIR:-$HOME/.claude}`)
 are the user's own environment: they are expanded from the hook's environment before
-anything is judged, unless the command itself assigns or otherwise names the variable. A
-run-time word is matched by its static parts: `"$m:fresh"` may be `migration:fresh`, but a
-path-looking word (a static `/` or file extension: `"$S/x.mjs"`, `$TMPDIR/cov.mjs`) is one
-path, never a pattern's literal word or a flag. A command name whose directory alone is
-computed (`"$S/smoke.sh"`) is judged by its basename.
+anything is judged — never as a bare command name, and not at all in a command that names the
+variable other than as an expansion (even as `HO\\ME=`) or uses a builtin that assigns a
+computed name (`export`, `declare`, `read`, `printf -v`, `eval`, `source`, `let`, …). A
+quoted run-time word is matched by its static parts: `"$m:fresh"` may be `migration:fresh`,
+`"$S/x.mjs"` can't be `ace`. An unquoted expansion field-splits, so it may be any words. A
+quoted command name whose directory alone is computed (`"$S/smoke.sh"`) is judged by its
+basename.
 
 A pattern that itself contains a separator (`curl | sh`) matches a run of consecutive
 commands that each match their part, joined by the same separator.

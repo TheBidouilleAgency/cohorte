@@ -53,7 +53,7 @@ class SelfProtection(object):
         for var, val in (("CLAUDE_PROJECT_DIR", os.environ.get("CLAUDE_PROJECT_DIR")),
                          ("HOME", os.path.expanduser("~")),
                          ("PWD", state.cwd if state.cwd_known else None)):
-            if val:
+            if val and var not in state.rebound:
                 # Forward slashes: a Windows value (C:\\Users\\…) would otherwise read as
                 # shell escapes below and every expanded path would look suspect.
                 val = val.replace("\\", "/")

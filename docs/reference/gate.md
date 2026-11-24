@@ -233,13 +233,16 @@ The gate follows indirection when the inner text is static:
 Some run-time values are resolved first. `$HOME`, `${HOME}`, `~`, `$CLAUDE_CONFIG_DIR` and
 `${CLAUDE_CONFIG_DIR:-$HOME/.claude}` are the user's own environment, so they are expanded
 from the hook's environment: `"$HOME/.claude/cohorte/pipeline/scripts/kanban-move.sh"` is
-judged as that path. A command that assigns or otherwise names the variable itself
-(`HOME=/tmp; …`, `export HOME=…`, `for HOME in …`) keeps it a run-time value. Other run-time
-words are matched by their static parts. `node ace "$m:fresh"` may still be
-`node ace migration:fresh`, but a path-looking word (a static `/` or a file extension:
-`node "$S/smoke.mjs"`, `node $TMPDIR/cov.mjs`) is one path, never a pattern's literal word or
-a flag. A command name whose directory alone is computed (`"$S/smoke.sh"`) is judged by its
-basename.
+judged as that path. They stay run-time values as a bare command name (`$HOME`), and in a
+command that names the variable other than as an expansion, however it is spelled
+(`HOME=/tmp; …`, `HO\ME=…`, `for HOME in …`), or that uses a builtin able to assign a computed
+name (`export`, `declare`, `typeset`, `local`, `readonly`, `read`, `mapfile`, `printf -v`,
+`eval`, `source`/`.`, `let`, `unset`). Self-protection then doesn't substitute them either.
+Other quoted run-time words are matched by their static parts: `node ace "$m:fresh"` may still
+be `node ace migration:fresh`, but `node "$S/smoke.mjs"` can't. An unquoted expansion
+(`node $TMPDIR/cov.mjs`) is field-split by the shell, so it may be any words and still gets
+"ask" against a matching rule. A quoted command name whose directory alone is computed
+(`"$S/smoke.sh"`) is judged by its basename.
 
 Some cases can't be judged statically:
 
@@ -270,8 +273,11 @@ The branch becomes unknown for the rest of the chain after any of these:
   `git switch -c <name> && …` or `git checkout -b <name> && …` (also `-C`/`-B`/`--orphan`), the
   rest of the chain is on `<name>`, so `git switch -c feat/x && git commit …` runs freely. It
   is not followed after `;` (a failed switch leaves HEAD where it was) or after
-  `a || git switch -c …`. A bare `git push` after a branch created from a start point
-  (`git switch -c x origin/main`) has an unknown destination, since the branch may track it.
+  `a || git switch -c …`. A push from the new branch only benefits when its destination is
+  explicit (`git push origin HEAD:<name>`, or `git push origin <name>` when the config holds no
+  `branch.<name>.merge` and no start point was given): a bare `git push`, `git push origin` or
+  `git push origin HEAD` has an unknown destination, because git keeps an existing
+  `branch.<name>.merge` and a start point may set one.
 - `git bisect`, `git branch -m`
 - `pushd`/`popd`, `cd -`, `cd $OLDPWD`, a `cd` that can't be resolved, `cd … ||`
 - a subshell `( … )`

@@ -944,6 +944,20 @@ console.log("gate.py — unattended false positives");
     ['HOME=/tmp; node "$HOME" migration:fresh', {}, "deny"],
     ['export HOME=/tmp && node "$HOME" migration:fresh', {}, "deny"],
     ["sh -c 'HOME=/x; $HOME migration:fresh'", {}, "deny"],
+    // …nor when the reassignment is spelled around the literal name, or made by a builtin
+    // that assigns a computed name…
+    ["export HO\\ME='git push --force origin main'; $HOME", {}, "deny"],
+    ["declare HO\"\"ME='git push -f origin main'; $HOME", {}, "deny"],
+    ["printf -v HO\\ME 'rm -rf src'; $HOME", {}, "deny"],
+    ["export HO\\ME='git reset --hard HEAD~5'; $HOME", {}, "deny"],
+    ["eval 'export HO''ME=x'; node \"$HOME\" migration:fresh", {}, "deny"],
+    ["read -r HOME <<< ace; node \"$HOME\" migration:fresh", {}, "deny"],
+    [": ${CLAUDE_CONFIG_DIR:=ace}; node \"$CLAUDE_CONFIG_DIR\" migration:fresh", {}, "deny"],
+    ["$HOME", {}, "deny"],                                      // never resolved as a command name
+    ['"${HOME}" migration:fresh', {}, "deny"],
+    // …self-protection doesn't substitute the real home after a reassignment…
+    ['HOME=.; echo x > "$HOME/.claude/gate-config.json"', {}, "deny"],
+    ['export X=1; echo x > "$HOME/.claude/settings.json"', {}, "deny"],
     // …and an unset variable that vanishes unquoted keeps the command name unknown.
     ["node $CLAUDE_CONFIG_DIR ace migration:fresh", {}, "deny"],
   ]) {
@@ -956,7 +970,12 @@ console.log("gate.py — unattended false positives");
   // 2. A path-looking run-time word can't be a plain literal word of a deny rule.
   unattended("run-time paths", main, [
     ['node "$S/smoke-t1.mjs"', "allow"],
-    ["node $TMPDIR/cov.mjs", "allow"],
+    ['node "$TMPDIR/cov.mjs"', "allow"],
+    ['node "$TMPDIR"/cov.mjs', "allow"],
+    // …but an unquoted expansion still field-splits: it can be any words
+    ["node $TMPDIR/cov.mjs", "deny"],
+    ['X="-rf /tmp/zz"; rm $X/y', "deny"],
+    ['X="migration:fresh ."; node ace $X/y', "deny"],
     ['node "$S/x.mjs" migration:fresh', "allow"],
     ['"$S/smoke.sh" --fast', "allow"],                  // only the directory is computed
     ["rm -f $TMPDIR/cov.json", "allow"],
@@ -978,8 +997,12 @@ console.log("gate.py — unattended false positives");
     ["git checkout -qb feature/x && git commit -m x", "allow"],
     ["git switch --create=feature/x && git commit -m x", "allow"],
     ["git switch -c feature/x && git add -A && git commit -m x && git push -u origin feature/x", "allow"],
-    ["git switch -c feature/x && git push", "allow"],
+    ["git switch -c feature/x && git push origin HEAD:feature/x", "allow"],
+    ["git switch -c feature/x && git push", "deny"],                // a kept branch.<name>.merge may say main
+    ["git switch -c feature/x && git push origin", "deny"],
+    ["git switch -c feature/x && git push origin HEAD", "deny"],
     ["git switch -c feature/x origin/main && git push", "deny"],    // may track main
+    ["git switch -c feature/x origin/main && git push origin feature/x", "deny"],
     ["git switch -c feature/x; git commit -m x", "deny"],           // a failed switch stays on main
     ["false || git switch -c feature/x && git commit -m x", "deny"],
     ["git switch -c main && git commit -m x", "deny"],
@@ -990,6 +1013,19 @@ console.log("gate.py — unattended false positives");
     ["git switch -c feature/x && git push origin HEAD:main", "deny"],
     ["git switch -c feature/x && git push --force origin main", "deny"],
     ["(git switch -c feature/x) && git commit -m x", "deny"],
+  ]);
+
+  // git keeps a branch.<name>.merge left in the config: the "new" branch already tracks main.
+  const kept = scratch({ config: CFG }); gitRepo(kept, "main");
+  git(kept, "config", "branch.z.merge", "refs/heads/main");
+  git(kept, "config", "branch.z.remote", "origin");
+  git(kept, "config", "push.default", "upstream");
+  unattended("fresh branch with a kept upstream", kept, [
+    ["git switch -c z && git push", "deny"],
+    ["git switch -c z && git push origin", "deny"],
+    ["git switch -c z && git push origin z", "deny"],
+    ["git switch -c z && git push origin HEAD:z", "allow"],              // explicit, non-default
+    ["git switch -c y && git push origin y", "allow"],                   // no upstream kept for y
   ]);
 
   // 4. Read-only git queries on protected paths are not self-protection hits.
@@ -1027,6 +1063,7 @@ console.log("gate.py — unattended false positives");
     ["for f in a; do (rm -rf $f); done", "deny"],
     ["[[ -n x ]] && rm -rf y", "deny"],
     ["function f() { rm -rf y; }; f", "deny"],
+    ["function f { rm -rf src; }; f", "deny"],
   ]);
 
   // The unattended deny says how a human lets it through.

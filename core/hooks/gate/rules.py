@@ -38,10 +38,12 @@ class RuleChecks(object):
         if cur is None:
             return set(), True
         names.add(cur)
-        created = state.branch is not None and state.branch[0] == cwd
-        if created and state.branch[2]:
-            return names, True        # created from a start point / --track: upstream unknown
-        for spec in () if created else ("@{push}", "@{upstream}"):
+        if state.branch is not None and state.branch[0] == cwd:
+            # created earlier in this chain: git keeps any branch.<name>.merge already in the
+            # config, and a start point / --track may set one — where a bare push lands is not
+            # known until it exists
+            return names, True
+        for spec in ("@{push}", "@{upstream}"):
             r = run_git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", spec], cwd)
             if r and r[0] == 0 and "/" in r[1].strip():
                 names.add(r[1].strip().split("/", 1)[1])
@@ -55,6 +57,11 @@ class RuleChecks(object):
                 elif key.endswith(".push"):
                     return names, True
         return names, all_ and "ALL"
+
+    def fresh_upstream(self, name, state):
+        """Whether the config already holds an upstream for a branch this chain creates."""
+        r = run_git(["config", "--get", "branch.%s.merge" % name], state.cwd)
+        return r is None or (r[0] == 0 and bool(r[1].strip()))
 
     def eval_push(self, inv, state, here_unknown):
         pi = analyze_push_args(inv.git.args)
@@ -99,8 +106,8 @@ class RuleChecks(object):
             dests.add(n)
             fresh = (state.branch is not None and state.branch[0] == state.cwd
                      and state.branch[1] == src)
-            if fresh and state.branch[2] and ":" not in v:
-                unknown = True     # just created from a start point: its upstream isn't known
+            if fresh and ":" not in v and (state.branch[2] or self.fresh_upstream(src, state)):
+                unknown = True     # just created, but it may already track something
             elif ":" not in v and not here_unknown and n == src and not fresh:
                 rr = run_git(["rev-parse", "--abbrev-ref", "--symbolic-full-name",
                               src + "@{upstream}"], state.cwd)
