@@ -337,7 +337,7 @@ export function create({ globalDir, version, token = crypto.randomBytes(24).toSt
         if (method === 'GET') return send(res, 200, view());
         if (method === 'POST') { const b = await bodyOf(); if (!b) return; flow.settings.set(p.id, b); return send(res, 200, view()); }
       }
-      if (parts[2] === 'tracker' && parts.length === 3 && method === 'POST') { const b = await bodyOf(); if (!b) return; return flowCall(() => ({ ...connectObsidian(globalDir, p.root, b), tracker: flow.tracker(p).info })); }
+      if (parts[2] === 'tracker' && parts.length === 3 && method === 'POST') { const b = await bodyOf(); if (!b) return; return flowCall(async () => ({ ...(await connectObsidian(globalDir, p.root, p.id, b)), tracker: flow.tracker(p).info })); }
       if (parts[2] === 'product-map' && parts.length === 3 && method === 'POST') return flowCall(() => ({ run: runs.view(flow.startProductMap(p.id), 0) }), 202);
       if (parts[2] === 'learning' && parts.length === 3 && method === 'GET') return send(res, 200, flow.learning(p.id));
 
