@@ -70,7 +70,10 @@ function play(steps: unknown[], opts: { quietMs?: number; stallMs?: number } = {
 const closedAsks = (evs: RunEvent[]) => evs.filter((e) => e.kind === 'tool_result' && /Stream closed/.test(e.text));
 const ticket = (i: number) => `\`\`\`cohorte-ticket\n${JSON.stringify({ ref: `t${i}`, title: `Ticket ${i}`, need: 'x'.repeat(3000), criteria: ['a', 'b'] })}\n\`\`\``;
 
-describe('runs: background subagents keep the permission channel open', () => {
+// The stand-in CLI is a shebang script: Windows cannot spawn it (same as scripts/test-flow.mjs).
+const onPosix = describe.skipIf(process.platform === 'win32');
+
+onPosix('runs: background subagents keep the permission channel open', () => {
   it('holds input open past the lead\'s result until its async agent reports, and through the turn that follows', async () => {
     const { run } = await play([
       lead([{ type: 'tool_use', id: 'ta', name: 'Agent', input: { subagent_type: 'frontend', description: 'fix lint', run_in_background: true } }]),
@@ -170,7 +173,7 @@ describe('runs: background subagents keep the permission channel open', () => {
   });
 });
 
-describe('runs: what the lead said is parsed whole, and only what the lead said', () => {
+onPosix('runs: what the lead said is parsed whole, and only what the lead said', () => {
   it('keeps a long lead message whole, so every fenced ticket is filed', async () => {
     const text = `Here is the first version.\n\n${Array.from({ length: 11 }, (_, i) => ticket(i + 1)).join('\n\n')}`;
     expect(text.length).toBeGreaterThan(30_000);
