@@ -325,7 +325,7 @@ export function create({ globalDir, version, token = crypto.randomBytes(24).toSt
         if (parts.length === 4 && method === 'GET') return flowCall(() => flow.detail(p.id, fid));
         if (method === 'POST' && parts[4] === 'checkpoint') { const b = await bodyOf(); if (!b) return; return flowCall(() => ({ feature: flow.checkpoint(p.id, fid, b) })); }
         if (method === 'POST' && parts[4] === 'lead') { const b = await bodyOf(); if (!b) return; return flowCall(() => { flow.replyLead(p.id, fid, b.text); return { ok: true }; }, 202); }
-        if (method === 'POST' && parts[4] === 'merge') return flowCall(() => ({ job: jobs.view(flow.merge(p.id, fid)) }), 202);
+        if (method === 'POST' && parts[4] === 'merge') return flowCall(() => ({ job: jobs.view(flow.merge(p.id, fid) as NonNullable<ReturnType<typeof flow.merge>>) }), 202);
         if (method === 'POST' && parts[4] === 'decisions' && parts[5] && parts[6] === 'contest') { const b = await bodyOf(); if (!b) return; return flowCall(() => ({ feature: flow.contest(p.id, fid, parts[5], b.note) })); }
       }
       if (parts[2] === 'settings' && parts.length === 3) {

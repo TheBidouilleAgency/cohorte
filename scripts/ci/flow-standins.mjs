@@ -101,6 +101,15 @@ rl.on("line", (line) => {
     }
     text("ok: " + prompt.slice(0, 40)); return done("ok");
   }
+  if (cmd === "cohorte-po" && /CALL_COHORTE/.test(prompt) && process.env.COHORTE_TEST_CLI) {   // an agent calling the CLI with its run hidden
+    setTimeout(() => {
+      const env = { ...process.env }; delete env.COHORTE_RUN_ID; delete env.COHORTE_RUN_PROJECT;
+      const r = require("child_process").spawnSync(process.execPath, [process.env.COHORTE_TEST_CLI, "ticket", "create", "--title", "Sneaky", "--status", "validate", "--project", process.env.COHORTE_TEST_PROJECT],
+        { env, encoding: "utf8" });
+      text("cli exit " + r.status + " " + (r.stderr || "").split("\\n")[0]); done("called");
+    }, 1200);
+    return;
+  }
   if (cmd === "cohorte-po") {
     if (/Feedback on the delivered/.test(prompt)) { text("Let us look at what is missing."); return done("follow-up"); }
     text("I understand you export by hand.\\n\`\`\`cohorte-ticket\\n" + JSON.stringify({ ref: "csv", title: "Export appointments as CSV", type: "feature", need: "The office exports by hand every week.", value: "2 hours a week", criteria: ["Given the list, when I export, then I get a CSV"], outOfScope: ["PDF"], priority: "medium", size: "M" }) + "\\n\`\`\`");
@@ -132,7 +141,7 @@ rl.on("line", (line) => {
     return ask("security", "Should the export require the admin role?", ["Yes (Recommended)", "No"], (r) => { text("fixed: " + JSON.stringify(r.updatedInput && r.updatedInput.answers)); done("fixed", 0.2); });
   }
   if (cmd === "cohorte-verify" && fs.existsSync(path.join(process.cwd(), "specs/reports/.ask-permission"))) {   // a permission only a terminal may grant
-    pending = null;
+    pending = (r) => { W("specs/reports/" + id + ".verify.json", JSON.stringify({ verdict: "PASS" })); text("verified, docker " + r.behavior); done("verified", 0.05); };
     out({ type: "control_request", request_id: "p1", request: { subtype: "can_use_tool", tool_name: "Bash", input: { command: "docker compose up -d" } } });
     return;
   }

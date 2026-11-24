@@ -24,7 +24,7 @@
 // person's own decisions — CP0, shipping at CP3, CP4, merging, abandoning, a ticket straight to the backlog, taking
 // over a lease — are typed at a terminal (stdin a TTY, a `yes`) or clicked in cohorte ui; nothing else can make them.
 // What a Claude Code session relays for the developer — CP1 approve, CP2 continue/correct, a reply to the lead —
-// may come from a pipe, with `--note "<their words>"`, recorded as relayed. A permission ask a run raises is
+// may come from a pipe, with `--note "<their words>"`, recorded as relayed — outside a run only. A permission ask a run raises is
 // answered only on the terminal that runs it; a detached drive that gets one parks the feature at CP2.
 //
 // --detach runs the verb in a background process of its own (`--driven`: it holds the feature's lease, logs to
@@ -122,7 +122,8 @@ function loadEngine() {
   if (!fs.existsSync(path.join(dist, 'engine.js'))) {
     throw new Error('the flow engine is not built in this checkout — run `npm run build:ui` here first (the published package ships it built)');
   }
-  return { engine: require(path.join(dist, 'engine.js')), tracker: require(path.join(dist, 'tracker.js')), docker: require(path.join(dist, 'docker.js')), history: require(path.join(dist, 'proc.js')) };
+  return { engine: require(path.join(dist, 'engine.js')), tracker: require(path.join(dist, 'tracker.js')), docker: require(path.join(dist, 'docker.js')), history: require(path.join(dist, 'proc.js')),
+    runsLib: require(path.join(dist, 'runs.js')) };
 }
 
 /** The main checkout of the repo `dir` is in — a feature worktree resolves to the project it belongs to. */
@@ -188,7 +189,7 @@ async function drive(ctx, id, { mode }) {
   for (const d of f0?.decisions || []) seenDecisions.add(d.id);
   // a conversation already under way (a reply just sent) prints from here on, not its earlier turns
   for (const r of runs.runs.values()) if (r.projectId === p.id && r.meta.featureId === id) cursors.set(r.id, r.dropped + r.events.length);
-  let kicked = false; let prChecked = false;
+  let kicked = false; let prChecked = false; let resumed = false;
   const announced = new Set();
 
   const report = (f) => {
@@ -225,11 +226,14 @@ async function drive(ctx, id, { mode }) {
       if (r.projectId !== p.id || r.meta.featureId !== id || !r.child || r.status !== 'running') continue;
       for (const x of r.pending.values()) if (!x.deciding) asked.push([r, x]);
     }
-    const perm = ctx.driven ? asked.find(([, x]) => x.kind === 'permission') : null;
+    // detached: no terminal — and a permission, a ship-stage question or a security/irreversible/cost one is never
+    // answered from elsewhere (runs.ts remoteAnswerable): stop safely, as with no terminal
+    const perm = ctx.driven ? asked.find(([r, x]) => !ctx.remoteAnswerable(r, x)) : null;
     if (perm) {
-      // detached: no terminal, and a permission ask is never answered from elsewhere — stop safely, as with no terminal
       const [r, x] = perm;
-      const reason = `${r.meta.stage || r.meta.role} asks to run ${whatOf(x)} — a permission is answered only where its run runs: run \`cohorte autopilot ${id}\` in a terminal`;
+      const reason = x.kind === 'permission'
+        ? `${r.meta.stage || r.meta.role} asks to run ${whatOf(x)} — a permission is answered only where its run runs: run \`cohorte autopilot ${id}\` in a terminal`
+        : `${r.meta.stage || r.meta.role} asks: ${whatOf(x)} — a ${(x.questions || [])[0]?.header || 'ship'} question is answered only at the terminal that runs it: run \`cohorte autopilot ${id}\` in a terminal`;
       out.line(`! ${reason}`);
       await flow.park(p.id, id, reason);
       return { code: EXIT.parked, waiting: 'question', reason };
@@ -265,6 +269,7 @@ async function drive(ctx, id, { mode }) {
     // nothing of ours in flight: where does it rest?
     if (flow.drivenElsewhere(f)) return { code: EXIT.elsewhere, waiting: 'elsewhere', reason: `driven by ${f.driver.by === 'ui' ? 'cohorte ui' : 'another terminal'} (pid ${f.driver.pid})` };
     if (mode === 'autopilot') {
+      if (f.pending && !resumed) { resumed = true; flow.resume(p.id, id); continue; } // checked against the person's decision on file
       if (f.phase === 'autopilot' && !kicked) { kicked = true; await flow.advance(flow.project(p.id), f); continue; }
       if (f.phase === 'pr' && !prChecked) { prChecked = true; await flow.checkPR(p.id, id); continue; }
       if (f.checkpoint && ask.interactive) {
@@ -361,6 +366,7 @@ function ticketText(t, f) {
   if (f) {
     L.push('', `  Feature: ${f.phase}${f.checkpoint ? ` · ${f.checkpoint.kind.toUpperCase()}: ${f.checkpoint.reason}` : ''}${f.worktree ? ` · ${f.worktree}` : ''}`);
     if (f.driver) L.push(`  driven by ${f.driver.by} (pid ${f.driver.pid})`);
+    if (f.integrity) L.push(`  ! ${f.integrity.reason} — nothing automatic runs on it until you act (a checkpoint, or cohorte take-over ${f.id})`);
     for (const s of f.stages) L.push(`    ${s.stage.padEnd(10)} ${s.status.padEnd(8)} ${s.model}${money(s.costUsd)}`);
     if (f.error) L.push(`  error: ${f.error}`);
   }
@@ -388,8 +394,9 @@ async function run(argv, globalDir) {
   // a person at a terminal: stdin is a TTY (a pipe, an agent's Bash call, a detached drive are not)
   const tty = !driven && !!process.stdin.isTTY;
   const interactive = tty && !o['no-interactive'];
-  if (process.env.COHORTE_RUN_ID && !(verb === 'ticket' && ['list', 'show', undefined].includes(pos[0])) && !(verb === 'autopilot' && o.status === true)) {
-    throw new PersonError(`cohorte ${verb} is not available to an agent of a cohorte run (run ${process.env.COHORTE_RUN_ID}) — moving the flow is the developer's: say what you need in your answer instead`);
+  const readOnly = (verb === 'ticket' && ['list', 'show', undefined].includes(pos[0])) || (verb === 'autopilot' && o.status === true);
+  if ('COHORTE_RUN_ID' in process.env && !readOnly) {
+    throw new PersonError(`cohorte ${verb} is not available to an agent of a cohorte run (run ${process.env.COHORTE_RUN_ID || '?'}) — moving the flow is the developer's: say what you need in your answer instead`);
   }
   const err = (s) => process.stderr.write(`${s}\n`);
   const out = {
@@ -399,23 +406,25 @@ async function run(argv, globalDir) {
     result: (obj, human) => { if (json) console.log(JSON.stringify(obj, null, 2)); else if (human) console.log(human); },
   };
 
-  const { engine, tracker, docker, history } = loadEngine();
+  const { engine, tracker, docker, history, runsLib } = loadEngine();
   const registry = require('../lib/registry.js');
   const eng = engine.createEngine({ globalDir, by: 'cli' });
   const { flow } = eng;
+  // the env can be scrubbed (`env -u`): the ancestry cannot — a cohorte run's `claude` among our ancestors is a run
+  if (!readOnly && !driven) {
+    const up = history.ancestors();
+    const run = [...eng.runs.runs.values()].find((r) => r.status === 'running' && r.childPid && up.some((a) => a.pid === r.childPid && (a.start == null || r.childStart == null || Math.abs(a.start - r.childStart) <= 5)));
+    if (run) throw new PersonError(`cohorte ${verb} is not available inside a cohorte run (run ${run.id}, ${run.command}) — moving the flow is the developer's`);
+  }
   const reader = lineReader();
   const typed = `cohorte ${argv.filter((a) => a !== '--json' && a !== '--driven').join(' ')}`;
   /**
-   * A person's decision: typed `yes` at a terminal. A detached drive carries the yes its parent got, as a one-time
-   * token (a file in the flow's state + the env var naming it); a pipe or an agent is refused with the command to type.
+   * A person's decision: typed `yes` at a terminal; a pipe, an agent or a background drive is refused (with the command
+   * to type). With --detach, the terminal applies the decision itself, then hands only what follows to the background.
    */
   const confirm = async (what) => {
-    if (driven) {
-      const tok = process.env.COHORTE_CONFIRM_TOKEN || '';
-      const f = path.join(eng.dataDir, 'drives', 'confirm', `${tok.replace(/[^a-f0-9]/g, '')}.ok`);
-      if (tok && fs.existsSync(f)) { fs.rmSync(f, { force: true }); return; }
-      throw new PersonError(`${what}: not confirmed`);
-    }
+    // a background drive has no authority at all: the terminal that detached it took the person's decision itself
+    if (driven) throw new PersonError(`${what} is a person's decision — a background drive never takes one`);
     if (!tty) throw new PersonError(`${what} is a person's decision — type it yourself in a terminal:\n  ${typed}\n  (or make it in cohorte ui)`);
     out.prompt(`${what} — type yes to confirm: `);
     const l = await reader.next();
@@ -425,7 +434,7 @@ async function run(argv, globalDir) {
   const root = repoOf(path.resolve(o.project || process.cwd()));
   const p = registry.add(globalDir, root).project; // idempotent; refuses a repo without cohorte
   const ask = asker(reader, out, interactive, flow, p);
-  const ctx = { eng, p, out, ask, driven };
+  const ctx = { eng, p, out, ask, driven, remoteAnswerable: runsLib.remoteAnswerable };
   const drives = path.join(eng.dataDir, 'drives', p.id);
 
   const finish = async (code) => {
@@ -540,7 +549,17 @@ async function run(argv, globalDir) {
   }
   if (o.detach && DRIVING.includes(verb)) {
     mustTicketOrSpec(id);
-    return finish(await detach({ argv, id, p, eng, out, drives, history, confirmed }));
+    if (confirmed && verb === 'checkpoint' && pos[0] === 'approve') {
+      // CP3: shipping is the person's — applied here (recorded, `pending`), the ship stage left to the background
+      flow.checkpoint(p.id, id, { action: 'approve', text: o.note, defer: true });
+      return finish(await detach({ args: ['autopilot', id], id, p, eng, out, drives, history }));
+    }
+    if (confirmed && verb === 'merge') {
+      flow.merge(p.id, id, { defer: true });
+      return finish(await detach({ args: ['autopilot', id], id, p, eng, out, drives, history }));
+    }
+    if (!confirmed) return finish(await detach({ args: argv.filter((a) => a !== '--detach' && a !== '--json'), id, p, eng, out, drives, history }));
+    out.line('(this decision runs here, in the foreground)'); // abandon and the rest: short, and the person's
   }
   if (verb === 'autopilot' && (o.follow || o.status)) {
     mustTicket(id);
@@ -621,23 +640,15 @@ async function run(argv, globalDir) {
 // Detached drives: one background process per feature, its log, and the ways back to it
 
 /** Starts the same verb as `--driven` in a background process; returns once it holds the feature (or ended). */
-async function detach({ argv, id, p, eng, out, drives, history, confirmed }) {
+async function detach({ args, id, p, eng, out, drives, history }) {
   fs.mkdirSync(drives, { recursive: true });
   const log = path.join(drives, `${id}.log`);
   const info = path.join(drives, `${id}.json`);
   const prev = readJson(info);
   if (prev && history.alive(prev.pid, prev.start) && prev.pid !== process.pid) throw new Error(`a detached drive of ${id} is already running (pid ${prev.pid}) — cohorte autopilot ${id} --follow`);
-  const args = argv.filter((a) => a !== '--detach' && a !== '--json' && a !== '--interactive');
   fs.writeFileSync(log, `# cohorte ${args.join(' ')} — ${new Date().toISOString()}\n`);
   const fd = fs.openSync(log, 'a');
-  // the yes typed here travels as a one-time token: the background process cannot ask, and nothing else can forge it
   const env = { ...process.env };
-  if (confirmed) {
-    const tok = require('crypto').randomBytes(16).toString('hex');
-    fs.mkdirSync(path.join(eng.dataDir, 'drives', 'confirm'), { recursive: true });
-    fs.writeFileSync(path.join(eng.dataDir, 'drives', 'confirm', `${tok}.ok`), '', { mode: 0o600 });
-    env.COHORTE_CONFIRM_TOKEN = tok;
-  }
   const child = require('child_process').spawn(process.execPath, [path.join(__dirname, 'cli.js'), ...args, '--driven', '--project', p.root],
     { detached: true, stdio: ['ignore', fd, fd], env, cwd: p.root });
   fs.closeSync(fd);

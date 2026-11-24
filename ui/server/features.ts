@@ -29,6 +29,8 @@ export class FeatureStore {
   private cache = new Map<string, Feature>();
   /** The file's mtime:size when this process last read or wrote it. */
   private stamps = new Map<string, string | null>();
+  /** Called when a record another process rewrote is read again — with what this process had before. */
+  onExternal: ((before: { phase: Feature['phase']; openedAt: string | null; updatedAt: string; decisions: Set<string> }, f: Feature) => void) | null = null;
   constructor(private dir: string) {}
 
   private file(projectId: string, id: string): string | null {
@@ -58,8 +60,11 @@ export class FeatureStore {
       if (v.v !== 1 || v.id !== id) return hit || null;
       this.stamps.set(key, st);
       if (!hit) { this.cache.set(key, v); return v; }
+      const before = { phase: hit.phase, openedAt: hit.checkpoint?.openedAt || null, updatedAt: hit.updatedAt, decisions: new Set(hit.decisions.map((d) => d.id)) };
       for (const k of Object.keys(hit)) if (!(k in v)) delete (hit as unknown as Record<string, unknown>)[k];
-      return Object.assign(hit, v);
+      Object.assign(hit, v);
+      try { this.onExternal?.(before, hit); } catch { /* a check never breaks a read */ }
+      return hit;
     } catch { return hit || null; }
   }
 
@@ -87,13 +92,15 @@ export class FeatureStore {
     this.mirror(f);
   }
 
+  static newId(): string { return crypto.randomBytes(3).toString('hex'); }
+
   phase(f: Feature, phase: FeaturePhase, checkpoint: Checkpoint | null = null, error: string | null = null): void {
     f.phase = phase; f.checkpoint = checkpoint; f.error = error;
     this.save(f);
   }
 
-  addDecision(f: Feature, d: Omit<DecisionRecord, 'id' | 'at' | 'contested' | 'confirmed'>): DecisionRecord {
-    const rec: DecisionRecord = { ...d, id: crypto.randomBytes(3).toString('hex'), at: new Date().toISOString(), contested: null, confirmed: false };
+  addDecision(f: Feature, d: Omit<DecisionRecord, 'id' | 'at' | 'contested' | 'confirmed'> & { id?: string }): DecisionRecord {
+    const rec: DecisionRecord = { ...d, id: d.id || FeatureStore.newId(), at: new Date().toISOString(), contested: null, confirmed: false };
     f.decisions.push(rec);
     this.save(f);
     return rec;

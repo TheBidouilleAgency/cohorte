@@ -214,42 +214,53 @@ try {
     check("…and the requester validates it on the page", (await post(`${P}/tickets/${v.json?.ticket.id}/decide`, { action: "validate" })).json.ticket.status === "backlog");
   }
 
-  console.log("--detach: a background drive, its question answered from the page");
+  console.log("--detach: a background drive — what the page may answer, what only a terminal may");
   {
     const S = "second-export";
+    // prudent: the decider hands over the build's `visible` question too — one the page may answer
+    await post(`${P}/settings`, { autonomy: "prudent" });
     term(["ticket", "create", "--title", "Second export", "--type", "feature"], "yes\n");
     const tk = cli(["take", S, "--json"]);
     check("take → CP1", tk.code === 2);
-    // verify will ask a permission: a detached drive cannot grant one, and nothing from elsewhere may
+    // verify will ask a permission: only the terminal that runs it may grant one
     writeFileSync(join(tk.json.feature.worktree, "specs", "reports", ".ask-permission"), "");
     const t0 = Date.now();
     const d = cli(["checkpoint", S, "approve", "--detach", "--note", "approved, go", "--json"]);
-    check("checkpoint approve --detach returns at once, with its pid and log", d.code === 0 && d.json?.detached?.pid && existsSync(d.json.detached.log) && Date.now() - t0 < 15000, `${d.code} ${d.out} ${d.err}`);
+    check("checkpoint approve --detach (CP1, relayed) returns at once, with its pid and log", d.code === 0 && d.json?.detached?.pid && existsSync(d.json.detached.log) && Date.now() - t0 < 15000, `${d.code} ${d.out} ${d.err}`);
     const log = d.json?.detached?.log;
-    const item = await until("the handed-over question is in the page's inbox", async () => (await call("/api/inbox")).json.items.find((i) => i.kind === "question" && i.feature === S), 30000);
+    const item = await until("the build's visible question is in the page's inbox", async () => (await call("/api/inbox")).json.items.find((i) => i.kind === "question" && i.feature === S), 30000);
     const run = item && (await call(`${P}/runs/${item.ref}`)).json;
     const q = run?.pending?.[0];
-    check("the page sees the parked question of a run another process drives", q && q.kind === "question" && /admin role/.test(q.questions[0].question) && !q.deciding, JSON.stringify(run?.pending));
+    check("the page sees the parked question of a run another process drives", q && q.kind === "question" && /validation library/.test(q.questions[0].question) && !q.deciding, JSON.stringify(run?.pending));
     const st = cli(["autopilot", S, "--status", "--json"]);
     check("autopilot --status: the question it waits for, the drive running", st.code === 0 && st.json?.waiting.length === 1 && st.json.drive?.running === true, st.out.slice(0, 300));
-    const r = q && await post(`${P}/runs/${item.ref}/respond`, { requestId: q.requestId, behavior: "allow", answers: { [q.questions[0].question]: ["Yes (Recommended)"] } });
+    const r = q && await post(`${P}/runs/${item.ref}/respond`, { requestId: q.requestId, behavior: "allow", answers: { [q.questions[0].question]: ["zod (Recommended)"] } });
     check("the page answers it", r && r.status === 200, JSON.stringify(r?.json));
-    const f2 = await until("verify's permission ask parks the detached drive at CP2", async () => { const f = (await call(`${P}/features/${S}`)).json; return f.phase === "cp2" && !f.driver ? f : null; }, 30000);
-    check("…the ask in the reason, never granted from elsewhere", f2 && /permission/.test(f2.checkpoint.reason) && /docker compose up -d/.test(f2.checkpoint.reason) && f2.stages.at(-1).stage === "verify" && f2.stages.at(-1).status === "stopped", JSON.stringify(f2 && { c: f2.checkpoint, s: f2.stages.at(-1) }));
-    check("the page's answer is on the record as remote — not as the developer's own", f2 && f2.decisions.some((x) => x.by === "remote" && x.chosen === "Yes (Recommended)") && !f2.decisions.some((x) => x.by === "human" && x.chosen === "Yes (Recommended)"), JSON.stringify(f2?.decisions));
+    const f2 = await until("the fix's SECURITY question parks the detached drive at CP2 — never answerable from elsewhere", async () => { const f = (await call(`${P}/features/${S}`)).json; return f.phase === "cp2" && !f.driver ? f : null; }, 30000);
+    check("…the question in the reason, the fix stage stopped", f2 && /admin role/.test(f2.checkpoint.reason) && /only at the terminal/.test(f2.checkpoint.reason) && f2.stages.at(-1).stage === "fix" && f2.stages.at(-1).status === "stopped", JSON.stringify(f2 && { c: f2.checkpoint, s: f2.stages.at(-1) }));
+    check("the page's answer is on the record as remote — not as the developer's own", f2 && f2.decisions.some((x) => x.by === "remote" && x.chosen === "zod (Recommended)") && !f2.decisions.some((x) => x.by === "human" && x.chosen === "zod (Recommended)"), JSON.stringify(f2?.decisions));
     const text = log ? readFileSync(log, "utf8") : "";
-    check("its log has the stages, the wait and the stop", /▶ build/.test(text) && /\? waiting for an answer \(fix\)/.test(text) && /! verify asks to run Bash/.test(text), text.slice(-800));
-    rmSync(join(f2.worktree, "specs", "reports", ".ask-permission"));
-    const c2 = cli(["checkpoint", S, "continue", "--note", "the docker ask is fine now", "--json"]);
-    check("CP2 continue, relayed with a note → verify reruns → CP3", c2.code === 2 && c2.json?.rest.waiting === "cp3", `${c2.code} ${c2.err.slice(-400)}`);
-    const cp3 = term(["autopilot", S], "");
-    check("CP3, at a terminal, lists the remote answer among what was decided on the developer's behalf", cp3.code === 2 && /decided on your behalf[\s\S]*admin role\? → Yes \(Recommended\) \(answered from elsewhere\)/.test(cp3.out), cp3.out.slice(-600));
+    check("its log has the stages, the wait and the stop", /▶ build/.test(text) && /\? waiting for an answer \(build\)/.test(text) && /! fix asks: .*admin role/.test(text), text.slice(-800));
+    // at a terminal: CP2 continue, the security question, verify's permission — then CP3
+    const at = term(["autopilot", S], "continue\n1\ny\n");
+    check("at its terminal: the security question and the permission are answered there, then CP3", at.code === 2 && /Should the export require the admin role\?/.test(at.out) && /verify asks to run Bash: docker compose up -d/.test(at.out) && /■ CP3/.test(at.out), at.out.slice(-900));
+    check("CP3 lists the remote answer among what was decided on the developer's behalf", /decided on your behalf[\s\S]*validation library\? → zod \(Recommended\) \(answered from elsewhere\)/.test(at.out), at.out.slice(-600));
+    await post(`${P}/settings`, { autonomy: "balanced" });
     writeFileSync(ghState, JSON.stringify({ state: "OPEN" })); // the first feature's merge left the fake PR merged
     check("CP3 approve --detach from a pipe → refused", cli(["checkpoint", S, "approve", "--detach"]).code === 5);
+    // the old confirm token is gone: a `--driven` call has no authority at all, whatever file or env it brings
+    mkdirSync(join(globalDir, "cohorte-ui", "drives", "confirm"), { recursive: true });
+    writeFileSync(join(globalDir, "cohorte-ui", "drives", "confirm", "ab.ok"), "");
+    const forged = cli(["checkpoint", S, "approve", "--driven"], "", { COHORTE_CONFIRM_TOKEN: "ab" });
+    check("a forged --driven CP3 approve → refused (exit 5)", forged.code === 5 && (await call(`${P}/features/${S}`)).json.phase === "cp3", forged.err);
+    check("…a forged --driven ticket straight to the backlog too", cli(["ticket", "create", "--title", "Forged", "--status", "backlog", "--driven"], "", { COHORTE_CONFIRM_TOKEN: "ab" }).code === 5);
     const sh = term(["checkpoint", S, "approve", "--detach", "--json"], "yes\n");
-    check("CP3 approve --detach at a terminal: the yes travels to the background drive", sh.code === 0, `${sh.code} ${sh.out.slice(-400)}`);
+    check("CP3 approve --detach at a terminal: the terminal applies it, the background ships", sh.code === 0, `${sh.code} ${sh.out.slice(-400)}`);
     const fo = cli(["autopilot", S, "--follow", "--json"]);
     check("autopilot --follow prints the drive until it ends, then where it rests", fo.code === 0 && fo.json?.rest.waiting === "pr" && /▶ ship/.test(fo.out + fo.err), `${fo.code} ${JSON.stringify(fo.json?.rest)} ${fo.err.slice(-600)}`);
+    const fs2 = fo.json?.feature;
+    const humanLog = readFileSync(join(globalDir, "cohorte-ui", "human", `${id}.jsonl`), "utf8");
+    check("the ship approval is the developer's, on the record and in the decision log", fs2?.decisions.some((x) => x.by === "human" && /CP3/.test(x.question)) && /"feature":"second-export","kind":"cp3-approve","by":"cli"/.test(humanLog), humanLog.slice(-400));
   }
 
   console.log("adopt: work from a plain Claude Code session joins the flow");
@@ -299,6 +310,25 @@ try {
     check("approve on the frozen spec starts the autopilot (here: parked at the fix question)", a.code === 3 && /▶ build/.test(a.err) && a.json?.feature.phase === "cp2", `${a.code} ${a.err.slice(-400)}`);
   }
 
+  console.log("a record edited outside cohorte never ships");
+  {
+    // page-spec sits at CP3 (adopted above); the page has it cached. An agent rewrites its JSON: shipped, pending ship.
+    const fpath = join(globalDir, "cohorte-ui", "features", id, "page-spec.json");
+    const rec = JSON.parse(readFileSync(fpath, "utf8"));
+    writeFileSync(fpath, JSON.stringify({ ...rec, phase: "shipping", checkpoint: null, pending: { stage: "ship", at: new Date().toISOString(), by: "cli" } }));
+    const seen = (await call(`${P}/features/page-spec`)).json;
+    check("the page flags it: changed outside cohorte", seen.integrity && /changed outside cohorte/.test(seen.integrity.reason), JSON.stringify(seen.integrity));
+    const drv = cli(["autopilot", "page-spec", "--driven", "--json"]);
+    check("…and a drive refuses to start the ship stage on it", drv.code !== 0 && !(cli(["ticket", "show", "page-spec", "--json"]).json?.feature?.stages || []).some((x) => x.stage === "ship"), `${drv.code} ${drv.err.slice(-300)}`);
+    // an agent of a UI run that scrubs its env still runs below a cohorte run: the CLI walks its ancestry
+    process.env.COHORTE_TEST_CLI = cliPath; process.env.COHORTE_TEST_PROJECT = proj;
+    process.env.CLAUDE_CONFIG_DIR = globalDir;
+    const po = await post(`${P}/po`, { text: "CALL_COHORTE please" });
+    const out = await until("the agent tried the CLI", async () => { const v = (await call(`${P}/runs/${po.json.run.id}`)).json; const t = (v.events || []).map((e) => e.text || "").join("\n"); return /cli exit/.test(t) ? t : null; }, 20000);
+    check("env scrubbed of COHORTE_RUN_ID, the CLI still refuses an agent of a run (its ancestry)", out && /cli exit 5 .*inside a cohorte run/.test(out), out);
+    delete process.env.CLAUDE_CONFIG_DIR;
+  }
+
   console.log("take-over: a stuck lease");
   {
     // a lease whose holder is gone: the pid of a live process, but not the one that took it (a reboot reused it)
@@ -315,6 +345,7 @@ try {
     check("take-over from a pipe → refused", cli(["take-over", "plain-spec"]).code === 5);
     const to = term(["take-over", "plain-spec", "--json"], "yes\n");
     check("take-over at a terminal clears it", to.code === 0 && to.json?.was?.pid === sleeper.pid && !existsSync(join(leaseDir, "plain-spec.lock")), to.out.slice(-300));
+    check("take-over also clears an integrity flag (a person looked)", !term(["take-over", "page-spec", "--json"], "yes\n").json?.feature?.integrity);
     sleeper.kill();
   }
 

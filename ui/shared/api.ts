@@ -188,6 +188,11 @@ export interface FeatureView {
   error: string | null; warning: string | null; createdAt: string; updatedAt: string; costUsd: number;
   /** The process with a run of this feature in flight — `cohorte ui`, or a `cohorte` verb in a terminal. Absent when idle. */
   driver?: FeatureDriver | null;
+  /** A person approved a step (CP3 ship, merge) in a terminal that then detached: the background drive starts it. */
+  pending?: { stage: 'ship' | 'merge'; at: string; by: 'ui' | 'cli' } | null;
+  /** The record was changed outside cohorte (a step past a person's checkpoint with no decision of theirs on file):
+   *  the flow does nothing automatic on it until a person acts (a checkpoint, or `cohorte take-over`). */
+  integrity?: { at: string; reason: string } | null;
 }
 export interface FeatureDriver { pid: number; start?: number | null; by: 'ui' | 'cli'; at: string }
 /** A spec written outside the flow (a plain Claude Code session) that no feature record follows yet. */
