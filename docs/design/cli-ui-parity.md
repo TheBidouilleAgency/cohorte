@@ -239,8 +239,8 @@ the gate denies every Bash or Write/Edit write under `<CLAUDE_CONFIG_DIR>/cohort
 allows only `ticket list|show` and `autopilot --status`. A person's decisions — CP0 (`ticket move`), a
 ticket straight to the backlog, CP3 approve, abandon, CP4 (`accept`), `merge`, `take-over`, the gate's ask on
 `take` — need stdin to be a TTY and a typed `yes` (or the UI); from a pipe they exit 5 with the command to
-type (`--interactive` and `--yes` are gone). A `--detach` of one of them carries the parent's yes to the
-background process as a one-time token (a file under `drives/confirm/` + an env var naming it). CP1 approve
+type (`--interactive` and `--yes` are gone). (A one-time token for `--detach` was tried here and removed in the
+fourth round: a file is forgeable.) CP1 approve
 (and a reply), CP2 continue/correct may be relayed from a pipe with `--note "<the developer's words>"`,
 recorded as a `remote` decision on the feature. The skills: `/cohorte-lead` relays CP1 with `--note`;
 `/cohorte-acceptance` and `/cohorte-po` give the person the command (or the dashboard button) instead of
@@ -271,6 +271,52 @@ vitest (`answers.test.ts`): a forged answer file does not approve a permission, 
 answer one, a question crosses as `remote`, a decider-held one does not, runs carry `COHORTE_RUN_ID`, pid +
 start identity, the lease (re-entrant, live holder refused, stale replaced). test-gate: writes under
 `cohorte-ui/` denied.
+
+## Fourth round: the second review
+
+- **No authority in a background drive, none in a file.** The confirm token is gone. `--driven` has no power at
+  all: its `confirm()` always refuses. For CP3 approve and merge with `--detach`, the TTY parent takes the
+  decision itself — recorded on the feature as the developer's (`by: 'human'`) and in the append-only decision log
+  (`<data>/human/<project>.jsonl`, humanlog.ts) — and leaves the step `pending`; the background drive
+  (`autopilot <id> --driven`) only starts it, after `Flow.resume` finds the approval in the log. Abandon with
+  `--detach` runs in the foreground.
+- **Inside a run.** The gate (the hook inherits the run's env) denies state-changing `cohorte` verbs under any
+  spelling, `COHORTE_*` tampering and pty helpers (test-gate). The CLI treats an empty `COHORTE_RUN_ID` as set and
+  refuses when a live run's `claude` is among its ancestors (run files now carry `childPid`/`childStart`;
+  `proc.ancestors`). CP1/CP2 relays are therefore possible only from sessions the user started.
+- **The gate's write-deny** also covers `touch`, `mkdir`, `tar -C`/`-x` into the cwd, `git -C`/`git init|clone`
+  targets, `$CLAUDE_CONFIG_DIR`; an unresolved target that names `cohorte-ui` is asked. Interpreters remain open —
+  see "The security boundary" below.
+- **File answers to questions**: never for the ship stage, nor for a question whose class (its header, or the
+  decider's reading) is security, irreversible or cost (`remoteAnswerable`). A detached drive parks on those, as on
+  a permission ask.
+- **The lock** is written whole to a temp file and `link()`ed into place; an unreadable lock younger than 5 s is
+  live (being written), older is stale.
+- **Integrity.** When another process rewrote a feature record, the flow checks what it claims a person did
+  against the decision log (CP3 → shipping/PR, PR → merging, a pending step, a decision `by: 'human'`). A record
+  that fails is flagged `integrity: "changed outside cohorte: …"` (logged, shown on the page and in
+  `ticket show`), and nothing automatic runs on it — no stage, no merge, no PR poll — until a person acts on it
+  (a checkpoint, or `take-over`). Tickets are not checked: their notes are meant to be edited by hand (Obsidian).
+
+## The security boundary
+
+What holds, and what does not, against an agent of a cohorte run (a run's `claude` and everything it spawns):
+
+- **With the default permissions** (the gate installed, Claude Code's prompts on, no broad allow rule): it cannot
+  move the flow — every state-changing `cohorte` verb is denied by the gate and refused by the CLI (env, then
+  ancestry); it cannot write the flow's state by the commands the gate parses; it cannot answer a permission ask,
+  a ship-stage question or a security/irreversible/cost question; it cannot pass for a person (no pty, no TTY). It
+  can answer its own ordinary questions through a file, visibly (`remote`, listed at CP3, never learned).
+- **With broad interpreter permissions** (`python3`, `node`, a script it may write and run): it can write any
+  file the user can, so it can forge a feature record, a ticket, the decision log, a lock. Parsing cannot close
+  that, and nothing human-only depends on a file being unforgeable: shipping and merging run only in the process
+  where the person approved (the page, a terminal's typed `yes`) or in the drive that terminal detached, after the
+  approval is found in the log; a record edited past a person's checkpoint is flagged and frozen. What a
+  determined agent with interpreter access can still do is forge BOTH the record and the log consistently, then
+  wait for a drive of its own feature — i.e. the same power it has over the user's shell profile. The only real
+  boundary there is not granting broad interpreter permissions to agents you would not trust with your account.
+- Tickets (Obsidian notes) are not integrity-checked: they are meant for people to edit. A forged CP0 (backlog)
+  lets a developer take a ticket the business did not validate — visible on the board, never acted on alone.
 
 ## What remains
 

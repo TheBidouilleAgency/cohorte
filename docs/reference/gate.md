@@ -331,6 +331,19 @@ only read before the command (or before `--`): a `--cwd=` or `--unattended` insi
 is part of the command. Pass the command as one quoted string; several arguments are re-quoted.
 A legacy `--runtime claude` argument is accepted and ignored.
 
+### The company flow — what an agent can and cannot forge
+
+Who decides is enforced in layers; know which one holds where.
+
+| An agent of a run, with… | it cannot | it can still |
+| --- | --- | --- |
+| the **default permissions** (the gate on, Claude Code's prompts on, nothing broad allowed) | run a state-changing `cohorte` verb (any path, `node …/bin/cli.js`, `npx`/`dlx`; denied while `COHORTE_RUN_ID` is in the hook's environment — the hook is a child of the run, even when the variable is empty); unset or override `COHORTE_*` (`env -u`, `env -i`, `unset`, `VAR=`); drive a pseudo-terminal (`script`, `expect`, `unbuffer`, python/node `pty`); write under `<CLAUDE_CONFIG_DIR>/cohorte-ui/` by the parsed ways (redirects, `cp`/`mv`/`tee`/`touch`/`mkdir`/`tar -C`/`git -C … init`, Write/Edit; a target the gate cannot resolve but names `cohorte-ui` is asked); answer a permission ask, a ship-stage question or a security/irreversible/cost question from a file; make a person's decision (CP0, a ticket straight to the backlog, CP3 ship, CP4, merge, abandon, take-over) — those need a TTY and a typed `yes`, or the page | answer an ordinary question of its own run through a file — recorded `remote`, shown at CP3, never learned; propose things in its answer |
+| **broad interpreter permissions** (`Bash(python3:*)`, `Bash(node:*)`, or a script it wrote and is allowed to run) | — parsing cannot see inside a program: such an agent can write any file the user can | forge the flow's files — a feature record, a ticket note, the decision log, a lock. What it still cannot do: make the autopilot ship or merge on it. Shipping and merging happen only in the process where a person approved them (the page, or a terminal's `yes`), or in the background drive that terminal started — which checks the approval against the append-only decision log first; and a record another process rewrote past a person's checkpoint with no decision of theirs on file is flagged "changed outside cohorte" and nothing automatic runs on it. Forging both files consistently, from the right process ancestry, is beyond what a careless or prompt-injected agent does by accident — but it is not a signature: grant broad interpreter permissions only to agents you would let edit your shell profile |
+
+The `cohorte` CLI also refuses a state-changing verb when any of its ancestor processes is the `claude` of a live
+cohorte run (it reads the run files' child pid and start time), so scrubbing the environment does not help an
+agent that runs it directly.
+
 ### What it does not guarantee
 
 - **Scripts on disk are not inspected.** `./release.sh`, `npm run deploy`, `make nuke` and a
