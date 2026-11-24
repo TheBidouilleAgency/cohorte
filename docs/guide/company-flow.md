@@ -3,7 +3,8 @@
 The [feature cycle](/guide/feature-cycle) is a developer typing commands: `/cohorte-spec`, `/clear`,
 `/cohorte-build`, `/clear`, `/cohorte-review`… The company flow is the same pipeline run the way a
 company runs work: **the business asks, the developers build, the code host merges, the business
-checks**. It lives in `cohorte ui`, and nobody types a command or a `/clear`.
+checks**. It lives in `cohorte ui`, and nobody types a command or a `/clear` — or, on the same state,
+in a terminal and in Claude Code sessions ([From the terminal](#from-the-terminal)).
 
 ```
 BUSINESS        │ DEVELOPER (with the lead)                                   │ BUSINESS
@@ -139,6 +140,47 @@ shipping opens PRs there — commits that, and pushes.
 company layout if needed — see [Kanban](/guide/kanban)). Each ticket is then a note in a `Tickets/` folder
 next to the board, and its card links to it; every step moves the card. Without a vault, tickets are
 kept on this machine. Jira and other trackers are planned as adapters of the same ticket format.
+
+## From the terminal
+
+Everything the dashboard does, the `cohorte` CLI does on the **same state** — the same tickets, feature
+records, checkpoints and questions — so a ticket filed in a terminal is on the board, a CP1 approved on
+the page can be followed in a terminal, and the reverse. Each verb takes `--project <path>` (default: the
+repo you are in) and `--json`.
+
+| In `cohorte ui` | From a terminal | From a Claude Code session |
+| --- | --- | --- |
+| Talk to the PO, CP0 drafts | — (the chat is Claude Code itself) | `/cohorte-po` files what the requester confirms with `cohorte ticket create --status validate` |
+| CP0 Validate / Reject | `cohorte ticket move <id> backlog` / `rejected` | — |
+| New tech ticket | `cohorte ticket create --title … [--body-file …]` | — |
+| The board | `cohorte ticket list`, `cohorte ticket show <id>` | the same commands |
+| Take it | `cohorte take <id>` (the lead frames it here, CP1 at the end) | `/cohorte-lead <id>` — takes it with `--no-lead`: the session is the lead |
+| Reply to the lead | `cohorte lead <id> --note …` | the session itself |
+| CP1 Approve | `cohorte checkpoint <id> approve [--detach]` — the spec freezes, the autopilot runs | `/cohorte-lead` runs `cohorte checkpoint <id> approve --detach` on your "approved" |
+| CP2 Continue / Correct / Re-frame / Abandon | `cohorte checkpoint <id> continue\|correct\|reframe\|abandon [--note …]` | — |
+| Watch the autopilot, answer its questions | `cohorte autopilot <id>` (in the foreground), or `--follow` a detached one, `--status` | — |
+| CP3 Ship / Correct | `cohorte checkpoint <id> approve` / `correct --note …` | — |
+| Merge | `cohorte merge <id>` | — |
+| CP4 It is what I asked for / Not quite | `cohorte accept <id> ok\|not-quite [--note …]` | `/cohorte-acceptance <id>` records the requester's answer the same way |
+| A spec written outside the flow → **Adopt** | `cohorte adopt <id>` (also listed by `cohorte ticket list`) | `/cohorte-spec <ticket id>` reuses the ticket id and adopts the spec once frozen |
+| New project | `cohorte new-project --idea … \| --stack \| --existing <path>` | `/cohorte-vision`, `/cohorte-foundation` relay `cohorte new-project` |
+
+**Questions.** The decider answers first, as in the dashboard. What it hands over is asked in the
+terminal that runs the autopilot — and is in the dashboard's inbox at the same time: answer it in either
+place. A terminal that cannot ask (a script, a pipe) stops the run and parks the feature at CP2 with the
+question in the reason (exit code 3); `cohorte autopilot <id>` in a terminal resumes it.
+
+**`--detach`** sends `take`, `lead`, `checkpoint`, `autopilot`, `merge` or `adopt` to a background
+process of its own and returns at once: it holds the feature until its next checkpoint, logs under
+`~/.claude/cohorte-ui/drives/`, and waits for answers from the inbox or from `cohorte autopilot <id>
+--follow`. That is how `/cohorte-lead` starts the autopilot from a Claude Code session.
+
+**Who drives.** While a run of a feature is in flight, the process that started it — the dashboard or a
+terminal — holds the feature; the other refuses to move it (it says which process has it) until the run
+ends. Between runs, at a checkpoint or with a PR open, either side may answer.
+
+Exit codes: `0` nothing waits on you · `2` a checkpoint or the lead waits on you · `3` a question was
+parked · `4` another process drives the feature · `1` an error.
 
 ## What stays a human's
 

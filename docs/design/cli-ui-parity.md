@@ -98,9 +98,8 @@ deliver events. A CLI that is waiting at a checkpoint prompt watches the feature
 on the page meanwhile, the prompt is dropped and the verb follows what the page started.
 
 Known limits: a CLI killed with SIGKILL leaves its feature in `autopilot` until the next start of either
-front end (the dead pid frees the lease, `recover()` opens CP2, as for a UI restart). Questions parked
-by a run are only answerable in the process that runs it (they are not persisted); the other side sees
-the feature leased.
+front end (the dead pid frees the lease, `recover()` opens CP2, as for a UI restart). (Questions parked
+by a run used to be visible only in the process running it — fixed in the second round, below.)
 
 ### The verbs (`bin/flow.js`, dispatched from `bin/cli.js`)
 
@@ -147,18 +146,90 @@ is asked what it sees (a feature it had cached at CP1 shows CP2, the lead run th
 readable, a `flow` notice reaches the event stream), and a ticket filed on the page is listed and moved
 from the CLI.
 
+## Second round (4.1.3 merged in): detach, parked questions, skills, adopt, founding
+
+### Parked questions on disk, answered from either side
+
+A run file now carries what its run parked on a person (`pending`: request id, kind, questions, the
+decider's advice — not the tool input). Another process reading it (the page's inbox, `cohorte autopilot
+--follow`) sees the question; `Runs.respond` on a run it does not drive writes the answer to
+`<runs>/<projectId>/answers/<runId>.<requestId>.json`, and the driving process polls that folder for its
+own runs with something pending (every 300 ms) and applies it as a human answer — so it becomes a
+preference and a decision on the record exactly like a page answer. A terminal prompting for a question
+drops the prompt when the answer arrives from elsewhere.
+
+### `--detach`
+
+`take`, `lead`, `checkpoint`, `autopilot`, `merge`, `adopt` with `--detach` re-run themselves as
+`--driven` in a detached child (stdin closed, stdout/stderr to `<data>/drives/<projectId>/<id>.log`,
+`<id>.json` = pid + log). The parent returns as soon as the child holds the feature's lease (or ended —
+then it prints the log and the child's exit code). A driven drive never parks a question: it logs
+`? waiting for an answer …` and waits; it stops at the next checkpoint (CP2/CP3 are on disk already, so
+the page or another terminal answers them, and that answer drives the rest). `cohorte autopilot <id>
+--follow` tails the log and asks the drive's parked questions on its own terminal; `--status` prints the
+feature, the questions waiting, and the drive's last lines.
+
+### The skills in a plain session
+
+Every skill keeps its `cohorte ui` path unchanged (the context block present ⇒ the dashboard does the
+writing) and says what to run without it — each call one plain command (validate-core checks every
+`` `cohorte <verb> …` `` in core/commands for `&&`, pipes, `;`, redirects and `$(…)`, and that the
+plain-session commands below are still there):
+
+- `/cohorte-po` lists tickets with `cohorte ticket list --json` and files the ones the requester confirms
+  with `cohorte ticket create --status validate …` (new: `--status validate` and every field of its
+  block — CP0 still applies).
+- `/cohorte-lead <ticket>` reads it with `cohorte ticket show --json`, takes it with `cohorte take <id>
+  --no-lead` (new: the worktree and record without a lead run — the session is the lead; the feature is
+  marked `sessionLead`), frames in the worktree, freezes on the developer's approval and runs `cohorte
+  checkpoint <id> approve --detach` (for a `sessionLead` feature in framing, approve checks the spec is
+  frozen and hands it to the autopilot), then tells them how to follow it (`--follow`, `--status`, the
+  inbox, CP3).
+- `/cohorte-spec <ticket id>` reuses the ticket id as the feature id, the ticket's criteria as the DoD,
+  and links the frozen spec with `cohorte adopt <id>`.
+- `/cohorte-acceptance` records the requester's answer with `cohorte accept <id> ok|not-quite --note`.
+- `/cohorte-vision`, `/cohorte-foundation` relay `cohorte new-project` (start, then `--resume … reply|approve
+  …` with the person's answers, `--identity github|"Name <email>"` before the foundations are approved).
+- the kanban hand-move in `/cohorte-lead` is gone: `cohorte take` moves the card.
+
+### `cohorte new-project`
+
+The page's Founding (`FoundingFlow`, unchanged) driven from a terminal: `--idea`/`--stack`/`--existing`,
+`--based-on`, then the conversation's turns and the checkpoints (`cp-vision`, `cp-foundation`,
+`cp-scaffold`) asked on stdin — with the 4.1.2 identity check before the foundations are approved and the
+skeleton retried (`github` or `Name <email>`, set in that repo only). Without a terminal it returns at the
+first wait (exit 2) with the command to run next — which is how the skills relay it.
+
+### Adopt — the reverse direction (step 5)
+
+`Flow.adoptable` lists the specs, in the main checkout or a feature worktree (the worktree's copy wins),
+that no live feature record follows; `Flow.adopt` creates the record: a draft is refused (freeze it, or
+take the ticket); `frozen`/in progress opens the checkpoint `nextStep` would stop at (CP3 when the
+reports say review and verify are clean) or CP2 "adopted — continue runs <stage> next"; `shipped` looks
+the PR up and waits at `pr`; `merged` goes on to the journal and the acceptance note. The ticket of the
+same id is linked, or created from the spec. A spec in the main checkout is adopted there, with a warning
+(the stages then run in the main checkout). Surfaces: `cohorte adopt <id>`, `cohorte ticket list` (the
+"started in a Claude Code session" list), `GET …/tickets` → `adoptable`, `POST …/adopt`, and an **Adopt**
+card on the page's Tickets board. The feature page also says when a terminal drives the feature.
+
+### Tests (second round)
+
+`scripts/test-cli-flow.mjs` adds: `ticket create --status validate` with the PO's fields (CP0 on the page);
+`checkpoint approve --detach` returning at once, its handed-over question read and answered from the
+page's inbox/respond route, the drive reaching CP3 with the page's answer recorded, `--status`, then a
+detached CP3 ship followed with `--follow`; `take --no-lead` + a session-frozen spec + `checkpoint
+approve`; adopt from the CLI (frozen spec in a worktree → CP2, ticket created, draft refused, twice
+refused) and from the page (reviewed + verified spec in the main checkout → CP3); the founding chain end
+to end from `new-project --idea … --based-on … --interactive` (reply, approve, identity `github`,
+approve, retry) to an ordinary project with its two tickets in the backlog. validate-core checks the
+skills' plain-session commands.
+
 ## What remains
 
-- **Step 4, skills.** `/cohorte-po` runs `cohorte ticket create` (status `validate` would need a
-  `--status` on create, or a `ticket move` after) once the requester confirms; `/cohorte-lead <ticket>`
-  runs `cohorte ticket show <id> --json`, `cohorte take` when the ticket is not taken yet, and on the
-  developer's approval `cohorte checkpoint <id> approve` — which today runs the autopilot in the
-  foreground of the Bash tool call; a `--detach` (spawn `cohorte autopilot` as its own process, so the UI
-  or another terminal can follow and answer it) is the missing piece for a long autopilot started from a
-  session. `/cohorte-spec` accepting a ticket id as the feature id, `/cohorte-acceptance` reading the
-  ticket, `cohorte new-project` for the founding chain. Docs: company-flow from the CLI.
-- **Step 5, the reverse direction.** A spec frozen or a branch built in a plain session (no feature
-  record) is still invisible to the flow: the UI should offer to adopt it (create the feature record from
-  `specs/<id>.md` and the worktree, phase from the pipeline's reports via `pipelineOf`/`nextStep`).
-- Questions parked in one process are not visible to the other; persisting pending items in the run file
-  would let the page show (not answer) what a terminal is asking.
+- A drive killed with SIGKILL still leaves its feature in `autopilot` until the next start of either
+  front end (`recover()` then opens CP2). The page could notice a dead driver pid on its watch tick and
+  recover at once.
+- `cohorte new-project` has no `--detach`: a skill relays it turn by turn, which is fine for the
+  conversations, but the skeleton step can take minutes inside one Bash call (600000 ms timeout).
+- A PO revision after filing (`ref` kept) has no CLI path: the note is edited by hand or on the page.
+- Plain-session work that is only a branch without a spec is not adoptable (there is no phase to infer).
