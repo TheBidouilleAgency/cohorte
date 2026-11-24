@@ -4,7 +4,7 @@ import type { RunEvent } from '../../../shared/api';
 export function precedingText(events: RunEvent[], i: number): string | undefined {
   for (let k = i - 1; k >= 0; k--) {
     const e = events[k];
-    if (e.kind === 'text') return e.text;
+    if (e.kind === 'text' && !e.sub) return e.text; // the result repeats the run's own last words, not a subagent's
   }
   return undefined;
 }

@@ -21,7 +21,8 @@ export const mcp = (cwd: string): { strictMcp: true; mcpConfig: string | null } 
   const f = path.join(cwd, '.mcp.json');
   return { strictMcp: true, mcpConfig: fs.existsSync(f) ? f : null };
 };
-export const textsOf = (events: RunEvent[]): string[] => events.filter((e): e is Extract<RunEvent, { kind: 'text' }> => e.kind === 'text').map((e) => e.text);
+/** The run's own messages — a subagent's (its HANDOFF, its REVIEW REPORT) are never read as the lead's blocks. */
+export const textsOf = (events: RunEvent[]): string[] => events.filter((e): e is Extract<RunEvent, { kind: 'text' }> => e.kind === 'text' && !e.sub).map((e) => e.text);
 export const readText = (p: string): string => { try { return fs.readFileSync(p, 'utf8'); } catch { return ''; } };
 
 /** The body of an installed /cohorte-* command, its $ARGUMENTS substituted — sent as a prompt so the run's model applies. */

@@ -11,6 +11,9 @@ describe('feed', () => {
     expect(precedingText(ev, 3)).toBe('b');
     expect(precedingText(ev, 0)).toBeUndefined();
   });
+  it('skips a subagent\'s text: the result repeats the run\'s own last words', () => {
+    expect(precedingText([text('mine'), { t: 0, kind: 'text', text: 'HANDOFF', sub: true }], 2)).toBe('mine');
+  });
   it('hides a result that repeats the last message', () => {
     expect(showResultText('done', 'done')).toBe(false);
     expect(showResultText('done', 'other')).toBe(true);
