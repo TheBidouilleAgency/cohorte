@@ -127,6 +127,36 @@ describe('runs: background subagents keep the permission channel open', () => {
     expect(ms).toBeLessThan(3000);
   });
 
+  it('does not hold the run open for a background shell that never ends (a dev server)', async () => {
+    for (const started of [true, false]) {
+      const { run, ms } = await play([
+        lead([{ type: 'tool_use', id: 'tb', name: 'Bash', input: { command: 'pnpm dev', run_in_background: true } }]),
+        ...(started ? [{ type: 'system', subtype: 'task_started', task_id: 'b1', tool_use_id: 'tb', task_type: 'local_bash', description: 'pnpm dev' }] : []),
+        toolResult('tb', 'Command running in background with ID: b1. Output is being written to: /tmp/b1.output'),
+        result('the dev server is up'),
+      ], { stallMs: 10_000 });
+      expect(run.status).toBe('done');
+      expect(ms).toBeLessThan(3000);
+    }
+  });
+
+  it('settles an older CLI\'s placeholder on a completion that names no tool call', async () => {
+    const { run, ms } = await play([
+      lead([{ type: 'tool_use', id: 'ta', name: 'Agent', input: {} }]),
+      toolResult('ta', ASYNC), // no task_started: a placeholder
+      result('dispatched'),
+      { wait: 300 },
+      { ask: 'pnpm lint', parent: 'ta' },
+      { type: 'system', subtype: 'task_notification', task_id: 'a8b38fa2fb1b59df3', status: 'completed' }, // no tool_use_id
+      { wait: 300 },
+      { ask: 'git status' },
+      result('all in'),
+    ], { stallMs: 10_000 });
+    expect(closedAsks(run.events)).toEqual([]);
+    expect(run.status).toBe('done');
+    expect(ms).toBeLessThan(5000);
+  });
+
   it('gives up after the stall timeout when a background task never reports', async () => {
     const { run, ms } = await play([
       lead([{ type: 'tool_use', id: 'ta', name: 'Agent', input: {} }]),
@@ -136,7 +166,7 @@ describe('runs: background subagents keep the permission channel open', () => {
     ], { stallMs: 600 });
     expect(run.status).toBe('done');
     expect(ms).toBeGreaterThanOrEqual(600);
-    expect(run.events.some((e) => e.kind === 'system' && /background task/.test(e.text))).toBe(true);
+    expect(run.events.some((e) => e.kind === 'system' && /background agent/.test(e.text))).toBe(true);
   });
 });
 
