@@ -151,36 +151,54 @@ repo you are in) and `--json`.
 | In `cohorte ui` | From a terminal | From a Claude Code session |
 | --- | --- | --- |
 | Talk to the PO, CP0 drafts | — (the chat is Claude Code itself) | `/cohorte-po` files what the requester confirms with `cohorte ticket create --status validate` |
-| CP0 Validate / Reject | `cohorte ticket move <id> backlog` / `rejected` | — |
-| New tech ticket | `cohorte ticket create --title … [--body-file …]` | — |
+| CP0 Validate / Reject | `cohorte ticket move <id> backlog` / `rejected` (you type `yes`) | `/cohorte-po` tells the requester the command — never runs it |
+| New tech ticket | `cohorte ticket create --title … [--body-file …]` (you type `yes`: no CP0) | — |
 | The board | `cohorte ticket list`, `cohorte ticket show <id>` | the same commands |
 | Take it | `cohorte take <id>` (the lead frames it here, CP1 at the end) | `/cohorte-lead <id>` — takes it with `--no-lead`: the session is the lead |
 | Reply to the lead | `cohorte lead <id> --note …` | the session itself |
-| CP1 Approve | `cohorte checkpoint <id> approve [--detach]` — the spec freezes, the autopilot runs | `/cohorte-lead` runs `cohorte checkpoint <id> approve --detach` on your "approved" |
-| CP2 Continue / Correct / Re-frame / Abandon | `cohorte checkpoint <id> continue\|correct\|reframe\|abandon [--note …]` | — |
+| CP1 Approve | `cohorte checkpoint <id> approve [--detach]` — the spec freezes, the autopilot runs | `/cohorte-lead` relays your "approved": `cohorte checkpoint <id> approve --detach --note "<your words>"` |
+| CP2 Continue / Correct / Re-frame / Abandon | `cohorte checkpoint <id> continue\|correct\|reframe\|abandon [--note …]` | continue / correct may be relayed with `--note` |
 | Watch the autopilot, answer its questions | `cohorte autopilot <id>` (in the foreground), or `--follow` a detached one, `--status` | — |
-| CP3 Ship / Correct | `cohorte checkpoint <id> approve` / `correct --note …` | — |
-| Merge | `cohorte merge <id>` | — |
-| CP4 It is what I asked for / Not quite | `cohorte accept <id> ok\|not-quite [--note …]` | `/cohorte-acceptance <id>` records the requester's answer the same way |
+| CP3 Ship / Correct | `cohorte checkpoint <id> approve` (you type `yes`) / `correct --note …` | — |
+| Merge | `cohorte merge <id>` (you type `yes`) | — |
+| CP4 It is what I asked for / Not quite | `cohorte accept <id> ok\|not-quite [--note …]` (you type `yes`) | `/cohorte-acceptance <id>` writes the note and gives the requester that command |
 | A spec written outside the flow → **Adopt** | `cohorte adopt <id>` (also listed by `cohorte ticket list`) | `/cohorte-spec <ticket id>` reuses the ticket id and adopts the spec once frozen |
 | New project | `cohorte new-project --idea … \| --stack \| --existing <path>` | `/cohorte-vision`, `/cohorte-foundation` relay `cohorte new-project` |
+| A feature stuck on a vanished driver | `cohorte take-over <id>` (you type `yes`) | — |
+
+**Who may decide.** A person's decisions — CP0, a ticket straight to the backlog, shipping at CP3,
+CP4, merging, abandoning, taking over — are typed at a terminal (`yes`) or clicked in the dashboard.
+From a pipe (a script, a Claude Code session's Bash call) they are refused with exit code `5` and the
+command to type. What a session relays for you — CP1 approve, CP2 continue/correct, a reply to the lead
+— passes from a pipe with `--note "<your words>"`, and is recorded as relayed. An agent of a run cohorte
+started (`COHORTE_RUN_ID` in its environment) may only read: `ticket list`, `ticket show`,
+`autopilot --status`. The project's gate also denies any agent write under `~/.claude/cohorte-ui/`.
 
 **Questions.** The decider answers first, as in the dashboard. What it hands over is asked in the
 terminal that runs the autopilot — and is in the dashboard's inbox at the same time: answer it in either
-place. A terminal that cannot ask (a script, a pipe) stops the run and parks the feature at CP2 with the
-question in the reason (exit code 3); `cohorte autopilot <id>` in a terminal resumes it.
+place (an answer given elsewhere is recorded as such and listed at CP3 with the decider's). A
+**permission** an agent asks for is different: only the terminal (or the dashboard) that runs it may
+grant it — never from elsewhere. A terminal that cannot ask (a script, a pipe) stops the run and parks the
+feature at CP2 with the question in the reason (exit code 3); `cohorte autopilot <id>` in a terminal
+resumes it.
 
 **`--detach`** sends `take`, `lead`, `checkpoint`, `autopilot`, `merge` or `adopt` to a background
 process of its own and returns at once: it holds the feature until its next checkpoint, logs under
 `~/.claude/cohorte-ui/drives/`, and waits for answers from the inbox or from `cohorte autopilot <id>
---follow`. That is how `/cohorte-lead` starts the autopilot from a Claude Code session.
+--follow`; a permission ask parks it at CP2 instead. That is how `/cohorte-lead` starts the autopilot
+from a Claude Code session.
 
 **Who drives.** While a run of a feature is in flight, the process that started it — the dashboard or a
-terminal — holds the feature; the other refuses to move it (it says which process has it) until the run
-ends. Between runs, at a checkpoint or with a PR open, either side may answer.
+terminal — holds the feature's lease (a lock file naming that process by pid and start time); the other
+refuses to move it (it says which process has it) until the run ends. Between runs, at a checkpoint or
+with a PR open, either side may answer. A holder that died frees it by itself; one that hangs is cleared
+with `cohorte take-over <id>`.
+
+**Adopt** never runs the autopilot on the default branch: a spec only in the main checkout is refused —
+take its ticket (`cohorte take <id> --no-lead` creates the worktree), move the spec there, approve CP1.
 
 Exit codes: `0` nothing waits on you · `2` a checkpoint or the lead waits on you · `3` a question was
-parked · `4` another process drives the feature · `1` an error.
+parked · `4` another process drives the feature · `5` a person's decision, refused here · `1` an error.
 
 ## What stays a human's
 

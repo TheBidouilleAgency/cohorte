@@ -41,7 +41,7 @@ model — their value is the conversation.
 `cohorte ui` runs these itself — see [The company flow](/guide/company-flow). In a plain Claude Code
 session they drive the same state through the CLI verbs below: `/cohorte-po` files the tickets the
 requester confirms, `/cohorte-lead` takes the ticket and starts the autopilot on approval, `/cohorte-spec
-<ticket id>` adopts the spec it froze, `/cohorte-acceptance` records the verdict, `/cohorte-vision` and
+<ticket id>` adopts the spec it froze, `/cohorte-acceptance` gives the requester the command for their verdict, `/cohorte-vision` and
 `/cohorte-foundation` relay `cohorte new-project`.
 
 - **`/cohorte-po [request]`** — a business conversation. Asks about need, value, frequency, scope; never
@@ -78,7 +78,10 @@ Starting a project — `cohorte ui` → **New project** ([guide](/guide/company-
 The CLI side of the company flow — same files as `cohorte ui` (`~/.claude/cohorte-ui/`, the project's
 tracker), same transitions as its buttons. Every verb takes `--project <path>` (default: the repo of the
 current folder; a feature worktree counts as its repo), `--json` (the result on stdout, progress on
-stderr) and `--interactive` / `--no-interactive` (ask on stdin even when it is not a TTY / never ask).
+stderr) and `--no-interactive` (never ask, even at a terminal). A person's decisions — `ticket move`, `ticket
+create` to the backlog, CP3 `approve`, `abandon`, `accept`, `merge`, `take-over` — need a terminal (stdin a TTY)
+and a typed `yes`; CP1 `approve`, CP2 `continue`/`correct` and `lead` may come from a pipe with `--note "<the
+developer's words>"`. An agent of a cohorte run (`COHORTE_RUN_ID` set) may only read.
 
 | Verb | Does |
 | --- | --- |
@@ -86,22 +89,24 @@ stderr) and `--interactive` / `--no-interactive` (ask on stdin even when it is n
 | `cohorte ticket show <id>` | a ticket and its feature (phase, checkpoint, stages, driver) |
 | `cohorte ticket create --title T [--body-file F \| --need …] [--type] [--criteria C]… [--value] [--out-of-scope X]… [--priority] [--size] [--parent] [--requester] [--status validate]` | to the backlog (a tech ticket), or `--status validate` for the requester's CP0 |
 | `cohorte ticket move <id> <status>` | `validate` → `backlog`/`rejected` is CP0; any other move edits the note and the card |
-| `cohorte take <id> [--yes] [--skip-docker-check] [--no-lead]` | worktree + feature record (id = ticket id), then the lead frames it → CP1. `--no-lead`: the calling session is the lead |
+| `cohorte take <id> [--skip-docker-check] [--no-lead]` | worktree + feature record (id = ticket id), then the lead frames it → CP1. `--no-lead`: the calling session is the lead |
 | `cohorte lead <id> --note TEXT` | reply to the lead, print its next turn |
 | `cohorte checkpoint <id> <action> [--note TEXT]` | CP1 `approve` `correct` `abandon` · CP2 `continue` `correct` `reframe` `abandon` · CP3 `approve` `correct` `abandon`; then follows what it started |
 | `cohorte autopilot <id>` | build → review → fix → verify in the terminal: a line per stage, the decider's decisions, CP2/CP3 and handed-over questions asked here |
 | `cohorte autopilot <id> --follow` / `--status` | attach to a detached drive (its log, its questions asked here) / where it stands |
 | `cohorte merge <id>` | `gh pr merge`, then the journal and the acceptance note (CP4) |
 | `cohorte accept <id> ok\|not-quite [--note TEXT]` | CP4; `not-quite` opens a follow-up PO conversation |
-| `cohorte adopt <id>` | a frozen (or further) spec with no feature record joins the flow at the phase its files say — CP2, CP3, PR — its ticket linked or created |
+| `cohorte adopt <id>` | a frozen (or further) spec in a feature worktree, with no feature record, joins the flow at the phase its files say — CP2, CP3, PR — its ticket linked or created (one only in the main checkout is refused) |
+| `cohorte take-over <id>` | clear a stuck lease (a driver that hung, or a pid the OS reused); a feature left mid-run opens CP2 |
 | `cohorte new-project --idea "…" --name N [--parent DIR] [--based-on PATH]` · `--stack` · `--existing PATH` | the founding chain — vision, foundations, skeleton, pipeline set-up — with the dashboard's checkpoints and git identity check |
 | `cohorte new-project --resume --project PATH [approve\|reply\|retry\|continue\|abandon] [--note] [--identity github\|"Name <email>"]` | the next step of a founding |
 
 `--detach` (on `take`, `lead`, `checkpoint`, `autopilot`, `merge`, `adopt`) runs the verb in a background
 process that holds the feature until its next checkpoint and logs to `~/.claude/cohorte-ui/drives/`;
-its questions wait in the dashboard's inbox and in `--follow`. Exit codes: `0` nothing waits on you,
-`2` a checkpoint or the lead waits on you, `3` a question was parked (the feature is at CP2), `4` another
-process drives the feature, `1` an error.
+its questions wait in the dashboard's inbox and in `--follow` (a permission ask parks it at CP2: it is
+granted only where its run runs). Exit codes: `0` nothing waits on you, `2` a checkpoint or the lead waits
+on you, `3` a question was parked (the feature is at CP2), `4` another process drives the feature, `5` a
+person's decision refused here (no terminal, or an agent), `1` an error.
 
 ## `/cohorte-init-pipeline`
 

@@ -224,11 +224,62 @@ to end from `new-project --idea … --based-on … --interactive` (reply, approv
 approve, retry) to an ordinary project with its two tickets in the backlog. validate-core checks the
 skills' plain-session commands.
 
+## Third round: the review's fixes (these supersede the rounds above where they differ)
+
+**Permission asks never cross processes.** Any process of the user — an agent's background shell — can
+read a run file and write under the data dir, so a file can never stand for a person. `Runs.respond` on a
+run another process drives refuses a permission ask (and a question the decider holds); the collector
+applies only question answers, as `by: 'remote'` (`DecisionRecord.by` gains `remote`: listed at CP3 with
+the decider's — "answered from elsewhere" — and confirmed by shipping, never learned as a preference).
+The UI's respond route answers 409 for a permission of a run a terminal drives. A detached drive (no
+terminal) that gets a permission ask parks the feature at CP2 with the ask in the reason. Defense in depth:
+the gate denies every Bash or Write/Edit write under `<CLAUDE_CONFIG_DIR>/cohorte-ui/` (test-gate).
+
+**Agents and people.** Every run Runs spawns carries `COHORTE_RUN_ID` / `COHORTE_RUN_PROJECT`; the CLI then
+allows only `ticket list|show` and `autopilot --status`. A person's decisions — CP0 (`ticket move`), a
+ticket straight to the backlog, CP3 approve, abandon, CP4 (`accept`), `merge`, `take-over`, the gate's ask on
+`take` — need stdin to be a TTY and a typed `yes` (or the UI); from a pipe they exit 5 with the command to
+type (`--interactive` and `--yes` are gone). A `--detach` of one of them carries the parent's yes to the
+background process as a one-time token (a file under `drives/confirm/` + an env var naming it). CP1 approve
+(and a reply), CP2 continue/correct may be relayed from a pipe with `--note "<the developer's words>"`,
+recorded as a `remote` decision on the feature. The skills: `/cohorte-lead` relays CP1 with `--note`;
+`/cohorte-acceptance` and `/cohorte-po` give the person the command (or the dashboard button) instead of
+running it; the founding relays approve with `--note`, abandon is the person's. validate-core checks it
+(no skill runs `accept` / `ticket move` itself).
+
+**Process identity.** `proc.ts`: a holder is a pid **and** its start time (from `/proc` on Linux, `ps -o
+lstart` elsewhere, to the second); alive = that pid exists and started then. EPERM no longer means alive
+forever, and a reused pid is dead. Run files record `pidStart`; detached drives record their start.
+
+**The lease is a lock file.** `lease.ts`: `<data>/leases/<project>/<feature>.lock`, created with `O_EXCL`
+(two processes: one wins), holding pid + start; a stale one is moved aside by rename and replaced; released
+when the holder has nothing of the feature in flight (runs, jobs, tracked hook work). Every transition
+claims it first and re-reads the record in place; `advance`, the PR poll and `recover` take it or skip;
+`startStage` refuses if another process holds it. `feature.driver` mirrors it for the page. `cohorte
+take-over <id>` (typed `yes`) clears a stuck one; a feature left mid-run opens CP2.
+
+**Adopt never runs on the default branch.** A spec only in the main checkout is refused with the way out
+(take the ticket with `--no-lead` — it creates the worktree — move the spec there, approve CP1); the page's
+Adopt card says so instead of offering the button.
+
+**Tests.** test-cli-flow runs the person's decisions on a pseudo-terminal (`scripts/ci/pty-run.py`) and
+checks each is refused from a pipe (exit 5) and from an agent (`COHORTE_RUN_ID`); CP1 relayed with a note
+(recorded); a detached drive whose verify asks a permission → parked at CP2, never granted; the page's
+answer to its question recorded `remote` and listed at a terminal's CP3; a stale lease (our pid, another
+start) ignored, a live one (pid + start) kept with 409, `take-over`; adopt of a main-checkout spec refused.
+vitest (`answers.test.ts`): a forged answer file does not approve a permission, another process cannot
+answer one, a question crosses as `remote`, a decider-held one does not, runs carry `COHORTE_RUN_ID`, pid +
+start identity, the lease (re-entrant, live holder refused, stale replaced). test-gate: writes under
+`cohorte-ui/` denied.
+
 ## What remains
 
 - A drive killed with SIGKILL still leaves its feature in `autopilot` until the next start of either
-  front end (`recover()` then opens CP2). The page could notice a dead driver pid on its watch tick and
-  recover at once.
+  front end (`recover()` then opens CP2) or a `take-over`. The page could notice the dead holder on its
+  watch tick and recover at once.
+- The TTY rule keeps a person's decisions away from a pipe and from cohorte's own agents; it cannot stop a
+  same-user program that fakes a terminal (a pty) — that is the gate's and Claude Code's permission
+  prompts' job, as for any command the agent runs.
 - `cohorte new-project` has no `--detach`: a skill relays it turn by turn, which is fine for the
   conversations, but the skeleton step can take minutes inside one Bash call (600000 ms timeout).
 - A PO revision after filing (`ref` kept) has no CLI path: the note is edited by hand or on the page.
