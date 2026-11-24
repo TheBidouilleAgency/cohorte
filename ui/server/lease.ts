@@ -48,10 +48,20 @@ export class Leases {
       // written whole to a temp file first, then linked into place — link fails if the lock exists (O_EXCL's
       // atomicity) and nobody ever sees a lock without its content
       const tmp = `${f}.${self.pid}.${mine.token}.tmp`;
+      let linked: boolean | null = null; // null: this filesystem cannot link (FAT, some network drives, Windows shares)
       try {
         fs.writeFileSync(tmp, JSON.stringify(mine));
-        try { fs.linkSync(tmp, f); return null; } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e; }
+        try { fs.linkSync(tmp, f); linked = true; } catch (e) { linked = (e as NodeJS.ErrnoException).code === 'EEXIST' ? false : null; }
       } finally { try { fs.rmSync(tmp, { force: true }); } catch { /* gone */ } }
+      if (linked) return null;
+      if (linked === null) {
+        // O_EXCL create, then the content: a reader in between sees a young unreadable lock, which counts as live
+        try {
+          const fd = fs.openSync(f, 'wx');
+          try { fs.writeSync(fd, JSON.stringify(mine)); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+          return null;
+        } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e; }
+      }
       const h = this.read(f);
       if (h && isSelf(h)) return null;
       if (h && alive(h.pid, h.start)) return h;

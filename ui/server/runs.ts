@@ -112,14 +112,15 @@ export type AnsweredBy = 'human' | 'decider' | 'remote';
 const HUMAN_ONLY_CLASSES = /^(security|irreversible|cost)$/i;
 /**
  * Whether a parked item may be answered by ANOTHER process (through the store): a question only, not one the decider
- * holds, not one of the ship stage, not one whose class (its header, or the decider's reading) is security,
- * irreversible or cost. A permission ask never.
+ * holds, not one of the ship stage — and only one the decider has classified (its advice) as neither security,
+ * irreversible nor cost, with a header (the asking agent's own label, so not trusted alone) that says none either.
+ * A permission ask never.
  */
 export function remoteAnswerable(run: Pick<Run, 'meta'>, p: Pick<Pending, 'kind' | 'deciding' | 'questions' | 'advice'>): boolean {
   if (p.kind !== 'question' || p.deciding) return false;
   if (['ship', 'reconcile'].includes(run.meta.stage || '')) return false;
   if ((p.questions || []).some((q) => HUMAN_ONLY_CLASSES.test((q.header || '').trim()))) return false;
-  return !(p.advice && HUMAN_ONLY_CLASSES.test(p.advice.category || ''));
+  return !!p.advice && !!p.advice.category && !HUMAN_ONLY_CLASSES.test(p.advice.category);
 }
 
 export class Runs {

@@ -5,7 +5,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { spawn } from 'child_process';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { Runs, remoteAnswerable, type Run } from './runs';
 import { RunStore } from './history';
 import { Leases } from './lease';
@@ -75,6 +75,8 @@ describe.skipIf(process.platform === 'win32')('answers across processes', () => 
     mine.hooks = { onAnswered: (_r, _p, _b, _a, who) => { by.push(who); } };
     const run = start(mine, 'question');
     expect(await until(() => run.pending.size === 1)).toBe(true);
+    // the decider read it (and handed it over): only a question it classified may come from elsewhere
+    mine.annotate(run, 'r1', { advice: { choice: 'A', rationale: '', agreement: 0.5, category: 'visible', escalated: 'split vote' } });
     await sleep(100);
     const other = runs(store);
     const seen = other.get(run.id) as Run;
@@ -102,10 +104,11 @@ describe.skipIf(process.platform === 'win32')('answers across processes', () => 
   it('a security, irreversible or cost question — or one of the ship stage — is answered only where its run runs', async () => {
     const q = (header: string, category?: string) => ({ kind: 'question' as const, questions: [{ question: 'x', header, multiSelect: false, options: [] }],
       advice: category ? { choice: null, rationale: '', agreement: 0, category, escalated: '' } : undefined });
-    expect(remoteAnswerable({ meta: { role: 'stage', stage: 'build' } }, q('visible'))).toBe(true);
+    expect(remoteAnswerable({ meta: { role: 'stage', stage: 'build' } }, q('visible', 'visible'))).toBe(true);
+    expect(remoteAnswerable({ meta: { role: 'stage', stage: 'build' } }, q('visible'))).toBe(false); // the agent's own label, not classified by the decider
     for (const h of ['security', 'Irreversible', 'cost']) expect(remoteAnswerable({ meta: { role: 'stage', stage: 'fix' } }, q(h))).toBe(false);
     expect(remoteAnswerable({ meta: { role: 'stage', stage: 'fix' } }, q('visible', 'security'))).toBe(false);
-    expect(remoteAnswerable({ meta: { role: 'stage', stage: 'ship' } }, q('visible'))).toBe(false);
+    expect(remoteAnswerable({ meta: { role: 'stage', stage: 'ship' } }, q('visible', 'visible'))).toBe(false);
     // end to end: the store's answer file for a security question is not applied, and another process cannot write one
     const store = path.join(dir, 'runs-sec');
     const mine = runs(store);
@@ -171,6 +174,19 @@ describe.skipIf(process.platform === 'win32')('process identity and the lease', 
     L.release('p1', 'f1');
     expect(fs.existsSync(file)).toBe(false);
     child.kill();
+  });
+
+  it('a filesystem that cannot link (FAT, a network share) still gets exclusive, whole locks', () => {
+    const L = new Leases(path.join(dir, 'leases3'));
+    const spy = vi.spyOn(fs, 'linkSync').mockImplementation(() => { throw Object.assign(new Error('operation not permitted'), { code: 'EPERM' }); });
+    try {
+      expect(L.acquire('p1', 'f3', 'ui')).toBeNull();
+      expect(spy).toHaveBeenCalled(); // the link really failed: the fallback took it
+      expect(JSON.parse(fs.readFileSync(path.join(dir, 'leases3', 'p1', 'f3.lock'), 'utf8')).pid).toBe(process.pid);
+      expect(L.acquire('p1', 'f3', 'ui')).toBeNull(); // re-entrant
+      L.release('p1', 'f3');
+      expect(fs.existsSync(path.join(dir, 'leases3', 'p1', 'f3.lock'))).toBe(false);
+    } finally { spy.mockRestore(); }
   });
 
   it('a lock being written (unreadable, young) is live; an old unreadable one is stale', () => {
