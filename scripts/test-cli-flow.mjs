@@ -254,10 +254,14 @@ try {
     const forged = cli(["checkpoint", S, "approve", "--driven"], "", { COHORTE_CONFIRM_TOKEN: "ab" });
     check("a forged --driven CP3 approve → refused (exit 5)", forged.code === 5 && (await call(`${P}/features/${S}`)).json.phase === "cp3", forged.err);
     check("…a forged --driven ticket straight to the backlog too", cli(["ticket", "create", "--title", "Forged", "--status", "backlog", "--driven"], "", { COHORTE_CONFIRM_TOKEN: "ab" }).code === 5);
+    // the page last saw it mid-autopilot (it missed CP3): the terminal's approval is on file, so the move is not flagged
+    const cached = ui.flow.features.get(id, S); cached.phase = "autopilot"; cached.checkpoint = null;
     const sh = term(["checkpoint", S, "approve", "--detach", "--json"], "yes\n");
     check("CP3 approve --detach at a terminal: the terminal applies it, the background ships", sh.code === 0, `${sh.code} ${sh.out.slice(-400)}`);
     const fo = cli(["autopilot", S, "--follow", "--json"]);
     check("autopilot --follow prints the drive until it ends, then where it rests", fo.code === 0 && fo.json?.rest.waiting === "pr" && /▶ ship/.test(fo.out + fo.err), `${fo.code} ${JSON.stringify(fo.json?.rest)} ${fo.err.slice(-600)}`);
+    const seenS = (await call(`${P}/features/${S}`)).json;
+    check("a CP3 the page did not see, approved at a terminal, is not flagged", !seenS.integrity && ["shipping", "pr"].includes(seenS.phase), JSON.stringify({ i: seenS.integrity, p: seenS.phase }));
     const fs2 = fo.json?.feature;
     const humanLog = readFileSync(join(globalDir, "cohorte-ui", "human", `${id}.jsonl`), "utf8");
     check("the ship approval is the developer's, on the record and in the decision log", fs2?.decisions.some((x) => x.by === "human" && /CP3/.test(x.question)) && /"feature":"second-export","kind":"cp3-approve","by":"cli"/.test(humanLog), humanLog.slice(-400));
@@ -294,6 +298,21 @@ try {
     const pa = await post(`${P}/adopt`, { id: "page-spec" });
     check("the page's Adopt on a reviewed + verified spec → CP3", pa.status === 200 && pa.json.feature.phase === "cp3" && pa.json.feature.worktree === pw, JSON.stringify(pa.json));
     check("…and the CLI sees it", cli(["ticket", "show", "page-spec", "--json"]).json?.feature?.phase === "cp3");
+    // a refused transition gives the lease back (replyLead used to keep it on every refusal)
+    const lr = await post(`${P}/features/page-spec/lead`, { text: "hello" });
+    check("a refused lead reply (not in a conversation) → 409, and the lease is released", lr.status === 409 && !existsSync(join(globalDir, "cohorte-ui", "leases", id, "page-spec.lock")), JSON.stringify(lr));
+    check("…the CLI's too", cli(["lead", "page-spec", "--note", "x"]).code !== 0 && !existsSync(join(globalDir, "cohorte-ui", "leases", id, "page-spec.lock")));
+    // adopting a shipped spec over a dead (abandoned) record the page has cached is not "changed outside cohorte"
+    const rw = join(home, "app-revived");
+    spawnSync("git", ["-C", proj, "worktree", "add", "-q", "-b", "feature/revived", rw]);
+    writeFileSync(join(rw, "specs", "revived.md"), "---\nfeature_id: revived\ntitle: Revived\nstatus: frozen\n---\n");
+    check("adopt revived → CP2", cli(["adopt", "revived"]).code === 2);
+    check("…abandoned at a terminal", term(["checkpoint", "revived", "abandon", "--json"], "yes\n").json?.feature?.phase === "abandoned");
+    check("the page has it abandoned", (await call(`${P}/features/revived`)).json.phase === "abandoned");
+    writeFileSync(join(rw, "specs", "revived.md"), "---\nfeature_id: revived\ntitle: Revived\nstatus: shipped\n---\n");
+    const rv = cli(["adopt", "revived", "--json"]);
+    const seenR = (await call(`${P}/features/revived`)).json;
+    check("re-adopted once shipped → waits at its PR, not flagged", rv.code === 0 && seenR.phase === "pr" && !seenR.integrity, `${rv.code} ${JSON.stringify({ p: seenR.phase, i: seenR.integrity })} ${rv.err.slice(-300)}`);
   }
 
   console.log("/cohorte-lead in a plain session: take --no-lead, the session freezes, checkpoint approve");

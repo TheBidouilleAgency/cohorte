@@ -298,6 +298,27 @@ start identity, the lease (re-entrant, live holder refused, stale replaced). tes
   `ticket show`), and nothing automatic runs on it — no stage, no merge, no PR poll — until a person acts on it
   (a checkpoint, or `take-over`). Tickets are not checked: their notes are meant to be edited by hand (Obsidian).
 
+## Fifth round: the final review
+
+- **Integrity without false alarms.** A process that last saw a feature mid-autopilot and next sees it shipping
+  looks for a CP3 approval in the decision log since it last saw the record (it may have missed the CP3); an
+  adoption over an abandoned or failed record (logged as `adopt`) is not a jump past CP3 either.
+- **No lease leak.** `replyLead` releases on every refusal (try/finally), `advance` releases when a run is
+  already running; every other claim site was already wrapped.
+- **Alive when unsure.** A process that exists but whose start time cannot be read (`ps` failed or timed out) is
+  alive: a stolen live lease is worse than a stuck one, which `take-over` clears. Windows reads start times with
+  PowerShell's `Get-Process`; where that fails too, the pid check stands and `take-over` is the recovery.
+- **Locks on filesystems without hard links** (FAT, some network shares): `link()` failing with anything but
+  EEXIST falls back to an O_EXCL create, then write + fsync; a reader in between sees a young unreadable lock, live.
+  Detached drives spawn with `windowsHide`.
+- **The run guard** also catches `npm exec|x cohorte …`, and inside a run a command whose name is computed at
+  run time (`$c …`, `$(which cohorte) …`, `"$C" …`) is denied, not asked.
+- **Relayed founding approvals keep the person's words**: `FoundingView.approvals` records each vision/foundations
+  approval with `relayed` and the text (also handed to the next step, as before).
+- **File answers need the decider's classification**: a question is answerable from another process only when the
+  decider classified it (its advice) as neither security, irreversible nor cost — the asking agent's own header is
+  not trusted alone.
+
 ## The security boundary
 
 What holds, and what does not, against an agent of a cohorte run (a run's `claude` and everything it spawns):

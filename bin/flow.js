@@ -650,7 +650,7 @@ async function detach({ args, id, p, eng, out, drives, history }) {
   const fd = fs.openSync(log, 'a');
   const env = { ...process.env };
   const child = require('child_process').spawn(process.execPath, [path.join(__dirname, 'cli.js'), ...args, '--driven', '--project', p.root],
-    { detached: true, stdio: ['ignore', fd, fd], env, cwd: p.root });
+    { detached: true, stdio: ['ignore', fd, fd], env, cwd: p.root, windowsHide: true });
   fs.closeSync(fd);
   let exited = null;
   child.on('exit', (code) => { exited = code == null ? 1 : code; });
@@ -760,7 +760,8 @@ async function newProject({ o, pos, eng, out, reader, interactive, tty, confirm,
   const action = o.resume ? pos.shift() : null;
   if (action === 'abandon') await confirm('Abandon this new project');
   else if (action === 'approve' && !tty && !(o.note && String(o.note).trim())) throw new UsageError('not typed at a terminal: --note "<their own words>" is required to approve — it is the person\'s validation, relayed');
-  if (action) await fd.checkpoint(projectId, { action, text: action === 'approve' && !tty ? '' : o.note });
+  // a relayed approval keeps the person's words, recorded as relayed on the founding (and given to the next step)
+  if (action) await fd.checkpoint(projectId, { action, text: o.note, relayed: action === 'approve' && !tty });
 
   const cursors = new Map();
   for (const r of runs.runs.values()) if (r.projectId === projectId) cursors.set(r.id, r.dropped + r.events.length);

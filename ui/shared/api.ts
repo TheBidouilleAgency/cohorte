@@ -248,6 +248,8 @@ export type FoundingPhase = 'vision' | 'cp-vision' | 'foundation' | 'cp-foundati
 export type FoundingMode = 'idea' | 'stack' | 'existing';
 export interface FoundingStage { stage: 'vision' | 'foundation' | 'scaffold' | 'setup'; runId: string; model: string; status: RunStatus; costUsd: number | null; startedAt: string; endedAt: string | null }
 export interface FoundingView {
+  /** Who approved the vision and the foundations: typed or clicked (`relayed: false`), or relayed from a Claude Code session with the person's words. */
+  approvals?: { at: string; phase: string; relayed: boolean; text: string }[];
   projectId: string; root: string; name: string; mode: FoundingMode; phase: FoundingPhase; brief: string; basedOn: string | null; requester: string;
   vision: Vision | null; tickets: TicketProposal[]; foundation: Foundation | null; scaffold: ScaffoldReport | null;
   currentRunId: string | null; stages: FoundingStage[]; error: string | null; warning: string | null; createdAt: string; updatedAt: string; costUsd: number;
