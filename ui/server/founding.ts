@@ -435,10 +435,12 @@ export class FoundingFlow {
     return this.toView(f);
   }
 
-  async checkpoint(projectId: string, body: { action?: unknown; text?: unknown }): Promise<FoundingView> {
+  /** `relayed`: an approval a Claude Code session passed on, in the person's words — recorded as such on the founding. */
+  async checkpoint(projectId: string, body: { action?: unknown; text?: unknown; relayed?: unknown }): Promise<FoundingView> {
     const f = this.must(projectId);
     const text = typeof body.text === 'string' ? body.text.trim().slice(0, 4000) : '';
     const action = body.action;
+    const approving = action === 'approve' && ['cp-vision', 'cp-foundation'].includes(f.phase) ? f.phase : null;
     if (action === 'abandon') {
       const run = f.currentRunId ? this.d.runs.get(f.currentRunId) : null;
       if (run && run.status === 'running') this.d.runs.stop(run);
@@ -466,6 +468,10 @@ export class FoundingFlow {
       this.startSetup(f);
     } else {
       throw new FlowError(`"${String(action)}" is not possible while the project is in ${f.phase}`, 409);
+    }
+    if (approving) { // only once it went through (the identity check may refuse it)
+      f.approvals = [...(f.approvals || []), { at: now(), phase: approving, relayed: body.relayed === true, text }];
+      this.store.save(f);
     }
     this.d.changed(projectId);
     return this.toView(f);

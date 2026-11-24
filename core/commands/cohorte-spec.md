@@ -20,6 +20,15 @@ You run the **spec** step in the main thread — interactive, with the human. Pa
 > `kanban: <reason>` line when there is none — so **never decide "no board is configured" without
 > running it**.
 
+> **A ticket id as the input** (one kebab-case word, e.g. `export-csv`): run `cohorte ticket show <id> --json`
+> (one plain command per Bash call — no `&&`, `;`, `|`, redirect or `$(…)`: the gate and the permission rules read it whole). It exists ⇒ this spec is that ticket's: the ticket id **is** the `feature_id` (never
+> derive another slug — it is the join key of the ticket, its card and every report), and its need,
+> value, acceptance criteria and out-of-scope are the input of Mode A (its criteria become §9 DoD lines,
+> worded as checks). After the freeze (Mode A step 6), link it to the company flow with
+> `cohorte adopt <id> --json`: the flow now follows the feature — its next step (the build) is a
+> checkpoint in `cohorte ui`, or `cohorte autopilot <id>` in a terminal; `/cohorte-build <id>` by hand
+> works as before. Not found ⇒ it is not a ticket: treat the input as a described feature.
+
 Detect the mode from the pasted content:
 
 ## Mode A — new spec (input is a brainstorm return, or empty)

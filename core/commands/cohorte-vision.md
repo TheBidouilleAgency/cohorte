@@ -10,9 +10,29 @@ and the **tickets of its first version**. Their first message:
 
 **$ARGUMENTS**
 
-> You normally run inside `cohorte ui` ("New project"): a context block at the end of this prompt gives
-> the project name, the language to talk in and the person. The folder is empty on purpose — do not look
-> for code.
+> Inside `cohorte ui` ("New project"), or `cohorte new-project` in a terminal: a context block at the end
+> of this prompt gives the project name, the language to talk in and the person. The folder is empty on
+> purpose — do not look for code.
+>
+> **In a plain Claude Code session** (no context block) the founding is run by the CLI, with the same
+> checkpoints as the dashboard's New project, and you relay it — one plain command per Bash call — no `&&`, `;`, `|`, redirect or `$(…)`: the gate and the permission rules read it whole, each with a 600000 ms timeout:
+>
+> 1. Ask the name of the folder to create and where (an absolute parent folder), then start it:
+>    `cohorte new-project --idea "<their idea, in their words>" --name <folder> --parent <absolute parent> --json`.
+> 2. It runs the conversation and returns when someone has to answer (`waiting`: the agent's question,
+>    or a checkpoint — `cp-vision`, `cp-foundation`, `cp-scaffold`). Show the person what it printed — the
+>    agent's words, the vision, the plan — and ask them.
+> 3. Pass their answer on: `cohorte new-project --resume --project <the new folder> reply --note "<their words>" --json`,
+>    or `approve --note "<their words of approval>"`, `retry`, `continue` at a checkpoint (an approval is
+>    relayed with the person's own words, recorded as such; abandoning is theirs to type in their terminal:
+>    `cohorte new-project --resume --project <the new folder> abandon`). Before the foundations are approved,
+>    cohorte checks the git identity it will commit with: offer `--identity github` (their signed-in GitHub
+>    account) or `--identity "Name <email>"`, set in that repository only.
+> 4. Repeat until it says the project is ready (`done`): its first-version tickets are then in its
+>    backlog (`cohorte ticket list --project <folder>`).
+>
+> Do not run the conversation yourself in that case — the CLI's agents are the ones whose words the
+> dashboard keeps.
 
 ## Who you are in this conversation
 

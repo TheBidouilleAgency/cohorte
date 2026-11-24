@@ -222,6 +222,37 @@ for (const path of [...allDocs, ...readdirSync(join(root, "core/workflows")).map
   }
 }
 
+// ── the skills drive the company flow through the CLI verbs in a plain session (4.2) ──
+// In cohorte ui the dashboard files tickets, takes them and records each checkpoint; in a plain Claude Code
+// session the same commands do it through `cohorte <verb>` — or the ticket, the feature and the checkpoints
+// never reach the flow's state. Every such call is ONE plain command: the gate and the permission rules read a
+// Bash call whole, and a `&&`/pipe/redirect/`$(…)` turns an allowed verb into an ask (or a refusal).
+{
+  const flowCli = read("bin/flow.js");
+  const verbs = JSON.parse((flowCli.match(/const VERBS = (\[[^\]]*\])/) || [, "[]"])[1].replace(/'/g, '"'));
+  for (const [file, needles] of [
+    ["core/commands/cohorte-po.md", ["cohorte ticket create --status validate", "cohorte ticket list --json", "it refuses it from you"]],
+    ["core/commands/cohorte-lead.md", ["cohorte ticket show $ARGUMENTS --json", "cohorte take $ARGUMENTS --no-lead", "cohorte checkpoint $ARGUMENTS approve --detach --note", "cohorte autopilot $ARGUMENTS --follow", "CP1 APPROVED"]],
+    ["core/commands/cohorte-spec.md", ["cohorte ticket show <id> --json", "cohorte adopt <id>"]],
+    ["core/commands/cohorte-acceptance.md", ["cohorte accept $ARGUMENTS ok", "cohorte accept $ARGUMENTS not-quite", "refuses it from you"]],
+    ["core/commands/cohorte-vision.md", ["cohorte new-project --idea", "cohorte new-project --resume"]],
+    ["core/commands/cohorte-foundation.md", ["cohorte new-project --stack", "cohorte new-project --resume"]],
+  ]) {
+    const flat = read(file).replace(/\s+/g, " ");
+    for (const n of needles) if (!flat.includes(n)) fail(file, `lost \`${n}\` — the plain-session path of the company flow`);
+    if (/You normally run inside `cohorte ui`/.test(flat)) fail(file, "assumes it runs inside cohorte ui — say what to do in a plain session too");
+    // a person's decisions are never run by the skill: CP4, CP0, shipping — the CLI refuses them from a pipe anyway
+    if (/`cohorte (accept|ticket move) [^`]*--json`/.test(flat)) fail(file, "runs a person's decision itself (accept / ticket move) — give the person the command instead");
+  }
+  for (const f of readdirSync(join(root, "core/commands")).filter((x) => x.endsWith(".md"))) {
+    for (const m of read(`core/commands/${f}`).matchAll(/`(cohorte (\S+)[^`]*)`/g)) {
+      const [, cmd, verb] = m;
+      if (!verbs.includes(verb) && !["install", "update", "sync", "uninstall", "doctor", "specs", "metrics", "ui", "version"].includes(verb)) continue;
+      if (/&&|\|\||(^|\s)\|(\s|$)|;|\$\(|(^|\s)(2>&1|>{1,2}|2>)(\s|$)/.test(cmd)) fail(`core/commands/${f}`, `\`${cmd}\` is not one plain command (no &&, pipe, ;, redirect or $(…))`);
+    }
+  }
+}
+
 // ── profile ─────────────────────────────────────────────────────────────────
 for (const p of ["profile/PIPELINE.template.md", "profile/SCHEMA.md",
   "profile/cohorte.config.template.yaml"])

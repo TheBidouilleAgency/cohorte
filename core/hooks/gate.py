@@ -44,6 +44,9 @@ What it does, in order of authority:
    path or inline code that may name it at run time gets "ask". So are verify-run.sh's
    `--out`/`<id>` outputs and kanban-move.sh's board there (the scripts refuse it too).
    `cohorte install`/`update`, run by the human, is how it changes.
+   Inside a cohorte run (COHORTE_RUN_ID in the hook's environment, even empty): a state-changing
+   `cohorte` verb, unsetting or overriding COHORTE_*, and pseudo-terminal helpers are denied
+   (protect.py run_guard). Parsing cannot see into interpreters: nothing a person decides rests on it alone.
 4. Project rules from `.claude/gate-config.json` (`deny` / `ask` / `ask_on_default_branch`).
    These are matched as tokens, not substrings (see "Matching").
 5. Preflight phase gate: a Task/Agent dispatch of a listed subagent needs a fresh
@@ -2556,7 +2559,18 @@ class RuleChecks(object):
 # ══ core/hooks/gate/protect.py ═══════════════════════════════════════════════
 PROTECTED_HINT_RE = re.compile(r"(^|/)\.claude(/|$)|gate-config\.json|preflight\.ok|"
                                r"settings(\.local)?\.json|cohorte-gate\.py|pipeline\.json|"
-                               r"(^|/)\.cohorte(/|$)")
+                               r"(^|/)\.cohorte(/|$)|cohorte-ui|CLAUDE_CONFIG_DIR")
+
+# -- inside a cohorte run (COHORTE_RUN_ID in the hook's environment: the hook is a child of the run) --------------
+# The `cohorte` verbs an agent of a run may call: reads only. Everything else moves the company flow.
+READ_VERBS = {"doctor", "specs", "metrics", "version", "--version", "-v", "help", "--help", "-h",
+              "sync"}  # sync re-wires the project's own files (the founding's set-up stage runs it), never the flow's state
+PTY_TOOLS = {"script", "expect", "unbuffer", "socat", "empty", "ttyrec", "tmux", "screen", "faketty", "pty"}
+ENV_TAMPER_RE = re.compile(r"(^|[\s;&|(])env\s+(?:\S+\s+)*?(-u\b|--unset\b|-i\b|--ignore-environment\b|-\s)|"
+                           r"(^|[\s;&|(])(unset|export|declare|typeset|readonly)\b[^;&|]*\bCOHORTE_|\bCOHORTE_\w*\+?=")
+PTY_CODE_RE = re.compile(r"\bpty\b|node-pty|openpty|forkpty|posix_openpt")
+RUNNERS = {"npx", "bunx", "pnpx"}
+DLX = {"pnpm", "yarn", "bun"}
 PROTECTED_BASENAMES = {"gate-config.json", "preflight.ok", "settings.json", "settings.local.json", "profile.json",
                       "cohorte-gate.py", "pipeline.json", ".claude", ".cohorte", "hooks", "~", "",
                       ".", ".."}
@@ -2828,6 +2842,56 @@ class SelfProtection(object):
                 for p in pos[:-1]:
                     self.check_path(p, state, "delete", "`git mv`", reloc)
                 self.check_path(pos[-1], state, "write", "`git mv`", reloc)
+
+    def run_guard(self, inv, assigns, seg):
+        """Inside a cohorte run, its agents may read the company flow, never move it: no state-changing `cohorte`
+        verb (whatever path or runner calls it), no hiding the run from the CLI (COHORTE_* unset or overridden), no
+        pseudo-terminal to pass for a person at a terminal. Parsing cannot see into scripts or interpreters — which is
+        why nothing a person decides rests on it alone (see docs/reference/gate.md, "The company flow")."""
+        if os.environ.get("COHORTE_RUN_ID") is None:
+            return
+        name, args = inv.name, inv.args
+        text = seg.text
+        if any(a.startswith("COHORTE_") for a in assigns) or ENV_TAMPER_RE.search(text):
+            self.deny("an agent of a cohorte run may not unset or override COHORTE_* (`%s`) — that is how the "
+                      "`cohorte` CLI knows it is called from a run" % text.strip()[:120])
+            return
+        if name in PTY_TOOLS or PTY_TOOLS.intersection(inv.prefixes or []) or (name in ("python", "python3", "node", "perl", "ruby", "bun", "deno")
+                                 and PTY_CODE_RE.search(text)):
+            self.deny("an agent of a cohorte run may not drive a pseudo-terminal (`%s`) — a person's decisions "
+                      "are typed at a real one" % name)
+            return
+        vals = [w.value for w in args]
+        rest = None
+        if name == "cohorte":
+            rest = vals
+        elif name in ("node", "nodejs", "bun") and vals and (vals[0].endswith("bin/cli.js") or vals[0].endswith("bin/flow.js")
+                                                              or os.path.basename(vals[0]) == "cohorte"):
+            rest = vals[1:]
+        elif name in RUNNERS or (name in DLX and vals[:1] in (["dlx"], ["exec"], ["x"])) or (name == "npm" and vals[:1] in (["exec"], ["x"])):
+            for k, v in enumerate(vals):
+                if re.match(r"^cohorte(@\S*)?$", v):
+                    rest = vals[k + 1:]
+                    break
+        if rest is None:
+            return
+        pos = [v for v in rest if not v.startswith("-")]
+        verb = pos[0] if pos else (rest[0] if rest else "help")
+        ok = verb in READ_VERBS or (verb == "ticket" and (len(pos) < 2 or pos[1] in ("list", "show"))) \
+            or (verb == "autopilot" and "--status" in rest and "--follow" not in rest and "--detach" not in rest)
+        if not ok:
+            self.deny("an agent of a cohorte run may read the company flow (`cohorte ticket list|show`, "
+                      "`cohorte autopilot <id> --status`), never move it (`cohorte %s`) — say what you need in your "
+                      "answer: the developer decides" % verb)
+
+    def run_opaque_name(self, seg):
+        """Inside a cohorte run, a command whose name is computed at run time (`$c take x`, `$(which cohorte) …`)
+        could be the `cohorte` CLI: denied, not merely asked. Returns True when it denied."""
+        if os.environ.get("COHORTE_RUN_ID") is None:
+            return False
+        self.deny("an agent of a cohorte run may not run a command whose name is computed at run time (`%s`) — "
+                  "it could move the company flow" % seg.text.strip()[:120])
+        return True
 
     # -- the machine-wide install: folders a command works in, sources of links -------------
     def core_place(self, w, state, relocated, base=None):
@@ -3694,18 +3758,19 @@ class Analyzer(Indirection, SelfProtection, RuleChecks, Findings):
         cmd = argv[0]
         if STATIC_VAR_ALONE_RE.match(cmd.raw):
             # `$HOME` as the whole command name: whatever it holds is the command
-            self.opaque("the command name is computed at run time", seg.text)
+            self.run_opaque_name(seg) or self.opaque("the command name is computed at run time", seg.text)
             return None
         if cmd.dynamic:
             base = static_basename(cmd)
             if base is None:
-                self.opaque("the command name is computed at run time", seg.text)
+                self.run_opaque_name(seg) or self.opaque("the command name is computed at run time", seg.text)
                 return None
             cmd = static_word(base)
         name = cmd_name(cmd.value)
         args = argv[1:]
         inv = Inv(name, args, seg)
         inv.prefixes = prefixes
+        self.run_guard(inv, assigns, seg)
 
         if name == "git":
             g = self.expand_git(args, state, depth)

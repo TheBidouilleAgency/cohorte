@@ -7,6 +7,30 @@ short, user-facing, most recent first. One `## <version> — <YYYY-MM-DD>` secti
 > They are history and are deliberately not rewritten — every command gained a `cohorte-` prefix
 > in 2.0.0.
 
+## 4.2.0 — 2026-11-24
+
+**The company flow from the terminal.** Everything `cohorte ui` does can now be done from a Claude Code
+session or a shell, on the same state, and the dashboard follows it live.
+
+- **New `cohorte` verbs**: `ticket list|show|create|move`, `take`, `lead`, `checkpoint`, `autopilot`,
+  `merge`, `accept`, `adopt`, `new-project`, `take-over`, each with `--json`. `autopilot` runs the
+  same build → review → fix → verify loop as the dashboard, with the decider answering first and the rest
+  asked in the terminal; `--detach` runs it in the background, and `autopilot <id> --follow` / `--status`
+  (or the dashboard's inbox) answer what it waits on.
+- **The skills work in a plain session**: `/cohorte-po` files the tickets the requester confirms,
+  `/cohorte-lead <ticket>` takes the ticket, frames it with you and starts the autopilot on your approval,
+  `/cohorte-spec <ticket>` reuses the ticket's id, `/cohorte-acceptance` and the new-project skills tell you
+  the command to confirm with.
+- **Adopt**: a spec written outside the flow joins it at the right step (`cohorte adopt <id>`, or the
+  Adopt card on the Tickets board).
+- **Your decisions stay yours.** Shipping (CP3), merging, acceptance (CP4), validating a ticket (CP0) and
+  abandoning need you — a typed `yes` in a real terminal, or the dashboard. Cohorte's own agents cannot run
+  these commands, answer a permission for themselves, or move another feature; a record changed outside
+  cohorte is flagged and frozen until you look at it. See "The security boundary" in the docs for what
+  this does and does not protect against.
+- **One feature, one driver**: the dashboard and a terminal never run the same feature at once (an atomic
+  per-feature lease that survives crashes; `take-over` clears a stuck one).
+
 ## 4.1.5 — 2026-11-24
 
 Security fix — update now, then run `/cohorte-update-pipeline` in each project.

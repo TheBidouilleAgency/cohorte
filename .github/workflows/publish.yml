@@ -55,6 +55,7 @@ jobs:
           node scripts/test-verify.mjs
           node scripts/test-ui.mjs
           node scripts/test-flow.mjs
+          node scripts/test-cli-flow.mjs
           node scripts/test-e2e.mjs
           python3 -B -m py_compile core/hooks/gate.py
 

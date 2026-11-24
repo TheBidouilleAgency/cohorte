@@ -39,6 +39,9 @@ What it does, in order of authority:
    path or inline code that may name it at run time gets "ask". So are verify-run.sh's
    `--out`/`<id>` outputs and kanban-move.sh's board there (the scripts refuse it too).
    `cohorte install`/`update`, run by the human, is how it changes.
+   Inside a cohorte run (COHORTE_RUN_ID in the hook's environment, even empty): a state-changing
+   `cohorte` verb, unsetting or overriding COHORTE_*, and pseudo-terminal helpers are denied
+   (protect.py run_guard). Parsing cannot see into interpreters: nothing a person decides rests on it alone.
 4. Project rules from `.claude/gate-config.json` (`deny` / `ask` / `ask_on_default_branch`).
    These are matched as tokens, not substrings (see "Matching").
 5. Preflight phase gate: a Task/Agent dispatch of a listed subagent needs a fresh

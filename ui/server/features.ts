@@ -3,6 +3,10 @@
 // for. Kept by cohorte ui on this machine: <globalDir>/cohorte-ui/features/<projectId>/<id>.json — the pipeline's
 // own artifacts (spec, reports, contract) stay in the worktree, where the commands read them.
 //
+// Two processes share these files — `cohorte ui` and a `cohorte take|checkpoint|autopilot` in a terminal — so the
+// cache is only a cache: a record whose file changed since this process last read or wrote it is read again, into
+// the SAME object, so a reference the flow holds across an await sees the other process's write.
+//
 // The record is also mirrored into the worktree as specs/reports/<id>.decisions.md (gitignored report buffer), so
 // /cohorte-learn — which runs in the worktree and cannot see this store — reads the decisions and corrections.
 
@@ -12,10 +16,21 @@ import crypto from 'crypto';
 import type { Checkpoint, DecisionRecord, FeaturePhase, FeatureView } from '../shared/api';
 
 const SAFE = /^[A-Za-z0-9._-]+$/;
-export type Feature = FeatureView & { v: 1; reservationsAck: boolean; lastBlocking: number | null; failures: Record<string, number> };
+export type Feature = FeatureView & {
+  v: 1; reservationsAck: boolean; lastBlocking: number | null; failures: Record<string, number>;
+  /** Taken from a plain Claude Code session that IS the lead (`cohorte take --no-lead`): no lead run is started, and
+   *  CP1 is approved on a spec that session already froze. */
+  sessionLead?: boolean;
+};
+
+const stamp = (file: string): string | null => { try { const st = fs.statSync(file); return `${st.mtimeMs}:${st.size}`; } catch { return null; } };
 
 export class FeatureStore {
   private cache = new Map<string, Feature>();
+  /** The file's mtime:size when this process last read or wrote it. */
+  private stamps = new Map<string, string | null>();
+  /** Called when a record another process rewrote is read again — with what this process had before. */
+  onExternal: ((before: { phase: Feature['phase']; openedAt: string | null; updatedAt: string; decisions: Set<string> }, f: Feature) => void) | null = null;
   constructor(private dir: string) {}
 
   private file(projectId: string, id: string): string | null {
@@ -35,16 +50,22 @@ export class FeatureStore {
 
   get(projectId: string, id: string): Feature | null {
     const key = `${projectId}/${id}`;
-    const hit = this.cache.get(key);
-    if (hit) return hit;
     const f = this.file(projectId, id);
     if (!f) return null;
+    const hit = this.cache.get(key);
+    const st = stamp(f);
+    if (hit && (st === null || st === this.stamps.get(key))) return hit;
     try {
       const v = JSON.parse(fs.readFileSync(f, 'utf8'));
-      if (v.v !== 1 || v.id !== id) return null;
-      this.cache.set(key, v);
-      return v;
-    } catch { return null; }
+      if (v.v !== 1 || v.id !== id) return hit || null;
+      this.stamps.set(key, st);
+      if (!hit) { this.cache.set(key, v); return v; }
+      const before = { phase: hit.phase, openedAt: hit.checkpoint?.openedAt || null, updatedAt: hit.updatedAt, decisions: new Set(hit.decisions.map((d) => d.id)) };
+      for (const k of Object.keys(hit)) if (!(k in v)) delete (hit as unknown as Record<string, unknown>)[k];
+      Object.assign(hit, v);
+      try { this.onExternal?.(before, hit); } catch { /* a check never breaks a read */ }
+      return hit;
+    } catch { return hit || null; }
   }
 
   list(projectId: string): Feature[] {
@@ -63,19 +84,23 @@ export class FeatureStore {
     if (!file) return;
     try {
       fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.writeFileSync(`${file}.tmp`, JSON.stringify(f, null, 1));
-      fs.renameSync(`${file}.tmp`, file);
+      const tmp = `${file}.${process.pid}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify(f, null, 1));
+      fs.renameSync(tmp, file);
+      this.stamps.set(`${f.projectId}/${f.id}`, stamp(file));
     } catch { /* a convenience record: never take the flow down */ }
     this.mirror(f);
   }
+
+  static newId(): string { return crypto.randomBytes(3).toString('hex'); }
 
   phase(f: Feature, phase: FeaturePhase, checkpoint: Checkpoint | null = null, error: string | null = null): void {
     f.phase = phase; f.checkpoint = checkpoint; f.error = error;
     this.save(f);
   }
 
-  addDecision(f: Feature, d: Omit<DecisionRecord, 'id' | 'at' | 'contested' | 'confirmed'>): DecisionRecord {
-    const rec: DecisionRecord = { ...d, id: crypto.randomBytes(3).toString('hex'), at: new Date().toISOString(), contested: null, confirmed: false };
+  addDecision(f: Feature, d: Omit<DecisionRecord, 'id' | 'at' | 'contested' | 'confirmed'> & { id?: string }): DecisionRecord {
+    const rec: DecisionRecord = { ...d, id: d.id || FeatureStore.newId(), at: new Date().toISOString(), contested: null, confirmed: false };
     f.decisions.push(rec);
     this.save(f);
     return rec;

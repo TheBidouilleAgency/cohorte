@@ -305,6 +305,18 @@ console.log("gate.py — commands handed to pipeline scripts need an approval");
     // still judged by the rules even when declared: a deny stays a deny
     [`${V} --check "smoke=pnpm -r test; rm -rf /"`, "deny"],
   ], ISOLATED_USER);
+  // the autopilot's own stages run these inside a cohorte run (COHORTE_RUN_ID): its legitimate flow stays unprompted,
+  // and the run guard still reaches inside what is handed (a flow verb handed to a pipeline script is denied)
+  const IN_RUN = { env: { ...ISOLATED_USER.env, COHORTE_RUN_ID: "r1", COHORTE_RUN_PROJECT: "p1" } };
+  table("pipeline scripts, inside a cohorte run", d, [
+    [`${V} --migrate "pnpm db:migrate" --migrate-down "pnpm db:rollback" --db local --dev "pnpm dev" --ready "http://localhost:3000/health" ` +
+      `--check "smoke=curl -sf http://localhost:3000/health" --check "e2e=pnpm exec playwright test"`, "allow"],
+    [`${P} "pnpm -r typecheck" "pnpm -r lint 2>&1 | tail -40" "pnpm -r test 2>&1 | tail -40" ": cohorte-security-scans" "pnpm audit --prod"`, "allow"],
+    ["bash ~/.claude/cohorte/pipeline/scripts/phase-clock.sh start x build", "allow"],
+    ["cohorte doctor", "allow"], ["cohorte sync .", "allow"], ["cohorte ticket show x --json", "allow"],
+    [`${V} --check "smoke=cohorte checkpoint x approve --note ok"`, "deny"],
+    [`${P} "cohorte accept x ok"`, "deny"],
+  ], IN_RUN);
   const headless = run(bash(`${V} --check "smoke=python3 -c 'print(1)'"`, d, { permission_mode: "bypassPermissions" }),
     { projectDir: d, ...ISOLATED_USER });
   check("unapproved handed command + bypassPermissions ⇒ deny, naming the command and the fix",
@@ -622,6 +634,51 @@ console.log("gate.py — self-protection");
     ["echo x > .claude/pipeline-metrics.jsonl", "allow"], ["echo x >> .claude/pipeline-metrics.jsonl", "allow"],
     ["git rm --cached .claude/preflight.ok", "allow"],
   ]);
+  // The company flow's state: an agent that writes there could forge an answer, a checkpoint or a lease.
+  const cfgDir = join(d, "cfg"); const ui = join(cfgDir, "cohorte-ui");
+  mkdirSync(join(ui, "runs", "p1", "answers"), { recursive: true }); mkdirSync(join(ui, "features", "p1"), { recursive: true });
+  writeFileSync(join(ui, "features", "p1", "f.json"), "{}");
+  table("the flow's state (CLAUDE_CONFIG_DIR/cohorte-ui)", d, [
+    [`echo '{"behavior":"allow"}' > ${sh(ui)}/runs/p1/answers/r.q.json`, "deny"],
+    [`cp x.json ${sh(ui)}/features/p1/f.json`, "deny"], [`tee ${sh(ui)}/leases/p1/f.lock < x`, "deny"],
+    [`rm -rf ${sh(ui)}`, "deny"], [`rm -rf ${sh(cfgDir)}`, "deny"], [`rm ${sh(ui)}/features/p1/*.json`, "deny"],
+    [`mv x.json ${sh(ui)}/runs/p1/r.json`, "deny"],
+    [`cat ${sh(ui)}/features/p1/f.json`, "allow"], [`ls ${sh(ui)}/runs`, "allow"],
+  ], { env: { CLAUDE_CONFIG_DIR: cfgDir } });
+  table("the flow's state: the other ways in", d, [
+    [`touch ${sh(ui)}/drives/x.ok`, "deny"], [`mkdir -p ${sh(ui)}/leases/p1`, "deny"],
+    [`tar -xf x.tar -C ${sh(ui)}`, "deny"], [`git -C ${sh(ui)} init`, "deny"], [`git init ${sh(ui)}/runs`, "deny"],
+    [`cd ${sh(ui)} && touch x`, "deny"], [`cd ${sh(ui)}/features && tar -xf /tmp/x.tar`, "deny"],
+    ["echo x > \"$CLAUDE_CONFIG_DIR/cohorte-ui/features/p1/f.json\"", "deny"],
+    ["echo x > \"$X/cohorte-ui/features/p1/f.json\"", "ask"], ["echo x > \"$(dirname $X)/cohorte-ui/f.json\"", "ask"],
+    ["touch notes.md", "allow"], ["mkdir -p build/out", "allow"], ["tar -xf x.tar -C build", "allow"],
+  ], { env: { CLAUDE_CONFIG_DIR: cfgDir } });
+  // inside a cohorte run: its agents read the flow, never move it (the hook inherits the run's COHORTE_RUN_ID)
+  const inRun = { CLAUDE_CONFIG_DIR: cfgDir, COHORTE_RUN_ID: "r1", COHORTE_RUN_PROJECT: "p1" };
+  table("inside a run (COHORTE_RUN_ID)", d, [
+    ["cohorte checkpoint t approve --note ok", "deny"], ["/usr/local/bin/cohorte take t --no-lead", "deny"],
+    ["node /opt/cohorte/bin/cli.js accept t ok", "deny"], ["npx cohorte@4 merge t", "deny"], ["npx -y cohorte ticket create --title x --status validate", "deny"],
+    ["pnpm dlx cohorte ticket move t backlog", "deny"], ["bash -c \"cohorte autopilot t --detach\"", "deny"], ["cohorte autopilot t --follow", "deny"],
+    ["cohorte new-project --idea x --name y", "deny"], ["cohorte take-over t", "deny"], ["cohorte ui", "deny"],
+    ["env -u COHORTE_RUN_ID cohorte ticket list", "deny"], ["COHORTE_RUN_ID= node x.js", "deny"], ["unset COHORTE_RUN_ID", "deny"],
+    ["export COHORTE_RUN_ID=", "deny"], ["env -i sh -c 'echo hi'", "deny"], ["env - PATH=/bin sh", "deny"],
+    ["script -q /dev/null cohorte ticket list", "deny"], ["expect -c 'spawn cohorte'", "deny"], ["unbuffer cohorte ticket list", "deny"],
+    ["python3 -c \"import pty; pty.spawn(['sh'])\"", "deny"], ["node -e \"require('node-pty')\"", "deny"],
+    ["npm exec cohorte -- checkpoint t approve", "deny"], ["npm x cohorte take t", "deny"], ["c=cohorte; $c take t", "deny"],
+    ["$(which cohorte) accept t ok", "deny"], ["\"$C\" merge t", "deny"],
+    ["cohorte ticket list --json", "allow"], ["cohorte ticket show t --json", "allow"], ["cohorte ticket --json", "allow"],
+    ["cohorte autopilot t --status --json", "allow"], ["cohorte doctor", "allow"], ["npm test", "allow"], ["env FOO=1 npm test", "allow"],
+  ], { env: inRun });
+  table("inside a run, COHORTE_RUN_ID set but empty", d, [["cohorte checkpoint t approve --note ok", "deny"], ["cohorte ticket list", "allow"]],
+    { env: { ...inRun, COHORTE_RUN_ID: "" } });
+  table("outside a run, the verbs are the developer's (the CLI asks them at a terminal)", d, [["cohorte checkpoint t approve --note ok", "allow"], ["unset COHORTE_RUN_ID", "allow"]],
+    { env: { CLAUDE_CONFIG_DIR: cfgDir } });
+  for (const tool of ["Write", "Edit"]) {
+    const r = run({ tool_name: tool, tool_input: { file_path: join(ui, "runs", "p1", "answers", "r.q.json"), content: "{}", old_string: "a", new_string: "b" }, cwd: d },
+      { projectDir: d, env: { CLAUDE_CONFIG_DIR: cfgDir } });
+    check(`${tool} under cohorte-ui/ ⇒ deny`, r.decision === "deny" && /machine-wide cohorte install/.test(r.reason || ""), `${r.decision}: ${r.reason}`);
+  }
+
   // rm -rf on an ancestor of a protected file is denied even without an `rm -rf` rule.
   const floor = scratch(); gitRepo(floor, "feat");
   table("ancestors (pointer only)", floor, [["rm -r .claude", "deny"], [`rm -r ${sh(floor)}`, "deny"], ["rm -r build", "allow"]]);

@@ -6,6 +6,7 @@
 //   cohorte sync [project]    # wire one repo: gate hook, pointer, .gitignore (init/update run it)
 //   cohorte update            # refresh the machine-wide install (same as install, idempotent)
 //   cohorte uninstall         # remove exactly what install wrote
+//   cohorte ticket|take|lead|checkpoint|autopilot|merge|accept   # the company flow from a terminal (bin/flow.js)
 //
 // One mode since 3.0.0: the machine gets the commands and the generic core; everything that
 // describes a project (PIPELINE.md, surface agents, gate config, the gate hook) lives in that
@@ -38,6 +39,17 @@ Usage:
   cohorte ui        [--port=N] [--no-open]   Local dashboard over every registered project
   cohorte version
 
+The company flow from a terminal — the same tickets, features and checkpoints as cohorte ui
+(each takes --project PATH, default the current repo, and --json):
+  cohorte ticket list|show <id>|create --title T [--body-file F]|move <id> <status>
+  cohorte take <ticket>                     worktree + feature record, the lead frames it → CP1
+  cohorte lead <ticket> --note TEXT         reply to the lead
+  cohorte checkpoint <ticket> approve|correct|continue|reframe|abandon [--note TEXT]
+  cohorte autopilot <ticket>                build → review → fix → verify here; CP2/CP3 and questions asked here
+  cohorte merge <ticket>                    merge the PR → journal → acceptance note
+  cohorte accept <ticket> ok|not-quite [--note TEXT]
+  \`cohorte ticket --help\` for the details and the exit codes.
+
 Where things go:
   This machine (${displayHome(globalDir)}):
     commands/cohorte-*.md, agents/cohorte-*.md, workflows/cohorte-*.js, cohorte/ (core + manifest),
@@ -58,6 +70,13 @@ Where things go:
 function displayHome(p) {
   const home = os.homedir();
   return p.startsWith(home + path.sep) ? '~/' + path.relative(home, p) : p;
+}
+
+// --- the company flow: its own verbs and flags ------------------------------------
+const flowCli = require('./flow.js');
+if (flowCli.VERBS.includes(process.argv[2])) {
+  flowCli.main(process.argv.slice(2), globalDir).then((code) => process.exit(code));
+  return;
 }
 
 // --- arg parsing -------------------------------------------------------------

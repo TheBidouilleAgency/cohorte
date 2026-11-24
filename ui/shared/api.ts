@@ -155,7 +155,7 @@ export interface ConversationView {
   /** ref → ticket id: the draft tickets this conversation created (CP0 validates them). */
   tickets: Record<string, string>; pending: number;
 }
-export interface TicketsResponse { tracker: TrackerInfo; tickets: Ticket[]; conversations: ConversationView[] }
+export interface TicketsResponse { tracker: TrackerInfo; tickets: Ticket[]; conversations: ConversationView[]; adoptable?: AdoptableSpec[] }
 
 /** The lead's plan, from its ```cohorte-plan``` block — what CP1 asks you to validate. */
 export interface Plan {
@@ -173,7 +173,10 @@ export interface StageRecord { stage: string; runId: string; model: string; stat
 export interface DecisionSource { kind: 'spec' | 'decision' | 'convention' | 'preference' | 'code' | 'plan' | 'recommendation' | 'none'; ref: string; quote: string }
 export interface DecisionRecord {
   id: string; at: string; runId: string; stage: string; question: string; header: string; options: string[]; chosen: string;
-  by: 'decider' | 'human'; agreement: number | null; category: string | null; source: DecisionSource | null; rationale: string;
+  /** `remote`: answered from another process than the one running the stage (the page for a terminal's run, a terminal
+   *  for the page's), or a checkpoint relayed from a Claude Code session — someone did, but not provably the developer
+   *  at the run's own screen: listed at CP3 with the decider's, never learned as a preference. */
+  by: 'decider' | 'human' | 'remote'; agreement: number | null; category: string | null; source: DecisionSource | null; rationale: string;
   contested: { at: string; note: string } | null; confirmed: boolean;
 }
 export interface Correction { at: string; checkpoint: CheckpointKind | 'pr'; text: string }
@@ -183,7 +186,17 @@ export interface FeatureView {
   stages: StageRecord[]; rounds: number; decisions: DecisionRecord[]; corrections: Correction[];
   pr: { number: number; url: string; state: string; checks: PullInfo['checks'] } | null; plan: Plan | null;
   error: string | null; warning: string | null; createdAt: string; updatedAt: string; costUsd: number;
+  /** The process with a run of this feature in flight — `cohorte ui`, or a `cohorte` verb in a terminal. Absent when idle. */
+  driver?: FeatureDriver | null;
+  /** A person approved a step (CP3 ship, merge) in a terminal that then detached: the background drive starts it. */
+  pending?: { stage: 'ship' | 'merge'; at: string; by: 'ui' | 'cli' } | null;
+  /** The record was changed outside cohorte (a step past a person's checkpoint with no decision of theirs on file):
+   *  the flow does nothing automatic on it until a person acts (a checkpoint, or `cohorte take-over`). */
+  integrity?: { at: string; reason: string } | null;
 }
+export interface FeatureDriver { pid: number; start?: number | null; by: 'ui' | 'cli'; at: string }
+/** A spec written outside the flow (a plain Claude Code session) that no feature record follows yet. */
+export interface AdoptableSpec { id: string; title: string; status: string | null; worktree: string | null; branch: string | null; ticket: boolean }
 export interface FeatureDetail extends FeatureView {
   pipeline: PipelineInfo | null; ticket: Ticket | null;
   /** CP3 material: what a human signs off. */
@@ -235,6 +248,8 @@ export type FoundingPhase = 'vision' | 'cp-vision' | 'foundation' | 'cp-foundati
 export type FoundingMode = 'idea' | 'stack' | 'existing';
 export interface FoundingStage { stage: 'vision' | 'foundation' | 'scaffold' | 'setup'; runId: string; model: string; status: RunStatus; costUsd: number | null; startedAt: string; endedAt: string | null }
 export interface FoundingView {
+  /** Who approved the vision and the foundations: typed or clicked (`relayed: false`), or relayed from a Claude Code session with the person's words. */
+  approvals?: { at: string; phase: string; relayed: boolean; text: string }[];
   projectId: string; root: string; name: string; mode: FoundingMode; phase: FoundingPhase; brief: string; basedOn: string | null; requester: string;
   vision: Vision | null; tickets: TicketProposal[]; foundation: Foundation | null; scaffold: ScaffoldReport | null;
   currentRunId: string | null; stages: FoundingStage[]; error: string | null; warning: string | null; createdAt: string; updatedAt: string; costUsd: number;

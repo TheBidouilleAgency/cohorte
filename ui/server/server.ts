@@ -14,15 +14,13 @@ import path from 'path';
 import crypto from 'crypto';
 import { spawn } from 'child_process';
 import { registry, doctor, report, repo, uiDir, type Project, type SpecScan } from './legacy';
-import { Jobs } from './jobs';
-import { Runs } from './runs';
-import { RunStore } from './history';
 import * as gitinfo from './gitinfo';
 import * as ops from './ops';
 import * as docker from './docker';
 import { pipelineOf } from './pipeline';
 import { parseReviewReport } from './findings';
-import { Flow } from './flow';
+import { createEngine, watchState } from './engine';
+import type { Jobs } from './jobs';
 import { FOUNDING_ROLES } from './founding';
 import { DEFAULTS as SETTINGS_DEFAULTS } from './settings';
 import { TrackerError, connectObsidian, isTicketId } from './tracker';
@@ -75,8 +73,6 @@ export interface CreateOpts { globalDir: string; version: string; token?: string
 export function create({ globalDir, version, token = crypto.randomBytes(24).toString('hex'), storePath }: CreateOpts) {
   const cacheDoctor = memo<Awaited<ReturnType<typeof state>>>(8000);
   const cacheMetrics = memo<unknown>(60000);
-  const jobs = new Jobs();
-  const runs = new Runs({ store: new RunStore(path.join(globalDir, 'cohorte-ui', 'runs')) });
   const cachePulls = memo<Awaited<ReturnType<typeof gitinfo.pullFor>>>(60000);
   let ghOk: Promise<boolean> | null = null;
 
@@ -95,15 +91,15 @@ export function create({ globalDir, version, token = crypto.randomBytes(24).toSt
       for (const r of subs) { try { r.write(frame); } catch { subs.delete(r); } }
     }, 120);
   };
-  const flow = new Flow({ globalDir, runs, jobs, dataDir: path.join(globalDir, 'cohorte-ui'), changed: (projectId) => {
+  const flowChanged = (projectId: string): void => {
     const pr = registry.get(globalDir, projectId);
     if (pr) cacheDoctor.clear(pr.root); // a founding step may have just written PIPELINE.md
     notify({ type: 'flow', projectId, id: projectId, status: 'changed' });
-  } });
-  jobs.onChange = (j) => {
-    notify({ type: 'job', projectId: j.projectId, id: j.id, status: j.status });
-    try { flow.onJob(j); flow.onMergeJob(j); } catch { /* the flow never takes a job down */ }
   };
+  const { jobs, runs, flow } = createEngine({ globalDir, by: 'ui', changed: flowChanged,
+    onJob: (j) => notify({ type: 'job', projectId: j.projectId, id: j.id, status: j.status }) });
+  // A `cohorte take|checkpoint|autopilot` in a terminal writes the same files: the page hears of it here.
+  let unwatch: (() => void) | null = null;
   runs.onChange = (r) => notify({ type: 'run', projectId: r.projectId, id: r.id, status: r.status, pending: [...r.pending.values()].filter((x) => !x.deciding).length });
   let origin: string | null = null; // set once listening
 
@@ -278,6 +274,8 @@ export function create({ globalDir, version, token = crypto.randomBytes(24).toSt
           let body: Record<string, any>;
           try { body = await readBody(req); } catch (e) { return fail(res, 400, (e as Error).message); }
           if (body.behavior !== 'allow' && body.behavior !== 'deny') return fail(res, 400, 'behavior must be allow or deny');
+          const parked = run.pending.get(String(body.requestId));
+          if (parked && !runs.mine(run) && parked.kind === 'permission') return fail(res, 409, 'a terminal runs this command: its permission ask is answered there, not from the page');
           return runs.respond(run, String(body.requestId), body.behavior, body.answers) ? send(res, 200, { ok: true }) : fail(res, 404, 'no such pending request');
         }
       }
@@ -291,7 +289,7 @@ export function create({ globalDir, version, token = crypto.randomBytes(24).toSt
       };
       const bodyOf = async (): Promise<Record<string, any> | null> => { try { return await readBody(req); } catch (e) { fail(res, 400, (e as Error).message); return null; } };
       if (parts[2] === 'tickets') {
-        if (parts.length === 3 && method === 'GET') return flowCall(() => { const tr = flow.tracker(p); return { tracker: tr.info, tickets: tr.list(), conversations: flow.conversations(p.id) }; });
+        if (parts.length === 3 && method === 'GET') return flowCall(() => { const tr = flow.tracker(p); return { tracker: tr.info, tickets: tr.list(), conversations: flow.conversations(p.id), adoptable: flow.adoptable(p.id) }; });
         if (parts.length === 3 && method === 'POST') { const b = await bodyOf(); if (!b) return; return flowCall(() => ({ ticket: flow.createTicket(p.id, b) }), 201); }
         const tid = parts[3];
         if (!isTicketId(tid)) return fail(res, 404, 'unknown ticket');
@@ -318,6 +316,7 @@ export function create({ globalDir, version, token = crypto.randomBytes(24).toSt
         if (method === 'GET') return flowCall(() => flow.founding.remote(p.id));
         if (method === 'POST') { const b = await bodyOf(); if (!b) return; return flowCall(async () => ({ job: jobs.view(await flow.founding.connectRemote(p.id, b)) }), 202); }
       }
+      if (parts[2] === 'adopt' && parts.length === 3 && method === 'POST') { const b = await bodyOf(); if (!b) return; return flowCall(async () => { if (!isTicketId(b.id)) throw new ops.OpError('a spec id is required'); cacheDoctor.clear(p.root); return { feature: await flow.adopt(p.id, b.id) }; }); }
       if (parts[2] === 'po' && parts.length === 3 && method === 'POST') { const b = await bodyOf(); if (!b) return; return flowCall(() => ({ run: runs.view(flow.startPO(p.id, b), 0) }), 202); }
       if (parts[2] === 'features') {
         if (parts.length === 3 && method === 'GET') return send(res, 200, { features: flow.features.list(p.id) });
@@ -326,7 +325,7 @@ export function create({ globalDir, version, token = crypto.randomBytes(24).toSt
         if (parts.length === 4 && method === 'GET') return flowCall(() => flow.detail(p.id, fid));
         if (method === 'POST' && parts[4] === 'checkpoint') { const b = await bodyOf(); if (!b) return; return flowCall(() => ({ feature: flow.checkpoint(p.id, fid, b) })); }
         if (method === 'POST' && parts[4] === 'lead') { const b = await bodyOf(); if (!b) return; return flowCall(() => { flow.replyLead(p.id, fid, b.text); return { ok: true }; }, 202); }
-        if (method === 'POST' && parts[4] === 'merge') return flowCall(() => ({ job: jobs.view(flow.merge(p.id, fid)) }), 202);
+        if (method === 'POST' && parts[4] === 'merge') return flowCall(() => ({ job: jobs.view(flow.merge(p.id, fid) as NonNullable<ReturnType<typeof flow.merge>>) }), 202);
         if (method === 'POST' && parts[4] === 'decisions' && parts[5] && parts[6] === 'contest') { const b = await bodyOf(); if (!b) return; return flowCall(() => ({ feature: flow.contest(p.id, fid, parts[5], b.note) })); }
       }
       if (parts[2] === 'settings' && parts.length === 3) {
@@ -452,8 +451,9 @@ export function create({ globalDir, version, token = crypto.randomBytes(24).toSt
   }
 
   flow.start();
+  unwatch = watchState(globalDir, flowChanged);
   return { server, listen, token, jobs, runs, flow, close: () => {
-    flow.stop(); jobs.stopAll(); runs.stopAll(); runs.flush();
+    flow.stop(); unwatch?.(); jobs.stopAll(); runs.stopAll(); runs.flush();
     for (const r of subs) { try { r.end(); } catch { /* closed */ } }
     subs.clear();
     return new Promise<void>((r) => { server.close(() => r()); (server as http.Server & { closeAllConnections?: () => void }).closeAllConnections?.(); });

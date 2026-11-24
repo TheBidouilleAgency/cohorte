@@ -1,7 +1,7 @@
 ---
 model: sonnet
 description: Generate a new project's walking skeleton from the approved foundations plan — official generators, one trivial path through every surface, tests, lint, compose, CI — and commit it.
-argument-hint: (none — the approved plan is in the cohorte ui context block)
+argument-hint: (none — the approved plan is in the context block of cohorte ui or cohorte new-project)
 ---
 
 You are generating the **walking skeleton** of a new project, in the current folder (its root — `git

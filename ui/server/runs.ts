@@ -74,6 +74,8 @@ export interface Run {
   strictMcp: boolean; mcpConfig: string | null;
   /** Appended to Claude Code's system prompt (`--append-system-prompt`), on every turn of the run. */
   systemNote: string | null;
+  /** The `claude` process of the run's current turn, by pid and start — so the CLI can tell it is called from inside it. */
+  childPid?: number | null; childStart?: number | null;
   /** The flow's bookkeeping, persisted with the run: how far its events were processed, the draft tickets it created. */
   seen: number; tickets: Record<string, string>;
   /** Tasks (subagents, shells) this process launched and has not seen finish, by task id: the tool call that launched it,
@@ -98,11 +100,31 @@ export interface RunHooks {
   /** A question was parked. Return true to keep it away from the human while you work on it (deciding). */
   onQuestion?: (run: Run, p: Pending) => boolean;
   /** A parked item was answered — by the human over HTTP or by the flow. */
-  onAnswered?: (run: Run, p: Pending, behavior: 'allow' | 'deny', answers: Record<string, string>, by: 'human' | 'decider') => void;
+  /** `remote`: answered from another process (the page answering a terminal's run, or the reverse) — a question only. */
+  onAnswered?: (run: Run, p: Pending, behavior: 'allow' | 'deny', answers: Record<string, string>, by: AnsweredBy) => void;
+}
+
+export type AnsweredBy = 'human' | 'decider' | 'remote';
+
+/** The question classes a person answers at the run's own terminal (or the page that runs it) — never from a file. */
+const HUMAN_ONLY_CLASSES = /^(security|irreversible|cost)$/i;
+/**
+ * Whether a parked item may be answered by ANOTHER process (through the store): a question only, not one the decider
+ * holds, not one of the ship stage — and only one the decider has classified (its advice) as neither security,
+ * irreversible nor cost, with a header (the asking agent's own label, so not trusted alone) that says none either.
+ * A permission ask never.
+ */
+export function remoteAnswerable(run: Pick<Run, 'meta'>, p: Pick<Pending, 'kind' | 'deciding' | 'questions' | 'advice'>): boolean {
+  if (p.kind !== 'question' || p.deciding) return false;
+  if (['ship', 'reconcile'].includes(run.meta.stage || '')) return false;
+  if ((p.questions || []).some((q) => HUMAN_ONLY_CLASSES.test((q.header || '').trim()))) return false;
+  return !!p.advice && !!p.advice.category && !HUMAN_ONLY_CLASSES.test(p.advice.category);
 }
 
 export class Runs {
   runs = new Map<string, Run>();
+  /** Runs this process spawned a turn of: the only ones it writes back to the store (another process owns the rest). */
+  #owned = new Set<string>();
   bin: string;
   onChange: (run: Run) => void = () => {};
   store: RunStore | null;
@@ -115,6 +137,7 @@ export class Runs {
     this.stallMs = stallMs ?? STALL_MS;
     this.store = store || null;
     for (const r of this.store?.loadAll() || []) this.runs.set(r.id, r);
+    if (this.store) { const t = setInterval(() => this.#collect(), 300); t.unref(); }
   }
 
   // opts: { projectId, cwd, command (e.g. "/cohorte-build f1"), permissionMode }
@@ -151,8 +174,13 @@ export class Runs {
     if (run.mcpConfig) args.push('--mcp-config', run.mcpConfig);
     if (resumeId) args.push('--resume', resumeId);
     run.tasks.clear(); run.awaitingTurn = false; // a new process: the old one's background tasks went with it
-    const child = spawn(this.bin, args, { cwd: run.cwd, detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'], env: process.env });
+    this.#owned.add(run.id);
+    // COHORTE_RUN_ID tells the `cohorte` CLI it is called by an agent of a run: it then refuses every flow transition
+    const env = { ...process.env, COHORTE_RUN_ID: run.id, COHORTE_RUN_PROJECT: run.projectId };
+    const child = spawn(this.bin, args, { cwd: run.cwd, detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'], env });
     run.child = child;
+    run.childPid = child.pid || null;
+    run.childStart = child.pid ? Math.round(Date.now() / 1000) : null;
     child.stdin?.on('error', () => { /* the child went away first */ });
     child.on('error', (e: Error) => { this.#push(run, { kind: 'system', text: `could not start ${this.bin}: ${e.message}` }); if (run.child === child) this.#end(run, 'failed'); });
     readline.createInterface({ input: child.stdout as NodeJS.ReadableStream }).on('line', (line: string) => { if (run.child === child) this.#line(run, line); });
@@ -199,6 +227,23 @@ export class Runs {
     if (!p) return;
     Object.assign(p, patch);
     this.onChange(run);
+    this.store?.schedule(run, true); // the other process (the page, a terminal) sees it is now a person's to answer
+  }
+
+  /**
+   * Answers another process left on disk for the runs this one drives (the page answering a terminal's run, or the
+   * reverse). Questions only, and only those the decider let go: a file never answers a permission ask.
+   */
+  #collect(): void {
+    if (!this.store) return;
+    for (const r of this.runs.values()) {
+      if (!this.#mine(r) || !r.pending.size) continue;
+      for (const a of this.store.takeAnswers(r)) {
+        const p = r.pending.get(a.requestId);
+        if (!p || !remoteAnswerable(r, p)) continue;
+        this.respond(r, a.requestId, a.behavior, a.answers, 'remote');
+      }
+    }
   }
 
   #line(run: Run, line: string): void {
@@ -285,6 +330,7 @@ export class Runs {
       try { held = this.hooks.onQuestion?.(run, p) === true; } catch { held = false; }
       if (held) p.deciding = true;
       this.#push(run, { kind: 'question', ...base, questions });
+      this.store?.schedule(run, true);
       return;
     }
     if (req.tool_name === 'AskUserQuestion') {
@@ -296,12 +342,20 @@ export class Runs {
     const ask: Pending = { ...base, kind: 'permission', input, summary: summarize(req.tool_name, input), reason, via };
     run.pending.set(v.request_id, ask);
     this.#push(run, { kind: 'approval', requestId: v.request_id, tool: req.tool_name, summary: ask.summary || '', reason, via });
+    this.store?.schedule(run, true);
   }
 
   // behavior: 'allow' | 'deny'. For a question, `answers` maps each question text to the chosen label(s).
-  respond(run: Run, requestId: string, behavior: 'allow' | 'deny', answers?: Record<string, string | string[]>, by: 'human' | 'decider' = 'human'): boolean {
+  respond(run: Run, requestId: string, behavior: 'allow' | 'deny', answers?: Record<string, string | string[]>, by: AnsweredBy = 'human'): boolean {
     const p = run.pending.get(requestId);
     if (!p) return false;
+    if (!this.#mine(run)) { // another process drives it: a question's answer goes to it through the store; a permission never
+      if (!remoteAnswerable(run, p)) return false;
+      if (!this.store?.answer(run, requestId, behavior, answers)) return false;
+      run.pending.delete(requestId);
+      this.onChange(run);
+      return true;
+    }
     let response: Record<string, unknown>;
     let given: Record<string, string> = {};
     if (behavior === 'allow') {
@@ -344,7 +398,7 @@ export class Runs {
   }
 
   stop(run: Run): boolean {
-    if (run.status !== 'running') return false;
+    if (run.status !== 'running' || !run.child) return false; // no child: another process drives it
     run.stopping = true;
     try { run.child?.stdin?.end(); } catch { /* closed */ }
     const pid = run.child?.pid;
@@ -355,10 +409,37 @@ export class Runs {
     return true;
   }
 
-  flush(): void { this.store?.flush(this.runs.values()); }
+  flush(): void { this.store?.flush([...this.runs.values()].filter((r) => this.#owned.has(r.id))); }
   stopAll(): void { for (const r of this.runs.values()) this.stop(r); }
-  get(id: string): Run | null { return this.runs.get(id) || null; }
-  forProject(projectId: string): Run[] { return [...this.runs.values()].filter((r) => r.projectId === projectId); }
+  /**
+   * A run by id. Another process (the UI, or a flow verb in a terminal) may have started it, resumed it or ended it
+   * since this one loaded the store: what is not running HERE is re-read when its file changed.
+   */
+  get(id: string): Run | null {
+    const r = this.runs.get(id);
+    if (!r) {
+      const s = this.store?.find(id);
+      if (s) this.runs.set(s.id, s);
+      return s || null;
+    }
+    if (!this.#mine(r)) { const s = this.store?.refresh(r); if (s) this.#adopt(r, s); }
+    return r;
+  }
+  forProject(projectId: string): Run[] {
+    for (const id of this.store?.ids(projectId) || []) this.get(id);
+    return [...this.runs.values()].filter((r) => r.projectId === projectId);
+  }
+  /** A run this process is driving right now (its child is ours): never re-read from disk. */
+  #mine(r: Run): boolean { return r.status === 'running' && !!r.child; }
+  mine(r: Run): boolean { return this.#mine(r); }
+  /** Another process's write of a run, taken into the object this process holds (references stay valid). */
+  #adopt(r: Run, s: Run): void {
+    const { child: _c, closeTimer: _t, pending: _p, tasks: _k, ...persisted } = s;
+    Object.assign(r, persisted, { child: null, stopping: false });
+    this.#owned.delete(r.id);
+    r.pending.clear(); r.tasks.clear();
+    for (const [k, v] of s.pending) r.pending.set(k, v);
+  }
   find(projectId: string, cwd: string): Run | null { return [...this.runs.values()].find((r) => r.projectId === projectId && r.cwd === cwd && r.status === 'running') || null; }
 
   view(run: Run, since?: number): RunView {

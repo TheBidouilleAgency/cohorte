@@ -193,18 +193,19 @@ class Analyzer(Indirection, SelfProtection, RuleChecks, Findings):
         cmd = argv[0]
         if STATIC_VAR_ALONE_RE.match(cmd.raw):
             # `$HOME` as the whole command name: whatever it holds is the command
-            self.opaque("the command name is computed at run time", seg.text)
+            self.run_opaque_name(seg) or self.opaque("the command name is computed at run time", seg.text)
             return None
         if cmd.dynamic:
             base = static_basename(cmd)
             if base is None:
-                self.opaque("the command name is computed at run time", seg.text)
+                self.run_opaque_name(seg) or self.opaque("the command name is computed at run time", seg.text)
                 return None
             cmd = static_word(base)
         name = cmd_name(cmd.value)
         args = argv[1:]
         inv = Inv(name, args, seg)
         inv.prefixes = prefixes
+        self.run_guard(inv, assigns, seg)
 
         if name == "git":
             g = self.expand_git(args, state, depth)

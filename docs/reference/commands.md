@@ -38,16 +38,23 @@ model — their value is the conversation.
 
 ## The company flow commands
 
-`cohorte ui` runs these itself — see [The company flow](/guide/company-flow). They also work in a plain
-Claude Code session.
+`cohorte ui` runs these itself — see [The company flow](/guide/company-flow). In a plain Claude Code
+session they drive the same state through the CLI verbs below: `/cohorte-po` files the tickets the
+requester confirms, `/cohorte-lead` takes the ticket and starts the autopilot on approval, `/cohorte-spec <ticket id>`
+adopts the spec it froze, `/cohorte-acceptance` gives the requester the command for their verdict, and
+`/cohorte-vision` and `/cohorte-foundation` relay `cohorte new-project`.
 
 - **`/cohorte-po [request]`** — a business conversation. Asks about need, value, frequency, scope; never
   code. Reads `PRODUCT.md` and the existing tickets to avoid duplicates. Each ticket it proposes is a
   ` ```cohorte-ticket ` JSON block (`ref`, `title`, `type`, `need`, `value`, `criteria`, `outOfScope`,
-  `priority`, `size`, `parent`); the dashboard turns it into a draft ticket waiting for CP0. Read-only.
+  `priority`, `size`, `parent`); the dashboard turns it into a draft ticket waiting for CP0. In a plain
+  session it files the ones the requester confirms with `cohorte ticket create --status validate`.
+  Otherwise read-only.
 - **`/cohorte-lead <ticket>`** — framing with the developer. Proposes an approach and asks the decisions
   the developer must own (by class), writes `specs/<ticket>.md` as a draft from `/cohorte-spec`'s
-  doctrine, posts a ` ```cohorte-plan ` block for CP1, and freezes on `CP1 APPROVED`.
+  doctrine, posts a ` ```cohorte-plan ` block for CP1, and freezes on `CP1 APPROVED`. In a plain session
+  it reads the ticket with `cohorte ticket show`, takes it with `cohorte take <id> --no-lead`, and on the
+  developer's approval freezes and runs `cohorte checkpoint <id> approve --detach`.
 - **`/cohorte-learn <id> [merged|abandoned]`** — the feature's journal: one entry per pattern worth
   counting, in `.claude/journal/<date>-<id>.md` of the main checkout, reusing existing motifs.
 - **`/cohorte-acceptance <ticket>`** — the acceptance note (` ```cohorte-acceptance ` block): what changed,
@@ -65,6 +72,41 @@ Starting a project — `cohorte ui` → **New project** ([guide](/guide/company-
 - **`/cohorte-scaffold`** — builds the walking skeleton the approved plan describes: each surface from its
   official generator, one trivial path through all of them, tests/lint/build green, compose, CI, README;
   commits it. Reports in a ` ```cohorte-scaffold ` block. No business feature, no push.
+
+## The flow verbs (`cohorte …`)
+
+The CLI side of the company flow — same files as `cohorte ui` (`~/.claude/cohorte-ui/`, the project's
+tracker), same transitions as its buttons. Every verb takes `--project <path>` (default: the repo of the
+current folder; a feature worktree counts as its repo), `--json` (the result on stdout, progress on
+stderr) and `--no-interactive` (never ask, even at a terminal). A person's decisions — `ticket move`, `ticket
+create` to the backlog, CP3 `approve`, `abandon`, `accept`, `merge`, `take-over` — need a terminal (stdin a TTY)
+and a typed `yes`; CP1 `approve`, CP2 `continue`/`correct` and `lead` may come from a pipe with `--note "<the
+developer's words>"`. An agent of a cohorte run (`COHORTE_RUN_ID` set) may only read.
+
+| Verb | Does |
+| --- | --- |
+| `cohorte ticket list [--status S]` | the tickets with their feature's phase, and the specs a plain session wrote that the flow does not follow yet |
+| `cohorte ticket show <id>` | a ticket and its feature (phase, checkpoint, stages, driver) |
+| `cohorte ticket create --title T [--body-file F \| --need …] [--type] [--criteria C]… [--value] [--out-of-scope X]… [--priority] [--size] [--parent] [--requester] [--status validate]` | to the backlog (a tech ticket), or `--status validate` for the requester's CP0 |
+| `cohorte ticket move <id> <status>` | `validate` → `backlog`/`rejected` is CP0; any other move edits the note and the card |
+| `cohorte take <id> [--skip-docker-check] [--no-lead]` | worktree + feature record (id = ticket id), then the lead frames it → CP1. `--no-lead`: the calling session is the lead |
+| `cohorte lead <id> --note TEXT` | reply to the lead, print its next turn |
+| `cohorte checkpoint <id> <action> [--note TEXT]` | CP1 `approve` `correct` `abandon` · CP2 `continue` `correct` `reframe` `abandon` · CP3 `approve` `correct` `abandon`; then follows what it started |
+| `cohorte autopilot <id>` | build → review → fix → verify in the terminal: a line per stage, the decider's decisions, CP2/CP3 and handed-over questions asked here |
+| `cohorte autopilot <id> --follow` / `--status` | attach to a detached drive (its log, its questions asked here) / where it stands |
+| `cohorte merge <id>` | `gh pr merge`, then the journal and the acceptance note (CP4) |
+| `cohorte accept <id> ok\|not-quite [--note TEXT]` | CP4; `not-quite` opens a follow-up PO conversation |
+| `cohorte adopt <id>` | a frozen (or further) spec in a feature worktree, with no feature record, joins the flow at the phase its files say — CP2, CP3, PR — its ticket linked or created (one only in the main checkout is refused) |
+| `cohorte take-over <id>` | clear a stuck lease (a driver that hung, or a pid the OS reused); a feature left mid-run opens CP2 |
+| `cohorte new-project --idea "…" --name N [--parent DIR] [--based-on PATH]` · `--stack` · `--existing PATH` | the founding chain — vision, foundations, skeleton, pipeline set-up — with the dashboard's checkpoints and git identity check |
+| `cohorte new-project --resume --project PATH [approve\|reply\|retry\|continue\|abandon] [--note] [--identity github\|"Name <email>"]` | the next step of a founding |
+
+`--detach` (on `take`, `lead`, `checkpoint`, `autopilot`, `merge`, `adopt`) runs the verb in a background
+process that holds the feature until its next checkpoint and logs to `~/.claude/cohorte-ui/drives/`;
+its questions wait in the dashboard's inbox and in `--follow` (a permission ask parks it at CP2: it is
+granted only where its run runs). Exit codes: `0` nothing waits on you, `2` a checkpoint or the lead waits
+on you, `3` a question was parked (the feature is at CP2), `4` another process drives the feature, `5` a
+person's decision refused here (no terminal, or an agent), `1` an error.
 
 ## `/cohorte-init-pipeline`
 
@@ -101,6 +143,8 @@ the **Ideas** column cards.
 
 ## `/cohorte-spec [paste]`
 
+**A ticket id as input:** reads the ticket (`cohorte ticket show`), reuses its id as the feature id and
+its criteria as the DoD, and links the frozen spec to the flow with `cohorte adopt`.
 **Mode A (new spec):** reads the staged brainstorm return (or asks), derives the id, enforces
 the ≤ ~300-line size budget (proposes a feature split past it), walks the template section by
 section — §5 CONTRACT to zero-further-questions precision — authors the design brief to
