@@ -88,6 +88,15 @@ class Ctx(object):
             add(write, os.path.join(home, ".claude", rel))
         self.protected = write
         self.delete_protected = write | delete
+        # The company flow's state (cohorte ui and the `cohorte` verbs): tickets, feature records, leases, run
+        # files and the answers dropped for a run. Only those processes write it — an agent writing there could
+        # forge a checkpoint or an answer. Defense in depth: the flow itself never takes a permission from a file.
+        cfg = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(home, ".claude")
+        ui = os.path.join(os.path.expanduser(cfg), "cohorte-ui")
+        self.protected_dirs = sorted({os.path.normpath(ui), os.path.realpath(ui)})
+
+    def in_protected_dir(self, p):
+        return any(p == d or p.startswith(d + os.sep) for d in self.protected_dirs)
 
     # git state, cached
     def current_branch(self, cwd):

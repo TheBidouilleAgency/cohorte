@@ -112,6 +112,10 @@ def evaluate(payload):
         for fp in targets if decision is None else ():
             p = fp if os.path.isabs(fp) else os.path.join(ctx.cwd0 or ".", fp)
             p = os.path.expanduser(p)
+            if ctx.in_protected_dir(os.path.normpath(p)) or ctx.in_protected_dir(os.path.realpath(p)):
+                decision = ("deny", "`%s` writes `%s`, the company flow's state (tickets, features, runs, answers) "
+                            "— only cohorte ui and the `cohorte` commands write there (self-protection)" % (tool, fp))
+                break
             if os.path.normpath(p) in ctx.protected or os.path.realpath(p) in ctx.protected:
                 decision = ("ask", "`%s` edits `%s`, a file the Cohorte gate depends on "
                             "(self-protection) — confirm this change is intended" % (tool, fp))

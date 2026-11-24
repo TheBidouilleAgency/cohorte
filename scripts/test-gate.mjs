@@ -515,6 +515,23 @@ console.log("gate.py — self-protection");
     ["echo x > .claude/pipeline-metrics.jsonl", "allow"], ["echo x >> .claude/pipeline-metrics.jsonl", "allow"],
     ["git rm --cached .claude/preflight.ok", "allow"],
   ]);
+  // The company flow's state: an agent that writes there could forge an answer, a checkpoint or a lease.
+  const cfgDir = join(d, "cfg"); const ui = join(cfgDir, "cohorte-ui");
+  mkdirSync(join(ui, "runs", "p1", "answers"), { recursive: true }); mkdirSync(join(ui, "features", "p1"), { recursive: true });
+  writeFileSync(join(ui, "features", "p1", "f.json"), "{}");
+  table("the flow's state (CLAUDE_CONFIG_DIR/cohorte-ui)", d, [
+    [`echo '{"behavior":"allow"}' > ${sh(ui)}/runs/p1/answers/r.q.json`, "deny"],
+    [`cp x.json ${sh(ui)}/features/p1/f.json`, "deny"], [`tee ${sh(ui)}/leases/p1/f.lock < x`, "deny"],
+    [`rm -rf ${sh(ui)}`, "deny"], [`rm -rf ${sh(cfgDir)}`, "deny"], [`rm ${sh(ui)}/features/p1/*.json`, "deny"],
+    [`mv x.json ${sh(ui)}/runs/p1/r.json`, "deny"],
+    [`cat ${sh(ui)}/features/p1/f.json`, "allow"], [`ls ${sh(ui)}/runs`, "allow"],
+  ], { env: { CLAUDE_CONFIG_DIR: cfgDir } });
+  for (const tool of ["Write", "Edit"]) {
+    const r = run({ tool_name: tool, tool_input: { file_path: join(ui, "runs", "p1", "answers", "r.q.json"), content: "{}", old_string: "a", new_string: "b" }, cwd: d },
+      { projectDir: d, env: { CLAUDE_CONFIG_DIR: cfgDir } });
+    check(`${tool} under cohorte-ui/ ⇒ deny`, r.decision === "deny" && /company flow/.test(r.reason || ""), `${r.decision}: ${r.reason}`);
+  }
+
   // rm -rf on an ancestor of a protected file is denied even without an `rm -rf` rule.
   const floor = scratch(); gitRepo(floor, "feat");
   table("ancestors (pointer only)", floor, [["rm -r .claude", "deny"], [`rm -r ${sh(floor)}`, "deny"], ["rm -r build", "allow"]]);

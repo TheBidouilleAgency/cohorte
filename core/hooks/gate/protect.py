@@ -88,10 +88,15 @@ class SelfProtection(object):
                 targets = glob.glob(v)[:500]
             except Exception:
                 targets = []
+        if w.glob and any(fnmatch.fnmatchcase(d, os.path.normpath(v)) or ctx.in_protected_dir(os.path.dirname(os.path.normpath(v)))
+                          for d in ctx.protected_dirs):
+            return "protected"
         for t in targets:
             for cand in {os.path.normpath(os.path.abspath(t)), os.path.realpath(t)}:
-                if cand in prot:
+                if cand in prot or ctx.in_protected_dir(cand):
                     return "protected"
+                if mode in ("delete", "recursive", "chmod") and any(d.startswith(cand.rstrip(os.sep) + os.sep) for d in ctx.protected_dirs):
+                    return "protected" if mode == "delete" else "suspect"
                 if mode in ("delete", "recursive", "chmod"):
                     pre = cand if cand.endswith(os.sep) else cand + os.sep
                     if any(p.startswith(pre) for p in prot):

@@ -28,6 +28,9 @@ What it does, in order of authority:
    `git checkout`/`git restore` of them (`git reset --hard`, and `.`/directory/glob/`:/`
    pathspecs, count only when git reports one of them differs from what is restored). A
    Write/Edit/MultiEdit/NotebookEdit call aimed at one of them gets "ask".
+   Anything under `<CLAUDE_CONFIG_DIR>/cohorte-ui/` (the company flow's tickets, feature records,
+   leases, runs and their answers) is denied outright, Bash or Write/Edit: only cohorte ui and the
+   `cohorte` commands write there.
 4. Project rules from `.claude/gate-config.json` (`deny` / `ask` / `ask_on_default_branch`).
    These are matched as tokens, not substrings (see "Matching").
 5. Preflight phase gate: a Task/Agent dispatch of a listed subagent needs a fresh

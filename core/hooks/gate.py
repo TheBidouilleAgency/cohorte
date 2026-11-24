@@ -33,6 +33,9 @@ What it does, in order of authority:
    `git checkout`/`git restore` of them (`git reset --hard`, and `.`/directory/glob/`:/`
    pathspecs, count only when git reports one of them differs from what is restored). A
    Write/Edit/MultiEdit/NotebookEdit call aimed at one of them gets "ask".
+   Anything under `<CLAUDE_CONFIG_DIR>/cohorte-ui/` (the company flow's tickets, feature records,
+   leases, runs and their answers) is denied outright, Bash or Write/Edit: only cohorte ui and the
+   `cohorte` commands write there.
 4. Project rules from `.claude/gate-config.json` (`deny` / `ask` / `ask_on_default_branch`).
    These are matched as tokens, not substrings (see "Matching").
 5. Preflight phase gate: a Task/Agent dispatch of a listed subagent needs a fresh
@@ -1973,6 +1976,15 @@ class Ctx(object):
             add(write, os.path.join(home, ".claude", rel))
         self.protected = write
         self.delete_protected = write | delete
+        # The company flow's state (cohorte ui and the `cohorte` verbs): tickets, feature records, leases, run
+        # files and the answers dropped for a run. Only those processes write it — an agent writing there could
+        # forge a checkpoint or an answer. Defense in depth: the flow itself never takes a permission from a file.
+        cfg = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(home, ".claude")
+        ui = os.path.join(os.path.expanduser(cfg), "cohorte-ui")
+        self.protected_dirs = sorted({os.path.normpath(ui), os.path.realpath(ui)})
+
+    def in_protected_dir(self, p):
+        return any(p == d or p.startswith(d + os.sep) for d in self.protected_dirs)
 
     # git state, cached
     def current_branch(self, cwd):
@@ -2347,10 +2359,15 @@ class SelfProtection(object):
                 targets = glob.glob(v)[:500]
             except Exception:
                 targets = []
+        if w.glob and any(fnmatch.fnmatchcase(d, os.path.normpath(v)) or ctx.in_protected_dir(os.path.dirname(os.path.normpath(v)))
+                          for d in ctx.protected_dirs):
+            return "protected"
         for t in targets:
             for cand in {os.path.normpath(os.path.abspath(t)), os.path.realpath(t)}:
-                if cand in prot:
+                if cand in prot or ctx.in_protected_dir(cand):
                     return "protected"
+                if mode in ("delete", "recursive", "chmod") and any(d.startswith(cand.rstrip(os.sep) + os.sep) for d in ctx.protected_dirs):
+                    return "protected" if mode == "delete" else "suspect"
                 if mode in ("delete", "recursive", "chmod"):
                     pre = cand if cand.endswith(os.sep) else cand + os.sep
                     if any(p.startswith(pre) for p in prot):
@@ -3592,6 +3609,10 @@ def evaluate(payload):
         for fp in targets if decision is None else ():
             p = fp if os.path.isabs(fp) else os.path.join(ctx.cwd0 or ".", fp)
             p = os.path.expanduser(p)
+            if ctx.in_protected_dir(os.path.normpath(p)) or ctx.in_protected_dir(os.path.realpath(p)):
+                decision = ("deny", "`%s` writes `%s`, the company flow's state (tickets, features, runs, answers) "
+                            "— only cohorte ui and the `cohorte` commands write there (self-protection)" % (tool, fp))
+                break
             if os.path.normpath(p) in ctx.protected or os.path.realpath(p) in ctx.protected:
                 decision = ("ask", "`%s` edits `%s`, a file the Cohorte gate depends on "
                             "(self-protection) — confirm this change is intended" % (tool, fp))
