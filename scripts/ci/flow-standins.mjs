@@ -131,6 +131,11 @@ rl.on("line", (line) => {
   if (cmd === "cohorte-fix") {
     return ask("security", "Should the export require the admin role?", ["Yes (Recommended)", "No"], (r) => { text("fixed: " + JSON.stringify(r.updatedInput && r.updatedInput.answers)); done("fixed", 0.2); });
   }
+  if (cmd === "cohorte-verify" && fs.existsSync(path.join(process.cwd(), "specs/reports/.ask-permission"))) {   // a permission only a terminal may grant
+    pending = null;
+    out({ type: "control_request", request_id: "p1", request: { subtype: "can_use_tool", tool_name: "Bash", input: { command: "docker compose up -d" } } });
+    return;
+  }
   if (cmd === "cohorte-verify") { W("specs/reports/" + id + ".verify.json", JSON.stringify({ verdict: "PASS" })); text("verified"); return done("verified", 0.05); }
   if (cmd === "cohorte-ship") {
     const st = (R("specs/" + id + ".md").match(/^status: (\\S+)/m) || [])[1];

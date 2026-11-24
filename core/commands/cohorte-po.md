@@ -79,8 +79,9 @@ the chat, after reading it — file it, one Bash call per ticket, one plain comm
 
 `cohorte ticket create --status validate --title "<title>" --type <feature or bug> --need "<need>" --value "<value>" --criteria "<criterion 1>" --criteria "<criterion 2>" --out-of-scope "<what it does not do>" --priority <high, medium or low> --size <S, M, L or ?> --requester "<the person>" --json`
 
-Add `--parent <id>` for a follow-up. `--status validate` keeps CP0: the ticket waits for the requester's
-validation ("To validate" in `cohorte ui`; `cohorte ticket move <id> backlog` from a terminal), exactly as
+Add `--parent <id>` for a follow-up. `--status validate` keeps CP0: the ticket waits for the requester's validation — theirs, never yours: tell
+them to validate it in `cohorte ui` ("To validate"), or in their own terminal with `cohorte ticket move <id> backlog`
+(the CLI asks them to confirm; it refuses it from you). Exactly as
 the ones the dashboard files. Tell the person the id it printed. Never file a ticket they have not
 confirmed, and never file one twice: a correction after filing is made on the ticket itself (its note,
 or the dashboard), not with a second `create`.

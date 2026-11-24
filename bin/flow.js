@@ -20,6 +20,13 @@
 // this process through the store). With no terminal (stdin not a TTY, or --no-interactive) the run is stopped and
 // the feature parked at CP2 — what a restart of cohorte ui does — and the verb exits 3.
 //
+// Who may move the flow. An agent of a run cohorte started (COHORTE_RUN_ID in its env) may read, never move. The
+// person's own decisions — CP0, shipping at CP3, CP4, merging, abandoning, a ticket straight to the backlog, taking
+// over a lease — are typed at a terminal (stdin a TTY, a `yes`) or clicked in cohorte ui; nothing else can make them.
+// What a Claude Code session relays for the developer — CP1 approve, CP2 continue/correct, a reply to the lead —
+// may come from a pipe, with `--note "<their words>"`, recorded as relayed. A permission ask a run raises is
+// answered only on the terminal that runs it; a detached drive that gets one parks the feature at CP2.
+//
 // --detach runs the verb in a background process of its own (`--driven`: it holds the feature's lease, logs to
 // <data>/drives/<project>/<id>.log, waits for answers from the page or from `cohorte autopilot <id> --follow`, and
 // stops at the next checkpoint). Exit codes:
@@ -31,17 +38,19 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const EXIT = { ok: 0, error: 1, waiting: 2, parked: 3, elsewhere: 4 };
-const VERBS = ['ticket', 'take', 'lead', 'checkpoint', 'autopilot', 'merge', 'accept', 'adopt', 'new-project'];
+const EXIT = { ok: 0, error: 1, waiting: 2, parked: 3, elsewhere: 4, person: 5 };
+const VERBS = ['ticket', 'take', 'lead', 'checkpoint', 'autopilot', 'merge', 'accept', 'adopt', 'new-project', 'take-over'];
 /** The verbs that drive runs — the ones --detach can send to the background. */
 const DRIVING = ['take', 'lead', 'checkpoint', 'autopilot', 'merge', 'adopt'];
-const BOOL = new Set(['help', 'json', 'no-lead', 'interactive', 'no-interactive', 'yes', 'skip-docker-check', 'detach', 'driven', 'follow', 'idea', 'stack', 'resume']);
+const BOOL = new Set(['help', 'json', 'no-lead', 'no-interactive', 'skip-docker-check', 'detach', 'driven', 'follow', 'idea', 'stack', 'resume']);
 /** A value when one follows (`ticket list --status backlog`), else a switch (`autopilot <id> --status`). */
 const OPTIONAL = new Set(['status']);
 const MULTI = new Set(['criteria', 'out-of-scope']);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 class UsageError extends Error {}
+/** A person's decision asked of something that is not one (no terminal, or an agent): refused, exit 5. */
+class PersonError extends Error {}
 
 function parse(argv) {
   const pos = []; const o = { criteria: [], 'out-of-scope': [] };
@@ -68,7 +77,7 @@ function usage() {
                                               straight to the backlog, like "New tech ticket";
                                               --status validate files it for the requester's CP0 (the PO's way)
   cohorte ticket move <id> <status>           validate→backlog|rejected is CP0; anything else moves the card
-  cohorte take <ticket> [--yes] [--no-lead]   worktree + feature record (id = ticket id), the lead frames → CP1
+  cohorte take <ticket> [--no-lead]           worktree + feature record (id = ticket id), the lead frames → CP1
                                               --no-lead: the calling session is the lead (/cohorte-lead in Claude Code);
                                               its CP1 approve then needs the spec it froze
   cohorte lead <ticket> --note TEXT           reply to the lead
@@ -90,11 +99,19 @@ function usage() {
 
   --project PATH       the project (default: the repo of the current folder; a worktree counts as its repo)
   --json               the result as JSON on stdout (progress goes to stderr)
-  --interactive        ask on stdin even when it is not a TTY (scripts); --no-interactive never asks
+  --no-interactive     never ask, even on a terminal
   --detach             take|lead|checkpoint|autopilot|merge|adopt in the background: returns at once, prints where
                        to follow it; its questions wait for an answer from cohorte ui or --follow
+  cohorte take-over <ticket>                  clear a stuck lease (a hung or vanished driver) — typed at a terminal
+
+  A person's decisions — ticket move (CP0), ticket create to the backlog, CP3 approve (ship), abandon, accept (CP4),
+  merge, take-over — are confirmed at a terminal (type yes) or made in cohorte ui; a pipe or an agent cannot.
+  CP1 approve, CP2 continue|correct and lead replies may be relayed from a pipe with --note "<the developer's words>".
+  An agent of a cohorte run (COHORTE_RUN_ID set) may only read: ticket list|show, autopilot --status.
+
   Exit: 0 nothing waits on you · 2 a checkpoint or the lead waits on you · 3 a question was parked (CP2)
-        · 4 another process (cohorte ui, another terminal) is driving this feature · 1 error`;
+        · 4 another process (cohorte ui, another terminal) is driving this feature · 5 a person's decision, refused
+          here (no terminal, or an agent) · 1 error`;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -105,7 +122,7 @@ function loadEngine() {
   if (!fs.existsSync(path.join(dist, 'engine.js'))) {
     throw new Error('the flow engine is not built in this checkout — run `npm run build:ui` here first (the published package ships it built)');
   }
-  return { engine: require(path.join(dist, 'engine.js')), tracker: require(path.join(dist, 'tracker.js')), docker: require(path.join(dist, 'docker.js')), history: require(path.join(dist, 'history.js')) };
+  return { engine: require(path.join(dist, 'engine.js')), tracker: require(path.join(dist, 'tracker.js')), docker: require(path.join(dist, 'docker.js')), history: require(path.join(dist, 'proc.js')) };
 }
 
 /** The main checkout of the repo `dir` is in — a feature worktree resolves to the project it belongs to. */
@@ -208,6 +225,15 @@ async function drive(ctx, id, { mode }) {
       if (r.projectId !== p.id || r.meta.featureId !== id || !r.child || r.status !== 'running') continue;
       for (const x of r.pending.values()) if (!x.deciding) asked.push([r, x]);
     }
+    const perm = ctx.driven ? asked.find(([, x]) => x.kind === 'permission') : null;
+    if (perm) {
+      // detached: no terminal, and a permission ask is never answered from elsewhere — stop safely, as with no terminal
+      const [r, x] = perm;
+      const reason = `${r.meta.stage || r.meta.role} asks to run ${whatOf(x)} — a permission is answered only where its run runs: run \`cohorte autopilot ${id}\` in a terminal`;
+      out.line(`! ${reason}`);
+      await flow.park(p.id, id, reason);
+      return { code: EXIT.parked, waiting: 'question', reason };
+    }
     if (asked.length && ctx.driven) {
       // detached: nobody types here — the question waits on disk for the page or `--follow`
       for (const [r, x] of asked) {
@@ -289,8 +315,8 @@ function asker(reader, out, interactive, flow, p) {
       const lines = [`\n■ ${cp.kind.toUpperCase()} · ${cp.reason}`];
       if (cp.kind === 'cp1' && f.plan) lines.push(`  plan: ${f.plan.summary}`, ...f.plan.criteria.map((c) => `    ${c.id} ${c.text}`));
       if (cp.kind === 'cp3') {
-        const by = f.decisions.filter((d) => d.by === 'decider' && !d.contested);
-        if (by.length) lines.push('  decided on your behalf (shipping confirms them):', ...by.map((d) => `    ${d.question} → ${d.chosen}`));
+        const by = f.decisions.filter((d) => d.by !== 'human' && !d.contested);
+        if (by.length) lines.push('  decided on your behalf (shipping confirms them):', ...by.map((d) => `    ${d.question} → ${d.chosen}${d.by === 'remote' ? ' (answered from elsewhere)' : ''}`));
       }
       lines.push(`  ${actions.join(' | ')} [note]: `);
       prompt(lines.join('\n'));
@@ -359,7 +385,12 @@ async function run(argv, globalDir) {
   if (!verb || o.help) { console.log(usage()); return EXIT.ok; }
   const json = o.json === true;
   const driven = o.driven === true; // the background half of --detach
-  const interactive = driven || o['no-interactive'] ? false : o.interactive === true || !!process.stdin.isTTY;
+  // a person at a terminal: stdin is a TTY (a pipe, an agent's Bash call, a detached drive are not)
+  const tty = !driven && !!process.stdin.isTTY;
+  const interactive = tty && !o['no-interactive'];
+  if (process.env.COHORTE_RUN_ID && !(verb === 'ticket' && ['list', 'show', undefined].includes(pos[0])) && !(verb === 'autopilot' && o.status === true)) {
+    throw new PersonError(`cohorte ${verb} is not available to an agent of a cohorte run (run ${process.env.COHORTE_RUN_ID}) — moving the flow is the developer's: say what you need in your answer instead`);
+  }
   const err = (s) => process.stderr.write(`${s}\n`);
   const out = {
     line: (s) => (json ? err(s) : console.log(s)),
@@ -373,7 +404,24 @@ async function run(argv, globalDir) {
   const eng = engine.createEngine({ globalDir, by: 'cli' });
   const { flow } = eng;
   const reader = lineReader();
-  if (verb === 'new-project') return newProject({ o, pos, eng, out, reader, interactive, registry, tracker, globalDir });
+  const typed = `cohorte ${argv.filter((a) => a !== '--json' && a !== '--driven').join(' ')}`;
+  /**
+   * A person's decision: typed `yes` at a terminal. A detached drive carries the yes its parent got, as a one-time
+   * token (a file in the flow's state + the env var naming it); a pipe or an agent is refused with the command to type.
+   */
+  const confirm = async (what) => {
+    if (driven) {
+      const tok = process.env.COHORTE_CONFIRM_TOKEN || '';
+      const f = path.join(eng.dataDir, 'drives', 'confirm', `${tok.replace(/[^a-f0-9]/g, '')}.ok`);
+      if (tok && fs.existsSync(f)) { fs.rmSync(f, { force: true }); return; }
+      throw new PersonError(`${what}: not confirmed`);
+    }
+    if (!tty) throw new PersonError(`${what} is a person's decision — type it yourself in a terminal:\n  ${typed}\n  (or make it in cohorte ui)`);
+    out.prompt(`${what} — type yes to confirm: `);
+    const l = await reader.next();
+    if (!l || l.trim().toLowerCase() !== 'yes') throw new PersonError('not confirmed — nothing was done');
+  };
+  if (verb === 'new-project') return newProject({ o, pos, eng, out, reader, interactive, tty, confirm, registry, tracker, globalDir });
   const root = repoOf(path.resolve(o.project || process.cwd()));
   const p = registry.add(globalDir, root).project; // idempotent; refuses a repo without cohorte
   const ask = asker(reader, out, interactive, flow, p);
@@ -437,6 +485,7 @@ async function run(argv, globalDir) {
       let need = o.need || '';
       if (o['body-file']) need = fs.readFileSync(o['body-file'] === '-' ? 0 : path.resolve(o['body-file']), 'utf8');
       if (o.status && !['validate', 'backlog'].includes(o.status)) throw new UsageError('a new ticket goes to validate (CP0) or backlog');
+      if (o.status !== 'validate') await confirm(`File "${o.title}" straight to the backlog, with no CP0`);
       const t = flow.createTicket(p.id, { title: o.title, type: o.type, need, value: o.value, criteria: o.criteria, outOfScope: o['out-of-scope'],
         priority: o.priority, size: o.size, parent: o.parent, requester: o.requester, status: o.status });
       out.result({ ticket: t }, `${t.id} — ${t.title} (${t.status})\n  next: ${t.status === 'validate' ? `the requester validates it (cohorte ui, or cohorte ticket move ${t.id} backlog)` : `cohorte take ${t.id}`}`);
@@ -446,12 +495,14 @@ async function run(argv, globalDir) {
       const t = mustTicket(pos[0]);
       const to = pos[1];
       if (!tracker.STATUSES.includes(to)) throw new UsageError(`the status must be one of ${tracker.STATUSES.join(', ')}`);
+      await confirm(['discussion', 'validate'].includes(t.status) && ['backlog', 'rejected'].includes(to)
+        ? `CP0 — ${to === 'backlog' ? 'validate' : 'reject'} "${t.title}"` : `Move "${t.title}" from ${t.status} to ${to}`);
       let next;
       if (['discussion', 'validate'].includes(t.status) && ['backlog', 'rejected'].includes(to)) {
         next = flow.decideTicket(p.id, t.id, to === 'backlog' ? 'validate' : 'reject'); // CP0, as the page decides it
       } else {
         const f = flow.features.get(p.id, t.id);
-        if (f && flow.drivenElsewhere(f)) throw new Error(`${t.id} is being driven by ${f.driver.by} (pid ${f.driver.pid}) — not moved`);
+        if (f && flow.drivenElsewhere(f)) throw new Error(`${t.id} is being driven by another process — not moved`);
         next = tr.update(t.id, { status: to });
         await tr.move(next);
       }
@@ -462,9 +513,34 @@ async function run(argv, globalDir) {
   }
 
   const id = pos.shift();
+  // what this call may decide, settled before anything runs (and before --detach hands it to a background process)
+  let relayed = false;
+  let confirmed = false;
+  if (verb === 'checkpoint' && !o.help) {
+    mustTicket(id);
+    const f = flow.mustFeature(p.id, id);
+    const cp = f.checkpoint?.kind || (f.sessionLead && ['framing', 'cp1'].includes(f.phase) ? 'cp1' : null);
+    const act = cp === 'cp1' && pos[0] === 'correct' ? 'reply' : pos[0];
+    const relayable = (cp === 'cp1' && ['approve', 'reply'].includes(act)) || (cp === 'cp2' && ['continue', 'correct'].includes(act));
+    if (!relayable) { await confirm(act === 'abandon' ? `Abandon ${id}` : cp === 'cp3' && act === 'approve' ? `CP3 — ship ${id} (opens the PR)` : `${String(cp || f.phase).toUpperCase()} ${act} on ${id}`); confirmed = true; }
+    else if (!tty) {
+      if (!o.note || !String(o.note).trim()) throw new UsageError(`not typed at a terminal: --note "<the developer's own words>" is required — it is recorded with the ${String(cp).toUpperCase()} answer`);
+      relayed = true;
+    }
+  }
+  if (verb === 'merge') { mustTicket(id); await confirm(`Merge the PR of ${id}`); confirmed = true; }
+  if (verb === 'accept') { mustTicket(id); if (!['ok', 'accept', 'not-quite'].includes(pos[0])) throw new UsageError('accept takes ok or not-quite'); await confirm(`CP4 — ${pos[0] === 'ok' || pos[0] === 'accept' ? 'accept' : 'not quite:'} "${id}"${o.note ? ` (${o.note})` : ''}`); confirmed = true; }
+  if (verb === 'take-over') {
+    mustTicket(id);
+    const h = flow.leases.holder(p.id, id);
+    await confirm(`Take over ${id}${h ? ` from ${h.by === 'ui' ? 'cohorte ui' : 'a terminal'} (pid ${h.pid}, still running — it will no longer be obeyed)` : ' (no live holder)'}`);
+    const r = flow.takeOver(p.id, id);
+    out.result({ feature: r.feature, was: r.was }, `${id}: lease cleared${r.was ? ` (was pid ${r.was.pid})` : ''} · ${r.feature.phase}`);
+    return finish(EXIT.ok);
+  }
   if (o.detach && DRIVING.includes(verb)) {
     mustTicketOrSpec(id);
-    return finish(await detach({ argv, id, p, eng, out, drives, history }));
+    return finish(await detach({ argv, id, p, eng, out, drives, history, confirmed }));
   }
   if (verb === 'autopilot' && (o.follow || o.status)) {
     mustTicket(id);
@@ -483,15 +559,12 @@ async function run(argv, globalDir) {
       const pre = await docker.preflight(p.root);
       if (pre && !pre.ok) throw new Error(`${pre.reason} (--skip-docker-check to take it anyway)`);
     }
-    let confirmed = o.yes === true;
+    let gateOk = false;
     for (;;) {
-      try { flow.take(p.id, id, { confirmed, lead: !o['no-lead'] }); break; } catch (e) {
-        if (!e.needsConfirmation || confirmed) throw e;
-        if (!interactive) throw new Error(`${e.message} — the gate asks before \`${e.command}\`: re-run with --yes to confirm`);
-        out.prompt(`the gate asks before \`${e.command}\`${e.reason ? ` (${e.reason})` : ''} — run it? [y/N] `);
-        const l = await reader.next();
-        if (!l || !/^y(es)?$/i.test(l.trim())) throw new Error('not confirmed — nothing was taken');
-        confirmed = true;
+      try { flow.take(p.id, id, { confirmed: gateOk, lead: !o['no-lead'] }); break; } catch (e) {
+        if (!e.needsConfirmation || gateOk) throw e;
+        await confirm(`the project's gate asks before \`${e.command}\`${e.reason ? ` (${e.reason})` : ''}`); // the gate's ask is a person's
+        gateOk = true;
       }
     }
     out.line(o['no-lead'] ? `taking ${id} — its worktree, for the lead of this session` : `taking ${id} — worktree, then the lead frames it`);
@@ -510,7 +583,7 @@ async function run(argv, globalDir) {
     if (!action) throw new UsageError('an action is required: approve, correct, continue, reframe or abandon');
     const cp = f.checkpoint?.kind || (f.sessionLead && ['framing', 'cp1'].includes(f.phase) ? 'cp1' : null);
     if (cp === 'cp1' && action === 'correct') action = 'reply'; // CP1's "correct" is a reply to the lead
-    flow.checkpoint(p.id, id, { action, text: o.note });
+    flow.checkpoint(p.id, id, { action, text: o.note, relayed });
     out.line(`${cp ? cp.toUpperCase() : f.phase} · ${action}${cp === 'cp1' && action === 'approve' ? ' — the lead freezes the spec, then the autopilot runs' : ''}`);
     // what hands over to the autopilot is followed as `cohorte autopilot` would; a lead conversation, to its turn's end
     return settle(id, ['reply', 'reframe', 'abandon'].includes(action) ? 'once' : 'autopilot');
@@ -548,22 +621,30 @@ async function run(argv, globalDir) {
 // Detached drives: one background process per feature, its log, and the ways back to it
 
 /** Starts the same verb as `--driven` in a background process; returns once it holds the feature (or ended). */
-async function detach({ argv, id, p, eng, out, drives, history }) {
+async function detach({ argv, id, p, eng, out, drives, history, confirmed }) {
   fs.mkdirSync(drives, { recursive: true });
   const log = path.join(drives, `${id}.log`);
   const info = path.join(drives, `${id}.json`);
   const prev = readJson(info);
-  if (prev && history.alive(prev.pid) && prev.pid !== process.pid) throw new Error(`a detached drive of ${id} is already running (pid ${prev.pid}) — cohorte autopilot ${id} --follow`);
+  if (prev && history.alive(prev.pid, prev.start) && prev.pid !== process.pid) throw new Error(`a detached drive of ${id} is already running (pid ${prev.pid}) — cohorte autopilot ${id} --follow`);
   const args = argv.filter((a) => a !== '--detach' && a !== '--json' && a !== '--interactive');
   fs.writeFileSync(log, `# cohorte ${args.join(' ')} — ${new Date().toISOString()}\n`);
   const fd = fs.openSync(log, 'a');
+  // the yes typed here travels as a one-time token: the background process cannot ask, and nothing else can forge it
+  const env = { ...process.env };
+  if (confirmed) {
+    const tok = require('crypto').randomBytes(16).toString('hex');
+    fs.mkdirSync(path.join(eng.dataDir, 'drives', 'confirm'), { recursive: true });
+    fs.writeFileSync(path.join(eng.dataDir, 'drives', 'confirm', `${tok}.ok`), '', { mode: 0o600 });
+    env.COHORTE_CONFIRM_TOKEN = tok;
+  }
   const child = require('child_process').spawn(process.execPath, [path.join(__dirname, 'cli.js'), ...args, '--driven', '--project', p.root],
-    { detached: true, stdio: ['ignore', fd, fd], env: process.env, cwd: p.root });
+    { detached: true, stdio: ['ignore', fd, fd], env, cwd: p.root });
   fs.closeSync(fd);
   let exited = null;
   child.on('exit', (code) => { exited = code == null ? 1 : code; });
   child.unref();
-  fs.writeFileSync(info, JSON.stringify({ pid: child.pid, log, args, startedAt: new Date().toISOString() }, null, 2));
+  fs.writeFileSync(info, JSON.stringify({ pid: child.pid, start: history.startOf(child.pid), log, args, startedAt: new Date().toISOString() }, null, 2));
   // it is under way once it holds the lease; a verb with nothing to run (a checkpoint already open) just ends
   const end = Date.now() + 20000;
   while (exited === null && Date.now() < end && eng.flow.features.get(p.id, id)?.driver?.pid !== child.pid) await sleep(100);
@@ -594,7 +675,7 @@ function status({ id, p, eng, out, drives, history }) {
   const f = eng.flow.features.get(p.id, id);
   const t = eng.flow.tracker(eng.flow.project(p.id)).get(id);
   const info = readJson(path.join(drives, `${id}.json`));
-  const live = info && history.alive(info.pid);
+  const live = info && history.alive(info.pid, info.start);
   const qs = parked(eng, p, id).map(([r, x]) => ({ run: r.id, stage: r.meta.stage || r.meta.role, requestId: x.requestId, kind: x.kind, what: whatOf(x), questions: x.questions || null }));
   const tail = info ? (() => { try { return fs.readFileSync(info.log, 'utf8').trim().split('\n').slice(-15); } catch { return []; } })() : [];
   const lines = [ticketText(t, f)];
@@ -615,21 +696,21 @@ async function follow({ id, p, eng, out, ask, drives, history }) {
       if (buf.length > pos) { out.prompt(buf.subarray(pos).toString("utf8")); pos = buf.length; } // stderr under --json
     } catch { /* not yet */ }
   };
-  if (!info || !history.alive(info.pid)) {
+  if (!info || !history.alive(info.pid, info.start)) {
     flush();
     out.line(info ? '(the detached drive has ended)' : `no detached drive of ${id} — start one with: cohorte autopilot ${id} --detach`);
   }
   const told = new Set();
-  while (info && history.alive(info.pid)) {
+  while (info && history.alive(info.pid, info.start)) {
     flush();
-    const qs = parked(eng, p, id);
+    const qs = parked(eng, p, id).filter(([, x]) => x.kind === 'question'); // a permission is never answered from here
     if (qs.length) {
       const [r, x] = qs[0];
       if (ask.interactive) {
         const a = await ask.pending(r, x, until(() => !parked(eng, p, id).some(([, y]) => y.requestId === x.requestId)));
         if (a && a.cancelled) out.line('  (answered elsewhere)');
         else if (a === null) break;
-        else eng.runs.respond(r, x.requestId, a.behavior, a.answers, 'human'); // another process's run: the answer goes through the store
+        else eng.runs.respond(r, x.requestId, a.behavior, a.answers); // another process's run: through the store, recorded as remote
       } else if (!told.has(x.requestId)) { told.add(x.requestId); out.line(`? waiting for an answer: ${whatOf(x)}`); }
     }
     await sleep(300);
@@ -646,7 +727,7 @@ async function follow({ id, p, eng, out, ask, drives, history }) {
 // ---------------------------------------------------------------------------------------------------------------
 // New project — the page's Founding, from a terminal: the same FoundingFlow, its checkpoints asked here
 
-async function newProject({ o, pos, eng, out, reader, interactive, registry, tracker, globalDir }) {
+async function newProject({ o, pos, eng, out, reader, interactive, tty, confirm, registry, tracker, globalDir }) {
   const { flow, runs } = eng;
   const fd = flow.founding;
   let projectId;
@@ -666,7 +747,9 @@ async function newProject({ o, pos, eng, out, reader, interactive, registry, tra
   }
   if (o.identity) await setIdentity(fd, projectId, o.identity);
   const action = o.resume ? pos.shift() : null;
-  if (action) await fd.checkpoint(projectId, { action, text: o.note });
+  if (action === 'abandon') await confirm('Abandon this new project');
+  else if (action === 'approve' && !tty && !(o.note && String(o.note).trim())) throw new UsageError('not typed at a terminal: --note "<their own words>" is required to approve — it is the person\'s validation, relayed');
+  if (action) await fd.checkpoint(projectId, { action, text: action === 'approve' && !tty ? '' : o.note });
 
   const cursors = new Map();
   for (const r of runs.runs.values()) if (r.projectId === projectId) cursors.set(r.id, r.dropped + r.events.length);
@@ -739,6 +822,7 @@ async function main(argv, globalDir) {
   } catch (e) {
     process.stderr.write(`error: ${e && e.message ? e.message : e}\n`);
     if (e instanceof UsageError) process.stderr.write('\n' + usage() + '\n');
+    if (e instanceof PersonError) return EXIT.person;
     return e && e.code === 409 && /being driven by/.test(e.message) ? EXIT.elsewhere : EXIT.error;
   }
 }

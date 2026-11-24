@@ -93,13 +93,19 @@ brief to `specs/design/$ARGUMENTS.md` when the feature has UI.
 
 - **In `cohorte ui`:** end your turn with one line. Do not build, and do not tell anyone to run a command
   next: the autopilot starts the build itself.
-- **In a plain session:** start the autopilot in the background — `cohorte checkpoint $ARGUMENTS approve --detach --json`
-  (it refuses a spec that is not frozen: fix the freeze, then run it again). Do not build yourself. Then
+- **In a plain session:** start the autopilot in the background, relaying the developer's approval in their
+  own words — `cohorte checkpoint $ARGUMENTS approve --detach --note "<what the developer said when they approved>" --json`
+  (the note is recorded with CP1; it refuses a spec that is not frozen: fix the freeze, then run it again). Do
+  not build yourself. Then
   tell the developer, in plain words: the autopilot now builds, reviews, fixes and verifies on its own,
   each step in a fresh session; what it cannot settle from the spec appears as a question in the
   `cohorte ui` inbox, and in a terminal with `cohorte autopilot $ARGUMENTS --follow` (which also shows its
-  progress); `cohorte autopilot $ARGUMENTS --status` says where it is at any time; it stops at CP3, where
-  they sign off the result (`cohorte checkpoint $ARGUMENTS approve` ships it, or the dashboard's Ship).
+  progress), where a permission an agent asks for also lands — the background run itself stops at CP2 on
+  one, since only a terminal running it may grant it; `cohorte autopilot $ARGUMENTS --status` says where it is at
+  any time; it stops at CP3, where they sign off the result themselves — Ship in the dashboard, or
+  `cohorte checkpoint $ARGUMENTS approve` typed in their terminal (it asks them to confirm; never run it for them).
+- If `cohorte take` says the project's gate asks before creating the worktree, that confirmation is the
+  developer's: give them the command to run in their terminal, and wait.
 
 ## 5. When the autopilot sends you back
 

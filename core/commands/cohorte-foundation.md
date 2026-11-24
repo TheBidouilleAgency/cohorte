@@ -26,7 +26,9 @@ wrote one:
 >    or a checkpoint — `cp-vision`, `cp-foundation`, `cp-scaffold`). Show the person what it printed — the
 >    agent's words, the vision, the plan — and ask them.
 > 3. Pass their answer on: `cohorte new-project --resume --project <the new folder> reply --note "<their words>" --json`,
->    or `approve`, `retry`, `continue`, `abandon` at a checkpoint. Before the foundations are approved,
+>    or `approve --note "<their words of approval>"`, `retry`, `continue` at a checkpoint (an approval is
+>    relayed with the person's own words, recorded as such; abandoning is theirs to type in their terminal:
+>    `cohorte new-project --resume --project <the new folder> abandon`). Before the foundations are approved,
 >    cohorte checks the git identity it will commit with: offer `--identity github` (their signed-in GitHub
 >    account) or `--identity "Name <email>"`, set in that repository only.
 > 4. Repeat until it says the project is ready (`done`): its first-version tickets are then in its

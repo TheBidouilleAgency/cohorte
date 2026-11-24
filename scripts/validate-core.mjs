@@ -231,16 +231,18 @@ for (const path of [...allDocs, ...readdirSync(join(root, "core/workflows")).map
   const flowCli = read("bin/flow.js");
   const verbs = JSON.parse((flowCli.match(/const VERBS = (\[[^\]]*\])/) || [, "[]"])[1].replace(/'/g, '"'));
   for (const [file, needles] of [
-    ["core/commands/cohorte-po.md", ["cohorte ticket create --status validate", "cohorte ticket list --json"]],
-    ["core/commands/cohorte-lead.md", ["cohorte ticket show $ARGUMENTS --json", "cohorte take $ARGUMENTS --no-lead", "cohorte checkpoint $ARGUMENTS approve --detach", "cohorte autopilot $ARGUMENTS --follow", "CP1 APPROVED"]],
+    ["core/commands/cohorte-po.md", ["cohorte ticket create --status validate", "cohorte ticket list --json", "it refuses it from you"]],
+    ["core/commands/cohorte-lead.md", ["cohorte ticket show $ARGUMENTS --json", "cohorte take $ARGUMENTS --no-lead", "cohorte checkpoint $ARGUMENTS approve --detach --note", "cohorte autopilot $ARGUMENTS --follow", "CP1 APPROVED"]],
     ["core/commands/cohorte-spec.md", ["cohorte ticket show <id> --json", "cohorte adopt <id>"]],
-    ["core/commands/cohorte-acceptance.md", ["cohorte accept $ARGUMENTS ok", "cohorte accept $ARGUMENTS not-quite"]],
+    ["core/commands/cohorte-acceptance.md", ["cohorte accept $ARGUMENTS ok", "cohorte accept $ARGUMENTS not-quite", "refuses it from you"]],
     ["core/commands/cohorte-vision.md", ["cohorte new-project --idea", "cohorte new-project --resume"]],
     ["core/commands/cohorte-foundation.md", ["cohorte new-project --stack", "cohorte new-project --resume"]],
   ]) {
     const flat = read(file).replace(/\s+/g, " ");
     for (const n of needles) if (!flat.includes(n)) fail(file, `lost \`${n}\` — the plain-session path of the company flow`);
     if (/You normally run inside `cohorte ui`/.test(flat)) fail(file, "assumes it runs inside cohorte ui — say what to do in a plain session too");
+    // a person's decisions are never run by the skill: CP4, CP0, shipping — the CLI refuses them from a pipe anyway
+    if (/`cohorte (accept|ticket move) [^`]*--json`/.test(flat)) fail(file, "runs a person's decision itself (accept / ticket move) — give the person the command instead");
   }
   for (const f of readdirSync(join(root, "core/commands")).filter((x) => x.endsWith(".md"))) {
     for (const m of read(`core/commands/${f}`).matchAll(/`(cohorte (\S+)[^`]*)`/g)) {
