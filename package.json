@@ -31,7 +31,7 @@
     "build:ui": "node scripts/build-ui.mjs",
     "prepack": "npm run build:ui",
     "pretest": "npm run build:ui",
-    "test": "node scripts/validate-core.mjs && node scripts/test-install.mjs && node scripts/test-gate.mjs && node scripts/test-lib.mjs && node scripts/test-workflows.mjs && node scripts/test-kanban.mjs && node scripts/test-metrics.mjs && node scripts/test-e2e.mjs && node scripts/test-verify.mjs && node scripts/test-ui.mjs && npm --prefix ui test && node scripts/test-flow.mjs"
+    "test": "node scripts/validate-core.mjs && node scripts/test-install.mjs && node scripts/test-gate.mjs && node scripts/test-lib.mjs && node scripts/test-workflows.mjs && node scripts/test-kanban.mjs && node scripts/test-metrics.mjs && node scripts/test-e2e.mjs && node scripts/test-verify.mjs && node scripts/test-ui.mjs && npm --prefix ui test && node scripts/test-flow.mjs && node scripts/test-cli-flow.mjs"
   },
   "engines": {
     "node": ">=20"
