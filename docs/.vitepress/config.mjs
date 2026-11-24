@@ -3,6 +3,8 @@ import { defineConfig } from 'vitepress'
 // Deployed to GitHub Pages at https://thebidouilleagency.github.io/cohorte/
 // by .github/workflows/docs.yml — `base` must match the repo name.
 export default defineConfig({
+  // Design notes are for contributors, read on GitHub — not pages of the site.
+  srcExclude: ['design/**'],
   title: 'Cohorte',
   description:
     'Portable, stack-agnostic multi-agent development pipeline for Claude Code — install it once per machine, run /cohorte-init-pipeline in a repo, and it adapts to that project.',

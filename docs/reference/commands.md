@@ -40,9 +40,9 @@ model — their value is the conversation.
 
 `cohorte ui` runs these itself — see [The company flow](/guide/company-flow). In a plain Claude Code
 session they drive the same state through the CLI verbs below: `/cohorte-po` files the tickets the
-requester confirms, `/cohorte-lead` takes the ticket and starts the autopilot on approval, `/cohorte-spec
-<ticket id>` adopts the spec it froze, `/cohorte-acceptance` gives the requester the command for their verdict, `/cohorte-vision` and
-`/cohorte-foundation` relay `cohorte new-project`.
+requester confirms, `/cohorte-lead` takes the ticket and starts the autopilot on approval, `/cohorte-spec <ticket id>`
+adopts the spec it froze, `/cohorte-acceptance` gives the requester the command for their verdict, and
+`/cohorte-vision` and `/cohorte-foundation` relay `cohorte new-project`.
 
 - **`/cohorte-po [request]`** — a business conversation. Asks about need, value, frequency, scope; never
   code. Reads `PRODUCT.md` and the existing tickets to avoid duplicates. Each ticket it proposes is a
