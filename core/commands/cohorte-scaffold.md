@@ -12,6 +12,15 @@ for that stack, recorded in your final report as an assumption.
 
 ## Rules
 
+- **Tools — nobody should have to click.** Each call that falls outside what is pre-approved stops the
+  run until the developer allows it. What is pre-approved: **Write/Edit** for every file you create or
+  change (configs, tests, compose, CI, README — never `cat > file <<EOF`, `sed -i`, `node -e` or
+  `python3` to write a file), **Read/Grep/Glob** to look at files (never `cat`, `head`, `ls -R`, `grep`
+  through Bash), and Bash for the plan's own commands and git. Every Bash call is **one plain command**:
+  no `&&`, `;`, `|`, `( … )`, `>`/`2>&1` redirect, heredoc or `$(…)` — any of them makes the command
+  need an approval, however harmless. Run a command in a sub-folder with the tool's own directory flag
+  (`pnpm -C apps/api test`, `npm --prefix web run build`, `uv --directory api run pytest`) or one plain
+  `cd <absolute path>` call first — never `cd x && …`. Long output is fine: do not pipe it to `tail`.
 - **Generators first.** Create each surface with its `generate` command, from the project root,
   non-interactively. Never hand-write what a generator produces (configs, the framework's own files).
   A generator that prompts anyway → re-run it with the flags that answer the prompt, or with
@@ -37,6 +46,7 @@ for that stack, recorded in your final report as an assumption.
   (no skipped tests, no disabled lint rules).
 - **Commit** when the checks pass: `git add -A` then `git commit -m "chore: walking skeleton"` (on the
   current branch). Do not push, do not add a remote.
+  Before committing, run `git config user.email`: empty, or a hostname-looking address (`…@<host>.local`/`.lan`, no dot in the domain) ⇒ do not commit; report `status: failed`, naming it in `notes` with the fix `git config user.name "<name>" && git config user.email "<email>"` — never invent or set an identity yourself.
 - Do **not** create `PIPELINE.md`, `CLAUDE.md`, `.claude/` or `specs/`: the pipeline is set up right
   after you, from what you leave.
 

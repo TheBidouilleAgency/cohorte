@@ -2,6 +2,7 @@
 // the CLI, the installer and the tests use them directly — so the dashboard describes only what it uses.
 import fs from 'fs';
 import path from 'path';
+import type { GitHubIdentity, GitIdentity } from '../shared/api';
 
 // The package root, found by walking up: this file runs from ui/server/ (ts) and ui/dist-server/server/ (built).
 function findRoot(from: string): string {
@@ -46,6 +47,17 @@ export interface Doctor {
 export const doctor: Doctor = load('lib/doctor.js');
 export const report: { specRecords(root: string, scan: Doctor['scanSpecs']): unknown[] } = load('bin/report.js');
 export const parseProfileBlock: (text: string) => Record<string, any> | null = load('lib/yaml.js').parseProfileBlock;
+
+export interface IdentityLib {
+  classifyIdentity(id: { name?: string; email?: string }): { status: GitIdentity['status']; reason: string };
+  suspiciousEmail(email: string): string | null;
+  readIdentity(cwd: string): GitIdentity;
+  githubIdentityOf(user: unknown): GitHubIdentity | null;
+  fixCommand(name: string, email: string): string;
+  setIdentity(cwd: string, name: string, email: string): GitIdentity;
+}
+/** The git identity commits in a repo would carry, and whether a code host can link it (shared with `cohorte doctor`). */
+export const identity: IdentityLib = load('lib/identity.js');
 
 /** `cohorte sync` — re-wires a repo from its PIPELINE.md (profile.json, gate, pointer). */
 export const project: { sync(root: string): unknown } = load('lib/project.js');

@@ -6,6 +6,7 @@ backticks, `<(…)`, subshells, comments, heredocs. `strip_prefixes` then drops 
 front of the real command (`VAR=val`, `env`, `sudo`, `nice`, `timeout`, …).
 """
 
+import os
 import re
 
 # ── lexer ────────────────────────────────────────────────────────────────────
@@ -17,7 +18,7 @@ class ParseError(Exception):
 
 
 class Word(object):
-    __slots__ = ("value", "raw", "dynamic", "glob", "quoted", "substs")
+    __slots__ = ("value", "raw", "dynamic", "glob", "quoted", "substs", "split")
 
     def __init__(self, value="", raw=""):
         self.value = value
@@ -26,6 +27,7 @@ class Word(object):
         self.glob = False
         self.quoted = False
         self.substs = []      # inner command lists ($(…), `…`, <(…))
+        self.split = False    # holds an unquoted run-time expansion (field splitting applies)
 
     @property
     def head(self):
@@ -42,7 +44,67 @@ def static_word(v):
 def wildcard_word():
     w = Word(DYN, "$…")
     w.dynamic = True
+    w.split = True
     return w
+
+
+# ── variables the gate resolves itself ────────────────────────────────────────
+# $HOME and $CLAUDE_CONFIG_DIR are the user's own environment, inherited alike by this hook and
+# by the agent's Bash tool: a command can't choose them without assigning them, so the lexer
+# expands them statically (`"$HOME/.claude/…/kanban-move.sh"` is that literal path). A text that
+# names one of them other than as `$NAME`/`${NAME}`/`${NAME-…}`/`${NAME:-…}` — even spelled
+# with quotes or escapes (`HO\ME=…`, `HO""ME=…`) — or that uses any builtin able to assign a
+# variable whose name the gate can't read (`export`, `declare`, `read`, `printf -v`, `eval`,
+# `source`, `let`, …) keeps them all run-time expansions — see `rebound_vars`. A value with
+# blanks, glob characters, quotes or `$` is never resolved (it would split or expand again).
+STATIC_VARS = ("HOME", "CLAUDE_CONFIG_DIR")
+# Also never trusted by self-protection's `known_text` once the command may rebind them.
+KNOWN_VARS = STATIC_VARS + ("CLAUDE_PROJECT_DIR", "PWD")
+REBINDERS_RE = re.compile(
+    r"(?<![A-Za-z0-9_./-])(export|declare|typeset|local|readonly|read|readarray|mapfile|eval|"
+    r"source|let|getopts|unset)(?![A-Za-z0-9_./-])|(?<![A-Za-z0-9_./-])printf\b[^\n;&|]*\s-v"
+    r"|(?:^|[;&|(\n{]|\b(?:then|do|else|command|builtin|exec)\s)\s*\.(?=\s)")
+SAFE_VALUE_RE = re.compile(r"^[^\s*?\[\]$`'\"\\{}]*$")
+
+
+def static_env():
+    """{name: value} for the variables the lexer may expand; value None = known to be unset."""
+    env = {}
+    for name in STATIC_VARS:
+        v = os.environ.get(name)
+        if v is None and name == "HOME":
+            v = os.path.expanduser("~")
+            if v == "~":
+                continue
+        if v is not None:
+            v = v.replace("\\", "/")        # a Windows value would read as shell escapes
+            if not SAFE_VALUE_RE.match(v):
+                continue
+        env[name] = v
+    return env
+
+
+def rebound_vars(text, names):
+    """The names in `names` that `text` may assign: all of them when it uses a builtin that
+    assigns by a computed name (REBINDERS_RE), else those it names other than as a plain
+    expansion — quotes and backslashes removed first, so `HO\\ME=` and `HO""ME=` count."""
+    if REBINDERS_RE.search(text):
+        return set(names)
+    flat = re.sub(r"[\\'\"]", "", text)
+    out = set()
+    for name in names:
+        for m in re.finditer(r"(?<![A-Za-z0-9_])%s(?![A-Za-z0-9_])" % name, flat):
+            before, after = flat[:m.start()], flat[m.end():]
+            if before.endswith("$"):
+                continue
+            if before.endswith("${") and re.match(r"(\}|:?-)", after):
+                continue
+            out.add(name)
+            break
+    return out
+
+
+BRACE_VAR_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)(?:(:?-)(.*))?$", re.S)
 
 
 class Redir(object):
@@ -129,12 +191,13 @@ def ansi_c(s):
 class Lexer(object):
     """Just enough of the POSIX/bash grammar to find every simple command and its words."""
 
-    def __init__(self, src):
+    def __init__(self, src, env=None):
         self.s = src
         self.n = len(src)
         self.i = 0
         self.pending = []      # heredocs waiting for the end of the line
         self.depth = 0         # $( … ) nesting, for `EOF)` heredoc ends
+        self.env = env or {}   # variables expanded statically (static_env)
 
     def peek(self, k=0):
         j = self.i + k
@@ -153,6 +216,7 @@ class Lexer(object):
     def parse_list(self, closer, subshell):
         segs = []
         seg = Seg(self.s, self.i, subshell)
+        cases = []      # one entry per open `case … in`: True while a pattern is expected
         while True:
             if self.i >= self.n:
                 if closer:
@@ -175,6 +239,35 @@ class Lexer(object):
                 self._push(segs, seg, "\n")
                 self._read_heredocs()
                 seg = Seg(self.s, self.i, subshell)
+                continue
+            if cases and cases[-1] and not seg.words and not seg.redirs:
+                # a `case` clause: `pat | pat )` — or the `esac` that closes it
+                if re.match(r"esac(?=[\s;&|)]|$)", self.s[self.i:]):
+                    cases.pop()
+                    seg.words.append(self.read_word())
+                    continue
+                else:
+                    marker = self._case_pattern(seg)
+                    if marker is not None:
+                        segs.append(marker)
+                    cases[-1] = False
+                    seg = Seg(self.s, self.i, subshell)
+                    continue
+            if c == ";" and cases and not cases[-1] and self.peek(1) in (";", "&"):
+                # `;;`, `;&`, `;;&` end a case clause: a pattern comes next
+                self._push(segs, seg, ";")
+                self.i += 2
+                if self.peek() == "&":
+                    self.i += 1
+                cases[-1] = True
+                seg = Seg(self.s, self.i, subshell)
+                continue
+            if c in "()|&<>" and self._in_test(seg):
+                # inside `[[ … ]]` these are operators of the test, not shell syntax
+                start = self.i
+                while self.i < self.n and self.s[self.i] in "()|&<>":
+                    self.i += 1
+                seg.words.append(static_word(self.s[start:self.i]))
                 continue
             if c == ";":
                 self.i += 1
@@ -222,6 +315,10 @@ class Lexer(object):
                 self._redir(seg, None)
                 continue
             if c == "(":
+                if seg.words and not seg.redirs and self._only_reserved(seg.words):
+                    # `do (…)`, `then (…)`, `! (…)`: a subshell after a reserved word
+                    self._push(segs, seg, None)
+                    seg = Seg(self.s, self.i, subshell)
                 if not seg.words and not seg.redirs:
                     self.i += 1
                     if self.peek() == "(":          # (( arithmetic ))
@@ -232,7 +329,9 @@ class Lexer(object):
                     segs.extend(inner)
                     seg = Seg(self.s, self.i, subshell)
                     continue
-                if self.peek(1) == ")" and len(seg.words) == 1:
+                fwords = seg.words[1:] if (seg.words and not seg.words[0].quoted
+                                           and seg.words[0].value == "function") else seg.words
+                if self.peek(1) == ")" and len(fwords) == 1:
                     self.i += 2
                     seg.funcdef = True
                     continue
@@ -248,6 +347,70 @@ class Lexer(object):
                 self._redir(seg, w.raw)
                 continue
             seg.words.append(w)
+            head = self._command_words(seg.words)
+            if cases and not cases[-1] and len(head) == 1 and not w.quoted and w.value == "esac":
+                cases.pop()
+            elif (len(head) == 3 and not head[0].quoted and head[0].value == "case"
+                  and not head[2].quoted and head[2].value == "in"):
+                # `case WORD in`: the header is its own (ignored) segment; clauses follow
+                self._push(segs, seg, ";")
+                cases.append(True)
+                seg = Seg(self.s, self.i, subshell)
+
+    @staticmethod
+    def _command_words(words):
+        k = 0
+        while k < len(words) and not words[k].quoted and words[k].value in RESERVED_SKIP:
+            k += 1
+        return words[k:]
+
+    @staticmethod
+    def _only_reserved(words):
+        return all(not w.quoted and w.value in RESERVED_SKIP for w in words)
+
+    def _in_test(self, seg):
+        """Inside `[[ … ]]` (its closing `]]` not read yet)."""
+        head = self._command_words(seg.words)
+        if not head or head[0].quoted or head[0].value != "[[":
+            return False
+        return not any(not w.quoted and w.value == "]]" for w in head[1:])
+
+    def _case_pattern(self, seg):
+        """Read one `case` clause pattern up to and including its `)`. Returns a segment
+        holding the pattern words when they run command substitutions (it starts with the
+        reserved word `in`, so it is walked for those and never judged as a command)."""
+        words = []
+        if self.peek() == "(":
+            self.i += 1
+        while True:
+            while self.peek() in (" ", "\t", "\r", "\n") and self.i < self.n:
+                self.i += 1
+            if self.peek() == "\\" and self.peek(1) == "\n":
+                self.i += 2
+                continue
+            c = self.peek()
+            if not c:
+                raise ParseError("unterminated `case` pattern")
+            if c == ")":
+                self.i += 1
+                break
+            if c == "|":
+                self.i += 1
+                continue
+            if c in ";&<>(":
+                raise ParseError("unexpected `%s` in a `case` pattern" % c)
+            start = self.i
+            w = self.read_word()
+            if self.i == start:
+                raise ParseError("unexpected `%s` in a `case` pattern" % c)
+            words.append(w)
+        if not any(w.substs for w in words):
+            return None
+        m = Seg(self.s, seg.start, seg.subshell)
+        m.words = [static_word("in")] + words
+        m.sep = ";"
+        m.end = self.i
+        return m
 
     def _redir(self, seg, fd):
         s, i = self.s, self.i
@@ -284,7 +447,7 @@ class Lexer(object):
                 lines.append(line)
                 self.i = nxt
             body = "\n".join(lines)
-            substs = [] if quoted else expansions_in(body)
+            substs = [] if quoted else expansions_in(body, self.env)
             seg.heredocs.append(Heredoc(body, quoted, substs))
 
     def _skip_arith(self):
@@ -368,7 +531,7 @@ class Lexer(object):
                 self._read_dollar(w, buf, False)
                 continue
             if c == "`":
-                self._read_backtick(w, buf)
+                self._read_backtick(w, buf, False)
                 continue
             if c in "*?[":
                 w.glob = True
@@ -407,7 +570,7 @@ class Lexer(object):
                 self._read_dollar(w, buf, True)
                 continue
             if c == "`":
-                self._read_backtick(w, buf)
+                self._read_backtick(w, buf, bool(term))
                 continue
             buf.append(c)
             self.i += 1
@@ -427,6 +590,7 @@ class Lexer(object):
                 w.substs.append(inner)
             buf.append(DYN)
             w.dynamic = True
+            w.split = w.split or not in_dq
             return
         if nx == "{":
             j = self.i + 2
@@ -451,9 +615,14 @@ class Lexer(object):
                 j += 1
             if j >= self.n:
                 raise ParseError("unterminated ${…}")
+            known = self._static_brace(s[self.i + 2:j])
             self.i = j + 1
+            if known or (known is not None and in_dq):
+                buf.append(known)
+                return
             buf.append(DYN)
             w.dynamic = True
+            w.split = w.split or not in_dq
             return
         if nx == "'" and not in_dq:
             j = self.i + 2
@@ -477,19 +646,47 @@ class Lexer(object):
             else:
                 while j < self.n and (s[j].isalnum() or s[j] == "_"):
                     j += 1
+            name = s[self.i + 1:j]
             self.i = j
+            if self.env.get(name) or (name in self.env and in_dq):
+                # (unquoted and empty, the word may vanish: left a run-time expansion)
+                buf.append(self.env[name] or "")
+                return
             buf.append(DYN)
             w.dynamic = True
+            w.split = w.split or not in_dq
             return
         if nx and nx in "@*#?$!-":
             self.i += 2
             buf.append(DYN)
             w.dynamic = True
+            w.split = w.split or not in_dq
             return
         buf.append("$")
         self.i += 1
 
-    def _read_backtick(self, w, buf):
+    def _static_brace(self, body):
+        """The value of `${NAME}`, `${NAME-word}` or `${NAME:-word}` when NAME is a variable
+        the gate resolves (static_env) and the default word is itself static; else None."""
+        m = BRACE_VAR_RE.match(body)
+        if not m or m.group(1) not in self.env:
+            return None
+        val = self.env[m.group(1)]
+        op = m.group(2)
+        if op is None:
+            return val or ""
+        if (val if op == ":-" else val is not None):
+            return val
+        word = m.group(3)
+        for name in self.env:
+            v = self.env[name] or ""
+            word = word.replace("${%s}" % name, v)
+            word = re.sub(r"\$%s(?![A-Za-z0-9_])" % name, lambda _m: v, word)
+        if not re.match(r"^[A-Za-z0-9_./~@%+,:=-]*$", word):
+            return None
+        return word
+
+    def _read_backtick(self, w, buf, in_dq):
         s = self.s
         j = self.i + 1
         inner = []
@@ -506,16 +703,17 @@ class Lexer(object):
         if j >= self.n:
             raise ParseError("unterminated backtick")
         self.i = j + 1
-        w.substs.append(Lexer("".join(inner)).parse())
+        w.substs.append(Lexer("".join(inner), self.env).parse())
         buf.append(DYN)
         w.dynamic = True
+        w.split = w.split or not in_dq
 
 
-def expansions_in(text):
+def expansions_in(text, env=None):
     """Command substitutions inside an unquoted heredoc body (they run when it expands)."""
     if "$(" not in text and "`" not in text:
         return []
-    lx = Lexer(text)
+    lx = Lexer(text, env)
     w = Word()
     try:
         lx._read_dq(w, [], None)
@@ -524,8 +722,8 @@ def expansions_in(text):
     return w.substs
 
 
-def parse_command(text):
-    return Lexer(text.replace("\x00", "")).parse()
+def parse_command(text, env=None):
+    return Lexer(text.replace("\x00", ""), env).parse()
 
 
 # ── command normalisation ────────────────────────────────────────────────────

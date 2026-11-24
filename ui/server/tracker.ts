@@ -38,9 +38,12 @@ export const isTicketId = (s: unknown): s is string => typeof s === 'string' && 
 // ---------------------------------------------------------------------------------------------------------------
 // Resolution
 
+/** Where a project's tickets live when no board is connected — and, once one is, the backup of what was migrated. */
+export const localDir = (globalDir: string, projectId: string): string => path.join(globalDir, 'cohorte-ui', 'tickets', projectId);
+
 export function trackerOf(globalDir: string, root: string, projectId: string): TrackerInfo {
   const projectName = readProfile(root).name || null;
-  const local = (reason: string): TrackerInfo => ({ kind: 'local', dir: path.join(globalDir, 'cohorte-ui', 'tickets', projectId), board: null, reason, projectName });
+  const local = (reason: string): TrackerInfo => ({ kind: 'local', dir: localDir(globalDir, projectId), board: null, reason, projectName });
   let cfg: any = null;
   try { cfg = yaml.parse(fs.readFileSync(configPath(globalDir), 'utf8')); } catch { return local('no cohorte.config.yaml — connect Obsidian in Settings to keep tickets in your vault'); }
   if (cfg?.enabled === false) return local('cohorte capabilities are disabled in cohorte.config.yaml (enabled: false)');
@@ -236,11 +239,64 @@ export class Tracker {
   }
 }
 
-export function trackerFor(globalDir: string, root: string, projectId: string): Tracker {
+function openTracker(globalDir: string, root: string, projectId: string): Tracker {
   const info = trackerOf(globalDir, root, projectId);
   let vault: string | null = null;
   if (info.kind === 'obsidian') { try { vault = yaml.parse(fs.readFileSync(configPath(globalDir), 'utf8'))?.obsidian?.vault_path || null; } catch { vault = null; } }
   return new Tracker(info, vault);
+}
+
+/**
+ * The project's ticket store. When it is a vault that this machine's local tickets were never migrated to (a
+ * board connected before the migration existed, or by hand in cohorte.config.yaml), they are migrated now —
+ * once: the marker in the local store keeps a ticket deleted from the vault on purpose from coming back.
+ */
+export function trackerFor(globalDir: string, root: string, projectId: string): Tracker {
+  const tr = openTracker(globalDir, root, projectId);
+  if (tr.info.kind === 'obsidian') { try { void migrateLocal(globalDir, projectId, tr).cards; } catch { /* the vault is unwritable: list what is there */ } }
+  return tr;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Local store → vault. Connecting Obsidian switches the store; the tickets already on this machine follow.
+
+const MARKER = '.migrated.json';
+function markers(dir: string): Record<string, string> {
+  try { const m = JSON.parse(fs.readFileSync(path.join(dir, MARKER), 'utf8')); return m && typeof m === 'object' ? m : {}; } catch { return {}; }
+}
+
+/**
+ * Copies the local tickets into the vault store and puts each card in the column of its status. Idempotent: a
+ * ticket the vault already has — same id, or same title and creation date (a note renamed in the vault) — is
+ * left alone, the vault's copy wins. The local notes stay where they are, as a backup. Once done for a vault
+ * store, it is recorded in the local store and not done again for it (see trackerFor).
+ */
+export function migrateLocal(globalDir: string, projectId: string, tr: Tracker): { count: number; cards: Promise<string[]> } {
+  const src = localDir(globalDir, projectId);
+  const none = { count: 0, cards: Promise.resolve([] as string[]) };
+  if (tr.info.kind !== 'obsidian' || path.resolve(src) === path.resolve(tr.info.dir)) return none;
+  const done = markers(src);
+  if (done[path.resolve(tr.info.dir)]) return none;
+  let names: string[] = [];
+  try { names = fs.readdirSync(src).filter((n) => n.endsWith('.md')); } catch { return none; }
+  const there = tr.list();
+  const same = new Set(there.map((t) => `${t.title}\u0000${t.created}`));
+  const moved: Ticket[] = [];
+  for (const n of names) {
+    let text = '';
+    try { text = fs.readFileSync(path.join(src, n), 'utf8'); } catch { continue; }
+    const t = parse(text, n.slice(0, -3));
+    if (!t || tr.get(t.id) || fs.existsSync(path.join(tr.info.dir, `${t.id}.md`)) || same.has(`${t.title}\u0000${t.created}`)) continue;
+    fs.mkdirSync(tr.info.dir, { recursive: true });
+    const f = path.join(tr.info.dir, `${t.id}.md`);
+    fs.writeFileSync(`${f}.${process.pid}.tmp`, text);
+    fs.renameSync(`${f}.${process.pid}.tmp`, f);
+    moved.push(t);
+  }
+  fs.writeFileSync(path.join(src, MARKER), `${JSON.stringify({ ...done, [path.resolve(tr.info.dir)]: today() }, null, 2)}\n`);
+  // board order: oldest first, numbered ids in number order
+  moved.sort((a, b) => a.created.localeCompare(b.created) || a.id.localeCompare(b.id, undefined, { numeric: true }));
+  return { count: moved.length, cards: Promise.all(moved.map((t) => tr.move(t))) };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -312,8 +368,11 @@ export function companyBoard(): string {
   ].join('\n');
 }
 
-/** Points this project at a board in an Obsidian vault: config edited, board created (company layout) if absent. */
-export function connectObsidian(globalDir: string, root: string, body: { vault?: unknown; board?: unknown }): { created: boolean; board: string } {
+/**
+ * Points this project at a board in an Obsidian vault: config edited, board created (company layout) if absent,
+ * and the tickets of the local store migrated into the vault (`migrated` of them; see migrateLocal).
+ */
+export async function connectObsidian(globalDir: string, root: string, projectId: string, body: { vault?: unknown; board?: unknown }): Promise<{ created: boolean; board: string; migrated: number }> {
   const name = readProfile(root).name;
   if (!name) throw new TrackerError('this project has no `name` in its PIPELINE.md profile — run /cohorte-init-pipeline first');
   if (!/^[\w.-]+$/.test(name)) throw new TrackerError(`the project name "${name}" cannot be a config key (letters, digits, . _ - only)`);
@@ -335,5 +394,8 @@ export function connectObsidian(globalDir: string, root: string, body: { vault?:
   let created = false;
   if (!fs.existsSync(board)) { fs.mkdirSync(path.dirname(board), { recursive: true }); fs.writeFileSync(board, companyBoard()); created = true; }
   fs.mkdirSync(path.join(path.dirname(board), 'Tickets'), { recursive: true });
-  return { created, board };
+  const tr = openTracker(globalDir, root, projectId);
+  const m = migrateLocal(globalDir, projectId, tr);
+  await m.cards;
+  return { created, board, migrated: m.count };
 }

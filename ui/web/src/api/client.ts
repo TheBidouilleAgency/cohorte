@@ -1,7 +1,7 @@
 import type {
   ActivityResponse, ApiErrorBody, DiffListResponse, FileDiff, GitResponse, Command, DiscoverResponse, DockerStatus, JobView, MetricsResponse, ProjectDetail,
   ProjectSummary, RunView, SpecDetail, StateResponse, TicketsResponse, Ticket, FeaturesResponse, FeatureDetail, FeatureView, SettingsResponse,
-  ProjectSettings, InboxResponse, LearningResponse, TrackerInfo, FoundingView, NewProjectBody, RemoteInfo,
+  ProjectSettings, InboxResponse, LearningResponse, TrackerInfo, FoundingView, NewProjectBody, RemoteInfo, IdentityInfo, IdentityBody,
 } from '../../../shared/api';
 import { readToken } from '../lib/token';
 
@@ -69,12 +69,14 @@ export const api = {
   contest: (id: string, f: string, d: string, note: string) => post<{ feature: FeatureView }>(`/projects/${id}/features/${f}/decisions/${d}/contest`, { note }),
   settings: (id: string) => request<SettingsResponse>(`/projects/${id}/settings`),
   saveSettings: (id: string, body: Partial<ProjectSettings>) => post<SettingsResponse>(`/projects/${id}/settings`, body),
-  connectObsidian: (id: string, body: { vault: string; board?: string }) => post<{ created: boolean; board: string; tracker: TrackerInfo }>(`/projects/${id}/tracker`, body),
+  connectObsidian: (id: string, body: { vault: string; board?: string }) => post<{ created: boolean; board: string; migrated: number; tracker: TrackerInfo }>(`/projects/${id}/tracker`, body),
   productMap: (id: string) => post<{ run: RunView }>(`/projects/${id}/product-map`),
   newProject: (body: NewProjectBody) => post<{ project: ProjectSummary; founding: FoundingView }>('/founding', body),
   founding: (id: string) => request<FoundingView>(`/projects/${id}/founding`),
   foundingReply: (id: string, text: string) => post<FoundingView>(`/projects/${id}/founding/reply`, { text }),
   foundingCheckpoint: (id: string, body: { action: string; text?: string }) => post<FoundingView>(`/projects/${id}/founding/checkpoint`, body),
+  foundingIdentity: (id: string) => request<IdentityInfo>(`/projects/${id}/founding/identity`),
+  setFoundingIdentity: (id: string, body: IdentityBody) => post<FoundingView>(`/projects/${id}/founding/identity`, body),
   remote: (id: string) => request<RemoteInfo>(`/projects/${id}/remote`),
   connectRemote: (id: string, body: { kind: 'github' | 'url'; name?: string; visibility?: string; url?: string }) => post<{ job: JobView }>(`/projects/${id}/remote`, body),
   learning: (id: string) => request<LearningResponse>(`/projects/${id}/learning`),

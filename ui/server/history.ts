@@ -72,7 +72,7 @@ export class RunStore {
             disallowedTools: Array.isArray(v.disallowedTools) ? v.disallowedTools.filter((t: unknown) => typeof t === 'string') : [],
             allowedTools: Array.isArray(v.allowedTools) ? v.allowedTools.filter((t: unknown) => typeof t === 'string') : [],
             addDirs: Array.isArray(v.addDirs) ? v.addDirs.filter((t: unknown) => typeof t === 'string') : [],
-            seen: typeof v.seen === 'number' ? v.seen : 0, tickets: v.tickets && typeof v.tickets === 'object' ? v.tickets : {},
+            seen: typeof v.seen === 'number' ? v.seen : 0, tickets: v.tickets && typeof v.tickets === 'object' ? v.tickets : {}, tasks: new Map(), awaitingTurn: false,
             strictMcp: v.strictMcp === true, mcpConfig: typeof v.mcpConfig === 'string' ? v.mcpConfig : null });
         } catch { /* a corrupt file is skipped */ }
       }

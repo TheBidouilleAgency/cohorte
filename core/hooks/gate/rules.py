@@ -14,10 +14,17 @@ from .findings import short
 
 
 class RuleChecks(object):
+    def branch_at(self, state):
+        """The branch checked out at state.cwd: the one an earlier `git switch -c` of this
+        chain created there, else HEAD on disk (None when detached / not a repo)."""
+        if state.branch is not None and state.branch[0] == state.cwd:
+            return state.branch[1]
+        return self.ctx.current_branch(state.cwd)
+
     def branch_gated(self, state, here_unknown):
         if here_unknown or state.sticky or not state.cwd_known:
             return True
-        b = self.ctx.current_branch(state.cwd)
+        b = self.branch_at(state)
         return b is None or self.ctx.is_default(b)
 
     # -- git push --------------------------------------------------------------
@@ -27,10 +34,15 @@ class RuleChecks(object):
             return set(), True
         cwd = state.cwd
         names = set()
-        cur = self.ctx.current_branch(cwd)
+        cur = self.branch_at(state)
         if cur is None:
             return set(), True
         names.add(cur)
+        if state.branch is not None and state.branch[0] == cwd:
+            # created earlier in this chain: git keeps any branch.<name>.merge already in the
+            # config, and a start point / --track may set one — where a bare push lands is not
+            # known until it exists
+            return names, True
         for spec in ("@{push}", "@{upstream}"):
             r = run_git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", spec], cwd)
             if r and r[0] == 0 and "/" in r[1].strip():
@@ -46,6 +58,11 @@ class RuleChecks(object):
                     return names, True
         return names, all_ and "ALL"
 
+    def fresh_upstream(self, name, state):
+        """Whether the config already holds an upstream for a branch this chain creates."""
+        r = run_git(["config", "--get", "branch.%s.merge" % name], state.cwd)
+        return r is None or (r[0] == 0 and bool(r[1].strip()))
+
     def eval_push(self, inv, state, here_unknown):
         pi = analyze_push_args(inv.git.args)
         inv.push = pi
@@ -60,7 +77,7 @@ class RuleChecks(object):
                 continue
             if r.dynamic:
                 if BRANCH_SUBST_RE.match(r.raw) and not here_unknown:
-                    cur = self.ctx.current_branch(state.cwd)
+                    cur = self.branch_at(state)
                     if cur:
                         dests.add(cur)
                         continue
@@ -87,7 +104,11 @@ class RuleChecks(object):
             if n is None:
                 continue
             dests.add(n)
-            if ":" not in v and not here_unknown and n == src:
+            fresh = (state.branch is not None and state.branch[0] == state.cwd
+                     and state.branch[1] == src)
+            if fresh and ":" not in v and (state.branch[2] or self.fresh_upstream(src, state)):
+                unknown = True     # just created, but it may already track something
+            elif ":" not in v and not here_unknown and n == src and not fresh:
                 rr = run_git(["rev-parse", "--abbrev-ref", "--symbolic-full-name",
                               src + "@{upstream}"], state.cwd)
                 if rr and rr[0] == 0 and "/" in rr[1].strip():

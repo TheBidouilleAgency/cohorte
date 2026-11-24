@@ -904,6 +904,184 @@ console.log("gate.py — cross-worktree stamps");
   }
 }
 
+// ── unattended false positives (bypassPermissions: every ask is a deny) ──────
+// A real project's pipeline workflows broke on these: each was an "ask" the gate could have
+// judged statically, turned into a hard deny with nobody to answer it.
+console.log("gate.py — unattended false positives");
+{
+  const CFG = {
+    default_branch: "main",
+    deny: ["node ace migration:fresh", "rm -rf", "git push --force"],
+    ask: ["psql"],
+    ask_on_default_branch: ["git commit", "git push", "docker compose"],
+  };
+  const unattended = (title, cwd, rows, env = {}) => {
+    for (const [cmd, want] of rows) {
+      const r = run(bash(cmd, cwd, { permission_mode: "bypassPermissions" }), { projectDir: cwd, env });
+      check(`${title}: ${JSON.stringify(cmd).slice(0, 90)} ⇒ ${want}`, r.decision === want,
+        `got ${r.decision}: ${r.reason || r.stderr}`);
+    }
+  };
+  const main = scratch({ config: CFG }); gitRepo(main, "main");
+  const cfgDir = sh(join(main, "cfg"));
+
+  // 1. $HOME / ${HOME} / ~ / $CLAUDE_CONFIG_DIR are resolved from the hook's own environment.
+  // (spawnSync drops `undefined` env values: CLAUDE_CONFIG_DIR is unset unless a row sets it.)
+  for (const [cmd, env, want] of [
+    ['"$HOME/.claude/cohorte/pipeline/scripts/kanban-move.sh" auto x ready', {}, "allow"],
+    ["$HOME/.claude/cohorte/pipeline/scripts/kanban-move.sh auto x ready", {}, "allow"],
+    ['node "$HOME/.claude/cohorte/lib/project.js" sync .', {}, "allow"],
+    ['"${HOME}/.claude/cohorte/x.sh" a', {}, "allow"],
+    ["~/.claude/cohorte/x.sh a", {}, "allow"],
+    ['"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/cohorte/x.sh" a', {}, "allow"],
+    ['node "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/cohorte/lib/project.js" sync .', {}, "allow"],
+    ['"$CLAUDE_CONFIG_DIR/cohorte/x.sh" a', { CLAUDE_CONFIG_DIR: cfgDir }, "allow"],
+    ['node "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/x.js" migration:fresh', { CLAUDE_CONFIG_DIR: cfgDir }, "allow"],
+    // still caught: a resolved path is checked like the literal one…
+    ['echo {} > "$HOME/.claude/settings.json"', {}, "deny"],
+    ['rm -rf "$HOME/.claude/cohorte"', {}, "deny"],
+    // …a reassigned variable is not the hook's value…
+    ['HOME=/tmp; node "$HOME" migration:fresh', {}, "deny"],
+    ['export HOME=/tmp && node "$HOME" migration:fresh', {}, "deny"],
+    ["sh -c 'HOME=/x; $HOME migration:fresh'", {}, "deny"],
+    // …nor when the reassignment is spelled around the literal name, or made by a builtin
+    // that assigns a computed name…
+    ["export HO\\ME='git push --force origin main'; $HOME", {}, "deny"],
+    ["declare HO\"\"ME='git push -f origin main'; $HOME", {}, "deny"],
+    ["printf -v HO\\ME 'rm -rf src'; $HOME", {}, "deny"],
+    ["export HO\\ME='git reset --hard HEAD~5'; $HOME", {}, "deny"],
+    ["eval 'export HO''ME=x'; node \"$HOME\" migration:fresh", {}, "deny"],
+    ["read -r HOME <<< ace; node \"$HOME\" migration:fresh", {}, "deny"],
+    [": ${CLAUDE_CONFIG_DIR:=ace}; node \"$CLAUDE_CONFIG_DIR\" migration:fresh", {}, "deny"],
+    ["$HOME", {}, "deny"],                                      // never resolved as a command name
+    ['"${HOME}" migration:fresh', {}, "deny"],
+    // …self-protection doesn't substitute the real home after a reassignment…
+    ['HOME=.; echo x > "$HOME/.claude/gate-config.json"', {}, "deny"],
+    ['export X=1; echo x > "$HOME/.claude/settings.json"', {}, "deny"],
+    // …and an unset variable that vanishes unquoted keeps the command name unknown.
+    ["node $CLAUDE_CONFIG_DIR ace migration:fresh", {}, "deny"],
+  ]) {
+    const r = run(bash(cmd, main, { permission_mode: "bypassPermissions" }),
+      { projectDir: main, env: { CLAUDE_CONFIG_DIR: undefined, ...env } });
+    check(`env vars: ${JSON.stringify(cmd).slice(0, 80)} ⇒ ${want}`, r.decision === want,
+      `got ${r.decision}: ${r.reason || r.stderr}`);
+  }
+
+  // 2. A path-looking run-time word can't be a plain literal word of a deny rule.
+  unattended("run-time paths", main, [
+    ['node "$S/smoke-t1.mjs"', "allow"],
+    ['node "$TMPDIR/cov.mjs"', "allow"],
+    ['node "$TMPDIR"/cov.mjs', "allow"],
+    // …but an unquoted expansion still field-splits: it can be any words
+    ["node $TMPDIR/cov.mjs", "deny"],
+    ['X="-rf /tmp/zz"; rm $X/y', "deny"],
+    ['X="migration:fresh ."; node ace $X/y', "deny"],
+    ['node "$S/x.mjs" migration:fresh', "allow"],
+    ['"$S/smoke.sh" --fast', "allow"],                  // only the directory is computed
+    ["rm -f $TMPDIR/cov.json", "allow"],
+    ["node $X migration:fresh", "deny"],               // true positives stay
+    ['node "$X" migration:fresh', "deny"],
+    ['node ace "$m:fresh"', "deny"],
+    ['m=migration; node ace "$m:fresh"', "deny"],
+    ["node ace $X", "deny"],
+    ["$X ace migration:fresh", "deny"],
+    ['"$S/rm" -rf build', "deny"],                     // a static basename is judged by name
+    ['"$S"/git push --force origin main', "deny"],
+    ["rm $X", "deny"],
+  ]);
+
+  // 3. After `git switch -c <name>` / `git checkout -b <name>` the chain is on <name>.
+  unattended("fresh feature branch", main, [
+    ["git switch -c feature/x && git commit -m x", "allow"],
+    ["git checkout -b feature/x && docker compose up -d", "allow"],
+    ["git checkout -qb feature/x && git commit -m x", "allow"],
+    ["git switch --create=feature/x && git commit -m x", "allow"],
+    ["git switch -c feature/x && git add -A && git commit -m x && git push -u origin feature/x", "allow"],
+    ["git switch -c feature/x && git push origin HEAD:feature/x", "allow"],
+    ["git switch -c feature/x && git push", "deny"],                // a kept branch.<name>.merge may say main
+    ["git switch -c feature/x && git push origin", "deny"],
+    ["git switch -c feature/x && git push origin HEAD", "deny"],
+    ["git switch -c feature/x origin/main && git push", "deny"],    // may track main
+    ["git switch -c feature/x origin/main && git push origin feature/x", "deny"],
+    ["git switch -c feature/x; git commit -m x", "deny"],           // a failed switch stays on main
+    ["false || git switch -c feature/x && git commit -m x", "deny"],
+    ["git switch -c main && git commit -m x", "deny"],
+    ["git switch -c feature/x && git switch main && git commit -m x", "deny"],
+    ['git switch -c "$B" && git commit -m x', "deny"],
+    ["git -C . switch -c feature/x && git commit -m x", "deny"],
+    [`git switch -c feature/x && cd ${sh(tmpdir())} && git commit -m x`, "deny"],
+    ["git switch -c feature/x && git push origin HEAD:main", "deny"],
+    ["git switch -c feature/x && git push --force origin main", "deny"],
+    ["(git switch -c feature/x) && git commit -m x", "deny"],
+  ]);
+
+  // git keeps a branch.<name>.merge left in the config: the "new" branch already tracks main.
+  const kept = scratch({ config: CFG }); gitRepo(kept, "main");
+  git(kept, "config", "branch.z.merge", "refs/heads/main");
+  git(kept, "config", "branch.z.remote", "origin");
+  git(kept, "config", "push.default", "upstream");
+  unattended("fresh branch with a kept upstream", kept, [
+    ["git switch -c z && git push", "deny"],
+    ["git switch -c z && git push origin", "deny"],
+    ["git switch -c z && git push origin z", "deny"],
+    ["git switch -c z && git push origin HEAD:z", "allow"],              // explicit, non-default
+    ["git switch -c y && git push origin y", "allow"],                   // no upstream kept for y
+  ]);
+
+  // 4. Read-only git queries on protected paths are not self-protection hits.
+  unattended("read-only git on protected files", main, [
+    ["git check-ignore .claude/settings.json", "allow"],
+    ["git check-ignore -q .claude/settings.local.json && echo ignored || echo tracked", "allow"],
+    ["git check-ignore -v .claude/gate-config.json .claude/preflight.ok .claude/hooks/cohorte-gate.py", "allow"],
+    ["git check-ignore ~/.claude/settings.json", "allow"],
+    ['git check-ignore "$HOME/.claude/settings.json"', "allow"],
+    ["git ls-files --error-unmatch .claude/settings.json", "allow"],
+    ["git diff -- .claude/gate-config.json", "allow"],
+    ["git log --oneline -- .claude/profile.json", "allow"],
+    ["git show HEAD:.claude/settings.json > /dev/null", "allow"],
+    ["git rm .claude/gate-config.json", "deny"],                   // writes still are
+    ["git mv .claude/settings.json x.json", "deny"],
+  ]);
+
+  // 5. Shell syntax the lexer used to reject ("unexpected `)`").
+  unattended("parser", main, [
+    ["(cd apps/api && pnpm test) 2>&1 | tail -5", "allow"],
+    ["x=$(date +%s); echo $x", "allow"],
+    ["case $x in a) echo a;; b|c) echo b;; *) echo z;; esac", "allow"],
+    ["case \"$f\" in (*.ts) echo ts ;& *.js) echo js ;;& *) ;; esac", "allow"],
+    ['x=$(case "$y" in *.ts) echo ts;; *) echo o;; esac); echo $x', "allow"],
+    ["case $a in x) case $b in y) echo;; esac;; esac", "allow"],
+    ["for f in a b; do (echo $f); done", "allow"],
+    ["if (true); then echo y; fi", "allow"],
+    ["[[ $x =~ ^(a|b)$ ]] && echo y", "allow"],
+    ["[[ -f a && ( -d b || -L c ) ]] && echo y", "allow"],
+    ["function f() { echo y; }; f", "allow"],
+    ["case $x in a) rm -rf y;; esac", "deny"],                      // what they hide is still judged
+    ["case $x in $(rm -rf y)) echo;; esac", "deny"],
+    ["case x in a) echo a; esac; rm -rf y", "deny"],
+    ["case x in a) git push --force origin main;; esac", "deny"],
+    ["for f in a; do (rm -rf $f); done", "deny"],
+    ["[[ -n x ]] && rm -rf y", "deny"],
+    ["function f() { rm -rf y; }; f", "deny"],
+    ["function f { rm -rf src; }; f", "deny"],
+  ]);
+
+  // The unattended deny says how a human lets it through.
+  const r = run(bash("psql", main, { permission_mode: "bypassPermissions" }), { projectDir: main });
+  check("unattended deny of a config rule names the ways to allow it",
+    r.decision === "deny" && /`default` or `acceptEdits`/.test(r.reason || "")
+      && /gate-config\.json/.test(r.reason || "") && /cohorte-update-pipeline/.test(r.reason || "")
+      && /no allow list/.test(r.reason || ""), r.reason);
+  const r2 = run(bash("git commit -m x", main, { permission_mode: "dontAsk" }), { projectDir: main });
+  check("unattended deny on the default branch suggests a feature branch",
+    r2.decision === "deny" && /feature branch/.test(r2.reason || "") && /`dontAsk`/.test(r2.reason || ""), r2.reason);
+  const r3 = run(bash("node $X migration:fresh", main, { permission_mode: "bypassPermissions" }), { projectDir: main });
+  check("unattended deny of a run-time word suggests literal arguments",
+    r3.decision === "deny" && /literal paths and arguments/.test(r3.reason || ""), r3.reason);
+  const r4 = run(bash("psql", main, { permission_mode: "default" }), { projectDir: main });
+  check("…and an attended session still just asks", r4.decision === "ask" && !/denied outright/.test(r4.reason || ""), r4.reason);
+}
+
 // gate.py is BUILT from core/hooks/gate/*.py (scripts/build-gate.mjs; validate-core checks the
 // committed file is exactly the build). Once concatenated every module shares one namespace, so
 // a missing or stale `from .x import` line breaks nothing at run time — and a name defined in

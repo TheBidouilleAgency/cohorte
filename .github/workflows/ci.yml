@@ -101,6 +101,9 @@ jobs:
       - name: Dashboard (registry, local HTTP security)
         run: node scripts/test-ui.mjs
 
+      - name: Dashboard unit tests (vitest)
+        run: npm --prefix ui test
+
       - name: Company flow (PO → CP0 → lead → CP1 → autopilot + decider → CP3 → PR → acceptance)
         run: node scripts/test-flow.mjs
 

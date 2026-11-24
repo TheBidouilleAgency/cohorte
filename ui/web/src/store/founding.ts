@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { FoundingView, NewProjectBody, RemoteInfo } from '../../../shared/api';
+import type { FoundingView, IdentityBody, IdentityInfo, NewProjectBody, RemoteInfo } from '../../../shared/api';
 import { api, errorMessage } from '../api/client';
 import { onProjectChange, selectProject, useApp } from './app';
 import { openChat, pollChat, useFlow } from './flow';
@@ -11,9 +11,11 @@ interface FoundingState {
   form: null | { mode: NewProjectBody['mode']; path?: string };
   view: FoundingView | null;
   remote: RemoteInfo | null; remoteFor: string | null; remoteBusy: boolean;
+  /** The git identity commits would carry, and the GitHub one to propose — fetched when the view says it is not usable. */
+  identity: IdentityInfo | null; identityFor: string | null;
 }
-export const useFounding = create<FoundingState>(() => ({ form: null, view: null, remote: null, remoteFor: null, remoteBusy: false }));
-onProjectChange(() => useFounding.setState({ view: null, remote: null, remoteFor: null }));
+export const useFounding = create<FoundingState>(() => ({ form: null, view: null, remote: null, remoteFor: null, remoteBusy: false, identity: null, identityFor: null }));
+onProjectChange(() => useFounding.setState({ view: null, remote: null, remoteFor: null, identity: null, identityFor: null }));
 
 const sel = (): string | null => useApp.getState().sel;
 const guard = (fn: () => Promise<void>) => useApp.getState().guard(fn);
@@ -71,4 +73,14 @@ export const connectRemote = (body: { kind: 'github' | 'url'; name?: string; vis
   const id = sel(); if (!id) return;
   const r = await api.connectRemote(id, body);
   useJobs.getState().watch(r.job);
+});
+
+export async function loadIdentity(): Promise<void> {
+  const id = sel(); if (!id) return;
+  try { const r = await api.foundingIdentity(id); if (sel() === id) useFounding.setState({ identity: r, identityFor: id }); } catch (e) { useApp.getState().setError(errorMessage(e)); }
+}
+export const setIdentity = (body: IdentityBody) => guard(async () => {
+  const id = sel(); if (!id) return;
+  useFounding.setState({ view: await api.setFoundingIdentity(id, body) });
+  await loadIdentity();
 });

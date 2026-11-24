@@ -14,9 +14,16 @@
 //   stdin  ← {"type":"control_response","response":{"subtype":"success","request_id":…,
 //              "response":{"behavior":"allow","updatedInput":…}}}      or {"behavior":"deny","message":…}
 //
-// Our stdin is also the CLI's EOF signal. It is closed only once the turn's `result` is in, nothing is
-// parked on a human, and the stream has been quiet for a moment (a background subagent's asks would
-// otherwise be thrown away at the source with "Stream closed").
+// Our stdin is also the CLI's EOF signal — and the permission channel: once it is closed, every later ask fails
+// at the source with "Tool permission request failed: AbortError: Stream closed". So it is closed only once the
+// turn's `result` is in, nothing is parked on a human, no background task the run launched is still out, and the
+// stream has been quiet for a moment. A lead that dispatches subagents in the background (`Agent`, "Async agent
+// launched successfully", or `Bash` with run_in_background) ends its turn at once; its subagents keep working and
+// asking, and each completion wakes the lead for another turn with its own `result`. The CLI reports them as
+//   {"type":"system","subtype":"task_started","task_id":…,"tool_use_id":…,"is_backgrounded":…}
+//   {"type":"system","subtype":"task_notification","task_id":…,"tool_use_id":…,"status":"completed"|"failed"|"stopped"}
+// A subagent's own messages carry `parent_tool_use_id` (the lead's Agent call): they are tagged `sub` and never
+// parsed as the lead's words (its HANDOFF / REVIEW REPORT is not the lead's ticket or plan).
 
 import path from 'path';
 import crypto from 'crypto';
@@ -27,6 +34,14 @@ import type { DecisionAdvice, PendingItem, PendingQuestion, RunEvent, RunMeta, R
 
 const MAX_EVENTS = 3000;
 const QUIET_AFTER_RESULT_MS = 2000;
+/** Total silence after which input is closed even with background tasks still out — a run never hangs forever. */
+const STALL_MS = 30 * 60_000;
+/** The lead's own text is parsed for fenced blocks (a vision's eleven tickets run past 30k): never clipped short. */
+const MAX_TEXT = 200_000;
+const SUB_TEXT = 8000;
+/** A tool_result that means the tool's work goes on in the background, past the tool call. */
+const BACKGROUNDED = /Async agent launched successfully|running in background with ID|moved to the background/;
+const ASYNC_AGENT = /Async agent launched successfully/;
 export const MODES = ['default', 'acceptEdits', 'plan']; // never bypassPermissions: the gate's asks would turn into denials
 const DENY_MESSAGE = 'cohorte ui: the user denied this tool call.';
 
@@ -61,6 +76,11 @@ export interface Run {
   strictMcp: boolean; mcpConfig: string | null;
   /** The flow's bookkeeping, persisted with the run: how far its events were processed, the draft tickets it created. */
   seen: number; tickets: Record<string, string>;
+  /** Tasks (subagents, shells) this process launched and has not seen finish, by task id: the tool call that launched it,
+   *  whether it outlives that call, and whether it is an agent — only agents hold the input open (they are what asks). */
+  tasks: Map<string, { tool: string | null; bg: boolean; agent: boolean }>;
+  /** A lead-level task finished after the last `result`: the CLI wakes the lead for another turn — keep input open for it. */
+  awaitingTurn: boolean;
 }
 export interface RunStartOpts {
   projectId: string; cwd: string; command: string; permissionMode?: unknown;
@@ -87,8 +107,12 @@ export class Runs {
   onChange: (run: Run) => void = () => {};
   store: RunStore | null;
   hooks: RunHooks = {};
-  constructor({ bin, store }: { bin?: string; store?: RunStore } = {}) {
+  quietMs: number;
+  stallMs: number;
+  constructor({ bin, store, quietMs, stallMs }: { bin?: string; store?: RunStore; quietMs?: number; stallMs?: number } = {}) {
     this.bin = bin || process.env.COHORTE_CLAUDE_BIN || 'claude';
+    this.quietMs = quietMs ?? QUIET_AFTER_RESULT_MS;
+    this.stallMs = stallMs ?? STALL_MS;
     this.store = store || null;
     for (const r of this.store?.loadAll() || []) this.runs.set(r.id, r);
   }
@@ -104,7 +128,7 @@ export class Runs {
       meta: opts.meta || { role: 'command' }, model, disallowedTools: (opts.disallowedTools || []).filter((t) => /^[A-Za-z][\w:-]{0,60}$/.test(t)),
       allowedTools: (opts.allowedTools || []).filter((t) => ALLOWED_RULE.test(t)),
       addDirs: (opts.addDirs || []).filter((d) => typeof d === 'string' && path.isAbsolute(d)),
-      seen: 0, tickets: {}, strictMcp: opts.strictMcp === true, mcpConfig: typeof opts.mcpConfig === 'string' ? opts.mcpConfig : null,
+      seen: 0, tickets: {}, tasks: new Map(), awaitingTurn: false, strictMcp: opts.strictMcp === true, mcpConfig: typeof opts.mcpConfig === 'string' ? opts.mcpConfig : null,
     };
     this.#spawn(run, null);
     this.runs.set(run.id, run);
@@ -124,6 +148,7 @@ export class Runs {
     if (run.strictMcp) args.push('--strict-mcp-config');
     if (run.mcpConfig) args.push('--mcp-config', run.mcpConfig);
     if (resumeId) args.push('--resume', resumeId);
+    run.tasks.clear(); run.awaitingTurn = false; // a new process: the old one's background tasks went with it
     const child = spawn(this.bin, args, { cwd: run.cwd, detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'], env: process.env });
     run.child = child;
     child.stdin?.on('error', () => { /* the child went away first */ });
@@ -180,27 +205,65 @@ export class Runs {
     try { v = JSON.parse(line); } catch { this.#push(run, { kind: 'stderr', text: clip(line, 500) }); return; }
     if (run.closeTimer) clearTimeout(run.closeTimer);
     if (v.session_id && !run.sessionId) run.sessionId = v.session_id;
+    // Set on a subagent's messages (the lead's Agent call id); null on the lead's own.
+    const sub = typeof v.parent_tool_use_id === 'string' && v.parent_tool_use_id ? { sub: true as const } : {};
 
     if (v.type === 'assistant' && v.message && Array.isArray(v.message.content)) {
       for (const b of v.message.content as any[]) {
-        if (b.type === 'text' && b.text && b.text.trim()) this.#push(run, { kind: 'text', text: clip(b.text, 8000) });
-        else if (b.type === 'tool_use') this.#push(run, { kind: 'tool', id: b.id, name: b.name, summary: summarize(b.name, b.input) });
+        if (b.type === 'text' && b.text && b.text.trim()) this.#push(run, { kind: 'text', text: clip(b.text, sub.sub ? SUB_TEXT : MAX_TEXT), ...sub });
+        else if (b.type === 'tool_use') this.#push(run, { kind: 'tool', id: b.id, name: b.name, summary: summarize(b.name, b.input), ...sub });
       }
     } else if (v.type === 'user' && v.message && Array.isArray(v.message.content)) {
       for (const b of v.message.content) {
         if (b.type !== 'tool_result') continue;
-        const text = Array.isArray(b.content) ? b.content.map((c: any) => c.text || '').join('\n') : b.content;
-        this.#push(run, { kind: 'tool_result', id: b.tool_use_id, error: b.is_error === true, text: clip(text, 1500) });
+        const text = Array.isArray(b.content) ? b.content.map((c: any) => c.text || '').join('\n') : String(b.content ?? '');
+        if (BACKGROUNDED.test(text)) this.#backgrounded(run, b.tool_use_id, ASYNC_AGENT.test(text));
+        else this.#settled(run, null, b.tool_use_id, true); // a task that ran in the foreground ended with its tool call
+        this.#push(run, { kind: 'tool_result', id: b.tool_use_id, error: b.is_error === true, text: clip(text, 1500), ...sub });
       }
+    } else if (v.type === 'system' && v.subtype === 'task_started' && typeof v.task_id === 'string') {
+      const tool = typeof v.tool_use_id === 'string' ? v.tool_use_id : null;
+      let bg = v.is_backgrounded === true;
+      for (const [k, t] of run.tasks) if (k.startsWith('tool:') && t.tool === tool) { bg = true; run.tasks.delete(k); } // the tool_result came first
+      // `local_agent`, `remote_agent`… hold the run; a shell (`local_bash`) does not. No task_type at all: assume an agent.
+      const agent = typeof v.subagent_type === 'string' || typeof v.task_type !== 'string' || /agent/i.test(v.task_type);
+      run.tasks.set(v.task_id, { tool, bg, agent });
+    } else if (v.type === 'system' && v.subtype === 'task_notification') {
+      const tool = typeof v.tool_use_id === 'string' && v.tool_use_id ? v.tool_use_id : null;
+      let had = this.#settled(run, typeof v.task_id === 'string' ? v.task_id : null, tool, false);
+      // A completion that names no tool call cannot be matched to a placeholder: it settles the oldest one, so N
+      // launches and N completions always balance and a placeholder never pins the run until the stall timeout.
+      if (!had && !tool) for (const k of run.tasks.keys()) if (k.startsWith('tool:')) { run.tasks.delete(k); had = true; break; }
+      // The notification is queued to whoever launched the task: the lead's own wakes it for another turn, which
+      // may take a while to show (the model thinks first). A subagent's own (owned_by_subagent) wakes the subagent.
+      if (had && v.owned_by_subagent !== true && v.ambient !== true) run.awaitingTurn = true;
     } else if (v.type === 'control_request') {
       this.#control(run, v);
     } else if (v.type === 'result') {
       run.result = { ok: !v.is_error && v.subtype !== 'error_during_execution', text: clip(v.result, 4000), costUsd: v.total_cost_usd ?? null,
         durationMs: v.duration_ms ?? null, turns: v.num_turns ?? null };
+      run.awaitingTurn = false;
       this.#push(run, { kind: 'result', ...run.result });
       this.store?.schedule(run, true);
     }
     this.#maybeClose(run);
+  }
+
+  /** A tool call returned while its work goes on (an async agent, a background shell): tracked until its task_notification. */
+  #backgrounded(run: Run, tool: string, agent: boolean): void {
+    let known = false;
+    for (const t of run.tasks.values()) if (t.tool === tool) { t.bg = true; known = true; }
+    // No task_started seen for it (an older CLI): a placeholder, for an agent only — a shell never holds the run.
+    if (!known && agent) run.tasks.set(`tool:${tool}`, { tool, bg: true, agent: true });
+  }
+
+  /** Forgets the tasks matching a finished task id or tool call. `foreground` spares the ones that outlive their call. */
+  #settled(run: Run, taskId: string | null, tool: string | null, foreground: boolean): boolean {
+    let had = false;
+    for (const [k, t] of run.tasks) {
+      if ((taskId && k === taskId) || (tool && t.tool === tool && !(foreground && t.bg))) { run.tasks.delete(k); had = true; }
+    }
+    return had;
   }
 
   #control(run: Run, v: any): void {
@@ -262,11 +325,20 @@ export class Runs {
     return true;
   }
 
+  // Every line re-arms the timer, so both delays count silence. With a background agent still out the short one
+  // would cut its permission channel: the long one only guards against a CLI that never reports the end. A
+  // background shell does not count — a dev server never ends while the process lives, and a shell asks nothing.
   #maybeClose(run: Run): void {
+    if (run.closeTimer) { clearTimeout(run.closeTimer); run.closeTimer = null; }
     if (run.status !== 'running' || !run.result || run.pending.size) return;
+    const agents = [...run.tasks.values()].filter((t) => t.agent).length;
+    const busy = agents > 0 || run.awaitingTurn;
     run.closeTimer = setTimeout(() => {
-      if (run.status === 'running' && !run.pending.size) { try { run.child?.stdin?.end(); } catch { /* closed */ } }
-    }, QUIET_AFTER_RESULT_MS);
+      run.closeTimer = null;
+      if (run.status !== 'running' || run.pending.size) return;
+      if (busy) this.#push(run, { kind: 'system', text: `no output for ${this.stallMs >= 60_000 ? `${Math.round(this.stallMs / 60_000)} min` : `${this.stallMs} ms`} with ${agents} background agent(s) still out — closing the run's input` });
+      try { run.child?.stdin?.end(); } catch { /* closed */ }
+    }, busy ? this.stallMs : this.quietMs);
   }
 
   stop(run: Run): boolean {

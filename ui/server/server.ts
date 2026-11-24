@@ -310,6 +310,8 @@ export function create({ globalDir, version, token = crypto.randomBytes(24).toSt
       if (parts[2] === 'founding') {
         if (parts.length === 3 && method === 'GET') return flowCall(() => flow.founding.view(p.id));
         if (parts[3] === 'reply' && method === 'POST') { const b = await bodyOf(); if (!b) return; return flowCall(() => flow.founding.reply(p.id, b.text), 202); }
+        if (parts[3] === 'identity' && parts.length === 4 && method === 'GET') return flowCall(() => flow.founding.identity(p.id));
+        if (parts[3] === 'identity' && parts.length === 4 && method === 'POST') { const b = await bodyOf(); if (!b) return; return flowCall(() => flow.founding.setIdentity(p.id, b)); }
         if (parts[3] === 'checkpoint' && method === 'POST') { const b = await bodyOf(); if (!b) return; return flowCall(async () => { const v = await flow.founding.checkpoint(p.id, b); cacheDoctor.clear(p.root); return v; }); }
       }
       if (parts[2] === 'remote' && parts.length === 3) {
@@ -337,7 +339,7 @@ export function create({ globalDir, version, token = crypto.randomBytes(24).toSt
         if (method === 'GET') return send(res, 200, view());
         if (method === 'POST') { const b = await bodyOf(); if (!b) return; flow.settings.set(p.id, b); return send(res, 200, view()); }
       }
-      if (parts[2] === 'tracker' && parts.length === 3 && method === 'POST') { const b = await bodyOf(); if (!b) return; return flowCall(() => ({ ...connectObsidian(globalDir, p.root, b), tracker: flow.tracker(p).info })); }
+      if (parts[2] === 'tracker' && parts.length === 3 && method === 'POST') { const b = await bodyOf(); if (!b) return; return flowCall(async () => ({ ...(await connectObsidian(globalDir, p.root, p.id, b)), tracker: flow.tracker(p).info })); }
       if (parts[2] === 'product-map' && parts.length === 3 && method === 'POST') return flowCall(() => ({ run: runs.view(flow.startProductMap(p.id), 0) }), 202);
       if (parts[2] === 'learning' && parts.length === 3 && method === 'GET') return send(res, 200, flow.learning(p.id));
 
