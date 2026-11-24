@@ -85,6 +85,11 @@ const PROFILE = {
         properties: { key: { type: 'string' }, path: { type: 'string' }, agent: { type: 'string' } },
       },
     },
+    // Declared so the reader returns them as objects, not JSON text: a `commands` string
+    // once gave preflight zero checks to run, and a `contract` string switched the gate off.
+    commands: { type: 'object', additionalProperties: true, description: 'the profile `commands` map, as an object — never a JSON string' },
+    contract: { type: 'object', additionalProperties: true, description: 'the profile `contract` block, as an object — never a JSON string' },
+    vcs: { type: 'object', additionalProperties: true, description: 'the profile `vcs` block, as an object — never a JSON string' },
   },
 }
 
@@ -116,8 +121,10 @@ const PREFLIGHT = {
   type: 'object', required: ['pass'], additionalProperties: false,
   properties: {
     pass: { type: 'boolean' },
-    epoch: { type: 'integer', description: 'the `date +%s` printed at the START of the Bash call — the run\'s wall-clock origin' },
-    tail: { type: 'string', description: 'on failure: the raw last lines the script printed' },
+    epoch: { type: 'integer', description: 'the `date +%s` printed by the first Bash call — the run\'s wall-clock origin' },
+    rc: { type: 'integer', description: 'the exit status of preflight.sh (0 green, 1 a check failed, 2 nothing to run)' },
+    denied: { type: 'boolean', description: 'true when the preflight call never ran: refused by a hook, the gate or the permission system' },
+    tail: { type: 'string', description: 'on failure: the raw last lines the script printed (or the denial message)' },
   },
 }
 
@@ -221,28 +228,67 @@ const checks = [cmds.typecheck, quiet(cmds.lint_quiet, cmds.lint), quiet(cmds.te
 const shq = c => /[$`\\]/.test(c) ? `'${String(c).replace(/'/g, "'\\''")}'` : JSON.stringify(c)
 const preflightReport = `specs/reports/${feature}.preflight.txt`
 
+// Every abort from here on overwrites verdict.json too: a stale SHIP left on disk from
+// an earlier round is exactly what /cohorte-ship (and a driver) would read.
+const writeAborted = why => agent(
+  `Write EXACTLY this to specs/reports/${feature}.verdict.json (overwrite), substituting <ISO now> ` +
+  'with `date -u +%Y-%m-%dT%H:%M:%SZ`, then return the single word done:\n' +
+  JSON.stringify({ id: feature, phase: 'review', ts: '<ISO now>', aborted: why, verdict: 'BLOCK', blocking: null }),
+  { model: 'haiku', label: 'stage-verdict', effort: 'low' },
+)
+// `pipeline-misconfigured`: the project's checks never RAN — zero commands reached preflight,
+// or the call was denied. That is cohorte's setup, not the code; reporting it as "preflight
+// red" sent a developer hunting for a bug in code nobody had checked (profile/schema/preflight.md).
+const misconfigured = why => ({
+  verdict: 'ABORTED', aborted: 'pipeline-misconfigured',
+  reason: `cohorte setup problem, not a problem in the code: the project's checks (typecheck, lint, tests) never ran — ${why}. ` +
+    'Nothing was reviewed and nothing about the code was judged.',
+  next: 'run /cohorte-doctor to see what is wrong, then /cohorte-update-pipeline to repair the install; then re-run the review',
+})
+
 // ── Phase 1 — deterministic preflight (abort while red, zero reviewers) ─────
 phase('Preflight')
+if (!checks.length) {
+  await writeAborted('pipeline-misconfigured')
+  return misconfigured('the profile declares no typecheck/lint/test command (PIPELINE.md `commands`, or .claude/profile.json is stale)')
+}
 const pre = await agent(
-  `Run the cohorte deterministic pre-flight for feature ${feature} in ONE Bash call, starting it with ` +
-  '`date +%s` (return that number as `epoch` — the run\'s wall-clock origin for the metrics line):\n' +
+  `Run the cohorte deterministic pre-flight for feature ${feature}. One plain command per Bash call — no ` +
+  '`&&`, `;` or pipes joining them:\n' +
+  '1. `date +%s` — return that number as `epoch` (the run\'s wall-clock origin for the metrics line).\n' +
+  '2. the preflight itself, this exact command on its own:\n' +
   `<core>/pipeline/scripts/preflight.sh ${preflightReport} ` +
   checks.map(shq).join(' ') + '\n' +
-  '(<core> = the absolute path printed by `printf %s "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/cohorte"`. Run that lookup alone first (it does not count as any "one Bash call" below), then write the path out literally in every command: the gate denies a command name held in a variable. ' +
+  '(<core> = the absolute path printed by `printf %s "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/cohorte"`. Run that lookup alone first (it does not count as any step below), then write the path out literally in every command: the gate denies a command name held in a variable. ' +
   'Script absent: run the quoted commands yourself, each appended to the same report file, stopping at the first failure.) ' +
-  'Return pass=true only on a fully green run. On failure set pass=false, put the raw last 40 lines of the report ' +
-  'in `tail` — verbatim, no summarizing — and in the same Bash call write the degraded machine verdict the ' +
-  `conversational /cohorte-review §0 writes, so an automated driver gets a diagnosis rather than silence: ` +
-  `printf '{"id":"${feature}","phase":"review","ts":"%s","aborted":"preflight","verdict":"BLOCK","blocking":null}' ` +
-  `"$(date -u +%Y-%m-%dT%H:%M:%SZ)" > specs/reports/${feature}.verdict.json`,
+  'Return `rc` = the exit status of step 2. Return pass=true only on a fully green run (rc 0). On failure set pass=false and put ' +
+  'the raw last 40 lines it printed in `tail` — verbatim, no summarizing. If step 2 was refused before it ran (a hook, the gate ' +
+  'or the permission system denied it), set denied=true, pass=false, and put the denial message in `tail`; do not retry it another way.',
   { model: 'haiku', label: 'preflight', schema: PREFLIGHT, effort: 'low' },
 )
+// rc 2 / "no commands given" / "every command argument was empty" = preflight.sh verified
+// nothing; a denied call never ran. Neither says anything about the code.
+const NOTHING_RAN = /preflight: (no commands given|every command argument was empty)/
+if (pre && !pre.pass && (pre.denied === true || pre.rc === 2 || NOTHING_RAN.test(String(pre.tail || '')))) {
+  await writeAborted('pipeline-misconfigured')
+  return {
+    ...misconfigured(pre.denied === true ? 'the preflight script was denied before it could run' : 'preflight was handed no command to run'),
+    failures: pre.tail || '',
+  }
+}
 if (!pre || !pre.pass) {
+  // Written here, not by the preflight agent "in the same Bash call": a compound call is
+  // what the permission layer prompts on, and the degraded verdict must land regardless —
+  // an automated driver gets a diagnosis rather than silence (conversational /cohorte-review §0).
+  await writeAborted('preflight')
   return {
     verdict: 'ABORTED', aborted: 'preflight',
-    reason: 'preflight red — fix the mechanical failures (or run /cohorte-fix) before any review; no reviewer was spawned' +
-      (security.length ? ' (commands.security counts: a dependency advisory at its threshold, or a secret in the feature diff, is red too)' : ''),
+    reason: (pre
+      ? 'the project\'s own checks failed on the current code (typecheck, lint or tests) — fix them (or run /cohorte-fix) before any review; no reviewer was spawned'
+      : 'the agent running the project\'s checks died before reporting — nothing was checked; re-run the review') +
+      (pre && security.length ? ' (commands.security counts: a dependency advisory at its threshold, or a secret in the feature diff, is red too)' : ''),
     failures: (pre && pre.tail) || 'preflight agent returned nothing',
+    report: preflightReport,
   }
 }
 
@@ -275,14 +321,6 @@ if (!staged) {
     next: `re-run the review workflow, or /cohorte-review ${feature} conversationally`,
   }
 }
-// Every abort after the preflight overwrites verdict.json too: a stale SHIP left on disk from
-// an earlier round is exactly what /cohorte-ship (and a driver) would read.
-const writeAborted = why => agent(
-  `Write EXACTLY this to specs/reports/${feature}.verdict.json (overwrite), substituting <ISO now> ` +
-  'with `date -u +%Y-%m-%dT%H:%M:%SZ`, then return the single word done:\n' +
-  JSON.stringify({ id: feature, phase: 'review', ts: '<ISO now>', aborted: why, verdict: 'BLOCK', blocking: null }),
-  { model: 'haiku', label: 'stage-verdict', effort: 'low' },
-)
 if (staged.error) {
   await writeAborted('stage-diff')
   return {

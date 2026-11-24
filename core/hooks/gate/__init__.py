@@ -24,7 +24,9 @@ What it does, in order of authority:
    the gate depends on is denied (`.claude/gate-config.json`, `.claude/preflight.ok`,
    `.claude/settings.json`, `.claude/settings.local.json`, `.claude/hooks/cohorte-gate.py`,
    the legacy `.cohorte/gate-config.json`, `~/.claude/settings*.json`). The same applies to
-   deleting `.claude/pipeline.json` or a directory that contains any of them. A
+   deleting `.claude/pipeline.json` or a directory that contains any of them, and to
+   `git checkout`/`git restore` of them (`git reset --hard`, and `.`/directory/glob/`:/`
+   pathspecs, count only when git reports one of them differs from what is restored). A
    Write/Edit/MultiEdit/NotebookEdit call aimed at one of them gets "ask".
 4. Project rules from `.claude/gate-config.json` (`deny` / `ask` / `ask_on_default_branch`).
    These are matched as tokens, not substrings (see "Matching").

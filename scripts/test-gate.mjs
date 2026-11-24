@@ -1082,6 +1082,86 @@ console.log("gate.py — unattended false positives");
   check("…and an attended session still just asks", r4.decision === "ask" && !/denied outright/.test(r4.reason || ""), r4.reason);
 }
 
+// ── git checkout / restore / reset --hard rewrite protected files ────────────
+console.log("gate.py — self-protection: git checkout / restore / reset --hard");
+{
+  const CFG = { default_branch: "main", deny: ["rm -rf"], ask: ["psql"], ask_on_default_branch: ["git commit"] };
+  const fixture = (modified) => {
+    const d = scratch({ config: CFG });
+    writeFileSync(join(d, ".claude", "settings.json"), '{"hooks":{}}\n');
+    mkdirSync(join(d, "sub"), { recursive: true }); writeFileSync(join(d, "sub", "a.txt"), "a");
+    gitRepo(d, "feat");                    // commits .claude/{settings,gate-config,pipeline}.json
+    if (modified) writeFileSync(join(d, ".claude", "settings.json"), '{"hooks":{"PreToolUse":[]}}\n');
+    writeFileSync(join(d, "f.txt"), "changed");
+    return d;
+  };
+  const rows = (title, cwd, list) => {
+    for (const [cmd, want] of list) {
+      const r = run(bash(cmd, cwd, { permission_mode: "bypassPermissions" }), { projectDir: cwd });
+      check(`${title}: ${JSON.stringify(cmd).slice(0, 90)} ⇒ ${want}`, r.decision === want,
+        `got ${r.decision}: ${r.reason || r.stderr}`);
+    }
+  };
+  const clean = fixture(false);
+  rows("naming a protected file", clean, [
+    ["git checkout -- .claude/settings.json", "deny"],
+    ["git checkout .claude/settings.json", "deny"],
+    ["git checkout HEAD~0 -- .claude/gate-config.json", "deny"],
+    ["git checkout :/.claude/settings.json", "deny"],
+    ["git restore .claude/settings.json", "deny"],
+    ["git restore --source=HEAD -- .claude/settings.json", "deny"],
+    ["git restore -s HEAD .claude/settings.json", "deny"],
+    ["git restore -W -S .claude/settings.json", "deny"],
+    ["cd sub && git checkout -- ../.claude/settings.json", "deny"],
+    ['git checkout -- "$CLAUDE_PROJECT_DIR/.claude/settings.json"', "deny"],
+  ]);
+  rows("index-only and read-only forms", clean, [
+    ["git restore --staged .claude/settings.json", "allow"],
+    ["git reset HEAD -- .claude/settings.json", "allow"],
+    ["git reset -q .claude/settings.json", "allow"],
+    ["git checkout main", "allow"],
+    ["git checkout -b other && git checkout -- f.txt", "allow"],
+    ["git checkout -- f.txt", "allow"],
+    ["git diff -- .claude/settings.json && git show HEAD:.claude/settings.json", "allow"],
+  ]);
+  rows("broad pathspecs, protected files unchanged", clean, [
+    ["git checkout .", "allow"],
+    ["git checkout -- .", "allow"],
+    ["git restore .", "allow"],
+    ["git checkout HEAD -- .", "allow"],
+    ["git checkout -- .claude/", "allow"],
+    ["git restore ':/.claude/*.json'", "allow"],
+    ["git checkout -- '*.json'", "allow"],
+    ["git reset --hard", "allow"],
+  ]);
+  const dirty = fixture(true);
+  rows("broad pathspecs, a protected file modified", dirty, [
+    ["git checkout .", "deny"],
+    ["git checkout -- .", "deny"],
+    ["git restore .", "deny"],
+    ["git restore --source=HEAD :/", "deny"],
+    ["git checkout -- .claude/", "deny"],
+    ["git restore ':/.claude/*.json'", "deny"],
+    ["git checkout -- '*.json'", "deny"],
+    ["git checkout ':(glob).claude/**'", "deny"],
+    ["git reset --hard", "deny"],
+    ["git reset --hard HEAD", "deny"],
+    ['git checkout "$REV" -- .', "deny"],               // ask: the source is computed
+    ['cd "$X" && git checkout .', "deny"],              // ask: the directory can't be resolved
+    ["git checkout -- f.txt", "allow"],                 // what doesn't cover them is free
+    ["git checkout -- sub/", "allow"],
+    ["cd sub && git checkout .", "allow"],
+    ["git restore --staged .", "allow"],
+    ["git reset", "allow"],
+  ]);
+  const r = run(bash("git checkout -- .claude/settings.json", clean), { projectDir: clean });
+  check("an explicit checkout of a protected file is a self-protection deny even when attended",
+    r.decision === "deny" && /self-protection/.test(r.reason || ""), r.reason);
+  const r2 = run(bash("git checkout .", dirty), { projectDir: dirty });
+  check("…and so is a broad one that would rewrite a modified protected file",
+    r2.decision === "deny" && /settings\.json/.test(r2.reason || ""), r2.reason);
+}
+
 // gate.py is BUILT from core/hooks/gate/*.py (scripts/build-gate.mjs; validate-core checks the
 // committed file is exactly the build). Once concatenated every module shares one namespace, so
 // a missing or stale `from .x import` line breaks nothing at run time — and a name defined in

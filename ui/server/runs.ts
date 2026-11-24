@@ -74,6 +74,8 @@ export interface Run {
   addDirs: string[];
   /** Company-flow runs load only the project's own MCP servers (its .mcp.json, or none) — not every server of the user's. */
   strictMcp: boolean; mcpConfig: string | null;
+  /** Appended to Claude Code's system prompt (`--append-system-prompt`), on every turn of the run. */
+  systemNote: string | null;
   /** The flow's bookkeeping, persisted with the run: how far its events were processed, the draft tickets it created. */
   seen: number; tickets: Record<string, string>;
   /** Tasks (subagents, shells) this process launched and has not seen finish, by task id: the tool call that launched it,
@@ -85,7 +87,7 @@ export interface Run {
 export interface RunStartOpts {
   projectId: string; cwd: string; command: string; permissionMode?: unknown;
   /** The text sent as the first turn. Defaults to `command` (a slash command); the flow sends the expanded command body instead, so its model applies. */
-  prompt?: string; model?: string | null; disallowedTools?: string[]; allowedTools?: string[]; addDirs?: string[]; meta?: RunMeta; strictMcp?: boolean; mcpConfig?: string | null;
+  prompt?: string; model?: string | null; disallowedTools?: string[]; allowedTools?: string[]; addDirs?: string[]; meta?: RunMeta; strictMcp?: boolean; mcpConfig?: string | null; systemNote?: string | null;
   /** Shown in the feed as what the person said (a conversation's first message), when the prompt itself is not. */
   echo?: string;
 }
@@ -131,6 +133,7 @@ export class Runs {
       allowedTools: (opts.allowedTools || []).filter((t) => ALLOWED_RULE.test(t)),
       addDirs: (opts.addDirs || []).filter((d) => typeof d === 'string' && path.isAbsolute(d)),
       seen: 0, tickets: {}, tasks: new Map(), awaitingTurn: false, strictMcp: opts.strictMcp === true, mcpConfig: typeof opts.mcpConfig === 'string' ? opts.mcpConfig : null,
+      systemNote: typeof opts.systemNote === 'string' && opts.systemNote ? opts.systemNote.slice(0, 4000) : null,
     };
     this.#spawn(run, null);
     this.runs.set(run.id, run);
@@ -148,6 +151,7 @@ export class Runs {
     if (run.allowedTools.length) args.push('--allowedTools', run.allowedTools.join(','));
     for (const d of run.addDirs) args.push('--add-dir', d);
     if (run.strictMcp) args.push('--strict-mcp-config');
+    if (run.systemNote) args.push('--append-system-prompt', run.systemNote);
     if (run.mcpConfig) args.push('--mcp-config', run.mcpConfig);
     if (resumeId) args.push('--resume', resumeId);
     run.tasks.clear(); run.awaitingTurn = false; // a new process: the old one's background tasks went with it

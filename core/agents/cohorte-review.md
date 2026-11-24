@@ -168,7 +168,10 @@ they are **never lost and never cost a fix loop**.
 
 Every finding must be **self-sufficient for a stateless agent**: `file:line` · severity ·
 `spec-violation | quality | security | complexity` · one concrete suggested fix — it gets appended verbatim to the
-spec's `## Remediation`. Say **how sure** you are: a defect you established from the code is stated plainly;
+spec's `## Remediation`. **`file:line` is the line in the SOURCE file as checked out (HEAD plus
+the feature's uncommitted work) — never a line number of the staged `.diff` file** (a diff line is meaningless to the fixer, who opens
+the source). Before you cite a line, Read the source file around it and confirm the code is there;
+the hunk header's `+<start>` is only a hint. Say **how sure** you are: a defect you established from the code is stated plainly;
 an argued risk you could not establish starts its problem with `risk:`; something you need the spec's
 author to settle is not a finding — put it in `## Notes` as a question. When the fix needs a test to stay
 fixed, end the fix with `· test: <the behaviour the test must assert>`. Your final message **is** the report. **The shape is capped:** at most

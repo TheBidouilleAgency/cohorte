@@ -11,17 +11,32 @@ that change the *contract*; `/cohorte-fix` is for everything else.
 > Read `.claude/profile.json` first (the parsed `pipeline-profile` block; absent ⇒ read that block in `PIPELINE.md`): `surfaces` (paths + agent names) and `contract`.
 > _Skip the re-read if it's already in your context this session and unmodified since._
 >
-> **Kanban** (`<core>/pipeline/schema/kanban.md`): on ingest, run
-> `<core>/pipeline/scripts/kanban-move.sh auto $ARGUMENTS fix`; the card returns to **Review** when `/cohorte-review`
-> re-runs. `auto` resolves the board from the config itself and exits 0 with a `kanban: <reason>`
-> line when there is none — so **never decide "no board is configured" without running it**.
+> **Kanban** (`<core>/pipeline/schema/kanban.md`): once §1 has found a report with real findings to
+> apply — never before — run, as its own Bash call, `<core>/pipeline/scripts/kanban-move.sh auto $ARGUMENTS fix`;
+> the card returns to **Review** when `/cohorte-review` re-runs. `auto` resolves the board from the
+> config itself and exits 0 with a `kanban: <reason>` line when there is none — so **never decide
+> "no board is configured" without running it**.
+>
+> **One plain command per Bash call** throughout — never chain commands with `&&`, `;` or a pipe
+> ("note the epoch, move the card and grep the spec" in one call stops on a permission prompt every
+> time). Write and edit files with the Write/Edit tools.
 
 ## 1. Ingest the report
 
 - The report is either pasted after the feature id (a REVIEW REPORT, or failures the human hit by
   hand), this session's last `/cohorte-review` REVIEW REPORT, or — if the context was cleared — read from
   `specs/reports/<id>.md`, where `/cohorte-review` stages its last report for exactly this reason.
-  If you have none of these, ask for it and wait.
+  If you have none of these, ask for it and wait — and move nothing, start nothing: no report, no fix.
+- **Lint warnings alone dispatch nobody.** If every finding left to apply is a lint/format warning
+  and no CRITICAL or security finding is open (in the report or in the spec's `## Remediation`), do
+  not append them to the spec and do not dispatch an implementer: park them in
+  `specs/refactor-backlog.md` in `/cohorte-review` §3.5's format (`deferred:$ARGUMENTS`), stop there
+  (no clock, no card move, no dispatch), and tell the developer nothing blocking is left. Lint
+  warnings that sit next to real findings on a surface simply ride along with that surface's dispatch.
+- **Real findings to apply — now start:** run `<core>/pipeline/scripts/phase-clock.sh start $ARGUMENTS fix`
+  (it prints the epoch and keeps it in `specs/reports/$ARGUMENTS.fix.start`, inside this checkout —
+  never a shared `/tmp` path; script absent ⇒ `date +%s` alone, and keep the number), then the
+  kanban move above, each as its own Bash call.
 - Append each finding to `specs/<id>.md` **`## Remediation`** (same format as `/cohorte-spec` Mode B, under a
   dated/numbered subheading): `- [ ] <severity> · <file:line> · <type> · <concrete fix>`. Set
   `status: in-review`. Don't pull the whole spec into context for this: grep the line numbers of the
@@ -31,8 +46,6 @@ that change the *contract*; `/cohorte-fix` is for everything else.
   re-author the contract file yourself now (lead-only, per `/cohorte-build` §2) — agents never edit it. If
   the contract change ripples into surfaces *without* findings, fall back to full `/cohorte-build` instead
   and say so.
-- **Note the epoch** (`date +%s`) in the first Bash call you make here — §3's metrics line carries
-  `seconds`, and there is no separate timing call.
 
 ## 2. Scope the re-dispatch — only surfaces with findings
 
@@ -76,11 +89,24 @@ When the agents return:
 - **Model routing** — the same rule as `/cohorte-build` §3: a `Model routing:` line in your prompt sets
   the Agent tool's `model` parameter on every re-dispatch.
 - Print one status line per surface (`<key> · items fixed <n>/<m> · tests pass/fail`) — do not restate
-  handoff content — and append ONE metrics line for the batch to the **main checkout's**
-  `$(dirname "$(git rev-parse --git-common-dir)")/<state>/pipeline-metrics.jsonl` (never a bare
-  relative path: from a feature worktree that writes a stray sink whose lines die at teardown)
-  (rules in `/cohorte-build` §4, `phase: "fix"`).
+  handoff content — and append ONE metrics line for the batch, **even when a surface died** (an
+  incomplete batch is exactly the one worth recording), with one plain command:
+  `<core>/pipeline/scripts/phase-clock.sh metrics $ARGUMENTS fix '{"<key>":"ok|error|dead",…}'`
+  — one entry per re-dispatched surface. It computes `seconds` from §1's start file and appends
+  `{"ts":"<ISO>","feature":"$ARGUMENTS","phase":"fix","seconds":<wall-clock>,"surfaces":{…}}` to the
+  **main checkout's** `<state>/pipeline-metrics.jsonl`, from a feature worktree too. Script absent
+  (older core) ⇒ append that same line yourself to
+  `$(dirname "$(git rev-parse --git-common-dir)")/<state>/pipeline-metrics.jsonl`, never a bare
+  relative path.
 - Tell the human: re-test by hand if the failures were runtime ones, and `/cohorte-review $ARGUMENTS` for the
   re-verdict — the re-review is what *verifies* the ticked items actually hold (a regression simply
-  reappears as a new finding in the next round). **Recommend a `/clear`** — all state (spec,
-  checkboxes, staged report) is on disk, and the lead's history is re-sent at input price every turn.
+  reappears as a new finding in the next round). To let the review → fix rounds run on their own
+  until nothing blocking is left, recommend `/cohorte-loop $ARGUMENTS` instead. **Recommend a
+  `/clear`** — all state (spec, checkboxes, staged report) is on disk, and the lead's history is
+  re-sent at input price every turn.
+
+**Your last message to the developer** — in their language, in plain words: what happened, and
+what they need to do (often nothing, or one command). No pipeline jargon (Remediation, DoD, readiness, preflight, freshness stamp, round, handoff…) — those
+terms stay in the files you write. If something stopped you (a permission, a missing tool), say in
+one plain sentence what they should do about it. A `/clear` tip is one optional sentence, never an
+order.

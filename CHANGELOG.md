@@ -7,6 +7,30 @@ short, user-facing, most recent first. One `## <version> — <YYYY-MM-DD>` secti
 > They are history and are deliberately not rewritten — every command gained a `cohorte-` prefix
 > in 2.0.0.
 
+## 4.1.3 — 2026-11-24
+
+More from the first real company-flow project: clearer messages, fewer prompts, honest aborts.
+
+- **A setup problem is no longer reported as broken code.** When the checks could not run at all (no
+  commands found, a pipeline script refused), `/cohorte-loop` and `/cohorte-review` now stop with
+  "cohorte setup problem, your code is not at fault" and point at `/cohorte-doctor` and
+  `/cohorte-update-pipeline`, instead of "preflight red". The spec's status is not touched until the
+  checks have actually run.
+- **`/cohorte-loop` is suggested** at the end of `/cohorte-spec` and `/cohorte-build`: it is the command that
+  carries the feature through review and fixes by itself.
+- **Plain final messages.** Build, review, fix, verify and the loop end with what happened and what you need
+  to do, in your language, without pipeline vocabulary. Commands started by hand from `cohorte ui` are told
+  the person clicks rather than types (no `/clear`, no "now run /x"), and get the same MCP isolation as the
+  flow's runs.
+- **Fewer approval prompts in review, fix and build.** One plain command per call; a new `phase-clock.sh`
+  records a phase's start and its metrics line (the start files no longer collide between worktrees in
+  `/tmp`). `/cohorte-fix` moves the card only once there is something to fix, and does not start an agent
+  for lint warnings alone.
+- **Implementers no longer leave tests hanging**: explicit timeouts, nothing left running at handoff, another
+  port when the dev server holds it. Reviewers cite source lines, not lines of the diff file.
+- **The formatter hook stays in the project**: it no longer reformats files outside it (an Obsidian board).
+- **The gate protects its own files from `git checkout`, `git restore` and `git reset --hard`.**
+
 ## 4.1.2 — 2026-11-24
 
 Fixes from the first real project built with the company flow.

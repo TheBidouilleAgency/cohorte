@@ -336,6 +336,12 @@ const FIELD_STRINGIFIED = {
     const m = text.match(/^const unwrapProfile = [\s\S]*?^}$/m);
     return m ? m[0] : null;
   });
+  for (const s of SCRIPTS) {
+    const text = readFileSync(join(root, "core/workflows", s), "utf8");
+    const schema = (text.match(/^const PROFILE = \{[\s\S]*?^\}$/m) || [""])[0];
+    check(`${s}: PROFILE declares commands, contract and vcs as objects`,
+      ["commands", "contract", "vcs"].every(k => new RegExp(`\\b${k}: \\{ type: 'object'`).test(schema)), schema.slice(-300));
+  }
   check("unwrapProfile is identical in every workflow",
     bodies.every(b => b && b === bodies[0]),
     SCRIPTS.filter((s, i) => bodies[i] !== bodies[0]).join(","));
@@ -440,6 +446,45 @@ console.log("review.js verdict contract");
   ]));
   check("red preflight ⇒ aborted: 'preflight' (what a driver branches on)",
     result.aborted === "preflight", JSON.stringify(result.aborted));
+}
+{
+  // A red preflight still lands the degraded verdict.json — written by the workflow, not
+  // as a printf glued onto the preflight's Bash call (a compound call prompts every time).
+  let verdictPrompt = "";
+  const { prompts } = await run("review.js", (prompt, opts) => {
+    if (opts.label === "stage-verdict") { verdictPrompt = prompt; return "done"; }
+    return replier([["preflight", { pass: false, rc: 1, tail: "boom" }], ...BASE_REVIEW])(prompt, opts);
+  });
+  check("red preflight ⇒ verdict.json written with aborted: preflight",
+    /"aborted":"preflight"/.test(verdictPrompt), verdictPrompt.slice(-160));
+  check("the preflight prompt asks for one plain command per Bash call (no printf chained on)",
+    !/printf '\{/.test(prompts.preflight) && /One plain command per Bash call/.test(prompts.preflight), prompts.preflight.slice(0, 200));
+}
+{
+  // ZERO checks: the profile has no runnable command. preflight.sh would exit 2 ("no
+  // commands given") — that is cohorte's setup, not the code, and must not read as red.
+  const NOCMD = { ...PROFILE, commands: { typecheck: "<detected>" } };
+  let verdictPrompt = "";
+  const { result, calls } = await run("review.js", (prompt, opts) => {
+    if (opts.label === "stage-verdict") { verdictPrompt = prompt; return "done"; }
+    return replier([["profile", NOCMD], ...BASE_REVIEW])(prompt, opts);
+  });
+  check("zero checks ⇒ aborted: pipeline-misconfigured, not preflight",
+    result.verdict === "ABORTED" && result.aborted === "pipeline-misconfigured", JSON.stringify(result));
+  check("…the preflight is never even dispatched, no reviewer", !calls.includes("preflight") && !calls.some(c => c.startsWith("review:")), calls.join(","));
+  check("…the message says it is a setup problem and names /cohorte-doctor + /cohorte-update-pipeline",
+    /not a problem in the code/.test(result.reason) && /\/cohorte-doctor/.test(result.next) && /\/cohorte-update-pipeline/.test(result.next),
+    JSON.stringify(result));
+  check("…and the stale verdict.json is overwritten", /"aborted":"pipeline-misconfigured"/.test(verdictPrompt), verdictPrompt.slice(-160));
+}
+for (const [name, pre] of [
+  ["rc 2", { pass: false, rc: 2, tail: "preflight: no commands given" }],
+  ["'no commands given' without rc", { pass: false, tail: "preflight: no commands given" }],
+  ["a denied call", { pass: false, denied: true, tail: "Blocked by hook: gate.py" }],
+]) {
+  const { result, calls } = await run("review.js", replier([["preflight", pre], ...BASE_REVIEW]));
+  check(`preflight ${name} ⇒ pipeline-misconfigured, zero reviewers`,
+    result.aborted === "pipeline-misconfigured" && !calls.some(c => c.startsWith("review:")), JSON.stringify(result));
 }
 {
   // An empty diff reviewed NOTHING — it used to score SHIP (and an adds-only feature,
@@ -1053,6 +1098,42 @@ const SHIP_CLEAN = { verdict: "SHIP", blocking: 0, blockingItems: [], unreviewed
     result.outcome === "abort" && result.reason === "preflight", JSON.stringify([result.outcome, result.reason]));
 }
 {
+  // The real-run regression: the review's preflight had nothing to run (or was denied) and
+  // the loop said "preflight red" and flipped a frozen spec in-progress → blocked. A setup
+  // problem changes NO spec status and NO board column, and says so in plain words.
+  const wf = async () => ({ verdict: "ABORTED", aborted: "pipeline-misconfigured", reason: "cohorte setup problem, not a problem in the code" });
+  const { result, prompts } = await run("loop.js", loopReply(loopFacts()), { feature: "feat-x" }, wf);
+  check("child pipeline-misconfigured ⇒ abort/pipeline-misconfigured, resumable",
+    result.outcome === "abort" && result.reason === "pipeline-misconfigured" && result.resumable === true, JSON.stringify(result));
+  check("…detail: setup problem, code not at fault, /cohorte-doctor + /cohorte-update-pipeline",
+    /setup problem, not a problem in your code/.test(result.detail) && /\/cohorte-doctor/.test(result.detail)
+      && /\/cohorte-update-pipeline/.test(result.detail) && !/preflight red/.test(result.detail), result.detail);
+  const statusWrites = Object.entries(prompts).filter(([, p]) => /`status: /.test(p)).map(([l]) => l);
+  check("…no spec status written anywhere in the run (build, round, close)", statusWrites.length === 0, statusWrites.join(","));
+  check("…no board move at close", !/kanban-move/.test(prompts.close), prompts.close.slice(-200));
+  check("…the result tells the caller to relay it in plain words", /plain words/.test(result.relay || ""), String(result.relay));
+}
+{
+  // A genuinely red preflight on round 1 — the checks ran and failed, but no review in this
+  // run got past them: still no status change (the spec stays frozen, not blocked).
+  const wf = async () => ({ verdict: "ABORTED", aborted: "preflight", reason: "red", failures: "tsc: 3 errors" });
+  const { result, prompts } = await run("loop.js", loopReply(loopFacts({ build: FRESH_BUILD })), { feature: "feat-x" }, wf);
+  check("round-1 red preflight ⇒ no status stamp before or at close",
+    !Object.values(prompts).some(p => /`status: /.test(p)), Object.keys(prompts).join(","));
+  check("…detail is plain (the project's checks failed) and relays the failures",
+    /checks .* failed/.test(result.detail) && result.failures === "tsc: 3 errors", JSON.stringify(result));
+}
+{
+  // Once a review passed its preflight the loop owns the status again: fix round ⇒ in-progress.
+  let n = 0;
+  const wf = async () => (++n === 1 ? reviewOf() : SHIP_CLEAN);
+  const { result, prompts } = await run("loop.js", loopReply(loopFacts({ build: FRESH_BUILD })), { feature: "feat-x" }, wf);
+  check("after a passed preflight: fix-round state stamps in-progress, ship stamps in-review",
+    result.outcome === "ship" && /`status: in-progress`/.test(prompts["state:fixed-1"]) && /`status: in-review`/.test(prompts.close),
+    JSON.stringify(result.outcome));
+  check("…and the build/enter state never stamps a status", !/`status: /.test(prompts["state:enter"] || ""), prompts["state:enter"]);
+}
+{
   // A fresh build.json with no dead surfaces means the work is on disk — entering
   // after a conversational /cohorte-build must not rebuild it.
   const { result, calls } = await run("loop.js",
@@ -1374,6 +1455,55 @@ console.log("feature-diff.sh");
       const rf = spawnSync("bash", [join(dir, "scripts", "remove-feature.sh"), "fleet-a", "--force"], { cwd: dir, env, encoding: "utf8" });
       check("remove-feature.sh refuses an unknown flag instead of ignoring it",
         rf.status === 1 && /unknown option "--force"/.test(rf.stderr), `${rf.status} ${rf.stderr}`);
+    } finally {
+      rmSync(outer, { recursive: true, force: true });
+    }
+  }
+}
+
+// ── phase-clock.sh — the phase's start epoch and metrics line, one plain command each ──
+// The start epoch used to live in shared /tmp paths two worktrees overwrote for each other,
+// and was noted "in the same Bash call" as other work (a permission prompt every time).
+console.log("phase-clock.sh");
+{
+  const git = spawnSync("git", ["--version"], { encoding: "utf8" });
+  if (process.platform === "win32" || git.status !== 0) {
+    console.log("  - skipped (needs POSIX sh + git)");
+  } else {
+    const PC = join(root, "scripts", "phase-clock.sh");
+    const outer = mkdtempSync(join(tmpdir(), "cohorte-pc-"));
+    const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_")));
+    Object.assign(env, { GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" });
+    const g = (cwd, ...a) => spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...a], { cwd, env, encoding: "utf8" });
+    const pc = (cwd, ...a) => spawnSync("sh", [PC, ...a], { cwd, env, encoding: "utf8" });
+    try {
+      const main = join(outer, "repo");
+      mkdirSync(main);
+      g(main, "init", "-q", "-b", "main");
+      writeFileSync(join(main, "README"), "x\n");
+      g(main, "add", "-A"); g(main, "commit", "-qm", "init");
+      const wt = join(outer, "wt");
+      g(main, "worktree", "add", "-q", "-b", "feat/x", wt);
+
+      const st = pc(wt, "start", "feat-x", "fix");
+      const startFile = join(wt, "specs", "reports", "feat-x.fix.start");
+      let startBody = "";
+      try { startBody = readFileSync(startFile, "utf8").trim(); } catch {}
+      check("start prints the epoch and writes it under the worktree's own specs/reports/",
+        st.status === 0 && /^\d+$/.test(st.stdout.trim()) && startBody === st.stdout.trim(), `${st.status} ${st.stdout} ${st.stderr}`);
+      const m = pc(wt, "metrics", "feat-x", "fix", '{"backend":"ok"}');
+      let sink = "";
+      try { sink = readFileSync(join(main, ".claude", "pipeline-metrics.jsonl"), "utf8"); } catch {}
+      let parsed = null;
+      try { parsed = JSON.parse(sink.trim().split("\n").pop()); } catch {}
+      check("metrics appends ONE valid JSON line to the MAIN checkout's .claude/pipeline-metrics.jsonl",
+        m.status === 0 && parsed && parsed.feature === "feat-x" && parsed.phase === "fix"
+          && Number.isInteger(parsed.seconds) && parsed.seconds >= 0 && parsed.surfaces.backend === "ok",
+        `${m.status} ${m.stderr} ${sink}`);
+      const none = pc(wt, "metrics", "feat-x", "review", '{"backend":"SHIP:0"}');
+      check("no start file ⇒ seconds null, not a made-up 0", none.status === 0 && /"seconds":null/.test(none.stdout), none.stdout);
+      check("a feature id that is not a slug ⇒ exit 2", pc(wt, "start", "../x", "fix").status === 2);
+      check("surfaces that are not a JSON object ⇒ exit 2", pc(wt, "metrics", "feat-x", "fix", "ok").status === 2);
     } finally {
       rmSync(outer, { recursive: true, force: true });
     }
