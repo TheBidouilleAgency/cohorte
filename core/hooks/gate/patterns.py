@@ -181,24 +181,12 @@ def is_wildcard(tokens, idx):
     return True
 
 
-EXT_RE = re.compile(r"\.[A-Za-z0-9]{1,10}$")
-
-
-def path_like(w):
-    """A run-time word that visibly names a file: a static `/` (`"$S/smoke.mjs"`,
-    `$TMPDIR/cov.mjs`) or a static file extension at its end (`"$name.json"`). It is read as
-    one path: the gate does not assume a directory variable splits into several words."""
-    parts = [p for p in w.value.split(DYN)]
-    return any("/" in p for p in parts) or bool(EXT_RE.search(parts[-1]))
-
-
 def could_be(w, p):
-    """Could run-time word `w` expand to the pattern's literal word `p`? Its static parts must
-    appear in `p`, in order (`"$m:fresh"` can be `migration:fresh`, `"$S/x.mjs"` can't be
-    `ace`). An unquoted word that is not path-like can field-split into anything."""
-    if p.dynamic:
-        return True
-    if w.split and not path_like(w):
+    """Could run-time word `w` expand to the pattern's literal word `p`? For a word whose
+    expansions are all quoted, its static parts must appear in `p`, in order (`"$m:fresh"`
+    can be `migration:fresh`, `"$S/x.mjs"` can't be `ace`). An unquoted expansion is field-
+    split by the shell (`$X/y` with X="-rf /tmp" is three words), so it can be anything."""
+    if p.dynamic or w.split:
         return True
     rx = ".*".join(re.escape(part).replace(r"\*", ".*").replace(r"\?", ".").replace(r"\[", ".*")
                    for part in w.value.split(DYN))
@@ -207,7 +195,7 @@ def could_be(w, p):
 
 def wild_flag(tokens, idx):
     """A run-time word that could expand to flags: unquoted (field splitting) or visibly
-    starting with `-`, and not after `--`. A path-like word is one path, not flags."""
+    starting with `-`, and not after `--`."""
     if not is_wildcard(tokens, idx):
         return False
     if any(not t.dynamic and t.value == "--" for t in tokens[:idx]):
@@ -215,7 +203,7 @@ def wild_flag(tokens, idx):
     w = tokens[idx]
     if w.head.startswith("-"):
         return True
-    return not w.raw.startswith('"') and not path_like(w)
+    return w.split or not w.raw.startswith('"')
 
 
 def pos_match(ppos, tokens, eq):

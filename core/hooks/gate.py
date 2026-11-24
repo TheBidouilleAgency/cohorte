@@ -61,11 +61,13 @@ or `--force` pattern. Package runners are looked through: `npx`/`pnpm exec`/`yar
 
 `$HOME`, `${HOME}`, `~` and `$CLAUDE_CONFIG_DIR` (also `${CLAUDE_CONFIG_DIR:-$HOME/.claude}`)
 are the user's own environment: they are expanded from the hook's environment before
-anything is judged, unless the command itself assigns or otherwise names the variable. A
-run-time word is matched by its static parts: `"$m:fresh"` may be `migration:fresh`, but a
-path-looking word (a static `/` or file extension: `"$S/x.mjs"`, `$TMPDIR/cov.mjs`) is one
-path, never a pattern's literal word or a flag. A command name whose directory alone is
-computed (`"$S/smoke.sh"`) is judged by its basename.
+anything is judged — never as a bare command name, and not at all in a command that names the
+variable other than as an expansion (even as `HO\\ME=`) or uses a builtin that assigns a
+computed name (`export`, `declare`, `read`, `printf -v`, `eval`, `source`, `let`, …). A
+quoted run-time word is matched by its static parts: `"$m:fresh"` may be `migration:fresh`,
+`"$S/x.mjs"` can't be `ace`. An unquoted expansion field-splits, so it may be any words. A
+quoted command name whose directory alone is computed (`"$S/smoke.sh"`) is judged by its
+basename.
 
 A pattern that itself contains a separator (`curl | sh`) matches a run of consecutive
 commands that each match their part, joined by the same separator.
@@ -243,10 +245,18 @@ def wildcard_word():
 # $HOME and $CLAUDE_CONFIG_DIR are the user's own environment, inherited alike by this hook and
 # by the agent's Bash tool: a command can't choose them without assigning them, so the lexer
 # expands them statically (`"$HOME/.claude/…/kanban-move.sh"` is that literal path). A text that
-# names one of them other than as `$NAME`/`${NAME…}` (an assignment, `export`, `read`, `unset`,
-# a `for` variable, …) keeps it a run-time expansion — see `rebound_vars`. A value with blanks,
-# glob characters, quotes or `$` is never resolved (it would split or expand again).
+# names one of them other than as `$NAME`/`${NAME}`/`${NAME-…}`/`${NAME:-…}` — even spelled
+# with quotes or escapes (`HO\ME=…`, `HO""ME=…`) — or that uses any builtin able to assign a
+# variable whose name the gate can't read (`export`, `declare`, `read`, `printf -v`, `eval`,
+# `source`, `let`, …) keeps them all run-time expansions — see `rebound_vars`. A value with
+# blanks, glob characters, quotes or `$` is never resolved (it would split or expand again).
 STATIC_VARS = ("HOME", "CLAUDE_CONFIG_DIR")
+# Also never trusted by self-protection's `known_text` once the command may rebind them.
+KNOWN_VARS = STATIC_VARS + ("CLAUDE_PROJECT_DIR", "PWD")
+REBINDERS_RE = re.compile(
+    r"(?<![A-Za-z0-9_./-])(export|declare|typeset|local|readonly|read|readarray|mapfile|eval|"
+    r"source|let|getopts|unset)(?![A-Za-z0-9_./-])|(?<![A-Za-z0-9_./-])printf\b[^\n;&|]*\s-v"
+    r"|(?:^|[;&|(\n{]|\b(?:then|do|else|command|builtin|exec)\s)\s*\.(?=\s)")
 SAFE_VALUE_RE = re.compile(r"^[^\s*?\[\]$`'\"\\{}]*$")
 
 
@@ -268,14 +278,22 @@ def static_env():
 
 
 def rebound_vars(text, names):
-    """The names in `names` that `text` mentions other than as an expansion ($X, ${X…})."""
+    """The names in `names` that `text` may assign: all of them when it uses a builtin that
+    assigns by a computed name (REBINDERS_RE), else those it names other than as a plain
+    expansion — quotes and backslashes removed first, so `HO\\ME=` and `HO""ME=` count."""
+    if REBINDERS_RE.search(text):
+        return set(names)
+    flat = re.sub(r"[\\'\"]", "", text)
     out = set()
     for name in names:
-        for m in re.finditer(r"(?<![A-Za-z0-9_])%s(?![A-Za-z0-9_])" % name, text):
-            before = text[:m.start()]
-            if not (before.endswith("$") or before.endswith("${")):
-                out.add(name)
-                break
+        for m in re.finditer(r"(?<![A-Za-z0-9_])%s(?![A-Za-z0-9_])" % name, flat):
+            before, after = flat[:m.start()], flat[m.end():]
+            if before.endswith("$"):
+                continue
+            if before.endswith("${") and re.match(r"(\}|:?-)", after):
+                continue
+            out.add(name)
+            break
     return out
 
 
@@ -1738,24 +1756,12 @@ def is_wildcard(tokens, idx):
     return True
 
 
-EXT_RE = re.compile(r"\.[A-Za-z0-9]{1,10}$")
-
-
-def path_like(w):
-    """A run-time word that visibly names a file: a static `/` (`"$S/smoke.mjs"`,
-    `$TMPDIR/cov.mjs`) or a static file extension at its end (`"$name.json"`). It is read as
-    one path: the gate does not assume a directory variable splits into several words."""
-    parts = [p for p in w.value.split(DYN)]
-    return any("/" in p for p in parts) or bool(EXT_RE.search(parts[-1]))
-
-
 def could_be(w, p):
-    """Could run-time word `w` expand to the pattern's literal word `p`? Its static parts must
-    appear in `p`, in order (`"$m:fresh"` can be `migration:fresh`, `"$S/x.mjs"` can't be
-    `ace`). An unquoted word that is not path-like can field-split into anything."""
-    if p.dynamic:
-        return True
-    if w.split and not path_like(w):
+    """Could run-time word `w` expand to the pattern's literal word `p`? For a word whose
+    expansions are all quoted, its static parts must appear in `p`, in order (`"$m:fresh"`
+    can be `migration:fresh`, `"$S/x.mjs"` can't be `ace`). An unquoted expansion is field-
+    split by the shell (`$X/y` with X="-rf /tmp" is three words), so it can be anything."""
+    if p.dynamic or w.split:
         return True
     rx = ".*".join(re.escape(part).replace(r"\*", ".*").replace(r"\?", ".").replace(r"\[", ".*")
                    for part in w.value.split(DYN))
@@ -1764,7 +1770,7 @@ def could_be(w, p):
 
 def wild_flag(tokens, idx):
     """A run-time word that could expand to flags: unquoted (field splitting) or visibly
-    starting with `-`, and not after `--`. A path-like word is one path, not flags."""
+    starting with `-`, and not after `--`."""
     if not is_wildcard(tokens, idx):
         return False
     if any(not t.dynamic and t.value == "--" for t in tokens[:idx]):
@@ -1772,7 +1778,7 @@ def wild_flag(tokens, idx):
     w = tokens[idx]
     if w.head.startswith("-"):
         return True
-    return not w.raw.startswith('"') and not path_like(w)
+    return w.split or not w.raw.startswith('"')
 
 
 def pos_match(ppos, tokens, eq):
@@ -2081,10 +2087,12 @@ class RuleChecks(object):
         if cur is None:
             return set(), True
         names.add(cur)
-        created = state.branch is not None and state.branch[0] == cwd
-        if created and state.branch[2]:
-            return names, True        # created from a start point / --track: upstream unknown
-        for spec in () if created else ("@{push}", "@{upstream}"):
+        if state.branch is not None and state.branch[0] == cwd:
+            # created earlier in this chain: git keeps any branch.<name>.merge already in the
+            # config, and a start point / --track may set one — where a bare push lands is not
+            # known until it exists
+            return names, True
+        for spec in ("@{push}", "@{upstream}"):
             r = run_git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", spec], cwd)
             if r and r[0] == 0 and "/" in r[1].strip():
                 names.add(r[1].strip().split("/", 1)[1])
@@ -2098,6 +2106,11 @@ class RuleChecks(object):
                 elif key.endswith(".push"):
                     return names, True
         return names, all_ and "ALL"
+
+    def fresh_upstream(self, name, state):
+        """Whether the config already holds an upstream for a branch this chain creates."""
+        r = run_git(["config", "--get", "branch.%s.merge" % name], state.cwd)
+        return r is None or (r[0] == 0 and bool(r[1].strip()))
 
     def eval_push(self, inv, state, here_unknown):
         pi = analyze_push_args(inv.git.args)
@@ -2142,8 +2155,8 @@ class RuleChecks(object):
             dests.add(n)
             fresh = (state.branch is not None and state.branch[0] == state.cwd
                      and state.branch[1] == src)
-            if fresh and state.branch[2] and ":" not in v:
-                unknown = True     # just created from a start point: its upstream isn't known
+            if fresh and ":" not in v and (state.branch[2] or self.fresh_upstream(src, state)):
+                unknown = True     # just created, but it may already track something
             elif ":" not in v and not here_unknown and n == src and not fresh:
                 rr = run_git(["rev-parse", "--abbrev-ref", "--symbolic-full-name",
                               src + "@{upstream}"], state.cwd)
@@ -2299,7 +2312,7 @@ class SelfProtection(object):
         for var, val in (("CLAUDE_PROJECT_DIR", os.environ.get("CLAUDE_PROJECT_DIR")),
                          ("HOME", os.path.expanduser("~")),
                          ("PWD", state.cwd if state.cwd_known else None)):
-            if val:
+            if val and var not in state.rebound:
                 # Forward slashes: a Windows value (C:\\Users\\…) would otherwise read as
                 # shell escapes below and every expanded path would look suspect.
                 val = val.replace("\\", "/")
@@ -2842,6 +2855,7 @@ class State(object):
         # this chain created and checked out at cwd — HEAD on disk doesn't show it yet.
         self.branch = None
         self.env = static_env() if env is None else env   # variables the lexer resolves
+        self.rebound = set()          # KNOWN_VARS this command may assign (never substituted)
 
     def copy(self):
         s = State(self.cwd, dict(self.env))
@@ -2850,8 +2864,11 @@ class State(object):
         s.written = set(self.written)
         s.git_aliases = dict(self.git_aliases)
         s.branch = self.branch
+        s.rebound = set(self.rebound)
         return s
 
+
+STATIC_VAR_ALONE_RE = re.compile(r'^"?\$\{?(HOME|CLAUDE_CONFIG_DIR)\b[^/]*"?$')
 
 SWITCH_CREATE = {"switch": ({"-c", "-C", "--create", "--force-create", "--orphan"}, "cC", "dfmqt"),
                  "checkout": ({"-b", "-B", "--orphan"}, "bB", "dfmqtl")}
@@ -2916,9 +2933,10 @@ class Analyzer(Indirection, SelfProtection, RuleChecks, Findings):
         if depth > MAX_DEPTH:
             self.opaque("commands are nested too deep", text)
             return
-        blocked = rebound_vars(text, list(state.env))
+        blocked = rebound_vars(text, KNOWN_VARS)
         if blocked:
-            # the text assigns (or otherwise names) one of them: its value is not the hook's
+            # the text may assign one of them: its value is not the hook's
+            state.rebound |= blocked
             state.env = {k: v for k, v in state.env.items() if k not in blocked}
         try:
             segs = parse_command(text, state.env)
@@ -2964,6 +2982,11 @@ class Analyzer(Indirection, SelfProtection, RuleChecks, Findings):
                 self.remember_written(r.target, state)
         while words and not words[0].quoted and words[0].value in RESERVED_SKIP:
             words.pop(0)
+        if (words and not words[0].quoted and words[0].value == "function" and not seg.funcdef
+                and len(words) > 2 and not words[2].quoted and words[2].value in ("{", "(")):
+            words = words[2:]            # `function f { …; }`: judge the body
+            while words and not words[0].quoted and words[0].value in RESERVED_SKIP:
+                words.pop(0)
         if words and not words[0].quoted and words[0].value in RESERVED_HEADER:
             return None
         if words and words[-1].value == "}" and not words[-1].quoted:
@@ -2983,6 +3006,10 @@ class Analyzer(Indirection, SelfProtection, RuleChecks, Findings):
         if lookup or not argv:
             return None
         cmd = argv[0]
+        if STATIC_VAR_ALONE_RE.match(cmd.raw):
+            # `$HOME` as the whole command name: whatever it holds is the command
+            self.opaque("the command name is computed at run time", seg.text)
+            return None
         if cmd.dynamic:
             base = static_basename(cmd)
             if base is None:

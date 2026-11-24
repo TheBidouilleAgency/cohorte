@@ -52,10 +52,18 @@ def wildcard_word():
 # $HOME and $CLAUDE_CONFIG_DIR are the user's own environment, inherited alike by this hook and
 # by the agent's Bash tool: a command can't choose them without assigning them, so the lexer
 # expands them statically (`"$HOME/.claude/…/kanban-move.sh"` is that literal path). A text that
-# names one of them other than as `$NAME`/`${NAME…}` (an assignment, `export`, `read`, `unset`,
-# a `for` variable, …) keeps it a run-time expansion — see `rebound_vars`. A value with blanks,
-# glob characters, quotes or `$` is never resolved (it would split or expand again).
+# names one of them other than as `$NAME`/`${NAME}`/`${NAME-…}`/`${NAME:-…}` — even spelled
+# with quotes or escapes (`HO\ME=…`, `HO""ME=…`) — or that uses any builtin able to assign a
+# variable whose name the gate can't read (`export`, `declare`, `read`, `printf -v`, `eval`,
+# `source`, `let`, …) keeps them all run-time expansions — see `rebound_vars`. A value with
+# blanks, glob characters, quotes or `$` is never resolved (it would split or expand again).
 STATIC_VARS = ("HOME", "CLAUDE_CONFIG_DIR")
+# Also never trusted by self-protection's `known_text` once the command may rebind them.
+KNOWN_VARS = STATIC_VARS + ("CLAUDE_PROJECT_DIR", "PWD")
+REBINDERS_RE = re.compile(
+    r"(?<![A-Za-z0-9_./-])(export|declare|typeset|local|readonly|read|readarray|mapfile|eval|"
+    r"source|let|getopts|unset)(?![A-Za-z0-9_./-])|(?<![A-Za-z0-9_./-])printf\b[^\n;&|]*\s-v"
+    r"|(?:^|[;&|(\n{]|\b(?:then|do|else|command|builtin|exec)\s)\s*\.(?=\s)")
 SAFE_VALUE_RE = re.compile(r"^[^\s*?\[\]$`'\"\\{}]*$")
 
 
@@ -77,14 +85,22 @@ def static_env():
 
 
 def rebound_vars(text, names):
-    """The names in `names` that `text` mentions other than as an expansion ($X, ${X…})."""
+    """The names in `names` that `text` may assign: all of them when it uses a builtin that
+    assigns by a computed name (REBINDERS_RE), else those it names other than as a plain
+    expansion — quotes and backslashes removed first, so `HO\\ME=` and `HO""ME=` count."""
+    if REBINDERS_RE.search(text):
+        return set(names)
+    flat = re.sub(r"[\\'\"]", "", text)
     out = set()
     for name in names:
-        for m in re.finditer(r"(?<![A-Za-z0-9_])%s(?![A-Za-z0-9_])" % name, text):
-            before = text[:m.start()]
-            if not (before.endswith("$") or before.endswith("${")):
-                out.add(name)
-                break
+        for m in re.finditer(r"(?<![A-Za-z0-9_])%s(?![A-Za-z0-9_])" % name, flat):
+            before, after = flat[:m.start()], flat[m.end():]
+            if before.endswith("$"):
+                continue
+            if before.endswith("${") and re.match(r"(\}|:?-)", after):
+                continue
+            out.add(name)
+            break
     return out
 
 

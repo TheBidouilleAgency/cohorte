@@ -13,7 +13,7 @@ import shlex
 
 from .shell import (
     ASSIGN_RE, cmd_name, DYN, GIT_ENV_VARS, is_flag_word, parse_command, ParseError,
-    PREFIXES_SEEN, rebound_vars, RESERVED_HEADER, RESERVED_SKIP, static_env, static_word,
+    KNOWN_VARS, PREFIXES_SEEN, rebound_vars, RESERVED_HEADER, RESERVED_SKIP, static_env, static_word,
     strip_prefixes,
 )
 from .git import GIT_BUILTINS, parse_git
@@ -39,6 +39,7 @@ class State(object):
         # this chain created and checked out at cwd — HEAD on disk doesn't show it yet.
         self.branch = None
         self.env = static_env() if env is None else env   # variables the lexer resolves
+        self.rebound = set()          # KNOWN_VARS this command may assign (never substituted)
 
     def copy(self):
         s = State(self.cwd, dict(self.env))
@@ -47,8 +48,11 @@ class State(object):
         s.written = set(self.written)
         s.git_aliases = dict(self.git_aliases)
         s.branch = self.branch
+        s.rebound = set(self.rebound)
         return s
 
+
+STATIC_VAR_ALONE_RE = re.compile(r'^"?\$\{?(HOME|CLAUDE_CONFIG_DIR)\b[^/]*"?$')
 
 SWITCH_CREATE = {"switch": ({"-c", "-C", "--create", "--force-create", "--orphan"}, "cC", "dfmqt"),
                  "checkout": ({"-b", "-B", "--orphan"}, "bB", "dfmqtl")}
@@ -113,9 +117,10 @@ class Analyzer(Indirection, SelfProtection, RuleChecks, Findings):
         if depth > MAX_DEPTH:
             self.opaque("commands are nested too deep", text)
             return
-        blocked = rebound_vars(text, list(state.env))
+        blocked = rebound_vars(text, KNOWN_VARS)
         if blocked:
-            # the text assigns (or otherwise names) one of them: its value is not the hook's
+            # the text may assign one of them: its value is not the hook's
+            state.rebound |= blocked
             state.env = {k: v for k, v in state.env.items() if k not in blocked}
         try:
             segs = parse_command(text, state.env)
@@ -161,6 +166,11 @@ class Analyzer(Indirection, SelfProtection, RuleChecks, Findings):
                 self.remember_written(r.target, state)
         while words and not words[0].quoted and words[0].value in RESERVED_SKIP:
             words.pop(0)
+        if (words and not words[0].quoted and words[0].value == "function" and not seg.funcdef
+                and len(words) > 2 and not words[2].quoted and words[2].value in ("{", "(")):
+            words = words[2:]            # `function f { …; }`: judge the body
+            while words and not words[0].quoted and words[0].value in RESERVED_SKIP:
+                words.pop(0)
         if words and not words[0].quoted and words[0].value in RESERVED_HEADER:
             return None
         if words and words[-1].value == "}" and not words[-1].quoted:
@@ -180,6 +190,10 @@ class Analyzer(Indirection, SelfProtection, RuleChecks, Findings):
         if lookup or not argv:
             return None
         cmd = argv[0]
+        if STATIC_VAR_ALONE_RE.match(cmd.raw):
+            # `$HOME` as the whole command name: whatever it holds is the command
+            self.opaque("the command name is computed at run time", seg.text)
+            return None
         if cmd.dynamic:
             base = static_basename(cmd)
             if base is None:
