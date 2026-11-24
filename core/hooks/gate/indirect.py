@@ -6,6 +6,7 @@ the pipeline's own preflight.sh / verify-run.sh arguments. Static inner text is 
 again one level deeper; text built at run time goes to `opaque`.
 """
 
+import os
 import re
 
 from .shell import cmd_name, INTERP_RE, Seg, SHELLS, static_word, wildcard_word
@@ -53,6 +54,9 @@ class Indirection(object):
             return
         if name == "verify-run.sh":
             self.verify_args(args, state, depth)
+            return
+        if name == "kanban-move.sh":
+            self.kanban_args(args, state)
             return
         if name == "eval":
             text = " ".join(a.value for a in args)
@@ -205,6 +209,8 @@ class Indirection(object):
             self.preflight_args(sargs, state, depth)
         elif cmd_name(script.value) == "verify-run.sh":
             self.verify_args(sargs, state, depth)
+        elif cmd_name(script.value) == "kanban-move.sh":
+            self.kanban_args(sargs, state)
 
     def preflight_args(self, args, state, depth):
         """preflight.sh <report> "<cmd>"…: it truncates <report>, and runs each cmd via sh -c."""
@@ -222,6 +228,7 @@ class Indirection(object):
                         "--migrate-down": False, "--check": True}
 
     def verify_args(self, args, state, depth):
+        self.verify_outputs(args, state)
         k = 0
         while k < len(args):
             a = args[k]
@@ -243,6 +250,42 @@ class Indirection(object):
                 k += 2
                 continue
             k += 1
+
+    def verify_outputs(self, args, state):
+        """verify-run.sh writes <out>/<id>.<phase>.json, .md and <out>/<id>.<phase>/ (`stop`
+        deletes <out>/<id>.<phase>/pgids) — unprompted, so each is a write the gate judges.
+        Relative to the checkout's top, which is the cwd in practice."""
+        if not args or args[0].dynamic or args[0].value not in ("run", "stop"):
+            return
+        out, phase = static_word("specs/reports"), "verify"
+        k = 2
+        while k < len(args):
+            v = args[k].value
+            if not args[k].dynamic and v in ("--out", "--phase") and k + 1 < len(args):
+                if v == "--out":
+                    out = args[k + 1]
+                elif not args[k + 1].dynamic:
+                    phase = args[k + 1].value
+                k += 2
+                continue
+            k += 1
+        via = "verify-run.sh's --out"
+        if out.dynamic and self.known_text(out, state) is None:
+            self.ask("verify-run.sh would write its reports into `%s`, a folder computed at run "
+                     "time the gate can't check — confirm" % out.raw)
+            return
+        if out.dynamic:
+            out = static_word(self.known_text(out, state))
+        self.check_path(out, state, "write", via)
+        if len(args) > 1 and not args[1].dynamic:
+            base = os.path.join(out.value, "%s.%s" % (args[1].value, phase))
+            for p in (base + ".json", base + ".md", base):
+                self.check_path(static_word(p), state, "write", via)
+
+    def kanban_args(self, args, state):
+        """kanban-move.sh <board.md|auto> …: an explicit board is rewritten in place."""
+        if args and (args[0].dynamic or args[0].value not in ("auto", "--check")):
+            self.check_path(args[0], state, "write", "kanban-move.sh's board argument")
 
     def handed_command(self, script, word, cmd, state, depth):
         """A command a pipeline script will execute. Claude Code approved only the script call
@@ -322,6 +365,9 @@ class Indirection(object):
         if PROTECTED_NAME_RE.search(code):
             self.ask("inline code references a file the Cohorte gate depends on (gate config, "
                      "settings or preflight stamp) — confirm it only reads it")
+        elif self.ctx.mentions_core(code) or (state.cwd_known and self.ctx.in_core(state.cwd)):
+            self.ask("inline code references (or runs inside) the machine-wide cohorte install, "
+                     "which agents never write — confirm it only reads it")
         if not SPAWN_RE[lang].search(code):
             return
         joined = re.sub(r"(['\"])\s*\+\s*\1", "", code)

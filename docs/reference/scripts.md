@@ -47,7 +47,8 @@ worktree has its own DB), and **stops the server on every exit path**. Writes
 verified — `/cohorte-ship` compares it). Every command it is handed is judged by the gate first; the
 gate also inspects its arguments directly, so a denied command never runs, and one that is not the
 profile's own (or covered by a `permissions.allow` rule) needs the human's yes. `verify-run.sh stop <id>`
-reaps a server a killed run left behind; `rollback-check <spec>` exits 1 when `migrations: true` and
+reaps a server a killed run left behind (only process groups it started itself — a pid it did not
+start is refused); it never writes inside the cohorte install (`--out` there is refused); `rollback-check <spec>` exits 1 when `migrations: true` and
 `## Rollback` is empty.
 
 ## `kanban-move.sh` — board updates outside agent context

@@ -28,9 +28,17 @@ What it does, in order of authority:
    `git checkout`/`git restore` of them (`git reset --hard`, and `.`/directory/glob/`:/`
    pathspecs, count only when git reports one of them differs from what is restored). A
    Write/Edit/MultiEdit/NotebookEdit call aimed at one of them gets "ask".
-   Anything under `<CLAUDE_CONFIG_DIR>/cohorte-ui/` (the company flow's tickets, feature records,
-   leases, runs and their answers) is denied outright, Bash or Write/Edit: only cohorte ui and the
-   `cohorte` commands write there (and `touch`/`mkdir`/`tar -C`/`git -C … init` count as writes).
+   The machine-wide install is never an agent's to write — every project runs it unprompted:
+   `<config>/cohorte/` (the core: lib/, the allowlisted pipeline/scripts/, …),
+   `<config>/cohorte-ui/` (cohorte ui's runs, tickets, settings) and `<config>/commands/
+   cohorte-*.md`, `agents/cohorte-*.md`, `workflows/cohorte-*.js`, for `<config>` =
+   `$CLAUDE_CONFIG_DIR` and `~/.claude`, through a symlink too. An edit tool there is denied, and
+   so is every Bash write form above plus touch/mkdir, archive extraction (`tar -C`, `unzip -d`,
+   the current folder), a link to a file there (`ln`, `cp -l/-s`), a non-read-only git command
+   in it (`git -C`, `--work-tree`, after `cd`) and `git clone/init/worktree add` into it; a
+   path or inline code that may name it at run time gets "ask". So are verify-run.sh's
+   `--out`/`<id>` outputs and kanban-move.sh's board there (the scripts refuse it too).
+   `cohorte install`/`update`, run by the human, is how it changes.
    Inside a cohorte run (COHORTE_RUN_ID in the hook's environment, even empty): a state-changing
    `cohorte` verb, unsetting or overriding COHORTE_*, and pseudo-terminal helpers are denied
    (protect.py run_guard). Parsing cannot see into interpreters: nothing a person decides rests on it alone.

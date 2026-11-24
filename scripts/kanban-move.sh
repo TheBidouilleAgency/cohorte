@@ -244,6 +244,25 @@ fi
 
 [ -f "$board" ] || { echo "error: board not found: $board" >&2; exit 3; }
 
+# This script runs unprompted (the allowlisted <core>/pipeline/scripts/) and rewrites its board in
+# place, so the board is never a file of the machine-wide install — the core every project runs,
+# cohorte ui's state, the global cohorte-* commands/agents/workflows — whatever path or config
+# named it, through a symlink too. A board is a Markdown note.
+case "$board" in *.md|*.MD|*.markdown) ;; *) echo "error: the board must be a Markdown file (.md): $board" >&2; exit 2 ;; esac
+board_real=$(realpath "$board" 2>/dev/null) || board_real=""
+if [ -z "$board_real" ]; then
+  board_real=$(cd "$(dirname "$board")" 2>/dev/null && pwd -P)/$(basename "$board")
+  [ -L "$board" ] && { echo "error: the board is a symlink this system cannot resolve: $board" >&2; exit 2; }
+fi
+for cfgdir in "${CLAUDE_CONFIG_DIR:-}" "$HOME/.claude"; do
+  [ -n "$cfgdir" ] && [ -d "$cfgdir" ] || continue
+  cfgreal=$(cd "$cfgdir" && pwd -P)
+  for c in "$cfgdir" "$cfgreal"; do
+    case "$board_real/" in "$c/cohorte/"*|"$c/cohorte-ui/"*) echo "error: refusing to move a card in $board — it is inside the cohorte install ($c)" >&2; exit 2 ;; esac
+    case "$board_real" in "$c"/commands/cohorte-*|"$c"/agents/cohorte-*|"$c"/workflows/cohorte-*) echo "error: refusing to move a card in $board — it is a cohorte install file" >&2; exit 2 ;; esac
+  done
+done
+
 # A stage key resolved to `a|b|c`: keep the first heading this board has (case-insensitive,
 # trailing spaces and CR ignored — the same comparison the move itself makes). None ⇒ the
 # first candidate, which the move then reports as the unknown column (exit 3).

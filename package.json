@@ -1,6 +1,6 @@
 {
   "name": "cohorte",
-  "version": "4.1.4",
+  "version": "4.1.5",
   "description": "Multi-agent development pipeline for Claude Code — install it once, run /cohorte-init-pipeline in a repo, and it adapts to that project's stack.",
   "bin": {
     "cohorte": "bin/cli.js"

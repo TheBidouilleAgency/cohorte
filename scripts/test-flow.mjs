@@ -270,6 +270,14 @@ try {
     check("set it up from here → the pipeline set-up starts", c.status === 201 && c.json.founding.phase === "setup", JSON.stringify(c.json));
     const v = await until("ready", async () => { const x = (await call(`/api/projects/${c.json.project.id}/founding`)).json; return x.phase === "done" ? x : null; });
     check("done, nothing committed for you", v && /not committed/.test(v.warning) && git(ex, "log", "--format=%s").stdout.trim() === "init", JSON.stringify(v));
+    // The set-up reads the core (templates, steps) but must never be able to edit it: no `--add-dir` (acceptEdits would
+    // auto-accept edits there), only a Read rule for it.
+    const runs = readFileSync(log, "utf8").trim().split("\n").map((x) => JSON.parse(x));
+    const setup = runs.filter((x) => x.cwd === ex && x.argv.includes("--allowedTools"));
+    const tools = setup.length ? setup[0].argv[setup[0].argv.indexOf("--allowedTools") + 1] : "";
+    const core = join(globalDir, "cohorte").split("\\").join("/").replace(/^([A-Za-z]):/, (_, l) => "/" + l.toLowerCase());
+    check("the set-up may read the core without asking — a Read rule, nothing that writes", setup.length && tools.includes(`Read(/${core}/**)`) && !/\b(Write|Edit)\(/.test(tools), tools);
+    check("no run is ever given an extra working directory (--add-dir)", runs.every((x) => !x.argv.includes("--add-dir")), JSON.stringify(runs.filter((x) => x.argv.includes("--add-dir")).map((x) => x.argv)));
     check("a cohorte project cannot be set up twice", (await post("/api/founding", { mode: "existing", path: ex })).status === 409);
   }
 
