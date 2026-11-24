@@ -476,7 +476,8 @@ export class FoundingFlow {
     const f = this.store.get(r.projectId);
     if (!f || f.phase === 'abandoned' || f.phase === 'done') return;
     const st = f.stages.find((x) => x.runId === r.id);
-    if (st) { st.status = r.status; st.costUsd = (st.costUsd || 0) + (r.result?.costUsd ?? 0); st.endedAt = r.endedAt; }
+    // The CLI's total_cost_usd is already the session's running total: store it, never add it up.
+    if (st) { st.status = r.status; st.costUsd = r.result?.costUsd ?? st.costUsd; st.endedAt = r.endedAt; }
     if (f.currentRunId === r.id) f.currentRunId = null;
     const failed = r.status !== 'done' ? `the ${r.meta.role} run ${r.status}${r.result?.text ? `: ${r.result.text.slice(0, 300)}` : ''}` : null;
     const texts = textsOf(r.events);
