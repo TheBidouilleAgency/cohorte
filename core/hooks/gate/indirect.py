@@ -9,6 +9,7 @@ again one level deeper; text built at run time goes to `opaque`.
 import re
 
 from .shell import cmd_name, INTERP_RE, Seg, SHELLS, static_word, wildcard_word
+from .findings import short
 
 
 PROTECTED_NAME_RE = re.compile(r"gate-config\.json|preflight\.ok|\.claude/settings(\.local)?\.json|"
@@ -211,35 +212,61 @@ class Indirection(object):
             return
         self.check_path(args[0], state, "write", "preflight.sh's report argument")
         for a in args[1:]:
-            if a.dynamic:
-                self.opaque("preflight.sh runs a check command built at run time", a.raw)
-            else:
-                self.analyze_text(a.value, state.copy(), depth + 1)
+            self.handed_command("preflight.sh", a, a.raw if a.dynamic else a.value, state, depth)
 
     # verify-run.sh run <id> --dev "<cmd>" --check "<name>=<cmd>" --migrate "<cmd>" …: every
     # command it is handed runs through a shell, so judge each one here — the script also asks
-    # the gate itself, but its `--confirmed` flag is the lead's word, and a DENIED command must
-    # stay denied whatever the flag says.
+    # the gate itself, but its `--confirmed` flag is the agent's to set, and a DENIED command must
+    # stay denied, an unapproved one asked, whatever the flag says.
     VERIFY_CMD_FLAGS = {"--dev": False, "--ready": False, "--migrate": False,
                         "--migrate-down": False, "--check": True}
 
     def verify_args(self, args, state, depth):
         k = 0
         while k < len(args):
-            flag = args[k].value
+            a = args[k]
+            flag = a.value
+            if a.dynamic and a.split:
+                # an unquoted expansion may be any words — `--check "x=…"` included
+                if not self.raw_deny(a.raw):
+                    self.ask("verify-run.sh is handed arguments built at run time (`%s`), so the "
+                             "commands it would run can't be checked — confirm" % a.raw)
+                k += 1
+                continue
             if flag in self.VERIFY_CMD_FLAGS and k + 1 < len(args):
                 a = args[k + 1]
-                if a.dynamic:
-                    self.opaque("verify-run.sh runs a command built at run time", a.raw)
-                else:
-                    cmd = a.value
-                    if self.VERIFY_CMD_FLAGS[flag] and "=" in cmd:
-                        cmd = cmd.split("=", 1)[1]          # --check "<name>=<cmd>"
-                    if not (flag == "--ready" and re.match(r"^https?://", cmd.strip())):
-                        self.analyze_text(cmd, state.copy(), depth + 1)
+                cmd = a.raw if a.dynamic else a.value
+                if self.VERIFY_CMD_FLAGS[flag] and "=" in cmd:
+                    cmd = cmd.split("=", 1)[1]          # --check "<name>=<cmd>"
+                if not (flag == "--ready" and not a.dynamic and re.match(r"^https?://", cmd.strip())):
+                    self.handed_command("verify-run.sh", a, cmd, state, depth)
                 k += 2
                 continue
             k += 1
+
+    def handed_command(self, script, word, cmd, state, depth):
+        """A command a pipeline script will execute. Claude Code approved only the script call
+        (`cohorte sync` allowlists <core>/pipeline/scripts/), so the inner command runs with no
+        prompt of its own: the gate's rules judge it, and when nothing denies or asks, it runs
+        unprompted only if the profile declares it or a permissions.allow rule covers it."""
+        if word.dynamic:
+            if not self.raw_deny(word.raw):
+                self.ask("%s would run a command built at run time (`%s`), which the gate can't "
+                         "check — confirm" % (script, short(word.raw)))
+            return
+        if not cmd.strip():
+            return
+        self.analyze_text(cmd, state.copy(), depth + 1)
+        verdict = self.ctx.approvals().judge(cmd)
+        if verdict == "allow":
+            return
+        if verdict is not None:
+            (self.deny if verdict[0] == "deny" else self.ask)(
+                "%s would run `%s`: %s" % (script, short(cmd), verdict[1]))
+            return
+        self.ask("%s would run `%s` without a permission prompt of its own, and it is neither a "
+                 "command of the project's profile (.claude/profile.json) nor covered by a "
+                 "permissions.allow rule — confirm it" % (script, short(cmd)))
 
     def interp_code(self, name, args):
         lang = lang_of(name)

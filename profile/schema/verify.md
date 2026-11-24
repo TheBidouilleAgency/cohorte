@@ -39,8 +39,12 @@ The hook only sees `verify-run.sh …`, so the script asks
 `.claude/hooks/cohorte-gate.py --check` about each command before it runs any of them:
 
 - `deny` ⇒ that check is recorded `SKIPPED` and never run.
-- `ask` ⇒ exit 4 and nothing is started. The lead shows the human the list and re-runs with
-  `--confirmed` only after a yes in this session.
+- `ask`, or `defer` (no gate rule matched, and the command is neither the profile's own nor
+  covered by a `permissions.allow` rule) ⇒ exit 4 and nothing is started. The lead shows the human
+  the list and re-runs with `--confirmed` only after a yes in this session. `--confirmed` never
+  overrides a deny, and the hook still judges the call on its own.
+
+The profile's own commands, passed as the profile spells them, need no confirmation.
 
 A `commands.migrate_down` that sits in `gate.deny` (`migration:rollback` usually does) is never
 verified. To let the pipeline check rollbacks on the dev DB, move it to `gate.ask`.

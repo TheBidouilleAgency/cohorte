@@ -18,6 +18,12 @@
 #   — the stamp `hooks/gate.py` checks (gate-config.json `preflight` block) before letting
 #   review agents dispatch.
 #
+# It runs whatever it is handed, and Claude Code approves the call itself (`cohorte sync`
+# allowlists <core>/pipeline/scripts/). So the project gate judges each command argument of a
+# `preflight.sh …` call: one that no gate rule denies or asks still needs to be a command of the
+# project's .claude/profile.json (or covered by a permissions.allow rule), else the call is asked
+# (denied when unattended). /cohorte-review passes exactly the profile's commands.
+#
 # The stamp is a LOCAL, GITIGNORED artifact. Versioning it breaks the gate outright: the
 # stamp records the pre-commit sha, committing it moves HEAD, so the checked-out stamp can
 # never match its own commit — every dispatch then reports "HEAD moved" on a clean tree.

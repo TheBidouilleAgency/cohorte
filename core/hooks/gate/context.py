@@ -12,6 +12,7 @@ import os
 from .runtime import run_git, warn
 from .config import ConfigError, resolve_roots, validate_config
 from .patterns import compile_pattern
+from .approve import Approvals
 
 # ── context ──────────────────────────────────────────────────────────────────
 class Ctx(object):
@@ -66,7 +67,14 @@ class Ctx(object):
         self._branches = {}
         self._aliases = {}
         self.owner = None             # Ownership, set by evaluate() for a surface agent
+        self._approvals = None
         self._build_protected()
+
+    def approvals(self):
+        """What a pipeline script may run unprompted (approve.py), read once per evaluation."""
+        if self._approvals is None:
+            self._approvals = Approvals(self.roots)
+        return self._approvals
 
     def _build_protected(self):
         write, delete = set(), set()

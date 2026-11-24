@@ -35,7 +35,12 @@ const check = (name, cond, detail = "") => {
 };
 
 const tmps = [];
-const git = (cwd, ...args) => spawnSync("git", args, { cwd, encoding: "utf8" });
+// The developer's own ~/.claude/settings.json may allow anything: the gate cases read an empty
+// user settings directory instead.
+const userDir = mkdtempSync(join(tmpdir(), "verify-user-"));
+tmps.push(userDir);
+const iso = { env: { ...process.env, CLAUDE_CONFIG_DIR: userDir } };
+const git =(cwd, ...args) => spawnSync("git", args, { cwd, encoding: "utf8" });
 
 const SERVER = `
 const http = require("http"), fs = require("fs");
@@ -273,12 +278,40 @@ async function assertStopped(d, port, label) {
   // silently swallow the rest. The second one is denied and must never run.
   writeFileSync(join(d, ".claude/gate-config.json"), JSON.stringify({
     deny: ["node migrate.js denied", "node probe.js"], ask: [], ask_on_default_branch: [], default_branch: "main" }));
-  r = run(d, ["run", "x", "--check", "smoke=node migrate.js smoke", "--check", "e2e=node migrate.js denied", "--check", "smoke:web=node migrate.js web"]);
+  // The profile declares the commands /cohorte-verify passes: those run with no confirmation.
+  writeFileSync(join(d, ".claude/profile.json"), JSON.stringify({
+    commands: { dev: "sh dev.sh 1", smoke: "node migrate.js smoke", e2e: "node migrate.js denied" },
+    verify: { surfaces: { web: { smoke: "node migrate.js web" } } } }));
+  r = run(d, ["run", "x", "--check", "smoke=node migrate.js smoke", "--check", "e2e=node migrate.js denied", "--check", "smoke:web=node migrate.js web"], iso);
   const v2 = verdict(d);
   check("denied 2nd of 3 checks ⇒ SKIPPED, the 1st and 3rd ran", status(v2, "smoke") === "PASS" && status(v2, "e2e") === "SKIPPED"
     && status(v2, "smoke:web") === "PASS" && !/denied/.test(readFileSync(join(d, "db.log"), "utf8")), JSON.stringify(v2.checks));
-  r = run(d, ["run", "x", "--dev", "sh dev.sh 1", "--ready", "node probe.js"]);
+  r = run(d, ["run", "x", "--dev", "sh dev.sh 1", "--ready", "node probe.js"], iso);
   check("a denied ready probe ⇒ SKIPPED, the app never started", r.status === 3 && status(verdict(d), "ready") === "SKIPPED" && !existsSync(join(d, "server.pid")), r.stdout + r.stderr);
+
+  // A command no gate rule matches is NOT an allow: Claude Code auto-approves `verify-run.sh …`
+  // (the allowlisted <core>/pipeline/scripts/), so it would run with no prompt at all. Only the
+  // profile's commands and permissions.allow rules run unconfirmed; anything else ⇒ exit 4.
+  rmSync(join(d, "db.log"), { force: true });
+  for (const cmd of ["node migrate.js evil", "python3 -c 'open(\"db.log\",\"a\").write(\"evil\\n\")'", "touch db.log"]) {
+    r = run(d, ["run", "x", "--check", `smoke=${cmd}`], iso);
+    check(`an undeclared check (${cmd.slice(0, 30)}) ⇒ exit 4, listed, nothing ran`,
+      r.status === 4 && r.stderr.includes(cmd) && !existsSync(join(d, "db.log")), r.status + r.stdout + r.stderr);
+  }
+  r = run(d, ["run", "x", "--check", "smoke=node migrate.js smoke", "--check", "e2e=node migrate.js evil"], iso);
+  check("one undeclared check among declared ones ⇒ exit 4, NOTHING ran", r.status === 4 && !existsSync(join(d, "db.log")), r.stdout + r.stderr);
+  r = run(d, ["run", "x", "--check", "smoke=node migrate.js evil", "--check", "e2e=node migrate.js denied", "--confirmed"], iso);
+  check("--confirmed (the human said yes in chat) runs the undeclared one, never the denied one",
+    status(verdict(d), "smoke") === "PASS" && status(verdict(d), "e2e") === "SKIPPED"
+    && readFileSync(join(d, "db.log"), "utf8") === "evil\n", r.stdout + r.stderr);
+  rmSync(join(d, "db.log"), { force: true });
+  r = run(d, ["run", "x", "--check", "smoke=node migrate.js smoke  "], iso);
+  check("a declared command (whitespace aside) runs unconfirmed", r.status === 0, r.stdout + r.stderr);
+  writeFileSync(join(d, ".claude/settings.local.json"), JSON.stringify({ permissions: { allow: ["Bash(node migrate.js allowed:*)"] } }));
+  r = run(d, ["run", "x", "--check", "smoke=node migrate.js allowed --fast"], iso);
+  check("a permissions.allow rule of the project's settings ⇒ runs unconfirmed", r.status === 0 && /allowed/.test(readFileSync(join(d, "db.log"), "utf8")), r.stdout + r.stderr);
+  rmSync(join(d, ".claude/settings.local.json"));
+  rmSync(join(d, ".claude/profile.json"));
 
   // From a linked worktree the gate still finds the main checkout's config.
   writeFileSync(join(d, ".claude/gate-config.json"), JSON.stringify({
@@ -305,6 +338,14 @@ async function assertStopped(d, port, label) {
   check("with a local Playwright ⇒ mobile + desktop shots in evidence", r.status === 0 && status(v, "screenshot:home") === "PASS"
     && v.evidence.some((e) => e.endsWith("home.mobile.png")) && v.evidence.some((e) => e.endsWith("home.desktop.png"))
     && existsSync(join(d, "specs/reports/x.verify/home.desktop.png")), JSON.stringify(v));
+  // A screenshot URL is data: it never reaches a shell as text, and only http(s) is captured.
+  r = run(d, ["run", "x", "--dev", `sh dev.sh ${port}`, "--ready", `http://127.0.0.1:${port}/`,
+    "--screenshot", `inj=http://127.0.0.1:${port}/"; touch pwned-a; echo "`, "--screenshot", `sub=http://127.0.0.1:${port}/$(touch pwned-b)`,
+    "--screenshot", "file=file:///etc/passwd"]);
+  v = verdict(d);
+  check("a screenshot URL with shell syntax is never executed", !existsSync(join(d, "pwned-a")) && !existsSync(join(d, "pwned-b")), r.stdout + r.stderr);
+  check("a non-http(s) screenshot URL ⇒ SKIPPED, not captured", status(v, "screenshot:file") === "SKIPPED"
+    && !existsSync(join(d, "specs/reports/x.verify/file.mobile.png")), JSON.stringify(v.checks));
   await assertStopped(d, port, "screenshots");
 }
 

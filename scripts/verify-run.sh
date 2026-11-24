@@ -28,10 +28,21 @@
 #   --ready-timeout <s>  (90)  --check-timeout <s> (600)  --deadline <s> (540, whole run)
 #   --confirmed                the human approved, in this session, the commands the gate would ask for
 #
-# The project gate (.claude/hooks/cohorte-gate.py) sees only `verify-run.sh …` — so this script
-# asks it, in `--check` mode, about every command it was handed BEFORE running any of them:
-# `deny` ⇒ that check is SKIPPED (never run); `ask` ⇒ exit 4 with the list, nothing started,
-# unless --confirmed. The gate stays the authority; this script never widens what it allows.
+# The project gate (.claude/hooks/cohorte-gate.py) is asked, in `--check` mode, about every
+# command this script was handed BEFORE running any of them. Exit 0 (allow) means the gate
+# approved it: no rule denies or asks, and it is a command of the project's .claude/profile.json
+# or covered by a permissions.allow rule. Exit 2 (deny) ⇒ that check is SKIPPED, never run.
+# Exit 1 (ask), 3 (defer: no gate rule matched, so only Claude Code's permission would have
+# decided) or anything else ⇒ exit 4 with the list, nothing started, unless --confirmed. Claude
+# Code approves `verify-run.sh …` itself through the allowlisted <core>/pipeline/scripts/, so a
+# deferred command run from here would have had NO prompt at all: defer counts as ask.
+#
+# `--confirmed` is an ordinary argument: the agent can set it. It relays the human's approval,
+# given in chat in an attended session, and that is all it does. It never overrides a deny (a
+# denied command is SKIPPED whatever the flag says), and it approves nothing for the PreToolUse
+# hook, which judges the commands of this call on its own and asks the human (denies, when
+# unattended) for any it would not approve. The gate stays the authority; this script never
+# widens what it allows.
 #
 # Exit: 0 PASS · 1 FAIL · 3 SKIPPED (nothing verified) · 4 needs the human's confirmation · 2 usage.
 # Never touches git state: no checkout, commit, push or merge — it reads HEAD and diffs, that's all.
@@ -262,7 +273,7 @@ run() {
     [ -n "$common" ] && gate="$(cd "$(dirname "$common")" 2>/dev/null && pwd)/.claude/hooks/cohorte-gate.py"
   fi
   denied_file=$(mktemp); asks=""
-  gate_verdict() { # prints allow|ask|deny
+  gate_verdict() { # prints allow|ask|deny — only exit 0 is an allow; 3 (defer) is an ask
     [ -f "$gate" ] || { echo allow; return; }
     command -v python3 > /dev/null 2>&1 || { echo ask; return; }
     python3 "$gate" --check --cwd "$top" -- "$1" < /dev/null > /dev/null 2>&1
@@ -463,10 +474,16 @@ run() {
     while IFS= read -r s; do
       [ -n "$s" ] || continue
       sname="${s%%=*}"; surl="${s#*=}"
+      # The URL is data, never shell text: a plain http(s) URL only, handed over in the env.
+      case "$surl" in
+        http://*|https://*) ;;
+        *) add_check "screenshot:$sname" SKIPPED "" 0 "$surl" "" "not an http(s) URL — not captured"; continue ;;
+      esac
       if [ -z "$pw" ]; then add_check "screenshot:$sname" SKIPPED "" 0 "" "" "no local Playwright CLI (node_modules/.bin/playwright) — evidence not captured"; continue; fi
       f="$evdir/$(printf '%s' "$sname" | tr -c 'A-Za-z0-9._-' '_')"
       slog="$f.screenshot.log"
-      timed 60 "$slog" "\"$pw\" screenshot --viewport-size=390,844 \"$surl\" \"$f.mobile.png\" && \"$pw\" screenshot --viewport-size=1280,800 \"$surl\" \"$f.desktop.png\""
+      VR_PW="$pw"; VR_URL="$surl"; VR_SHOT="$f"; export VR_PW VR_URL VR_SHOT
+      timed 60 "$slog" '"$VR_PW" screenshot --viewport-size=390,844 "$VR_URL" "$VR_SHOT.mobile.png" && "$VR_PW" screenshot --viewport-size=1280,800 "$VR_URL" "$VR_SHOT.desktop.png"'
       if [ "$timed_status" -eq 0 ]; then
         add_check "screenshot:$sname" PASS 0 0 "$surl" "$f.mobile.png" "evidence for a human eye — it proves the page rendered, not that it is right"
         add_evidence "$f.desktop.png"
