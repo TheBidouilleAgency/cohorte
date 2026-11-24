@@ -87,17 +87,24 @@ const PROFILE = {
 // return, or nested under a single wrapper field. Anything already shaped like a profile
 // (has `surfaces`, or is the documented `{error}` failure shape) passes through untouched.
 const unwrapProfile = p => {
-  if (typeof p === 'string') { try { return JSON.parse(p) } catch { return null } }
-  if (!p || typeof p !== 'object') return null
-  if (Array.isArray(p.surfaces) || p.error) return p
-  for (const v of Object.values(p)) {
-    if (typeof v !== 'string') continue
+  // The reader may also serialize each nested value while keeping the top level.
+  const decode = o => Object.fromEntries(Object.entries(o).map(([k, v]) => {
+    if (typeof v !== 'string' || !/^\s*[[{]/.test(v)) return [k, v]
     try {
-      const inner = JSON.parse(v)
-      if (inner && typeof inner === 'object' && !Array.isArray(inner)) return inner
-    } catch {}
+      const parsed = JSON.parse(v)
+      return [k, parsed && typeof parsed === 'object' ? parsed : v]
+    } catch { return [k, v] }
+  }))
+  if (typeof p === 'string') { try { p = JSON.parse(p) } catch { return null } }
+  if (!p || typeof p !== 'object' || Array.isArray(p)) return null
+  const flat = decode(p)
+  if (Array.isArray(flat.surfaces) || flat.error) return flat
+  for (const v of Object.values(flat)) {
+    if (!v || typeof v !== 'object' || Array.isArray(v)) continue
+    const inner = decode(v)
+    if (Array.isArray(inner.surfaces)) return inner
   }
-  return p
+  return flat
 }
 
 const OPEN = {
@@ -195,7 +202,7 @@ const implementPrompt = d =>
   'FIRST (pin current behavior / cover the entry points), watch them pass, THEN refactor to clear each ' +
   'item. Preserve current public behavior unless an item marks it a bug. Migrations stay additive. ' +
   `Need the current state of your tree? Compute it yourself: <core>/pipeline/scripts/feature-diff.sh --default ${base} --patch -- <your surface path> ` +
-  '(<core> = "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/cohorte"; never a bare git diff — it hides files you created). ' +
+  '(<core> = the absolute path printed by `printf %s "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/cohorte"`. Run that lookup alone first (it does not count as any "one Bash call" below), then write the path out literally in every command: the gate denies a command name held in a variable; never a bare git diff — it hides files you created). ' +
   'Lint + format before handoff; return the handoff in the format your agent instructions define. ' +
   'Backlog items for YOUR surface (self-contained — clear exactly these, reading only the files they name):\n' +
   d.items.join('\n')
@@ -351,7 +358,7 @@ if (wantSpec) {
     `3. \`git rev-parse --abbrev-ref HEAD\`: on ${base} ⇒ \`git switch -c ${prefix}ID\` (uncommitted work carries over); ` +
     `already on ${prefix}ID ⇒ keep it; any other branch ⇒ leave it and report it. ` +
     `4. \`<core>/pipeline/scripts/kanban-move.sh auto ID ready --title "[refactor] ${slug}"\` ` +
-    '(<core> = "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/cohorte"). ' +
+    '(<core> = the absolute path printed by `printf %s "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/cohorte"`. Run that lookup alone first (it does not count as any "one Bash call" below), then write the path out literally in every command: the gate denies a command name held in a variable). ' +
     'Return id (ID), branch (checked out now) and kanban (the line the script printed).\n' +
     `<<<SPEC\n${specText}SPEC`,
     { model: 'haiku', label: 'write-spec', schema: SPEC, effort: 'low' },

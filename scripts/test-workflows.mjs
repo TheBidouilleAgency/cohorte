@@ -292,6 +292,60 @@ const EMPTY_PROFILE = { ...PROFILE, surfaces: [] };
     /no surfaces/.test(result.error || ""), JSON.stringify(result));
 }
 
+// The reader can also keep the top level but serialize each nested value. `surfaces`
+// still looks fine, so nothing aborted: `commands` read as a string gave preflight no
+// check to run, and `contract` read as a string switched the contract gate off.
+const FIELD_STRINGIFIED = {
+  ...PROFILE,
+  vcs: JSON.stringify(PROFILE.vcs),
+  contract: JSON.stringify({ ...PROFILE.contract, enabled: true }),
+  commands: JSON.stringify(PROFILE.commands),
+};
+{
+  const { result, prompts } = await run("review.js", replier([
+    ["profile", FIELD_STRINGIFIED],
+    ["review:", { verdict: "SHIP", findings: [] }], ...BASE_REVIEW,
+  ]));
+  check("review: field-stringified commands still reach preflight",
+    /tsc --noEmit/.test(String(prompts.preflight)), String(prompts.preflight).slice(0, 160));
+  check("review: a field-stringified profile still gets a verdict",
+    result.verdict === "SHIP", `got ${result.verdict}`);
+}
+{
+  const { result } = await run("review.js", replier([
+    ["profile", { ...FIELD_STRINGIFIED, surfaces: JSON.stringify(PROFILE.surfaces) }],
+    ["review:", { verdict: "SHIP", findings: [] }], ...BASE_REVIEW,
+  ]));
+  check("review: stringified surfaces are decoded, not mistaken for a wrapper",
+    result.verdict === "SHIP", `got ${result.verdict}`);
+}
+{
+  const { prompts } = await run("audit.js", replier([
+    ["profile", FIELD_STRINGIFIED], ["gates", { failures: [] }],
+    ["audit:", { items: [] }], NO_BACKLOG, ["write-backlog", "done"],
+  ]), {});
+  check("audit: field-stringified commands still reach the gates",
+    /tsc --noEmit/.test(String(prompts.gates)), String(prompts.gates).slice(0, 160));
+}
+// Workflow scripts are self-contained, so unwrapProfile is copied into each one:
+// pin the copies together so a fix to one cannot silently miss the others.
+{
+  const SCRIPTS = ["audit.js", "loop.js", "refactor.js", "review.js"];
+  const bodies = SCRIPTS.map(s => {
+    const text = readFileSync(join(root, "core/workflows", s), "utf8");
+    const m = text.match(/^const unwrapProfile = [\s\S]*?^}$/m);
+    return m ? m[0] : null;
+  });
+  check("unwrapProfile is identical in every workflow",
+    bodies.every(b => b && b === bodies[0]),
+    SCRIPTS.filter((s, i) => bodies[i] !== bodies[0]).join(","));
+}
+for (const script of ["loop.js", "review.js", "refactor.js"]) {
+  const text = readFileSync(join(root, "core/workflows", script), "utf8");
+  check(`${script}: <core> is never defined as a shell expression to run`,
+    !text.includes('<core> = "${CLAUDE_CONFIG_DIR'), "the gate denies a computed command name");
+}
+
 // ── the dead-agent family, swept across every terminal/staging agent ─────────
 // `agent()` returns null when a subagent dies. Any call whose result is turned
 // into a CLAIM (a verdict, a path, "it is on disk") must distinguish "died" from

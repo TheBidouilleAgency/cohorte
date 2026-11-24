@@ -7,6 +7,15 @@ short, user-facing, most recent first. One `## <version> — <YYYY-MM-DD>` secti
 > They are history and are deliberately not rewritten — every command gained a `cohorte-` prefix
 > in 2.0.0.
 
+## 4.1.1 — 2026-11-24
+
+- **A malformed profile no longer switches checks off.** When the profile reader returned each nested
+  field as a JSON string, `/cohorte-review`, `/cohorte-loop`, `/cohorte-audit` and `/cohorte-refactor` read
+  `commands` and `contract` as plain text: preflight ran no check and the contract gate was off, with no
+  error. Those fields are now decoded.
+- **No more gate denials on `<core>` scripts.** Workflow agents now resolve the core path once and write it
+  out literally, instead of running a command name held in a shell expression, which the gate refuses.
+
 ## 4.1.0 — 2026-11-20
 
 - **New project, from `cohorte ui`.** Start a project that does not exist yet — no terminal, no
