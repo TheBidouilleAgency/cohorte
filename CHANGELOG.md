@@ -7,6 +7,18 @@ short, user-facing, most recent first. One `## <version> — <YYYY-MM-DD>` secti
 > They are history and are deliberately not rewritten — every command gained a `cohorte-` prefix
 > in 2.0.0.
 
+## 4.1.5 — 2026-11-24
+
+Security fix — update now, then run `/cohorte-update-pipeline` in each project.
+
+- **Agents can no longer change cohorte itself.** The gate now refuses any write by an agent into the
+  machine-wide install (`~/.claude/cohorte/`, the `cohorte-*` commands, agents and workflows, and the
+  dashboard's data): its scripts run without a prompt in every project, so an edited script was a
+  permanent way around your approvals. The new-project set-up run, which could edit that folder, now only
+  reads it. `cohorte install`/`update`, which you run yourself, are unaffected.
+- `verify-run.sh --out` and `kanban-move.sh` refuse to write there too.
+- `verify-run.sh stop` only stops the processes it started itself, never ones listed by someone else.
+
 ## 4.1.4 — 2026-11-24
 
 Security fix — update now.

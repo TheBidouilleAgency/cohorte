@@ -394,8 +394,10 @@ export class FoundingFlow {
       '- Never recommend `/clear`, and never tell anyone to run a command next: cohorte ui takes over when you end.',
     ]);
     const run = this.d.runs.start({ ...mcp(f.root), projectId: f.projectId, cwd: f.root, command: '/cohorte-init-pipeline', prompt, model: s.models.setup, permissionMode: 'acceptEdits',
-      allowedTools: [...this.syncRule(), 'Bash(git status:*)', 'Bash(git ls-files:*)', 'Bash(git log:*)', 'Bash(git remote:*)', 'Bash(ls:*)', 'Bash(cat:*)'],
-      addDirs: [path.join(this.d.globalDir, 'cohorte')], meta: { role: 'setup', title: `Pipeline set-up · ${f.name}` } });
+      // The core is READ-only for this run: a `Read(//<core>/**)` rule (Claude Code applies Read rules to Glob and Grep too),
+      // never `--add-dir`, which under acceptEdits would let the agent edit <core>/lib or <core>/pipeline/scripts unprompted.
+      allowedTools: [...this.syncRule(), ...readRules(path.join(this.d.globalDir, 'cohorte')), 'Bash(git status:*)', 'Bash(git ls-files:*)', 'Bash(git log:*)', 'Bash(git remote:*)', 'Bash(ls:*)', 'Bash(cat:*)'],
+      meta: { role: 'setup', title: `Pipeline set-up · ${f.name}` } });
     f.setupRunId = run.id;
     this.track(f, 'setup', run);
     this.phase(f, 'setup');
@@ -627,4 +629,16 @@ export class FoundingFlow {
       git(p.root, 'commit', '-q', '-m', `chore: point the pipeline at ${remote}`);
     }
   }
+}
+
+/** Claude Code permission rules that let a run read (Read, and through it Glob/Grep) everything under `dir` without asking —
+ *  and nothing more. An absolute path is spelled `//…` in a rule (`/…` is relative to the settings); a Windows path
+ *  `C:\x` is `//c/x`. A path a rule cannot hold (a comma or a parenthesis) yields no rule: the reads then ask. */
+export function readRules(dir: string): string[] {
+  let p = path.resolve(dir).split(path.sep).join('/');
+  const drive = /^([A-Za-z]):\/(.*)$/.exec(p);
+  if (drive) p = `/${drive[1].toLowerCase()}/${drive[2]}`;
+  p = p.replace(/\/+$/, '');
+  if (!p.startsWith('/') || /[(),\r\n]/.test(p)) return [];
+  return [`Read(/${p}/**)`];
 }

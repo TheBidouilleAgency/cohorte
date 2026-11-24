@@ -6,6 +6,7 @@ and `BUDGET_S` are computed when the gate starts, which is why this module comes
 """
 
 import os
+import re
 import subprocess
 import sys
 import time
@@ -81,3 +82,26 @@ def warn(msg):
         sys.stderr.write("cohorte-gate: %s\n" % msg)
     except Exception:
         pass
+
+
+# ── the home folder ──────────────────────────────────────────────────────────
+# `~` and $HOME mean what they mean to the shell that runs the agent's command: bash (Git Bash on
+# Windows) reads $HOME, while Python's expanduser reads USERPROFILE on Windows. So $HOME wins
+# when it is set (an MSYS spelling `/c/Users/x` is read as `C:/Users/x`).
+def home_dir():
+    h = os.environ.get("HOME")
+    if h:
+        if os.name == "nt":
+            m = re.match(r"^/([A-Za-z])(/.*)?$", h.replace("\\", "/"))
+            if m:
+                h = m.group(1).upper() + ":" + (m.group(2) or "/")
+        if os.path.isabs(h):
+            return os.path.normpath(h)
+    return os.path.expanduser("~")
+
+
+def expand_home(p):
+    """`~` / `~/…` expanded like the shell does; `~user` left to expanduser."""
+    if p == "~" or p.startswith("~/") or p.startswith("~\\"):
+        return home_dir() + p[1:]
+    return os.path.expanduser(p) if p.startswith("~") else p

@@ -8,13 +8,36 @@ project is active (pointer or config), the self-protected paths, and cached git 
 import fnmatch
 import json
 import os
+import re
 
-from .runtime import run_git, warn
+from .runtime import expand_home, home_dir, run_git, warn
 from .config import ConfigError, resolve_roots, validate_config
 from .patterns import compile_pattern
 from .approve import Approvals
 
 # ── context ──────────────────────────────────────────────────────────────────
+# Text that spells the machine-wide install (`~/.claude/cohorte/lib/project.js`, `…/.claude/
+# commands/cohorte-ship.md`) — in inline code, or anywhere in a path computed at run time.
+CORE_TEXT_RE = re.compile(r"\.claude[/\\](cohorte(-ui)?([/\\]|$)|(commands|agents|workflows)[/\\]cohorte-)")
+# The static tail of a run-time path right after its variable part (`$CFG/cohorte/lib/x.js`,
+# `$D/workflows/cohorte-loop.js`): the variable may be the config folder.
+CORE_TAIL_RE = re.compile(r"^[/\\](cohorte(-ui)?([/\\]|$)|(commands|agents|workflows)[/\\]cohorte-)")
+
+
+def config_dirs():
+    """Claude Code's user configuration folders: `$CLAUDE_CONFIG_DIR` when set, and ~/.claude
+    (the default, and where a 2.x install or a second account may still live)."""
+    out = []
+    env = os.environ.get("CLAUDE_CONFIG_DIR")
+    home = os.path.join(home_dir(), ".claude")
+    for d in (env, home):
+        if d and os.path.isabs(expand_home(d)):
+            d = os.path.normpath(expand_home(d))
+            if d not in out:
+                out.append(d)
+    return out
+
+
 class Ctx(object):
     def __init__(self, cwd, mode):
         self.cwd0 = os.path.realpath(cwd) if cwd and os.path.isdir(cwd) else None
@@ -91,11 +114,55 @@ class Ctx(object):
                         (".claude", "profile.json")):
                 add(write, os.path.join(r, *rel))
             add(delete, os.path.join(r, ".claude", "pipeline.json"))
-        home = os.path.expanduser("~")
-        for rel in ("settings.json", "settings.local.json"):
-            add(write, os.path.join(home, ".claude", rel))
+        cfg_dirs = config_dirs()
+        for cfg in cfg_dirs:
+            for rel in ("settings.json", "settings.local.json"):
+                add(write, os.path.join(cfg, rel))
         self.protected = write
         self.delete_protected = write | delete
+        # The machine-wide install: the core every project runs (<core>/lib, the allowlisted
+        # <core>/pipeline/scripts/, the hooks it copies), cohorte ui's own state (run history,
+        # tickets, settings) and the global commands/agents/workflows `cohorte install` writes.
+        # Nothing an agent may write: only `cohorte install`/`update`, run by the human, does.
+        dirs, globs = set(), set()
+        for cfg in cfg_dirs:
+            for c in (cfg, os.path.realpath(cfg)):
+                for sub in ("cohorte", "cohorte-ui"):
+                    dirs.add(os.path.normcase(os.path.normpath(os.path.join(c, sub))))
+                for sub, pat in (("commands", "cohorte-*.md"), ("agents", "cohorte-*.md"),
+                                 ("workflows", "cohorte-*.js")):
+                    globs.add(os.path.normcase(os.path.normpath(os.path.join(c, sub, pat))))
+        self.core_dirs = sorted(dirs)
+        self.core_globs = sorted(globs)
+
+    def in_core(self, p):
+        """Is `p` (absolute) inside the machine-wide install — through a symlink too?"""
+        for cand in {os.path.normcase(os.path.normpath(p)), os.path.normcase(os.path.realpath(p))}:
+            for d in self.core_dirs:
+                if cand == d or cand.startswith(d + os.sep):
+                    return True
+            for g in self.core_globs:
+                if fnmatch.fnmatchcase(cand, g):
+                    return True
+        return False
+
+    def core_below(self, p):
+        """Does the directory `p` (absolute) hold part of the machine-wide install?"""
+        for cand in {os.path.normcase(os.path.normpath(p)), os.path.normcase(os.path.realpath(p))}:
+            pre = cand.rstrip(os.sep) + os.sep
+            if any(d.startswith(pre) for d in self.core_dirs) or \
+                    any(os.path.dirname(g).startswith(pre) or os.path.dirname(g) == cand
+                        for g in self.core_globs):
+                return True
+        return False
+
+    def mentions_core(self, text):
+        """Does a piece of inline code name the machine-wide install?"""
+        if CORE_TEXT_RE.search(text):
+            return True
+        t = os.path.normcase(text)     # Windows: case-insensitive, either slash
+        return any(d in t for d in self.core_dirs) or \
+            any(os.path.dirname(g) + os.sep + "cohorte-" in t for g in self.core_globs)
 
     # git state, cached
     def current_branch(self, cwd):

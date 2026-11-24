@@ -70,8 +70,6 @@ export interface Run {
   meta: RunMeta; model: string | null; disallowedTools: string[];
   /** Tool rules allowed without asking (`Bash(npm:*)`) — the scaffold of a new project runs its stack's package managers. */
   allowedTools: string[];
-  /** Extra folders the session may read and edit without asking (`--add-dir`): the pipeline core, for the set-up. */
-  addDirs: string[];
   /** Company-flow runs load only the project's own MCP servers (its .mcp.json, or none) — not every server of the user's. */
   strictMcp: boolean; mcpConfig: string | null;
   /** Appended to Claude Code's system prompt (`--append-system-prompt`), on every turn of the run. */
@@ -87,7 +85,7 @@ export interface Run {
 export interface RunStartOpts {
   projectId: string; cwd: string; command: string; permissionMode?: unknown;
   /** The text sent as the first turn. Defaults to `command` (a slash command); the flow sends the expanded command body instead, so its model applies. */
-  prompt?: string; model?: string | null; disallowedTools?: string[]; allowedTools?: string[]; addDirs?: string[]; meta?: RunMeta; strictMcp?: boolean; mcpConfig?: string | null; systemNote?: string | null;
+  prompt?: string; model?: string | null; disallowedTools?: string[]; allowedTools?: string[]; meta?: RunMeta; strictMcp?: boolean; mcpConfig?: string | null; systemNote?: string | null;
   /** Shown in the feed as what the person said (a conversation's first message), when the prompt itself is not. */
   echo?: string;
 }
@@ -129,7 +127,6 @@ export class Runs {
       events: [], dropped: 0, pending: new Map(), result: null, sessionId: null, child: null, closeTimer: null, stopping: false,
       meta: opts.meta || { role: 'command' }, model, disallowedTools: (opts.disallowedTools || []).filter((t) => /^[A-Za-z][\w:-]{0,60}$/.test(t)),
       allowedTools: (opts.allowedTools || []).filter((t) => ALLOWED_RULE.test(t)),
-      addDirs: (opts.addDirs || []).filter((d) => typeof d === 'string' && path.isAbsolute(d)),
       seen: 0, tickets: {}, tasks: new Map(), awaitingTurn: false, strictMcp: opts.strictMcp === true, mcpConfig: typeof opts.mcpConfig === 'string' ? opts.mcpConfig : null,
       systemNote: typeof opts.systemNote === 'string' && opts.systemNote ? opts.systemNote.slice(0, 4000) : null,
     };
@@ -147,7 +144,8 @@ export class Runs {
     if (run.model) args.push('--model', run.model);
     if (run.disallowedTools.length) args.push('--disallowedTools', run.disallowedTools.join(','));
     if (run.allowedTools.length) args.push('--allowedTools', run.allowedTools.join(','));
-    for (const d of run.addDirs) args.push('--add-dir', d);
+    // Never `--add-dir`: Claude Code auto-accepts edits in an added directory under acceptEdits, and the one folder a run
+    // needed outside its project was the machine-wide core, which every later run executes. Reads go through `Read(//…)` rules.
     if (run.strictMcp) args.push('--strict-mcp-config');
     if (run.systemNote) args.push('--append-system-prompt', run.systemNote);
     if (run.mcpConfig) args.push('--mcp-config', run.mcpConfig);

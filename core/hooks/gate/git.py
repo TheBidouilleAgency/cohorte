@@ -8,6 +8,8 @@ remote branches it updates.
 
 import re
 
+from .shell import static_word
+
 # ── git ──────────────────────────────────────────────────────────────────────
 GIT_GLOBAL_WITH_ARG = {"-c", "-C", "--git-dir", "--work-tree", "--namespace", "--super-prefix",
                        "--config-env", "--list-cmds", "--attr-source"}
@@ -46,6 +48,7 @@ class GitInv(object):
         self.sub_index = None
         self.args = []
         self.relocated = False     # -C / --git-dir / --work-tree
+        self.places = []           # [(option, Word)] for each of them, in order
         self.dynamic_global = False
         self.c_aliases = {}
 
@@ -61,6 +64,8 @@ def parse_git(args):
         v = w.value
         if v == "-C":
             g.relocated = True
+            if i + 1 < len(args):
+                g.places.append(("-C", args[i + 1]))
             i += 2
             continue
         if v == "-c":
@@ -73,10 +78,14 @@ def parse_git(args):
             continue
         if v in ("--git-dir", "--work-tree"):
             g.relocated = True
+            if i + 1 < len(args):
+                g.places.append((v, args[i + 1]))
             i += 2
             continue
         if v.startswith("--git-dir=") or v.startswith("--work-tree="):
             g.relocated = True
+            opt, _, val = v.partition("=")
+            g.places.append((opt, static_word(val)))
             i += 1
             continue
         if v in GIT_GLOBAL_WITH_ARG:
