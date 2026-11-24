@@ -7,6 +7,7 @@ permission modes where nobody can answer.
 
 import os
 
+from .runtime import expand_home
 from .ownership import Ownership
 from .context import Ctx
 from .analyze import Analyzer, State
@@ -59,7 +60,7 @@ def edit_ownership(ctx, tool, targets):
                 "(surface ownership) — refused" % (tool, ctx.owner.agent))
     for fp in targets:
         try:
-            p = os.path.expanduser(fp)
+            p = expand_home(fp)
             if not os.path.isabs(p):
                 p = os.path.join(ctx.cwd0 or os.getcwd(), p)
             why = ctx.owner.judge(p)
@@ -111,7 +112,7 @@ def evaluate(payload):
             decision = edit_ownership(ctx, tool, targets)
         for fp in targets if decision is None else ():
             p = fp if os.path.isabs(fp) else os.path.join(ctx.cwd0 or ".", fp)
-            p = os.path.expanduser(p)
+            p = expand_home(p)
             if ctx.in_core(os.path.abspath(p)):
                 decision = ("deny", "`%s` of `%s` refused: it is inside the machine-wide cohorte "
                             "install (the core every project runs, cohorte ui's state, the global "

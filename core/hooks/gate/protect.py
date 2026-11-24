@@ -12,7 +12,7 @@ import glob
 import os
 import re
 
-from .runtime import run_git, warn
+from .runtime import expand_home, home_dir, run_git, warn
 from .shell import DYN, is_flag_word, static_word
 from .config import git_top_and_common
 from .patterns import flag_names
@@ -41,7 +41,7 @@ def suspicious(tail, raw):
 
 class SelfProtection(object):
     def path_key(self, w, state):
-        v = os.path.expanduser(w.value)
+        v = expand_home(w.value)
         if not os.path.isabs(v) and state.cwd_known:
             v = os.path.join(state.cwd, v)
         return os.path.normpath(v)
@@ -58,7 +58,7 @@ class SelfProtection(object):
             t = t[1:-1]
         for var, val in (("CLAUDE_PROJECT_DIR", os.environ.get("CLAUDE_PROJECT_DIR")),
                          ("CLAUDE_CONFIG_DIR", os.environ.get("CLAUDE_CONFIG_DIR")),
-                         ("HOME", os.path.expanduser("~")),
+                         ("HOME", home_dir()),
                          ("PWD", state.cwd if state.cwd_known else None)):
             if val and var not in state.rebound:
                 # Forward slashes: a Windows value (C:\\Users\\…) would otherwise read as
@@ -76,7 +76,7 @@ class SelfProtection(object):
             if t is None:
                 return "suspect" if suspicious(w.value.split(DYN)[-1], w.raw) else None
             w = static_word(t)
-        v = os.path.expanduser(w.value)
+        v = expand_home(w.value)
         if not v:
             return None
         if not os.path.isabs(v):
@@ -93,8 +93,9 @@ class SelfProtection(object):
             if mode in ("delete", "recursive", "chmod") and static and \
                     ctx.core_below(os.path.dirname(static) if not static.endswith(os.sep) else static):
                 # `rm -rf ~/.claude/*`: the glob may reach the install
-                if any(fnmatch.fnmatchcase(d, pat) for d in ctx.core_dirs) or \
-                        any(fnmatch.fnmatchcase(os.path.dirname(g), pat) for g in ctx.core_globs):
+                npat = os.path.normcase(pat)
+                if any(fnmatch.fnmatchcase(d, npat) for d in ctx.core_dirs) or \
+                        any(fnmatch.fnmatchcase(os.path.dirname(g), npat) for g in ctx.core_globs):
                     return "core" if mode == "delete" else "suspect"
             if any(fnmatch.fnmatchcase(p, pat) for p in prot):
                 return "protected"
@@ -124,7 +125,7 @@ class SelfProtection(object):
             t = self.known_text(w, state) if w.dynamic else w.value
             if not t:
                 return
-            v = os.path.expanduser(t)
+            v = expand_home(t)
             if not os.path.isabs(v):
                 if relocated or not state.cwd_known:
                     return
@@ -306,7 +307,7 @@ class SelfProtection(object):
             v = t
         else:
             v = w.value
-        v = os.path.expanduser(v)
+        v = expand_home(v)
         if not os.path.isabs(v):
             if base is None:
                 if relocated or not state.cwd_known:
@@ -505,7 +506,7 @@ class SelfProtection(object):
         v = w.value
         if v in (".", "..") or v.startswith(":") or w.glob:
             return True
-        return state.cwd_known and os.path.exists(os.path.join(state.cwd, os.path.expanduser(v)))
+        return state.cwd_known and os.path.exists(os.path.join(state.cwd, expand_home(v)))
 
     def restore_spec(self, spec, state, relocated, via, broad):
         if spec.dynamic:
@@ -526,7 +527,7 @@ class SelfProtection(object):
             rel, base = v[2:], None
         else:
             magic = False
-            rel, base = os.path.expanduser(v), "cwd"
+            rel, base = expand_home(v), "cwd"
         if base == "cwd" and not os.path.isabs(rel) and (relocated or not state.cwd_known):
             # relative to a directory the gate can't resolve
             if suspicious(rel, v) or rel in ("", ".", "./") or glob_like:

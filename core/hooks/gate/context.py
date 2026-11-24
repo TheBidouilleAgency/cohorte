@@ -10,7 +10,7 @@ import json
 import os
 import re
 
-from .runtime import run_git, warn
+from .runtime import expand_home, home_dir, run_git, warn
 from .config import ConfigError, resolve_roots, validate_config
 from .patterns import compile_pattern
 from .approve import Approvals
@@ -29,10 +29,10 @@ def config_dirs():
     (the default, and where a 2.x install or a second account may still live)."""
     out = []
     env = os.environ.get("CLAUDE_CONFIG_DIR")
-    home = os.path.join(os.path.expanduser("~"), ".claude")
+    home = os.path.join(home_dir(), ".claude")
     for d in (env, home):
-        if d and os.path.isabs(os.path.expanduser(d)):
-            d = os.path.normpath(os.path.expanduser(d))
+        if d and os.path.isabs(expand_home(d)):
+            d = os.path.normpath(expand_home(d))
             if d not in out:
                 out.append(d)
     return out
@@ -128,16 +128,16 @@ class Ctx(object):
         for cfg in cfg_dirs:
             for c in (cfg, os.path.realpath(cfg)):
                 for sub in ("cohorte", "cohorte-ui"):
-                    dirs.add(os.path.normpath(os.path.join(c, sub)))
+                    dirs.add(os.path.normcase(os.path.normpath(os.path.join(c, sub))))
                 for sub, pat in (("commands", "cohorte-*.md"), ("agents", "cohorte-*.md"),
                                  ("workflows", "cohorte-*.js")):
-                    globs.add(os.path.normpath(os.path.join(c, sub, pat)))
+                    globs.add(os.path.normcase(os.path.normpath(os.path.join(c, sub, pat))))
         self.core_dirs = sorted(dirs)
         self.core_globs = sorted(globs)
 
     def in_core(self, p):
         """Is `p` (absolute) inside the machine-wide install — through a symlink too?"""
-        for cand in {os.path.normpath(p), os.path.realpath(p)}:
+        for cand in {os.path.normcase(os.path.normpath(p)), os.path.normcase(os.path.realpath(p))}:
             for d in self.core_dirs:
                 if cand == d or cand.startswith(d + os.sep):
                     return True
@@ -148,7 +148,7 @@ class Ctx(object):
 
     def core_below(self, p):
         """Does the directory `p` (absolute) hold part of the machine-wide install?"""
-        for cand in {os.path.normpath(p), os.path.realpath(p)}:
+        for cand in {os.path.normcase(os.path.normpath(p)), os.path.normcase(os.path.realpath(p))}:
             pre = cand.rstrip(os.sep) + os.sep
             if any(d.startswith(pre) for d in self.core_dirs) or \
                     any(os.path.dirname(g).startswith(pre) or os.path.dirname(g) == cand
@@ -160,8 +160,9 @@ class Ctx(object):
         """Does a piece of inline code name the machine-wide install?"""
         if CORE_TEXT_RE.search(text):
             return True
-        return any(d in text for d in self.core_dirs) or \
-            any(os.path.dirname(g) + os.sep + "cohorte-" in text for g in self.core_globs)
+        t = os.path.normcase(text)     # Windows: case-insensitive, either slash
+        return any(d in t for d in self.core_dirs) or \
+            any(os.path.dirname(g) + os.sep + "cohorte-" in t for g in self.core_globs)
 
     # git state, cached
     def current_branch(self, cwd):

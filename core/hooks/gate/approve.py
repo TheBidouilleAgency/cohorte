@@ -12,7 +12,7 @@ import json
 import os
 import re
 
-from .runtime import warn
+from .runtime import home_dir, warn
 from .shell import parse_command, ParseError
 
 # ── approvals ────────────────────────────────────────────────────────────────
@@ -90,7 +90,7 @@ class Approvals(object):
                 self.profile.add(norm_cmd(c))
                 self.profile.add(norm_cmd(c + QUIET_SUFFIX))
         self.profile.add(norm_cmd(SECURITY_MARKER))
-        cfg = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
+        cfg = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(home_dir(), ".claude")
         files = [os.path.join(cfg, "settings.json")]
         for r in roots:
             files += [os.path.join(r, ".claude", "settings.json"),

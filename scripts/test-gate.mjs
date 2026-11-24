@@ -11,7 +11,7 @@
 //   node scripts/test-gate.mjs
 
 import { spawnSync, execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync, realpathSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync, realpathSync, symlinkSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -654,7 +654,9 @@ console.log("gate.py — self-protection: the machine-wide install");
   writeFileSync(join(C, "pipeline", "scripts", "feature-diff.sh"), "#!/bin/sh\n");
   writeFileSync(join(cfg, "commands", "cohorte-ship.md"), "x\n");
   writeFileSync(join(cfg, "settings.json"), "{}");
-  execFileSync("ln", ["-s", C, join(d, "core-link")]);
+  // A real link — Git Bash's `ln -s` copies by default on Windows — and there a junction, which
+  // needs no symlink privilege.
+  symlinkSync(C, join(d, "core-link"), process.platform === "win32" ? "junction" : "dir");
   const env = { HOME: home, CLAUDE_CONFIG_DIR: cfg };
   const c = sh(C), k = sh(cfg);
   const V = `${c}/pipeline/scripts/verify-run.sh`;

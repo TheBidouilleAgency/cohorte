@@ -9,7 +9,7 @@ main checkout of a linked worktree).
 import json
 import os
 
-from .runtime import run_git
+from .runtime import home_dir, run_git
 
 # ── config ───────────────────────────────────────────────────────────────────
 DEFAULT_AGENTS = ["cohorte-review", "review"]
@@ -128,7 +128,7 @@ def resolve_roots(cwd):
             add(top)
         else:
             d = os.path.realpath(cwd)
-            home = os.path.realpath(os.path.expanduser("~"))
+            home = os.path.realpath(home_dir())
             while True:
                 c = os.path.join(d, ".claude")
                 if (os.path.isfile(os.path.join(c, "gate-config.json"))

@@ -11,6 +11,7 @@ import os
 import re
 import shlex
 
+from .runtime import expand_home, home_dir
 from .shell import (
     ASSIGN_RE, cmd_name, DYN, GIT_ENV_VARS, is_flag_word, parse_command, ParseError,
     KNOWN_VARS, PREFIXES_SEEN, rebound_vars, RESERVED_HEADER, RESERVED_SKIP, static_env, static_word,
@@ -282,7 +283,7 @@ class Analyzer(Indirection, SelfProtection, RuleChecks, Findings):
             if pos and pos[0].value == "--" and not pos[0].dynamic:
                 pos = pos[1:]
             if not pos:
-                target = os.path.expanduser("~")
+                target = home_dir()
             else:
                 w = pos[0]
                 if w.value == "-" and not w.dynamic:
@@ -295,7 +296,7 @@ class Analyzer(Indirection, SelfProtection, RuleChecks, Findings):
                         return
                     target = k
                 else:
-                    target = os.path.expanduser(w.value)
+                    target = expand_home(w.value)
             if not os.path.isabs(target):
                 if not state.cwd_known:
                     return
@@ -342,7 +343,7 @@ class Analyzer(Indirection, SelfProtection, RuleChecks, Findings):
             t = t[1:-1]
         # Only $HOME: CLAUDE_PROJECT_DIR is set for hooks but usually NOT in the agent's
         # Bash call, so resolving it here could judge the branch in the wrong directory.
-        val = os.path.expanduser("~")
+        val = home_dir()
         t = t.replace("${HOME}", val).replace("$HOME", val)
         if "$" in t or "`" in t or "'" in t or '"' in t or "\\" in t:
             return None
