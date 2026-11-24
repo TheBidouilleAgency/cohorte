@@ -85,7 +85,7 @@ The verdict is in `specs/reports/$ARGUMENTS.revert.json`.
    merges, and it is the human's call (`<core>/pipeline/schema/spec-status.md`).
 5. `release_notes.enabled` ⇒ write the note yourself per `<core>/pipeline/schema/release-notes.md`,
    describing the removal for the user, and ask the human for the level.
-6. Commit with `revert: <title> (#<num>)` and the body `This reverts <sha> (PR #<num>).`
+6. Before committing, run `git config user.email`: empty, or a hostname-looking address (`…@<host>.local`/`.lan`, no dot in the domain) ⇒ stop and report it with the fix `git config user.name "<name>" && git config user.email "<email>"` — never invent or set an identity yourself. Commit with `revert: <title> (#<num>)` and the body `This reverts <sha> (PR #<num>).`
 
 ## 5. Confirm, push the revert branch, open the PR
 

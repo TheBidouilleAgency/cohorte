@@ -14,7 +14,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { spawnSync } from 'child_process';
-import { project as projectLib, registry, type Project } from './legacy';
+import { identity as identityLib, project as projectLib, registry, type Project } from './legacy';
 import type { Run, Runs } from './runs';
 import type { Job, Jobs } from './jobs';
 import type { SettingsStore } from './settings';
@@ -25,10 +25,10 @@ import { AUTOPILOT_NOTE, FlowError, READ_ONLY, contextBlock, expandCommand, mcp,
 import { lastOf, proposalsOf, toFoundation, toScaffold, toVision } from '../shared/blocks';
 import * as gitinfo from './gitinfo';
 import * as ops from './ops';
-import type { Foundation, FoundingMode, FoundingPhase, FoundingStage, FoundingView, NewProjectBody, RemoteInfo, RunRole, Vision } from '../shared/api';
+import type { Foundation, FoundingMode, FoundingPhase, FoundingStage, FoundingView, GitHubIdentity, GitIdentity, IdentityBody, IdentityInfo, NewProjectBody, RemoteInfo, RunRole, Vision } from '../shared/api';
 
 export const FOUNDING_ROLES: readonly RunRole[] = ['vision', 'foundation', 'scaffold', 'setup'];
-type Founding = FoundingView & { visionRunId: string | null; foundationRunId: string | null; setupRunId: string | null; scaffoldRuns: number; ticketIds: string[] };
+type Founding = Omit<FoundingView, 'identity'> & { visionRunId: string | null; foundationRunId: string | null; setupRunId: string | null; scaffoldRuns: number; ticketIds: string[] };
 
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const git = (cwd: string, ...a: string[]) => spawnSync('git', ['-C', cwd, ...a], { encoding: 'utf8', timeout: 30000 });
@@ -74,7 +74,7 @@ export function visionMarkdown(v: Vision, name: string): string {
 const NEVER = new Set(['rm', 'sudo', 'su', 'curl', 'wget', 'sh', 'bash', 'zsh', 'fish', 'chmod', 'chown', 'dd', 'mv', 'eval', 'exec', 'ssh', 'scp', 'git', 'docker', 'kill', 'pkill', 'open', 'xargs', 'env', 'cd', 'source', 'export', 'set']);
 export function scaffoldTools(plan: Foundation): string[] {
   const out = new Set<string>(['Bash(git init:*)', 'Bash(git status:*)', 'Bash(git add:*)', 'Bash(git commit:*)', 'Bash(git log:*)', 'Bash(git diff:*)',
-    'Bash(git rev-parse:*)', 'Bash(git branch:*)', 'Bash(cd:*)', 'Bash(mkdir:*)', 'Bash(ls:*)', 'Bash(pwd)', 'Bash(which:*)', 'Bash(cat:*)', 'Bash(echo:*)', 'Bash(test:*)', 'Bash(node --version)']);
+    'Bash(git rev-parse:*)', 'Bash(git branch:*)', 'Bash(git config user.email)', 'Bash(git config user.name)', 'Bash(cd:*)', 'Bash(mkdir:*)', 'Bash(ls:*)', 'Bash(pwd)', 'Bash(which:*)', 'Bash(cat:*)', 'Bash(echo:*)', 'Bash(test:*)', 'Bash(node --version)']);
   const cmds = [plan.devCommand, ...plan.surfaces.flatMap((s) => [s.generate || '', s.test, s.lint, s.build, s.packageManager])];
   for (const c of cmds) {
     for (const seg of c.split(/&&|\|\||;|\|/)) {
@@ -155,6 +155,28 @@ export function parseRemote(url: string): { host: 'github' | 'gitlab' | 'none'; 
   return { host: /(^|\.)github\.com$/.test(server) ? 'github' : /gitlab/.test(server) ? 'gitlab' : 'none', remote: m ? m[2] : '' };
 }
 
+/**
+ * Nothing is committed under an identity git invented: with no `user.email`, git signs commits `<os user>@<hostname>`
+ * (enzo@Mac.lan), the code host cannot link them, and fixing it is a history rewrite + force-push.
+ */
+export function requireIdentity(root: string): GitIdentity {
+  const id = identityLib.readIdentity(root);
+  if (id.status === 'ok') return id;
+  throw new FlowError(`set the git identity of this project before cohorte commits in it: ${id.reason}${id.effective ? ` (commits would be authored "${id.effective}")` : ''}. `
+    + `Use your GitHub identity on this page, or run in ${root}: ${identityLib.fixCommand(id.name || 'Your Name', 'you@example.com')}`, 409);
+}
+const ghBin = (): string => process.env.COHORTE_GH_BIN || 'gh';
+async function githubIdentity(root: string): Promise<{ installed: boolean; authed: boolean; github: GitHubIdentity | null }> {
+  const v = await gitinfo.probe(ghBin(), ['--version'], root, 4000);
+  if (v.code !== 0) return { installed: false, authed: false, github: null };
+  const r = await gitinfo.probe(ghBin(), ['api', 'user'], root, 10000);
+  if (r.code !== 0) return { installed: true, authed: false, github: null };
+  let user: unknown = null;
+  try { user = JSON.parse(r.out); } catch { /* not JSON: treated as signed out */ }
+  const github = identityLib.githubIdentityOf(user);
+  return { installed: true, authed: !!github, github };
+}
+
 interface FoundingDeps { globalDir: string; runs: Runs; jobs: Jobs; settings: SettingsStore; changed: (projectId: string) => void }
 
 export class FoundingFlow {
@@ -175,7 +197,8 @@ export class FoundingFlow {
   }
   private toView(f: Founding): FoundingView {
     const { visionRunId: _v, foundationRunId: _f, setupRunId: _s, scaffoldRuns: _n, ticketIds: _t, ...v } = f;
-    return { ...v, costUsd: Math.round(f.stages.reduce((a, s) => a + (s.costUsd || 0), 0) * 10000) / 10000 };
+    const live = f.phase !== 'done' && f.phase !== 'abandoned' && fs.existsSync(f.root);
+    return { ...v, costUsd: Math.round(f.stages.reduce((a, s) => a + (s.costUsd || 0), 0) * 10000) / 10000, identity: live ? identityLib.readIdentity(f.root) : null };
   }
   private project(projectId: string): Project {
     const p = registry.get(this.d.globalDir, projectId);
@@ -428,11 +451,14 @@ export class FoundingFlow {
       await this.startFoundation(f);
     } else if (f.phase === 'cp-foundation' && action === 'approve') {
       if (!f.foundation) throw new FlowError('there is no plan to approve', 409);
+      requireIdentity(f.root); // the skeleton is cohorte's first commit here
       this.startScaffold(f, text);
     } else if (f.phase === 'cp-scaffold' && action === 'retry') {
+      requireIdentity(f.root);
       this.startScaffold(f, text);
     } else if (f.phase === 'cp-scaffold' && action === 'continue') {
       if (git(f.root, 'rev-parse', '--verify', '-q', 'HEAD').status !== 0) throw new FlowError('nothing is committed yet — retry the skeleton, or commit it yourself first', 409);
+      requireIdentity(f.root); // the pipeline set-up is committed when it ends
       this.startSetup(f);
     } else if (f.phase === 'setup' && action === 'retry') {
       this.startSetup(f);
@@ -483,7 +509,10 @@ export class FoundingFlow {
 
   /** The pipeline is set up: commit it (a new project only), file the first version's tickets, and hand over to the company flow. */
   private async finish(f: Founding): Promise<void> {
-    if (f.mode !== 'existing' && (git(f.root, 'status', '--porcelain').stdout || '').trim()) {
+    const id = identityLib.readIdentity(f.root);
+    if (f.mode !== 'existing' && (git(f.root, 'status', '--porcelain').stdout || '').trim() && id.status !== 'ok') {
+      f.warning = `The pipeline files are written but not committed: ${id.reason}. Set this project's identity (${identityLib.fixCommand(id.name || 'Your Name', 'you@example.com')}), then commit them with \`git add -A && git commit -m "chore: set up the cohorte pipeline"\`.`;
+    } else if (f.mode !== 'existing' && (git(f.root, 'status', '--porcelain').stdout || '').trim()) {
       git(f.root, 'add', '-A');
       const c = git(f.root, 'commit', '-q', '-m', 'chore: set up the cohorte pipeline');
       if (c.status !== 0) f.warning = `the pipeline files could not be committed: ${(c.stderr || '').trim().slice(0, 300)}`;
@@ -519,6 +548,33 @@ export class FoundingFlow {
   }
 
   // -------------------------------------------------------------------------------------------------------------
+  // the git identity — set before cohorte's first commit, in this repository only
+
+  /** The identity commits here would carry, and the signed-in GitHub account's, to propose when it is not usable. */
+  async identity(projectId: string): Promise<IdentityInfo> {
+    const root = this.must(projectId).root;
+    const id = identityLib.readIdentity(root);
+    const gh = await githubIdentity(root);
+    return { identity: id, github: gh.github, gh: { installed: gh.installed, authed: gh.authed } };
+  }
+
+  /** `git config user.name/user.email` in this repository only (never --global): the GitHub identity, or the one typed. */
+  async setIdentity(projectId: string, body: IdentityBody): Promise<FoundingView> {
+    const f = this.must(projectId);
+    let name = typeof body.name === 'string' ? body.name : '';
+    let email = typeof body.email === 'string' ? body.email : '';
+    if (body.source === 'github') {
+      const gh = await githubIdentity(f.root);
+      if (!gh.github) throw new FlowError(gh.installed ? 'gh is not signed in — run `gh auth login` in a terminal once, or type a name and email' : 'the GitHub CLI (gh) is not installed — type a name and email', 400);
+      ({ name, email } = gh.github);
+    }
+    try { identityLib.setIdentity(f.root, name, email); } catch (e) { throw new FlowError(String((e as Error).message || e), 400); }
+    this.store.save(f);
+    this.d.changed(projectId);
+    return this.toView(f);
+  }
+
+  // -------------------------------------------------------------------------------------------------------------
   // the code host — never required, one click when wanted
 
   async remote(projectId: string): Promise<RemoteInfo> { return gitinfo.remoteInfo(this.project(projectId).root); }
@@ -532,6 +588,7 @@ export class FoundingFlow {
     const info = await gitinfo.remoteInfo(p.root);
     if (info.origin) throw new FlowError(`this project already has a remote: ${info.origin}`, 409);
     if (git(p.root, 'rev-parse', '--verify', '-q', 'HEAD').status !== 0) throw new FlowError('there is no commit to push yet', 409);
+    requireIdentity(p.root); // the profile change is committed, then everything is pushed
     if (body.kind === 'github') {
       if (!info.gh.installed) throw new FlowError('the GitHub CLI (gh) is not installed — install it from https://cli.github.com, or paste the URL of a repository you created yourself', 400);
       if (!info.gh.authed) throw new FlowError('gh is not signed in — run `gh auth login` in a terminal once, then try again', 400);

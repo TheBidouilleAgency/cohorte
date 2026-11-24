@@ -46,6 +46,7 @@ for that stack, recorded in your final report as an assumption.
   (no skipped tests, no disabled lint rules).
 - **Commit** when the checks pass: `git add -A` then `git commit -m "chore: walking skeleton"` (on the
   current branch). Do not push, do not add a remote.
+  Before committing, run `git config user.email`: empty, or a hostname-looking address (`…@<host>.local`/`.lan`, no dot in the domain) ⇒ do not commit; report `status: failed`, naming it in `notes` with the fix `git config user.name "<name>" && git config user.email "<email>"` — never invent or set an identity yourself.
 - Do **not** create `PIPELINE.md`, `CLAUDE.md`, `.claude/` or `specs/`: the pipeline is set up right
   after you, from what you leave.
 

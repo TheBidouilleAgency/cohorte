@@ -127,6 +127,12 @@ fix only with the human's go-ahead (or hand them the command).
    belong to the **main checkout** — a `pipeline-metrics.jsonl` inside a live feature worktree is a
    stale-core sign (its lines die at teardown) ⇒ suggest appending its lines to the main checkout's
    file and deleting the stray.
+10. **Git identity** (`cohorte doctor`'s `identity` row). `git config user.name` and `git config user.email`
+   are set for this repo (conditional includes count). Unset ⇒ ❌: git falls back to `<os user>@<hostname>`
+   and the code host cannot link the commits; an email whose domain has no dot or ends in
+   `.local`/`.lan`/`.localdomain` ⇒ ⚠️ (a hostname, not a mailbox). fix:
+   `git config user.name "<name>" && git config user.email "<email>"` (repo-local; with `gh` signed in,
+   `<id>+<login>@users.noreply.github.com` from `gh api user`). Never invent the values.
 
 ## Report
 

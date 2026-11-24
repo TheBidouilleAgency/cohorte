@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { FoundingPhase, FoundingView } from '../../../../shared/api';
 import { FoundationCard, ScaffoldCard, VisionCard } from './Cards';
+import { IdentityCard } from './Identity';
 import { ago, usd } from '../../lib/format';
 import { usePoll } from '../../lib/usePoll';
 import { useApp } from '../../store/app';
@@ -97,6 +98,7 @@ export function Founding() {
       {f.error && f.phase !== 'cp-scaffold' ? <Card tone="bad" className="gate"><div className="error pre-wrap">{f.error}</div>
         {f.phase === 'setup' ? <div className="actions"><Button onClick={() => void foundingCheckpoint('retry')}>Restart the set-up</Button></div> : null}</Card> : null}
       {f.warning ? <Card tone="warn" className="gate"><div className="pre-wrap">{f.warning}</div></Card> : null}
+      {f.mode !== 'existing' ? <IdentityCard f={f} /> : null}
       <Checkpoint f={f} />
       {f.phase !== 'cp-vision' && f.vision ? <details className="gap-top"><summary>The validated vision</summary><VisionCard v={f.vision} name={f.name} tickets={f.tickets} /></details> : null}
       {f.phase !== 'cp-foundation' && f.foundation && ['scaffold', 'cp-scaffold', 'setup', 'done'].includes(f.phase) ? <details className="gap-top"><summary>The approved foundations</summary><FoundationCard p={f.foundation} /></details> : null}

@@ -39,7 +39,7 @@ committing, pushing, and opening the PR. You do **not** write features.
 ## Steps
 
 1. Sanity-check: `git status`, `git diff --stat`. Confirm you're on the feature branch (not the default
-   branch). Confirm no `.env`/secret files staged.
+   branch). Confirm no `.env`/secret files staged. Before committing, run `git config user.email`: empty, or a hostname-looking address (`…@<host>.local`/`.lan`, no dot in the domain) ⇒ stop and report it with the fix `git config user.name "<name>" && git config user.email "<email>"` — never invent or set an identity yourself.
 2. Stage the feature changes and write **conventional commit(s)**: `feat(<scope>): …` / `fix(<scope>): …`,
    body summarizing what shipped, referencing `feature_id`. Scope from the domain. A spec whose
    front-matter carries `kind: patch` is a bug fix — `fix(<scope>): …`, and the body states the

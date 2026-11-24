@@ -310,6 +310,8 @@ export function create({ globalDir, version, token = crypto.randomBytes(24).toSt
       if (parts[2] === 'founding') {
         if (parts.length === 3 && method === 'GET') return flowCall(() => flow.founding.view(p.id));
         if (parts[3] === 'reply' && method === 'POST') { const b = await bodyOf(); if (!b) return; return flowCall(() => flow.founding.reply(p.id, b.text), 202); }
+        if (parts[3] === 'identity' && parts.length === 4 && method === 'GET') return flowCall(() => flow.founding.identity(p.id));
+        if (parts[3] === 'identity' && parts.length === 4 && method === 'POST') { const b = await bodyOf(); if (!b) return; return flowCall(() => flow.founding.setIdentity(p.id, b)); }
         if (parts[3] === 'checkpoint' && method === 'POST') { const b = await bodyOf(); if (!b) return; return flowCall(async () => { const v = await flow.founding.checkpoint(p.id, b); cacheDoctor.clear(p.root); return v; }); }
       }
       if (parts[2] === 'remote' && parts.length === 3) {
