@@ -35,7 +35,7 @@ const EXIT = { ok: 0, error: 1, waiting: 2, parked: 3, elsewhere: 4 };
 const VERBS = ['ticket', 'take', 'lead', 'checkpoint', 'autopilot', 'merge', 'accept', 'adopt', 'new-project'];
 /** The verbs that drive runs — the ones --detach can send to the background. */
 const DRIVING = ['take', 'lead', 'checkpoint', 'autopilot', 'merge', 'adopt'];
-const BOOL = new Set(['help', 'json', 'interactive', 'no-interactive', 'yes', 'skip-docker-check', 'detach', 'driven', 'follow', 'idea', 'stack', 'resume']);
+const BOOL = new Set(['help', 'json', 'no-lead', 'interactive', 'no-interactive', 'yes', 'skip-docker-check', 'detach', 'driven', 'follow', 'idea', 'stack', 'resume']);
 /** A value when one follows (`ticket list --status backlog`), else a switch (`autopilot <id> --status`). */
 const OPTIONAL = new Set(['status']);
 const MULTI = new Set(['criteria', 'out-of-scope']);
@@ -68,7 +68,9 @@ function usage() {
                                               straight to the backlog, like "New tech ticket";
                                               --status validate files it for the requester's CP0 (the PO's way)
   cohorte ticket move <id> <status>           validate→backlog|rejected is CP0; anything else moves the card
-  cohorte take <ticket> [--yes]               worktree + feature record (id = ticket id), the lead frames → CP1
+  cohorte take <ticket> [--yes] [--no-lead]   worktree + feature record (id = ticket id), the lead frames → CP1
+                                              --no-lead: the calling session is the lead (/cohorte-lead in Claude Code);
+                                              its CP1 approve then needs the spec it froze
   cohorte lead <ticket> --note TEXT           reply to the lead
   cohorte checkpoint <ticket> <action> [--note TEXT]
         CP1 approve | correct (= reply to the lead) | abandon   — approve freezes the spec, starts the autopilot
@@ -154,6 +156,7 @@ function until(cond, ms = 250) {
 function restOf(f) {
   if (!f) return { code: EXIT.ok, waiting: 'nothing' };
   if (f.checkpoint) return { code: EXIT.waiting, waiting: f.checkpoint.kind, reason: f.checkpoint.reason };
+  if (f.phase === 'framing' && f.sessionLead) return { code: EXIT.ok, waiting: 'framing', reason: `framed in your Claude Code session, in ${f.worktree}` };
   if (f.phase === 'framing') return { code: EXIT.waiting, waiting: 'lead', reason: f.error || 'the lead waits for your reply' };
   if (f.phase === 'failed') return { code: EXIT.error, waiting: 'failed', reason: f.error || 'failed' };
   return { code: EXIT.ok, waiting: f.phase };
@@ -346,6 +349,7 @@ const NEXT = {
   question: (id) => `cohorte autopilot ${id}   (in a terminal, to answer it)`,
   pr: (id) => `merge the PR, or: cohorte merge ${id}   (then cohorte autopilot ${id} picks the merge up)`,
   acceptance: (id) => `the requester: cohorte accept ${id} ok|not-quite --note "…"`,
+  framing: (id) => `once the developer approves the frozen spec: cohorte checkpoint ${id} approve --detach`,
   elsewhere: (id) => `cohorte autopilot ${id} --follow   (or answer in cohorte ui)`,
 };
 
@@ -481,7 +485,7 @@ async function run(argv, globalDir) {
     }
     let confirmed = o.yes === true;
     for (;;) {
-      try { flow.take(p.id, id, { confirmed }); break; } catch (e) {
+      try { flow.take(p.id, id, { confirmed, lead: !o['no-lead'] }); break; } catch (e) {
         if (!e.needsConfirmation || confirmed) throw e;
         if (!interactive) throw new Error(`${e.message} — the gate asks before \`${e.command}\`: re-run with --yes to confirm`);
         out.prompt(`the gate asks before \`${e.command}\`${e.reason ? ` (${e.reason})` : ''} — run it? [y/N] `);
@@ -490,7 +494,7 @@ async function run(argv, globalDir) {
         confirmed = true;
       }
     }
-    out.line(`taking ${id} — worktree, then the lead frames it`);
+    out.line(o['no-lead'] ? `taking ${id} — its worktree, for the lead of this session` : `taking ${id} — worktree, then the lead frames it`);
     return settle(id, 'once');
   }
   if (verb === 'lead') {
@@ -504,7 +508,7 @@ async function run(argv, globalDir) {
     let action = pos.shift();
     const f = flow.mustFeature(p.id, id);
     if (!action) throw new UsageError('an action is required: approve, correct, continue, reframe or abandon');
-    const cp = f.checkpoint?.kind || null;
+    const cp = f.checkpoint?.kind || (f.sessionLead && ['framing', 'cp1'].includes(f.phase) ? 'cp1' : null);
     if (cp === 'cp1' && action === 'correct') action = 'reply'; // CP1's "correct" is a reply to the lead
     flow.checkpoint(p.id, id, { action, text: o.note });
     out.line(`${cp ? cp.toUpperCase() : f.phase} · ${action}${cp === 'cp1' && action === 'approve' ? ' — the lead freezes the spec, then the autopilot runs' : ''}`);

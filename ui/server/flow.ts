@@ -265,7 +265,8 @@ export class Flow {
   // -------------------------------------------------------------------------------------------------------------
   // Lead — a developer takes a ticket (worktree, framing, CP1)
 
-  take(projectId: string, ticketId: string, { confirmed = false } = {}): Feature {
+  /** `lead: false` — the caller is the lead (a /cohorte-lead in a plain session): the worktree and record only, no lead run. */
+  take(projectId: string, ticketId: string, { confirmed = false, lead = true } = {}): Feature {
     const p = this.project(projectId);
     const t = this.ticketOf(p, ticketId);
     if (!t) throw new FlowError('unknown ticket', 404);
@@ -276,11 +277,11 @@ export class Flow {
     if (!ops.FEATURE_ID.test(ticketId)) throw new FlowError('the ticket id is not a valid feature id');
     const wt = this.worktreeFor(p, ticketId);
     const f = existing || this.features.create(p.id, ticketId, t.title);
-    f.error = null; f.checkpoint = null;
+    f.error = null; f.checkpoint = null; f.sessionLead = !lead;
     if (wt) {
       f.worktree = wt.path; f.branch = wt.branch;
       this.features.save(f);
-      this.startLead(p, f);
+      if (lead) this.startLead(p, f); else this.features.phase(f, 'framing');
     } else {
       ops.createWorktree(this.jobs, p, ticketId, { confirmed }); // throws OpError (gate ask, bad id) before anything is recorded
       this.own(f);
@@ -313,7 +314,8 @@ export class Flow {
     if (!wt) { this.features.phase(f, 'failed', null, 'the worktree job finished but no worktree was found for this feature'); this.release(p.id, f.id); this.changed(p.id); return; }
     f.worktree = wt.path; f.branch = wt.branch;
     this.features.save(f);
-    try { this.startLead(p, f); } catch (e) { this.features.phase(f, 'failed', null, String((e as Error).message || e)); }
+    if (f.sessionLead) this.features.phase(f, 'framing');
+    else { try { this.startLead(p, f); } catch (e) { this.features.phase(f, 'failed', null, String((e as Error).message || e)); } }
     this.release(p.id, f.id);
     this.changed(p.id);
   }
@@ -458,6 +460,17 @@ export class Flow {
       this.features.phase(f, 'abandoned');
       this.setTicket(p, f.id, { status: 'backlog' });
       this.learn(p, f, 'abandoned');
+      this.changed(p.id);
+      return f;
+    }
+    if (action === 'approve' && f.sessionLead && ['framing', 'cp1'].includes(f.phase)) {
+      // CP1 from a plain session: its lead froze the spec on the developer's approval; the autopilot takes it from here
+      const spec = this.specOf(f);
+      if (!spec || !spec.status || spec.status === 'draft') throw new FlowError(`specs/${f.id}.md is not frozen in ${f.worktree} — freeze it first (the lead's step 4)`, 409);
+      if (text) f.corrections.push({ at: now(), checkpoint: 'cp1', text });
+      this.features.phase(f, 'autopilot');
+      this.setTicket(p, f.id, { status: 'building' });
+      void this.track(this.advance(p, f));
       this.changed(p.id);
       return f;
     }

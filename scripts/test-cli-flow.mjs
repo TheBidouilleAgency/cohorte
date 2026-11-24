@@ -245,6 +245,20 @@ try {
     check("…and the CLI sees it", cli(["ticket", "show", "page-spec", "--json"]).json?.feature?.phase === "cp3");
   }
 
+  console.log("/cohorte-lead in a plain session: take --no-lead, the session freezes, checkpoint approve");
+  {
+    const L = "session-led";
+    cli(["ticket", "create", "--title", "Session led", "--type", "feature"]);
+    const t = cli(["take", L, "--no-lead", "--json"]);
+    const wt = t.json?.feature?.worktree;
+    check("take --no-lead: the worktree and the record, no lead run, exit 0", t.code === 0 && t.json.feature.phase === "framing" && !t.json.feature.leadRunId && wt && existsSync(wt), `${t.code} ${t.err}`);
+    writeFileSync(join(wt, "specs", `${L}.md`), `---\nfeature_id: ${L}\ntitle: Session led\nstatus: draft\n---\n`);
+    check("approve on a draft is refused", cli(["checkpoint", L, "approve"]).code === 1);
+    writeFileSync(join(wt, "specs", `${L}.md`), `---\nfeature_id: ${L}\ntitle: Session led\nstatus: frozen\n---\n## 9. DoD\n- [x] C1 works\n`);
+    const a = cli(["checkpoint", L, "approve", "--json"]);
+    check("approve on the frozen spec starts the autopilot (here: parked at the fix question)", a.code === 3 && /▶ build/.test(a.err) && a.json?.feature.phase === "cp2", `${a.code} ${a.err.slice(-400)}`);
+  }
+
   console.log("new-project: the Founding chain from a terminal");
   {
     const noGlobal = join(home, "gitconfig-empty"); writeFileSync(noGlobal, "");

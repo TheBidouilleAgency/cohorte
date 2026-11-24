@@ -16,7 +16,12 @@ import crypto from 'crypto';
 import type { Checkpoint, DecisionRecord, FeaturePhase, FeatureView } from '../shared/api';
 
 const SAFE = /^[A-Za-z0-9._-]+$/;
-export type Feature = FeatureView & { v: 1; reservationsAck: boolean; lastBlocking: number | null; failures: Record<string, number> };
+export type Feature = FeatureView & {
+  v: 1; reservationsAck: boolean; lastBlocking: number | null; failures: Record<string, number>;
+  /** Taken from a plain Claude Code session that IS the lead (`cohorte take --no-lead`): no lead run is started, and
+   *  CP1 is approved on a spec that session already froze. */
+  sessionLead?: boolean;
+};
 
 const stamp = (file: string): string | null => { try { const st = fs.statSync(file); return `${st.mtimeMs}:${st.size}`; } catch { return null; } };
 
