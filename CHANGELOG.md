@@ -7,6 +7,31 @@ short, user-facing, most recent first. One `## <version> — <YYYY-MM-DD>` secti
 > They are history and are deliberately not rewritten — every command gained a `cohorte-` prefix
 > in 2.0.0.
 
+## 4.1.2 — 2026-11-24
+
+Fixes from the first real project built with the company flow.
+
+- **Reviews and fixes run from `cohorte ui` keep their results.** The dashboard closed a run's
+  permission channel two seconds after the lead's turn, while the agents it had started in the background
+  were still working: every permission they needed then failed, and a review's verdict was never written.
+  A run now stays open until its background agents are done.
+- **Every ticket of a long vision is filed.** The PO's messages were cut at 8,000 characters before the
+  tickets were read, so the last ones were lost. Agents' own output no longer shows up, or gets read, as
+  the lead's.
+- **Connecting Obsidian no longer hides your tickets.** The tickets you had are moved into the vault (the
+  local copies stay as a backup), and Settings says how many.
+- **Commits get the right author.** Before its first commit in a project, cohorte checks the git
+  identity; without one (or with a machine-made address like `you@laptop.lan`) it offers your GitHub
+  identity in one click instead of committing as the OS user. `cohorte doctor` checks it too.
+- **Fewer approval prompts.** The new-project skeleton writes files with the editor tools and runs one plain
+  command at a time (24 prompts on a real skeleton before). The gate resolves `$HOME` and
+  `$CLAUDE_CONFIG_DIR`, stops treating a script path like `node "$S/x.mjs"` as a possible match for a
+  deny rule, knows the branch after `git switch -c <name> &&`, parses `case`/`[[ ]]`/`function`, and
+  says how to allow a command when nobody is there to confirm it.
+- **A clearer message while a feature builds**: what is being built, that there is nothing to do, roughly
+  how long.
+- Founding costs were added up several times over in the dashboard; they are now the real figure.
+
 ## 4.1.1 — 2026-11-24
 
 - **A malformed profile no longer switches checks off.** When the profile reader returned each nested
