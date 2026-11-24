@@ -166,6 +166,17 @@ export function startRun(runs: Runs, project: Project, globalDir: string, body: 
   if (fs.existsSync(path.join(project.root, '.claude', 'hooks', 'cohorte-gate.py')) && spawnSync('python3', ['--version'], { stdio: 'ignore' }).status !== 0) {
     throw new OpError('python3 is not on PATH: the project gate is fail-closed, so every tool call would be refused', 400);
   }
-  return runs.start({ projectId: project.id, cwd: wt.path, command: `/${name}${args ? ` ${args}` : ''}`, permissionMode: body.permissionMode });
+  // Same MCP isolation as the flow's runs (agents.ts `mcp`, not imported: agents.ts imports this module).
+  const mcpFile = path.join(wt.path, '.mcp.json');
+  return runs.start({ strictMcp: true, mcpConfig: fs.existsSync(mcpFile) ? mcpFile : null, projectId: project.id, cwd: wt.path, command: `/${name}${args ? ` ${args}` : ''}`, permissionMode: body.permissionMode,
+    systemNote: MANUAL_RUN_NOTE });
 }
+
+/** A command started by hand from the dashboard: the skill's "next, run /x" and "/clear" advice reaches someone who clicks, not types. */
+export const MANUAL_RUN_NOTE = [
+  'This session was started from cohorte ui, the local dashboard; the person reads your messages there and cannot type slash commands into this session.',
+  'End with a plain-language message in their language: what happened, and what they need to do (often nothing). Never recommend /clear.',
+  'Name a next step as the dashboard action it is ("run the review from the feature page"), not as a command to type.',
+  'Keep pipeline vocabulary (DoD, preflight, readiness, handoff, freshness stamp) in the files you write, not in that message.',
+].join(' ');
 

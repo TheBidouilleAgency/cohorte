@@ -158,20 +158,19 @@ case: a bug fix corrects behaviour behind a shape that already exists, and re-au
 would put the contract file in the diff for nothing. Say you skipped it and why, in one line. A patch
 whose §5 **does** carry a delta is authored exactly as below, from the delta, against the existing
 file — never rewritten from scratch. (A patch needing *new* contract surface area never reaches here:
-`/cohorte-patch` §3 routes it to `/cohorte-spec`.) When you skip, still run `date +%s` on its own —
-the skipped postcondition is where §4's wall-clock start comes from, and a build with no start epoch
+`/cohorte-patch` §3 routes it to `/cohorte-spec`.) When you skip, still run `<core>/pipeline/scripts/phase-clock.sh start $ARGUMENTS build` on its own —
+the skipped postcondition is where §4's wall-clock start comes from, and a build with no start
 writes a metrics line with no duration.
 
 _Only if `contract.enabled`._ From §5 of the spec, write/update the feature's contract file at
 `<contract.path>/$ARGUMENTS.<contract.ext>` in the profile's `mechanism` (e.g. Zod v4 schemas + inferred
 types for `shared-types-zod`). Export it from `contract.index` if set. This is the ONLY file the agents
 share; they import it read-only and must not edit it. If `contract.enabled` is false, the spec prose is
-the sync channel — say so and skip, but still run `date +%s` on its own (same as the patch skip
-above: §4's wall-clock start comes from here, and a build with no start epoch writes a metrics
-line with no duration). **Postcondition (if `contract.enabled`):**
-`test -f <contract.path>/$ARGUMENTS.<contract.ext> && date +%s` — the contract file must exist before
-you dispatch §3, or the stateless agents have nothing to build against (the epoch output is §4's
-wall-clock start — no separate timing call).
+the sync channel — say so and skip, but still run `<core>/pipeline/scripts/phase-clock.sh start $ARGUMENTS build` on
+its own (same as the patch skip above). **Postcondition (if `contract.enabled`):** check with the Glob
+tool that `<contract.path>/$ARGUMENTS.<contract.ext>` exists — the stateless agents have nothing to
+build against otherwise — then run `<core>/pipeline/scripts/phase-clock.sh start $ARGUMENTS build`,
+alone: it records §4's wall-clock start under `specs/reports/` (one plain command, no approval prompt).
 
 **`--readiness-only` stops here** — print the readiness verdict + contract path and point at
 **`/cohorte-loop $ARGUMENTS`** (the loop workflow, `{feature: "$ARGUMENTS"}` — it builds, reviews and
@@ -251,17 +250,15 @@ For every answer that differs from the recommendation, append a Remediation item
 answer in `notes.md` under `## Decisions`. A run without a human (an autopilot) gets its answers the
 same way — the call is answered for you or waits; never skip it.
 A dead surface (§3.5) prints `<key> · DEAD — unverified` and **the batch is never reported as ok**.
-Append **ONE line for the batch** to the **main checkout's** `<state>/pipeline-metrics.jsonl` —
-NOT the worktree's, which dies at teardown while metrics must accumulate across features. Resolve
-it from anywhere: `$(dirname "$(git rev-parse --git-common-dir)")/<state>/pipeline-metrics.jsonl`
-(in the main checkout this resolves to itself). Create it if absent; it must be gitignored.
-Compute the elapsed time in the same Bash call
-(`echo "{...\"seconds\":$(($(date +%s)-<start epoch from §2>)),...}" >> …`):
-`{"ts":"<ISO date>","feature":"$ARGUMENTS","phase":"build","seconds":<wall-clock>,"surfaces":{"<key>":"ok|error|dead",…}}`
+Append **ONE line for the batch** to the **main checkout's** `<state>/pipeline-metrics.jsonl` (not
+the worktree's, which dies at teardown) with one plain command:
+`<core>/pipeline/scripts/phase-clock.sh metrics $ARGUMENTS build '{"<key>":"ok|error|dead",…}'` — it
+resolves the main checkout, computes the seconds from §2's start and writes
+`{"ts":"<ISO date>","feature":"$ARGUMENTS","phase":"build","seconds":<wall-clock>,"surfaces":{…}}`.
 — **write this line even when a surface died.** An incomplete batch is exactly the batch worth having
 in the record; skipping the append to "wait until it's complete" silently deletes the evidence that
-anything went wrong. In the same call write the machine-readable batch result to
-`specs/reports/$ARGUMENTS.build.json` (overwrite) — the channel an automated driver reads, since it
+anything went wrong. Then write the machine-readable batch result to
+`specs/reports/$ARGUMENTS.build.json` (overwrite, with the Write tool) — the channel an automated driver reads, since it
 never sees your chat:
 `{"id":"$ARGUMENTS","phase":"build","ts":"<ISO>","surfaces":{"<key>":"ok|error|dead",…},"dead":["<key>",…]}`
 — this is the evidence `<core>/pipeline/schema/specialization.md` asks for before splitting a surface.
