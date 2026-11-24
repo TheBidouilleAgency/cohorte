@@ -204,6 +204,7 @@ class Analyzer(Indirection, SelfProtection, RuleChecks, Findings):
         args = argv[1:]
         inv = Inv(name, args, seg)
         inv.prefixes = prefixes
+        self.run_guard(inv, assigns, seg)
 
         if name == "git":
             g = self.expand_git(args, state, depth)

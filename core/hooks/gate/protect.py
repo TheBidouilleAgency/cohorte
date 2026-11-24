@@ -20,7 +20,17 @@ from .patterns import flag_names
 
 PROTECTED_HINT_RE = re.compile(r"(^|/)\.claude(/|$)|gate-config\.json|preflight\.ok|"
                                r"settings(\.local)?\.json|cohorte-gate\.py|pipeline\.json|"
-                               r"(^|/)\.cohorte(/|$)")
+                               r"(^|/)\.cohorte(/|$)|cohorte-ui|CLAUDE_CONFIG_DIR")
+
+# -- inside a cohorte run (COHORTE_RUN_ID in the hook's environment: the hook is a child of the run) --------------
+# The `cohorte` verbs an agent of a run may call: reads only. Everything else moves the company flow.
+READ_VERBS = {"doctor", "specs", "metrics", "version", "--version", "-v", "help", "--help", "-h"}
+PTY_TOOLS = {"script", "expect", "unbuffer", "socat", "empty", "ttyrec", "tmux", "screen", "faketty", "pty"}
+ENV_TAMPER_RE = re.compile(r"(^|[\s;&|(])env\s+(?:\S+\s+)*?(-u\b|--unset\b|-i\b|--ignore-environment\b|-\s)|"
+                           r"(^|[\s;&|(])(unset|export|declare|typeset|readonly)\b[^;&|]*\bCOHORTE_|\bCOHORTE_\w*\+?=")
+PTY_CODE_RE = re.compile(r"\bpty\b|node-pty|openpty|forkpty|posix_openpt")
+RUNNERS = {"npx", "bunx", "pnpx"}
+DLX = {"pnpm", "yarn", "bun"}
 PROTECTED_BASENAMES = {"gate-config.json", "preflight.ok", "settings.json", "settings.local.json", "profile.json",
                       "cohorte-gate.py", "pipeline.json", ".claude", ".cohorte", "hooks", "~", "",
                       ".", ".."}
@@ -29,6 +39,8 @@ PROTECTED_BASENAMES = {"gate-config.json", "preflight.ok", "settings.json", "set
 def suspicious(tail, raw):
     """For a path the gate can't resolve: could it name a protected file? Its static tail
     decides — `…/.claude/pipeline-metrics.jsonl` can't, `$DIR/.claude/settings.json` can."""
+    if "cohorte-ui" in raw:   # the flow's state, whatever file under it
+        return True
     base = os.path.basename(tail.rstrip("/")) if tail else ""
     if tail and "/" in tail and base not in PROTECTED_BASENAMES and not tail.endswith("/"):
         return False
@@ -53,6 +65,7 @@ class SelfProtection(object):
         if len(t) >= 2 and t[0] == t[-1] == '"':
             t = t[1:-1]
         for var, val in (("CLAUDE_PROJECT_DIR", os.environ.get("CLAUDE_PROJECT_DIR")),
+                         ("CLAUDE_CONFIG_DIR", os.environ.get("CLAUDE_CONFIG_DIR")),
                          ("HOME", os.path.expanduser("~")),
                          ("PWD", state.cwd if state.cwd_known else None)):
             if val and var not in state.rebound:
@@ -93,7 +106,9 @@ class SelfProtection(object):
             return "protected"
         for t in targets:
             for cand in {os.path.normpath(os.path.abspath(t)), os.path.realpath(t)}:
-                if cand in prot or ctx.in_protected_dir(cand):
+                if ctx.in_protected_dir(cand):
+                    return "flowstate"
+                if cand in prot:
                     return "protected"
                 if mode in ("delete", "recursive", "chmod") and any(d.startswith(cand.rstrip(os.sep) + os.sep) for d in ctx.protected_dirs):
                     return "protected" if mode == "delete" else "suspect"
@@ -135,6 +150,10 @@ class SelfProtection(object):
             return
         verb = {"write": "overwrite", "delete": "delete or move", "recursive": "overwrite",
                 "chmod": "change the permissions of"}[mode]
+        if kind == "flowstate":
+            self.deny("%s would %s `%s`, the company flow's state (tickets, features, leases, runs) — only "
+                      "cohorte ui and the `cohorte` commands write there (self-protection)" % (via, verb, w.raw))
+            return
         if kind == "protected" and mode in ("write", "delete"):
             self.deny("%s would %s `%s`, which the Cohorte gate depends on (self-protection). "
                       "Edit gate rules through PIPELINE.md and /cohorte-update-pipeline, or ask "
@@ -198,6 +217,21 @@ class SelfProtection(object):
                           if not target.dynamic else target, name, mv=(name == "mv"))
             elif len(pos) >= 2:
                 copy_like(pos[:-1], pos[-1], name, mv=(name == "mv"))
+        elif name == "touch":
+            for p in positionals(args, ("-r", "-t", "-d", "--reference", "--date")):
+                self.check_path(p, state, "write", "`touch`", relocated)
+        elif name in ("mkdir", "mkfifo", "mknod"):
+            for p in positionals(args, ("-m", "--mode", "--context")):
+                self.check_path(p, state, "write", "`%s`" % name, relocated)
+        elif name in ("tar", "gtar", "bsdtar", "unzip", "cpio"):
+            target = None
+            for k, w in enumerate(args):
+                v = w.value
+                if v in ("-C", "--directory", "-d") and k + 1 < len(args):
+                    target = args[k + 1]
+                elif v.startswith("--directory="):
+                    target = static_word(v.split("=", 1)[1]) if not w.dynamic else w
+            self.check_path(target if target is not None else static_word("."), state, "recursive", "`%s`" % name, relocated)
         elif name == "tee":
             for p in positionals(args):
                 self.check_path(p, state, "write", "`tee`", relocated)
@@ -241,6 +275,13 @@ class SelfProtection(object):
                 self.check_path(w, state, "delete", "`find -delete`", relocated)
         elif name == "git" and inv.git and inv.git.sub in ("checkout", "restore", "reset"):
             self.git_restore(inv.git, state, relocated or inv.git.relocated)
+        elif name == "git" and inv.git and inv.git.sub in ("init", "clone", "worktree", "archive"):
+            # where it writes: its positional directory, or -C's (seen in the raw arguments)
+            for k, w in enumerate(args):
+                if w.value == "-C" and k + 1 < len(args):
+                    self.check_path(args[k + 1], state, "recursive", "`git -C`", relocated)
+            for p in positionals(inv.git.args, ("-b", "--branch", "--template", "--separate-git-dir", "-o", "--origin", "--depth")):
+                self.check_path(p, state, "recursive", "`git %s`" % inv.git.sub, relocated)
         elif name == "git" and inv.git and inv.git.sub in ("rm", "mv"):
             g = inv.git
             pos = positionals(g.args)
@@ -252,6 +293,47 @@ class SelfProtection(object):
                 for p in pos[:-1]:
                     self.check_path(p, state, "delete", "`git mv`", reloc)
                 self.check_path(pos[-1], state, "write", "`git mv`", reloc)
+
+    def run_guard(self, inv, assigns, seg):
+        """Inside a cohorte run, its agents may read the company flow, never move it: no state-changing `cohorte`
+        verb (whatever path or runner calls it), no hiding the run from the CLI (COHORTE_* unset or overridden), no
+        pseudo-terminal to pass for a person at a terminal. Parsing cannot see into scripts or interpreters — which is
+        why nothing a person decides rests on it alone (see docs/reference/gate.md, "The company flow")."""
+        if os.environ.get("COHORTE_RUN_ID") is None:
+            return
+        name, args = inv.name, inv.args
+        text = seg.text
+        if any(a.startswith("COHORTE_") for a in assigns) or ENV_TAMPER_RE.search(text):
+            self.deny("an agent of a cohorte run may not unset or override COHORTE_* (`%s`) — that is how the "
+                      "`cohorte` CLI knows it is called from a run" % text.strip()[:120])
+            return
+        if name in PTY_TOOLS or PTY_TOOLS.intersection(inv.prefixes or []) or (name in ("python", "python3", "node", "perl", "ruby", "bun", "deno")
+                                 and PTY_CODE_RE.search(text)):
+            self.deny("an agent of a cohorte run may not drive a pseudo-terminal (`%s`) — a person's decisions "
+                      "are typed at a real one" % name)
+            return
+        vals = [w.value for w in args]
+        rest = None
+        if name == "cohorte":
+            rest = vals
+        elif name in ("node", "nodejs", "bun") and vals and (vals[0].endswith("bin/cli.js") or vals[0].endswith("bin/flow.js")
+                                                              or os.path.basename(vals[0]) == "cohorte"):
+            rest = vals[1:]
+        elif name in RUNNERS or (name in DLX and vals[:1] in (["dlx"], ["exec"], ["x"])):
+            for k, v in enumerate(vals):
+                if re.match(r"^cohorte(@\S*)?$", v):
+                    rest = vals[k + 1:]
+                    break
+        if rest is None:
+            return
+        pos = [v for v in rest if not v.startswith("-")]
+        verb = pos[0] if pos else (rest[0] if rest else "help")
+        ok = verb in READ_VERBS or (verb == "ticket" and (len(pos) < 2 or pos[1] in ("list", "show"))) \
+            or (verb == "autopilot" and "--status" in rest and "--follow" not in rest and "--detach" not in rest)
+        if not ok:
+            self.deny("an agent of a cohorte run may read the company flow (`cohorte ticket list|show`, "
+                      "`cohorte autopilot <id> --status`), never move it (`cohorte %s`) — say what you need in your "
+                      "answer: the developer decides" % verb)
 
     # -- git checkout / restore / reset --hard: they overwrite worktree files ------------
     def git_restore(self, g, state, relocated):
