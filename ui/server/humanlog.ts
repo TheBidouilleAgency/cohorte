@@ -14,7 +14,7 @@ import path from 'path';
 import { self } from './proc';
 
 export type HumanKind = 'cp0-validate' | 'cp0-reject' | 'cp1-approve' | 'cp2-continue' | 'cp2-correct' | 'cp2-reframe' | 'cp3-approve' | 'cp3-correct'
-  | 'merge' | 'cp4-accept' | 'cp4-not-quite' | 'abandon' | 'answer' | 'take-over' | 'ticket-move' | 'ticket-backlog';
+  | 'merge' | 'adopt' | 'cp4-accept' | 'cp4-not-quite' | 'abandon' | 'answer' | 'take-over' | 'ticket-move' | 'ticket-backlog';
 export interface HumanEntry { at: string; feature: string; kind: HumanKind; by: 'ui' | 'cli'; pid: number; ref?: string }
 const SAFE = /^[A-Za-z0-9._-]+$/;
 

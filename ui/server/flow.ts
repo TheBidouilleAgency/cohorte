@@ -188,8 +188,13 @@ export class Flow {
     const PAST_CP3 = ['shipping', 'pr', 'merging', 'closing', 'acceptance', 'done'];
     if (before.phase === 'cp3' && PAST_CP3.includes(f.phase) && f.phase !== 'cp3' && !this.human.has(f.projectId, f.id, 'cp3-approve', { since: before.openedAt }))
       why.push(`it moved from CP3 to ${f.phase} with no ship approval on file`);
-    else if (!['cp3', ...PAST_CP3].includes(before.phase) && ['shipping', 'pr', 'merging'].includes(f.phase))
-      why.push(`it jumped from ${before.phase} to ${f.phase} without CP3`);
+    else if (!['cp3', ...PAST_CP3].includes(before.phase) && ['shipping', 'pr', 'merging'].includes(f.phase)) {
+      // this process may simply have missed the CP3 in between (it last saw `autopilot`): an approval since then, or an
+      // adoption of a shipped spec over a dead record, is on file when the move was legit
+      const ok = this.human.has(f.projectId, f.id, 'cp3-approve', { since: before.updatedAt })
+        || (['abandoned', 'failed'].includes(before.phase) && f.phase === 'pr' && this.human.has(f.projectId, f.id, 'adopt', { since: before.updatedAt }));
+      if (!ok) why.push(`it jumped from ${before.phase} to ${f.phase} without CP3`);
+    }
     if (before.phase === 'pr' && f.phase === 'merging' && !this.human.has(f.projectId, f.id, 'merge', { since: before.updatedAt }))
       why.push('it moved to merging with no merge decision on file');
     for (const d of f.decisions) {
@@ -453,6 +458,10 @@ export class Flow {
   replyLead(projectId: string, id: string, text: unknown): void {
     const p = this.project(projectId);
     this.claim(p.id, id);
+    try { this.replyLeadHeld(p, id, text); } finally { this.release(p.id, id); } // every refusal gives the lease back
+  }
+
+  private replyLeadHeld(p: Project, id: string, text: unknown): void {
     const f = this.mustFeature(p.id, id);
     if (!['framing', 'cp1', 'cp2'].includes(f.phase)) throw new FlowError(`the lead is not in a conversation (the feature is in ${f.phase})`, 409);
     const run = f.leadRunId ? this.runs.get(f.leadRunId) : null;
@@ -536,6 +545,7 @@ export class Flow {
     let t = tr.get(id);
     if (!t) t = tr.create({ title: cand.title, type: 'feature', need: `Started in a Claude Code session — see specs/${id}.md.` } as TicketProposal, { id, status: 'framing', requester: this.settings.get(p.id).requester });
     const f = existing || this.features.create(p.id, id, t.title);
+    this.noteHuman(p, { id }, 'adopt'); // on file before the record moves, as a person's step would be
     f.worktree = cand.worktree;
     f.branch = cand.branch;
     f.error = null; f.checkpoint = null;
@@ -721,7 +731,7 @@ export class Flow {
     if (this.leases.acquire(p.id, f.id, this.by)) return; // another process drives it
     this.features.get(p.id, f.id); // its latest state (in place)
     if (f.phase !== 'autopilot') { this.release(p.id, f.id); return; }
-    if (f.currentRunId) { const r = this.runs.get(f.currentRunId); if (r && r.status === 'running') return; }
+    if (f.currentRunId) { const r = this.runs.get(f.currentRunId); if (r && r.status === 'running') { this.release(p.id, f.id); return; } }
     this.busy.add(f.id);
     try {
       const s = this.settings.get(p.id);
